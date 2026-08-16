@@ -1,0 +1,786 @@
+{
+  "_meta": {
+    "version": "1.0.0",
+    "compiler": "ARMCC V5.06",
+    "description": "Keil MDK 编译/链接错误与警告诊断知识库",
+    "last_updated": "2026-07-07"
+  },
+  "errors": [
+    {
+      "code": "#5",
+      "type": "error",
+      "category": "file",
+      "pattern": "error: #5: cannot open source input file",
+      "meaning": "编译器找不到指定的源文件或头文件",
+      "causes": [
+        "文件名拼写错误或大小写不匹配",
+        "#include 路径未在 Options → C/C++ → Include Paths 中配置",
+        "文件已被移动或删除",
+        "工程中保留了不存在的文件引用"
+      ],
+      "fixes": [
+        "检查文件名拼写，注意大小写（ARMCC 大小写敏感）",
+        "在 Options → C/C++ → Include Paths 中添加对应目录",
+        "用 --via 文件或直接编辑 .uvprojx 添加 include path",
+        "确认文件确实存在于指定路径"
+      ],
+      "severity": "critical",
+      "keil_specific": false
+    },
+    {
+      "code": "#20",
+      "type": "error",
+      "category": "syntax",
+      "pattern": "error: #20: identifier \"(\\w+)\" is undefined",
+      "meaning": "使用了未定义的标识符（变量、函数、宏）",
+      "causes": [
+        "变量/函数名拼写错误",
+        "缺少对应的 #include 头文件",
+        "宏定义被 #ifdef 条件排除",
+        "函数声明与调用的返回值类型不匹配"
+      ],
+      "fixes": [
+        "检查标识符拼写（分号/逗号混淆常见于中文输入法）",
+        "确认函数声明所在的头文件已 #include",
+        "在 -D 编译选项中添加宏定义",
+        "检查 #ifdef / #ifndef 条件是否正确"
+      ],
+      "severity": "critical",
+      "keil_specific": false
+    },
+    {
+      "code": "#29",
+      "type": "error",
+      "category": "syntax",
+      "pattern": "error: #29: expected an expression",
+      "meaning": "语法结构不完整，编译器期望一个表达式但得到了其他内容",
+      "causes": [
+        "行末缺少分号",
+        "括号/花括号不匹配",
+        "表达式残缺（如 if(x = ) 后面缺值）"
+      ],
+      "fixes": [
+        "检查上一行或当前行末尾是否缺少分号",
+        "检查括号是否成对匹配（利用 IDE 括号高亮）",
+        "确认 if/for/while 条件表达式完整"
+      ],
+      "severity": "critical",
+      "keil_specific": false
+    },
+    {
+      "code": "#40",
+      "type": "error",
+      "category": "syntax",
+      "pattern": "error: #40: expected an identifier",
+      "meaning": "语法位置需要一个标识符（变量名/函数名/类型名），但得到了其他 token",
+      "causes": [
+        "关键字被误用为变量名（如 int int = 0;）",
+        "结构体/联合体声明中缺少成员名",
+        "typedef 语句缺少新类型名"
+      ],
+      "fixes": [
+        "检查是否用了关键字做变量名",
+        "struct/union 声明末尾确认有成员名和分号",
+        "typedef 语句末尾确认有新类型名"
+      ],
+      "severity": "critical",
+      "keil_specific": false
+    },
+    {
+      "code": "#41",
+      "type": "error",
+      "category": "type",
+      "pattern": "error: #41: incomplete type",
+      "meaning": "使用了不完整类型（只有声明没有完整定义的 struct/union/enum）",
+      "causes": [
+        "struct/union 只有前向声明，缺少完整定义",
+        "头文件缺少，其中的类型定义不可见",
+        "循环依赖：A.h 需要 B.h 中的类型，B.h 又需要 A.h"
+      ],
+      "fixes": [
+        "确保 struct/union 的完整定义在引用前可见",
+        "添加缺失的 #include 头文件",
+        "解决头文件循环依赖：使用前向声明 + 指针代替值类型"
+      ],
+      "severity": "critical",
+      "keil_specific": false
+    },
+    {
+      "code": "#65",
+      "type": "error",
+      "category": "syntax",
+      "pattern": "error: #65: expected a \";\"",
+      "meaning": "编译器期望一个分号但未找到",
+      "causes": [
+        "语句末尾缺少分号",
+        "struct/union/enum 定义末尾缺少分号",
+        "函数声明末尾缺少分号"
+      ],
+      "fixes": [
+        "检查提示行号的上一行末尾是否缺少分号",
+        "特别检查 struct/union 的 } 后面是否有分号"
+      ],
+      "severity": "critical",
+      "keil_specific": false
+    },
+    {
+      "code": "#67",
+      "type": "error",
+      "category": "syntax",
+      "pattern": "error: #67: expected a \"}\"",
+      "meaning": "花括号不匹配，缺少闭合花括号",
+      "causes": [
+        "函数/结构体/if/for 的花括号缺少闭合",
+        "注释中包含了花括号导致配对错乱",
+        "条件编译导致某个 { 被排除但其 } 仍在"
+      ],
+      "fixes": [
+        "从报错行号向上搜索，找到对应的开括号",
+        "检查 #ifdef / #endif 区块是否打断了花括号配对",
+        "利用编辑器括号匹配功能逐层检查"
+      ],
+    "severity": "critical",
+      "keil_specific": false
+    },
+    {
+      "code": "#109",
+      "type": "error",
+      "category": "type",
+      "pattern": "error: #109: expression preceding parentheses",
+      "meaning": "用括号调用的表达式类型不是函数指针——通常是对非函数名加括号、函数名拼写错误，或变量名与函数名冲突",
+      "causes": [
+        "函数名拼写错误（如 delay_ms_typo 而不是 delay_ms）",
+        "声明了与函数同名的变量，变量遮蔽了函数名",
+        "头文件中函数声明未被 include，编译器不认识该函数名",
+        "把数组名/变量名当函数调用"
+      ],
+      "fixes": [
+        "检查函数名拼写是否正确",
+        "确认函数声明的头文件已 #include",
+        "检查是否有变量与函数同名",
+        "确认调用的是一个函数而非数组/变量"
+      ],
+      "severity": "critical",
+      "keil_specific": false
+    },
+    {
+      "code": "#101",
+      "type": "error",
+      "category": "symbol",
+      "pattern": "error: #101: \"(\\w+)\" has already been defined",
+      "meaning": "标识符被重复定义（函数、变量、宏）",
+      "causes": [
+        "同一个函数/变量在多个 .c 文件中非 static 定义",
+        "头文件中的变量定义被多个 .c 文件包含（缺少 extern）",
+        "宏在多个头文件中重复定义"
+      ],
+      "fixes": [
+        "头文件中用 extern 声明，在唯一一个 .c 文件中定义",
+        "或使用 static 限定文件作用域",
+        "用 #ifndef / #define 守卫保护头文件"
+      ],
+      "severity": "critical",
+      "keil_specific": false
+    },
+    {
+      "code": "#136",
+      "type": "error",
+      "category": "type",
+      "pattern": "error: #136: struct \"(\\w+)\" has no field \"(\\w+)\"",
+      "meaning": "访问的结构体成员不存在",
+      "causes": [
+        "成员名拼写错误",
+        "混淆了不同类型的结构体",
+        "头文件版本不匹配，结构体定义已变更"
+      ],
+      "fixes": [
+        "确认使用的结构体类型名正确",
+        "检查 struct 定义确认成员名拼写",
+        "确认包含的是正确的头文件版本"
+      ],
+      "severity": "critical",
+      "keil_specific": false
+    },
+    {
+      "code": "#144",
+      "type": "error",
+      "category": "type",
+      "pattern": "error: #144: a value of type \"(\\w+)\" cannot be used to initialize",
+      "meaning": "初始化值的类型与变量类型不兼容",
+      "causes": [
+        "指针和整数类型混用初始化",
+        "const 限定符冲突",
+        "数组初始化方式错误"
+      ],
+      "fixes": [
+        "确认初始化表达式类型与变量类型匹配",
+        "指针初始化用 NULL 而非 0（ARMCC 对此严格）",
+        "检查是否需要显式类型转换"
+      ],
+      "severity": "critical",
+      "keil_specific": false
+    },
+    {
+      "code": "#167",
+      "type": "error",
+      "category": "type",
+      "pattern": "error: #167: argument of type \"(\\w+)\" is incompatible",
+      "meaning": "函数调用时实参类型与形参不兼容",
+      "causes": [
+        "传入的参数类型与函数声明不一致",
+        "缺少函数声明导致编译器默认假设 int 返回",
+        "指针与整数之间的隐式转换被禁止"
+      ],
+      "fixes": [
+        "确认 #include 了函数声明的头文件",
+        "检查参数类型的 const/volatile/指针层级是否匹配",
+        "必要时使用显式类型转换"
+      ],
+      "severity": "critical",
+      "keil_specific": false
+    },
+    {
+      "code": "#223",
+      "type": "error",
+      "category": "symbol",
+      "pattern": "error: #223: function \"(\\w+)\" declared implicitly",
+      "meaning": "函数在使用前没有声明（C89 风格默认声明被禁止）",
+      "causes": [
+        "忘记 #include 包含函数声明的头文件",
+        "函数声明在调用点之后",
+        "STM32 HAL 库的 assert_param 等宏展开后调用了未声明的函数"
+      ],
+      "fixes": [
+        "添加对应的 #include 头文件（如 stm32f10x_gpio.h）",
+        "或将函数声明移到调用点之前",
+        "或在文件开头添加 extern 声明"
+      ],
+      "severity": "critical",
+      "keil_specific": false
+    },
+    {
+      "code": "#256",
+      "type": "error",
+      "category": "symbol",
+      "pattern": "error: #256: invalid redeclaration",
+      "meaning": "函数或变量的重复声明类型不一致",
+      "causes": [
+        "同一个函数在不同位置的声明签名冲突",
+        "前向声明的返回类型/参数类型与定义不一致",
+        "extern 声明和 static 定义冲突"
+      ],
+      "fixes": [
+        "确保所有声明与定义完全一致",
+        "检查 typedef 展开后的实际类型",
+        "使用统一的头文件声明，避免分散声明"
+      ],
+      "severity": "critical",
+      "keil_specific": false
+    },
+    {
+      "code": "#268",
+      "type": "error",
+      "category": "syntax",
+      "pattern": "error: #268: declaration requires a typedef name",
+      "meaning": "声明中需要类型名的地方出现了非类型标识符",
+      "causes": [
+        "忘记了 #include 定义自定义类型的头文件",
+        "类型名拼写错误",
+        "用变量名代替了类型名"
+      ],
+      "fixes": [
+        "确认类型名拼写正确",
+        "确认 typedef 所在的头文件已 include",
+        "STM32 中常见于忘记包含 stm32f10x.h"
+      ],
+      "severity": "critical",
+      "keil_specific": false
+    },
+    {
+      "code": "#381",
+      "type": "error",
+      "category": "preprocessor",
+      "pattern": "error: #381: \"(\\w+)\" is not a proper function-like macro",
+      "meaning": "将非函数宏当作函数宏调用（如给常量宏传了参数）",
+      "causes": [
+        "对宏使用错误的调用方式",
+        "宏在条件编译分支中被定义为不同形式"
+      ],
+      "fixes": [
+        "检查宏定义，确认是否接受参数",
+        "检查 #ifdef 分支中的宏定义是否一致"
+      ],
+      "severity": "critical",
+      "keil_specific": false
+    },
+    {
+      "code": "#546",
+      "type": "error",
+      "category": "syntax",
+      "pattern": "error: #546: transfer of control bypasses initialization",
+      "meaning": "goto/switch 跳过了变量的初始化",
+      "causes": [
+        "goto 语句跳过了某个局部变量的声明+初始化",
+        "switch 中 case 标签后直接声明了变量"
+      ],
+      "fixes": [
+        "在 case 分支中用花括号 {} 包裹变量声明",
+        "将变量声明移到 goto 跳转目标之前",
+        "变量声明和初始化分离：先声明，后在 goto 之前初始化"
+      ],
+      "severity": "critical",
+      "keil_specific": false
+    },
+    {
+      "code": "#767",
+      "type": "error",
+      "category": "type",
+      "pattern": "error: #767: conversion from \"(\\w+)\" to \"(\\w+)\"",
+      "meaning": "不安全的类型转换",
+      "causes": [
+        "将 32 位指针转换为 16 位整数（信息丢失）",
+        "有符号/无符号不匹配的隐式转换",
+        "const 到非 const 的转换"
+      ],
+      "fixes": [
+        "使用显式类型转换 (uint32_t)ptr",
+        "STM32 中指针转整数用 uint32_t 而非 uint16_t",
+        "确认转换是否确实安全，必要时重构"
+      ],
+      "severity": "critical",
+      "keil_specific": false
+    },
+    {
+      "code": "L6002",
+      "type": "error",
+      "category": "linker_file",
+      "pattern": "Error: L6002U: Could not open file",
+      "meaning": "链接器无法打开指定的 .o 或 .lib 文件",
+      "causes": [
+        "编译某文件失败导致 .o 未生成",
+        "库文件路径不存在或已移动",
+        "文件被其他进程锁定"
+      ],
+      "fixes": [
+        "先解决该文件的编译错误",
+        "检查库文件路径是否正确",
+        "关闭可能占用文件的其他程序"
+      ],
+      "severity": "critical",
+      "keil_specific": true
+    },
+    {
+      "code": "L6041",
+      "type": "error",
+      "category": "linker_scatter",
+      "pattern": "Error: L6041U: No section matches",
+      "meaning": "Scatter 文件中指定的 section 不存在（分散加载文件配置错误）",
+      "causes": [
+        "Scatter file 中的 section 名与实际目标文件不匹配",
+        "IRAM1/IRAM2 等内存段配置与实际芯片不匹配"
+      ],
+      "fixes": [
+        "检查 scatter file 或 Options → Linker 中的内存布局",
+        "确认芯片型号的 RAM/ROM 起始地址和大小正确"
+      ],
+      "severity": "critical",
+      "keil_specific": true
+    },
+    {
+      "code": "L6050",
+      "type": "error",
+      "category": "linker_lib",
+      "pattern": "Error: L6050U: The code size of this image",
+      "meaning": "库文件与目标 MCU 架构不兼容（如 Cortex-M4 的库用于 Cortex-M3）",
+      "causes": [
+        "Device 选型错误（Options → Device 中的 MCU 型号）",
+        "使用了不匹配的 HAL 库版本",
+        "ARMCC/ARMClang 混用"
+      ],
+      "fixes": [
+        "检查 Options → Device 中的芯片型号是否正确",
+        "确认 HAL 库与芯片匹配（F1/F4 分别对应不同库）",
+        "确保全工程使用同一编译器（不混用 ARMCC 和 ARMClang 编译的库）"
+      ],
+      "severity": "critical",
+      "keil_specific": true
+    },
+    {
+      "code": "L6200",
+      "type": "error",
+      "category": "linker_symbol",
+      "pattern": "Error: L6200E: Symbol (\\w+) multiply defined",
+      "meaning": "同一个符号（函数/变量）在多个目标文件中重复定义",
+      "causes": [
+        "函数名/全局变量名与其他文件冲突",
+        "头文件中定义了非 static/非 inline 函数",
+        "第三方库中的符号与工程代码冲突"
+      ],
+      "fixes": [
+        "将其中一个重命名为 static",
+        "或将头文件中的定义改为声明（extern）",
+        "或使用命名前缀避免冲突"
+      ],
+      "severity": "critical",
+      "keil_specific": true
+    },
+    {
+      "code": "L6218",
+      "type": "error",
+      "category": "linker_symbol",
+      "pattern": "Error: L6218E: Undefined symbol (\\w+)",
+      "meaning": "某个函数或变量被引用但没有任何地方定义它（链接时找不到实现）",
+      "causes": [
+        "对应的 .c 源文件没有加入工程",
+        "库文件 (.lib) 没有在 Linker 中引用",
+        "函数名拼写错误",
+        "条件编译排除了定义所在的文件",
+        "中断服务函数名拼写错误（如 SysTick_Handler 写成 Systick_Handler）",
+        "缺少启动文件中的默认中断处理函数定义"
+      ],
+      "fixes": [
+        "在工程中确认包含定义该符号的源文件",
+        "添加对应的 .lib 库文件到 Linker 配置",
+        "检查符号名拼写（特别注意大小写）",
+        "用 grep 在工程目录中搜索该符号在哪里定义",
+        "中断处理函数名必须与启动文件中的向量表名完全一致",
+        "如果是 STM32 HAL 函数，确认包含了正确的 HAL 源文件"
+      ],
+      "severity": "critical",
+      "keil_specific": true
+    },
+    {
+      "code": "L6304",
+      "type": "error",
+      "category": "linker_scatter",
+      "pattern": "Error: L6304E: Duplicate input file",
+      "meaning": "链接器发现重复的输入文件",
+      "causes": [
+        "同一个 .o / .lib 被多次添加到工程",
+        "Scatter file 中重复引用"
+      ],
+      "fixes": [
+        "检查工程中的重复文件",
+        "检查 scatter file 的引用"
+      ],
+      "severity": "critical",
+      "keil_specific": true
+    },
+    {
+      "code": "L6314",
+      "type": "error",
+      "category": "linker",
+      "pattern": "Error: L6314W: No section matched",
+      "meaning": "链接器发现没有匹配的 section（通常是向量表缺失）",
+      "causes": [
+        "启动文件未加入工程（startup_xxx.s）",
+        "Scatter file 配置错误",
+        "缺少中断向量表定义"
+      ],
+      "fixes": [
+        "确保 startup_xxx.s 加入工程并编译",
+        "启动文件中确认包含 __Vectors 段定义",
+        "检查 scatter file 中是否包含了 RESET 段"
+      ],
+      "severity": "critical",
+      "keil_specific": true
+    },
+    {
+      "code": "L6405",
+      "type": "error",
+      "category": "linker_memory",
+      "pattern": "Error: L6405E: No space in execution regions",
+      "meaning": "内存不足——代码+数据超出芯片的 Flash 或 RAM 容量",
+      "causes": [
+        "程序代码量超过 Flash 容量",
+        "全局变量/堆栈超过 RAM 容量",
+        "Scatter file 中给的内存区间太小"
+      ],
+      "fixes": [
+        "优化代码（开启 -O2 或 -Os 编译优化）",
+        "减少全局变量，改为局部变量或动态分配",
+        "减小堆/栈大小（startup 文件中的 Heap_Size / Stack_Size）",
+        "改用存储容量更大的 MCU 型号",
+        "检查 scatter file 配置是否与实际芯片一致"
+      ],
+      "severity": "critical",
+      "keil_specific": true
+    },
+    {
+      "code": "error_65",
+      "type": "error",
+      "category": "flash",
+      "pattern": "error 65: access violation",
+      "meaning": "Flash 下载失败：访问违规",
+      "causes": [
+        "Flash Download 选项卡中未选择正确的 Flash 算法",
+        "芯片被写保护或读保护",
+        "SWD/JTAG 连接不稳定",
+        "目标板供电不足"
+      ],
+      "fixes": [
+        "Options → Debug → Flash Download → 选择对应 MCU 的算法",
+        "用 OpenOCD 解锁芯片: openocd -c 'init; reset halt; stm32f1x unlock 0; reset halt; exit'",
+        "检查 SWD 连线质量，降低 SWD 时钟频率",
+        "确保目标板供电稳定（3.3V），不要只用调试器供电"
+      ],
+      "severity": "critical",
+      "keil_specific": true
+    },
+    {
+      "code": "no_algorithm",
+      "type": "error",
+      "category": "flash",
+      "pattern": "No Algorithm found for",
+      "meaning": "工程配置中未指定 Flash 下载算法",
+      "causes": [
+        "新建工程后未配置 Flash Download 算法",
+        "芯片型号选择后 Keil 未自动加载对应算法"
+      ],
+      "fixes": [
+        "Options → Debug → Flash Download → Add → 选择匹配芯片的算法",
+        "STM32F103C8 应选择: STM32F10x Med-density Flash 128K"
+      ],
+      "severity": "critical",
+      "keil_specific": true
+    },
+    {
+      "code": "tools_ini",
+      "type": "error",
+      "category": "env",
+      "pattern": "TOOLS.INI: TOOLCHAIN NOT INSTALLED",
+      "meaning": "Keil 工具链未安装或 license 注册异常",
+      "causes": [
+        "Keil 安装路径与 TOOLS.INI 记录不匹配",
+        "ARMCC 编译器未注册到 Keil 中",
+        "license 过期或损坏"
+      ],
+      "fixes": [
+        "检查 Tools.ini 文件中的 ARMCC 路径",
+        "重新注册 Keil license (File → License Management)",
+        "确认 TOOLS.INI 中的路径与实际安装路径一致"
+      ],
+      "severity": "critical",
+      "keil_specific": true
+    },
+    {
+      "code": "uv4_11",
+      "type": "error",
+      "category": "env",
+      "pattern": "ERRORLEVEL 11",
+      "meaning": "UV4.exe 无法打开工程文件",
+      "causes": [
+        ".uvprojx 文件不存在或路径错误",
+        ".uvprojx 文件被其他 Keil 实例占用",
+        "文件损坏或格式错误"
+      ],
+      "fixes": [
+        "确认工程文件路径正确",
+        "关闭其他 Keil uVision 窗口",
+        "从 .uvprojx.bak 备份文件恢复"
+      ],
+      "severity": "critical",
+      "keil_specific": true
+    }
+  ],
+  "warnings": [
+    {
+      "code": "#111",
+      "type": "warning",
+      "category": "flow",
+      "pattern": "warning: #111-D: statement is unreachable",
+      "meaning": "某条语句永远不会被执行到（死代码）",
+      "causes": [
+        "return/break/continue/goto 之后还有代码",
+        "while(1)/for(;;) 之后有代码",
+        "条件分支永远为真/假"
+      ],
+      "fixes": [
+        "删除不可达代码，或确认控制流逻辑是否正确",
+        "如果是有意保留的备用代码，用 #if 0 ... #endif 包裹",
+        "检查 return 是否过早（如放在了 while 循环之前）"
+      ],
+      "severity": "info",
+      "keil_specific": false
+    },
+    {
+      "code": "#177",
+      "type": "warning",
+      "category": "unused",
+      "pattern": "warning: #177-D: (function|variable) \"(\\w+)\" was declared but never referenced",
+      "meaning": "函数或变量声明/定义了但从未被使用",
+      "causes": [
+        "遗留的旧代码函数",
+        "功能尚未完成——函数定义好了但还没调用到",
+        "变量声明后用 volatile 保护但实际不需要"
+      ],
+      "fixes": [
+        "确认该函数确实不再需要，删除或注释掉",
+        "如果是暂未用到的功能，用条件编译保护: #ifdef FEATURE_X ... #endif",
+        "检查是否有拼写错误导致本应调用该函数的地方调用了别的函数"
+      ],
+      "severity": "info",
+      "keil_specific": false
+    },
+    {
+      "code": "#550",
+      "type": "warning",
+      "category": "unused",
+      "pattern": "warning: #550-D: variable \"(\\w+)\" was set but never used",
+      "meaning": "变量被赋值但从未被读取使用",
+      "causes": [
+        "调试代码遗留的变量",
+        "开发过程中某段用到该变量的代码被删除了",
+        "赋值语句本身是冗余的"
+      ],
+      "fixes": [
+        "删除该变量及其赋值语句",
+        "或将其值用于输出/日志/返回值",
+        "如果用 volatile 是因为预期该变量会被外部修改（如中断中），确认读取代码未被误删"
+      ],
+      "severity": "warn",
+      "keil_specific": false
+    },
+    {
+      "code": "#940",
+      "type": "warning",
+      "category": "flow",
+      "pattern": "warning: #940-D: missing return statement at end of non-void function",
+      "meaning": "非 void 函数缺少返回语句",
+      "causes": [
+        "函数声明了返回值类型但在某条路径上没有 return",
+        "if-else 分支中某一个分支缺少 return",
+        "结尾 switch 的 default 分支缺少 return"
+      ],
+      "fixes": [
+        "在函数末尾添加 return 语句",
+        "确保所有分支都有 return",
+        "如果是不会执行到的路径，在末尾添加 while(1); 或 __builtin_unreachable()"
+      ],
+      "severity": "warn",
+      "keil_specific": false
+    },
+    {
+      "code": "#1146",
+      "type": "warning",
+      "category": "unused",
+      "pattern": "warning: #1146-D: variable \"(\\w+)\" was declared but never used",
+      "meaning": "局部变量声明了但从未使用（比 #550 更轻微，未经赋值）",
+      "causes": [
+        "代码重构时遗留的变量声明",
+        "调试代码残留"
+      ],
+      "fixes": [
+        "删除未使用的变量声明",
+        "STM32 中常见如: uint32_t i; for(i=0;...)"
+      ],
+      "severity": "info",
+      "keil_specific": false
+    },
+    {
+      "code": "#1295",
+      "type": "warning",
+      "category": "compat",
+      "pattern": "warning: #1295-D: Deprecated declaration",
+      "meaning": "使用了被标记为弃用的函数或类型",
+      "causes": [
+        "使用了旧版 API（如标准外设库中的旧函数）",
+        "Keil 更新后某些函数被声明为 __attribute__((deprecated))"
+      ],
+      "fixes": [
+        "查阅库文档找到替代函数",
+        "如果必须使用，可用 #pragma diag_suppress 1295 临时屏蔽"
+      ],
+      "severity": "warn",
+      "keil_specific": false
+    },
+    {
+      "code": "#1864",
+      "type": "warning",
+      "category": "compat",
+      "pattern": "warning: #1864-D: attribute \"(\\w+)\" is unrecognized",
+      "meaning": "使用了编译器不认识的 attribute（如 GCC 的 attribute 用在 ARMCC 上）",
+      "causes": [
+        "移植 GCC 代码时保留了 __attribute__((packed)) 等 GCC 语法",
+        "不同的 attribute 语法混用"
+      ],
+      "fixes": [
+        "将 GCC attribute 改为 ARMCC 等效语法",
+        "如 packed: GCC 用 __attribute__((packed))，ARMCC 用 __packed",
+        "如 aligned: GCC 用 __attribute__((aligned(4)))，ARMCC 用 __align(4)"
+      ],
+      "severity": "warn",
+      "keil_specific": true
+    },
+    {
+      "code": "#188",
+      "type": "warning",
+      "category": "type",
+      "pattern": "warning: #188-D: enumerated type mixed with another type",
+      "meaning": "枚举类型与整数类型混用",
+      "causes": [
+        "将整数值直接赋给枚举变量",
+        "switch 中枚举值和 int 混用",
+        "算术运算中混用枚举和整数"
+      ],
+      "fixes": [
+        "使用显式类型转换: var = (enum_type)int_val",
+        "或用 #pragma diag_suppress 188 屏蔽（C 中枚举本质是整数）"
+      ],
+      "severity": "info",
+      "keil_specific": false
+    },
+    {
+      "code": "#186",
+      "type": "warning",
+      "category": "logic",
+      "pattern": "warning: #186-D: pointless comparison",
+      "meaning": "无意义的比较（如 unsigned 与负数比较永远为假）",
+      "causes": [
+        "将无符号变量与负数比较: if (uint_val < 0)",
+        "将常量与自身比较"
+      ],
+      "fixes": [
+        "检查比较逻辑是否合理",
+        "unsigned 变量不需要判断 < 0",
+        "如果是范围检查，确认边界的类型"
+      ],
+      "severity": "warn",
+      "keil_specific": false
+    },
+    {
+      "code": "#146",
+      "type": "warning",
+      "category": "type",
+      "pattern": "warning: #146-D: too many initializer values",
+      "meaning": "初始化列表的元素数量超过了数组/结构体的大小",
+      "causes": [
+        "数组大小声明过小（如 int arr[5] = {1,2,3,4,5,6}）",
+        "结构体成员数少于初始化值"
+      ],
+      "fixes": [
+        "增加数组大小或减少初始化值",
+        "如果不指定大小用 int arr[] = {...} 让编译器推断"
+      ],
+      "severity": "warn",
+      "keil_specific": false
+    },
+    {
+      "code": "L6314W",
+      "type": "warning",
+      "category": "linker",
+      "pattern": "Warning: L6314W: No section matched",
+      "meaning": "链接器发现某个模式未匹配到任何 section",
+      "causes": [
+        "Scatter file 中有些规则没有匹配到代码段",
+        "代码中某个段被优化掉了"
+      ],
+      "fixes": [
+        "如果程序运行正常，可忽略此警告",
+        "否则检查 scatter file 配置"
+      ],
+      "severity": "info",
+      "keil_specific": true
+    }
+  ]
+}

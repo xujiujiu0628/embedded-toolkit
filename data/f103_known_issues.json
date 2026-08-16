@@ -1,0 +1,38 @@
+{
+  "I2C": {
+    "hw_state_machine_hang": "Hardware I2C state machine can enter undefined state after failed transaction. HAL_I2C_Mem_Read timeout may trigger this.",
+    "clock_stretching_errata": "Errata with clock stretching on some F103 revisions. Use DMA mode or software I2C for reliability.",
+    "workaround": "Use software I2C (i2c_soft module) or enable DMA mode for HAL I2C transfers."
+  },
+  "USART": {
+    "OVER8_not_reliable": "OVER8 (8x oversampling) mode is unreliable on some F103 revisions. Use default 16x oversampling.",
+    "workaround": "Keep OVER8=0 (default 16x oversampling) for reliable communication."
+  },
+  "USB": {
+    "needs_external_pullup": "F103C8T6 USB requires external 1.5k pull-up resistor on D+ (PA12) to 3.3V. Not all Blue Pill boards have this.",
+    "workaround": "Add external 1.5k resistor between PA12 and 3.3V, or use a board variant with built-in pull-up."
+  },
+  "CAN": {
+    "sram_tight": "CAN peripheral exists on F103C8T6 but 20KB SRAM is tight for CAN buffers (16 filters + FIFO).",
+    "workaround": "Reduce filter banks, use single FIFO, keep payloads small."
+  },
+  "DMA": {
+    "fsmc_conflict": "DMA and FSMC cannot access SRAM simultaneously on F103. Not an issue for F103C8T6 (no FSMC).",
+    "circular_mode_buffers": "DMA circular mode buffers must be in a memory region accessible by the DMA controller (all SRAM is OK on F103C8T6)."
+  },
+  "Boot": {
+    "boot0_boot1": "BOOT0=0 boots from Flash. BOOT0=1+BOOT1=0 boots from system memory (UART1 bootloader). BOOT0=1+BOOT1=1 boots from SRAM.",
+    "flash_lock": "After flashing via ST-Link, BOOT0 must be LOW (Flash boot) for the application to run."
+  },
+  "Flash": {
+    "erase_cycle_limit": "Flash endurance: 10,000 erase cycles minimum. Flash is 64KB organized as 64 pages of 1KB each.",
+    "wait_states": "At 72MHz, 2 wait states required (FLASH_ACR = 0x12). CubeMX handles this automatically."
+  },
+  "ADC": {
+    "max_clock": "ADC clock max 14MHz. At 72MHz PCLK2, use ADCPRE=/6 (12MHz) or /8 (9MHz). CubeMX default is /6.",
+    "sample_time": "Too-short sample time causes inaccurate readings. For high-impedance sources, use 55.5 or 71.5 cycles."
+  },
+  "GPIO": {
+    "5v_tolerant": "PA8-PA15, PB, PC are 5V-tolerant. PA0-PA7 are NOT 5V-tolerant (analog inputs). Do not apply 5V to PA0-PA7."
+  }
+}
