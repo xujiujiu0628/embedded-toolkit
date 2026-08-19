@@ -104,8 +104,8 @@ def step_build(config: dict) -> dict:
     target = keil.get("target", "STM32F103C8_Blink")
     log_dir = keil.get("log_dir", ".embeddedskills/build")
 
-    uv4 = r"D:\KEIL5\UV4\UV4.exe"
-    args = ["build", "--uv4", uv4, "--project", project,
+    # uv4 由 keil_build 自行从 machine.json 解析 (机器路径只允许存在于 machine.json)
+    args = ["build", "--project", project,
             "--target", target, "--log-dir", log_dir, "--json"]
     return run_py(KEIL_BUILD, args, timeout=120)
 
