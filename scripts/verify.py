@@ -28,26 +28,19 @@ import time
 from datetime import datetime, timezone, timedelta
 
 
-SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-WORKSPACE = os.path.dirname(SCRIPT_DIR)
+WORKSPACE = None  # 工程根, main() 中 --project 或 cwd 向上发现后设置
 
-# 路径常量
-KEIL_BUILD = os.path.join(os.path.dirname(SCRIPT_DIR), ".claude", "skills", "keil", "scripts", "keil_build.py")
-OPENOCD_EXE = r"C:\openocd\xpack-openocd-0.12.0-7\bin\openocd.exe"
-OPENOCD_SEMIHOSTING = os.path.join(os.path.dirname(SCRIPT_DIR), ".claude", "skills", "openocd", "scripts", "openocd_semihosting.py")
+from wb_common import (TOOLKIT_ROOT, find_project_root, load_machine,
+                       toolkit_version, version_ok)
 
-# Fix keil_build path (it's in ~/.claude/skills, not under WORKSPACE)
-KEIL_BUILD = os.path.expanduser(r"~\AppData\Local\claude\skills\keil\scripts\keil_build.py")
-# Actually use the correct path from config
+OPENOCD_EXE = load_machine()["openocd_exe"]
+
 KEIL_SKILL_DIR = os.path.join(os.path.expanduser("~"), ".claude", "skills", "keil")
-KEIL_BUILD = os.path.join(KEIL_SKILL_DIR, "scripts", "keil_build.py")
-KEIL_ANALYZE = os.path.join(SCRIPT_DIR, "keil_analyze.py")
-OPENOCD_SKILL_DIR = os.path.join(os.path.expanduser("~"), ".claude", "skills", "openocd")
-OPENOCD_SEMIHOSTING = os.path.join(OPENOCD_SKILL_DIR, "scripts", "openocd_semihosting.py")
-
-# 反馈数据库路径
-FEEDBACK_DB = os.path.join(SCRIPT_DIR, "feedback", "feedback_db.py")
-ERROR_DB_GROW = os.path.join(SCRIPT_DIR, "feedback", "error_db_grow.py")
+KEIL_BUILD = os.path.join(KEIL_SKILL_DIR, "scripts", "keil_build.py")   # 阶段2改为 TOOLKIT_ROOT/scripts
+KEIL_ANALYZE = os.path.join(TOOLKIT_ROOT, "scripts", "keil_analyze.py")
+OPENOCD_SEMIHOSTING = os.path.join(os.path.expanduser("~"), ".claude", "skills", "openocd", "scripts", "openocd_semihosting.py")  # 阶段2改
+FEEDBACK_DB = os.path.join(TOOLKIT_ROOT, "scripts", "feedback_db.py")
+ERROR_DB_GROW = os.path.join(TOOLKIT_ROOT, "scripts", "error_db_grow.py")
 
 
 def now_iso() -> str:
@@ -55,11 +48,14 @@ def now_iso() -> str:
     return datetime.now(tz).isoformat(timespec="seconds")
 
 
-def load_config() -> dict:
-    """加载工程级配置"""
-    config_path = os.path.join(SCRIPT_DIR, "config.json")
-    with open(config_path, 'r', encoding='utf-8') as f:
-        return json.load(f)
+def load_config(project_root: str) -> dict:
+    """加载工程级配置 (.workbench/config.json, 兜底 .embeddedskills)"""
+    for marker in (".workbench/config.json", ".embeddedskills/config.json"):
+        config_path = os.path.join(project_root, marker)
+        if os.path.isfile(config_path):
+            with open(config_path, encoding="utf-8") as f:
+                return json.load(f)
+    raise FileNotFoundError("工程内未找到 .workbench/config.json")
 
 
 def run_py(script: str, args: list[str], timeout: int = 120) -> dict:
@@ -165,9 +161,9 @@ def step_physical_gate(pg_cfg: dict, timeout: int) -> dict:
     interval_ms = int(pg_cfg.get("sample_interval_ms", 100))
     min_edges = int(pg_cfg.get("min_edges", 8))
 
-    # 运行时生成 TCL 探测脚本 (build/ 已 gitignore, 不污染工程)
+    # 运行时生成 TCL 探测脚本 (工程 .workbench/build/ 已 gitignore, 不污染源码树)
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-    tcl_path = os.path.join(SCRIPT_DIR, "build", f"physical_gate_{ts}.tcl")
+    tcl_path = os.path.join(WORKSPACE, ".workbench", "build", f"physical_gate_{ts}.tcl")
     os.makedirs(os.path.dirname(tcl_path), exist_ok=True)
     warmup_ms = int(pg_cfg.get("warmup_ms", 4000))
     tcl = f"""\
@@ -364,14 +360,14 @@ def verify(output: str, expect: list[str], description: str = "", expect_pattern
 def _save_failure_context(result: dict, max_retries: int, capture_text: str = ""):
     """Save structured failure context for Agent analysis.
 
-    Written to .embeddedskills/build/last_failure.json so that
+    Written to .workbench/build/last_failure.json so that
     Claude Code agents can read and analyze the failure before
     retrying with code fixes.
 
     capture_text: 完整 semihosting 输出原文落盘 (人类可读输出被截断到 500 字符,
     --json 才有完整文本 — 2026-08-16 TGL 验证教训, 失败现场必须完整可取证)
     """
-    failure_path = os.path.join(SCRIPT_DIR, "build", "last_failure.json")
+    failure_path = os.path.join(WORKSPACE, ".workbench", "build", "last_failure.json")
     os.makedirs(os.path.dirname(failure_path), exist_ok=True)
 
     # Extract key diagnostic info
@@ -464,6 +460,7 @@ def main():
         """
     )
     parser.add_argument("--timeout", type=int, default=10, help="采集超时秒数 (默认 10)")
+    parser.add_argument("--project", default=None, help="工程根目录 (默认从 cwd 向上发现)")
     parser.add_argument("--no-build", action="store_true", help="跳过编译步骤")
     parser.add_argument("--no-flash", action="store_true", help="跳过烧录步骤")
     parser.add_argument("--json", action="store_true", help="JSON 格式输出")
@@ -476,6 +473,22 @@ def main():
                              "2026-08-16 review M1 门禁; 纯 boot 验证勿用)")
     args = parser.parse_args()
 
+    # 工程根: --project > cwd 向上发现
+    global WORKSPACE
+    WORKSPACE = args.project or find_project_root(os.getcwd())
+    if not WORKSPACE:
+        print("错误: 未找到工程根 (含 .workbench/config.json), 请在工程目录内运行或用 --project 指定",
+              file=sys.stderr)
+        sys.exit(1)
+    WORKSPACE = os.path.abspath(WORKSPACE)
+    config = load_config(WORKSPACE)
+
+    # 工具库版本检查: 工程要求的最低版本
+    cfg_min = config.get("toolkit_min_version")
+    if cfg_min and not version_ok(toolkit_version(), cfg_min):
+        print(f"错误: 工具库版本 {toolkit_version()} 低于工程要求 {cfg_min}", file=sys.stderr)
+        sys.exit(1)
+
     # Clamp retry
     max_retries = max(0, min(args.retry, 3))
     retry_delay = max(1, args.retry_delay)
@@ -483,7 +496,6 @@ def main():
     started_at = now_iso()
     started_ts = time.time()
 
-    config = load_config()
     verify_cfg = config.get("verify", {})
     expect = verify_cfg.get("expect", [])
     description = verify_cfg.get("description", "")
@@ -492,6 +504,7 @@ def main():
         "pipeline": "build → analyze → flash → capture → verify",
         "started_at": started_at,
         "workspace": WORKSPACE,
+        "toolkit_version": toolkit_version(),
         "expect": expect,
         "description": description,
         "retry_config": {"max_retries": max_retries, "retry_delay": retry_delay},
@@ -572,8 +585,8 @@ def main():
                 "Use /review:build to run adversarial review before applying fixes."
             )
     else:
-        # 从 state.json 读取上次构建产物
-        state_path = os.path.join(SCRIPT_DIR, "state.json")
+        # 从 state.json 读取上次构建产物 (keil_build 写于工程 .embeddedskills/state.json)
+        state_path = os.path.join(WORKSPACE, ".embeddedskills", "state.json")
         if os.path.exists(state_path):
             with open(state_path, 'r', encoding='utf-8') as f:
                 state = json.load(f)
@@ -713,7 +726,7 @@ def main():
         result.get("steps", {}).get("flash", {}).get("status") == "ok"
     capture_empty = (len(captured_lines) == 0)
     if has_hardfault or (capture_empty and flash_ran):
-        hf_path = os.path.join(SCRIPT_DIR, "hardfault.py")
+        hf_path = os.path.join(TOOLKIT_ROOT, "scripts", "hardfault.py")
         if os.path.exists(hf_path):
             try:
                 hf_result = subprocess.run(
