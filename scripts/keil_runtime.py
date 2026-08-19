@@ -205,6 +205,18 @@ def _first_resolved(mapping: dict, keys: list[str]) -> tuple[Any, str | None]:
     return None, None
 
 
+def _machine_uv4_exe() -> str:
+    """机器路径只允许存在于 machine.json (全局约束)。
+
+    从 wb_common.load_machine() 读取; wb_common 不可用时返回 "" 走 auto-detect。
+    """
+    try:
+        from wb_common import load_machine
+        return str(load_machine().get("uv4_exe") or "")
+    except Exception:
+        return ""
+
+
 def _auto_detect_uv4() -> str:
     candidates = [
         which("UV4.exe"),
@@ -247,6 +259,10 @@ def resolve_param(
             value, state_key = _first_resolved(state_record, state_keys)
             if not is_missing(value):
                 source = f"state:{state_key}"
+        if is_missing(value) and name == "uv4":
+            value = _machine_uv4_exe()
+            if not is_missing(value):
+                source = "machine:uv4_exe"
         if is_missing(value) and name == "uv4":
             value = _auto_detect_uv4()
             if not is_missing(value):
