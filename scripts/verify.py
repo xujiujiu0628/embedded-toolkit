@@ -102,7 +102,7 @@ def step_build(config: dict) -> dict:
     keil = config.get("keil", {})
     project = keil.get("project", "blink.uvprojx")
     target = keil.get("target", "STM32F103C8_Blink")
-    log_dir = keil.get("log_dir", ".embeddedskills/build")
+    log_dir = keil.get("log_dir", ".workbench/build")
 
     # uv4 由 keil_build 自行从 machine.json 解析 (机器路径只允许存在于 machine.json)
     args = ["build", "--project", project,
@@ -387,7 +387,7 @@ def _save_failure_context(result: dict, max_retries: int, capture_text: str = ""
             "last_warnings": build_s.get("warnings", "?"),
         }
         ctx["agent_hint"] = (
-            "Build failed. Check the build log at .embeddedskills/build/ for "
+            "Build failed. Check the build log at .workbench/build/ for "
             "compiler errors. Common causes: missing include paths, ARMCC V5 "
             "C90 incompatibility (no C++ comments, no mixed decl+code), "
             "undefined symbols. Run /review:build if errors are unmatched in KB."
@@ -401,7 +401,8 @@ def _save_failure_context(result: dict, max_retries: int, capture_text: str = ""
         ctx["agent_hint"] = (
             "Flash failed. Check: ST-Link connected? Board powered? "
             "SWD pins (PA13/SWDIO, PA14/SWCLK) not reconfigured as GPIO? "
-            "Try: python .embeddedskills/hardfault.py to check connectivity."
+            "Try: python <工作区根>\\embedded-toolkit\\scripts\\hardfault.py "
+            "to check connectivity."
         )
 
     # 采集失败: 写入 capture 步骤现场
@@ -409,8 +410,8 @@ def _save_failure_context(result: dict, max_retries: int, capture_text: str = ""
         ctx["steps"]["capture"] = result.get("steps", {}).get("capture", {})
         ctx["agent_hint"] = (
             "Capture failed. Check: ST-Link connected? OpenOCD target "
-            "examine succeeded? Run: python .embeddedskills/hardfault.py "
-            "to check SWD connectivity, then retry."
+            "examine succeeded? Run: python <工作区根>\\embedded-toolkit\\"
+            "scripts\\hardfault.py to check SWD connectivity, then retry."
         )
 
     # 验证失败 (含 TIMING_FAIL): 写入 capture + verify + physical_gate 现场
@@ -584,8 +585,8 @@ def main():
                 "Use /review:build to run adversarial review before applying fixes."
             )
     else:
-        # 从 state.json 读取上次构建产物 (keil_build 写于工程 .embeddedskills/state.json)
-        state_path = os.path.join(WORKSPACE, ".embeddedskills", "state.json")
+        # 从 state.json 读取上次构建产物 (keil_build 写于工程 .workbench/state.json)
+        state_path = os.path.join(WORKSPACE, ".workbench", "state.json")
         if os.path.exists(state_path):
             with open(state_path, 'r', encoding='utf-8') as f:
                 state = json.load(f)

@@ -11,7 +11,7 @@ from shutil import which
 from typing import Any
 
 
-STATE_DIR_NAME = ".embeddedskills"
+STATE_DIR_NAME = ".workbench"
 STATE_FILE_NAME = "state.json"
 PROJECT_CONFIG_FILE_NAME = "config.json"
 SKILL_NAME = "openocd"
@@ -56,7 +56,7 @@ def save_local_config(data: dict, script_file: str = "") -> None:
 
 
 def load_project_config(workspace: str | None = None) -> dict:
-    """从 workspace/.embeddedskills/config.json 读取本 skill 的工程级配置
+    """从 workspace/.workbench/config.json 读取本 skill 的工程级配置
     参数: workspace - 工作区路径，None 时使用 cwd
     返回: 该 skill 对应的配置字典
     """
@@ -67,9 +67,9 @@ def load_project_config(workspace: str | None = None) -> dict:
 
 
 def save_project_config(workspace: str | None = None, values: dict | None = None) -> None:
-    """写回工程级配置到 workspace/.embeddedskills/config.json
+    """写回工程级配置到 workspace/.workbench/config.json
     - 只更新本 skill 的配置部分，不覆盖其他 skill 的配置
-    - 目录不存在时自动创建 .embeddedskills/
+    - 目录不存在时自动创建 .workbench/
     - openocd_runtime 中 skill_name 硬编码为 "openocd"
     """
     if values is None:
