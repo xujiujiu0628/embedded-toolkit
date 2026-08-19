@@ -1,0 +1,8 @@
+{
+  "exe": "C:\\openocd\\xpack-openocd-0.12.0-7\\bin\\openocd.exe",
+  "scripts_dir": "",
+  "gdb_port": 3333,
+  "telnet_port": 4444,
+  "gdb_exe": "",
+  "operation_mode": 1
+}

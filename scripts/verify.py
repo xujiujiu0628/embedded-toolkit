@@ -35,10 +35,9 @@ from wb_common import (TOOLKIT_ROOT, find_project_root, load_machine,
 
 OPENOCD_EXE = load_machine()["openocd_exe"]
 
-KEIL_SKILL_DIR = os.path.join(os.path.expanduser("~"), ".claude", "skills", "keil")
-KEIL_BUILD = os.path.join(KEIL_SKILL_DIR, "scripts", "keil_build.py")   # 阶段2改为 TOOLKIT_ROOT/scripts
+KEIL_BUILD = os.path.join(TOOLKIT_ROOT, "scripts", "keil_build.py")       # 阶段2: 已折入工具库
 KEIL_ANALYZE = os.path.join(TOOLKIT_ROOT, "scripts", "keil_analyze.py")
-OPENOCD_SEMIHOSTING = os.path.join(os.path.expanduser("~"), ".claude", "skills", "openocd", "scripts", "openocd_semihosting.py")  # 阶段2改
+OPENOCD_SEMIHOSTING = os.path.join(TOOLKIT_ROOT, "scripts", "openocd_semihosting.py")  # 阶段2: 已折入工具库
 FEEDBACK_DB = os.path.join(TOOLKIT_ROOT, "scripts", "feedback_db.py")
 ERROR_DB_GROW = os.path.join(TOOLKIT_ROOT, "scripts", "error_db_grow.py")
 
