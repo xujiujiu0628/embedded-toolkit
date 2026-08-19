@@ -20,9 +20,10 @@ import json
 import os
 import sys
 
-SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-REF_PATH = os.path.join(SCRIPT_DIR, "stm32f103-ref.json")
-ISSUES_PATH = os.path.join(SCRIPT_DIR, "f103_known_issues.json")
+from wb_common import TOOLKIT_ROOT
+
+REF_PATH = os.path.join(TOOLKIT_ROOT, "data", "stm32f103-ref.json")
+ISSUES_PATH = os.path.join(TOOLKIT_ROOT, "data", "f103_known_issues.json")
 
 # ── 项目当前固定引脚占用（从 CLAUDE.md 和 main.c 提取）──
 FIXED_PINS = {

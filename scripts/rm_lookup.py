@@ -17,9 +17,9 @@ import os
 import re
 import sys
 
+from wb_common import TOOLKIT_ROOT
 
-SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-REF_PATH = os.path.join(SCRIPT_DIR, "stm32f103-ref.json")
+REF_PATH = os.path.join(TOOLKIT_ROOT, "data", "stm32f103-ref.json")
 
 
 def load_ref() -> dict:
@@ -169,7 +169,7 @@ def format_result(result: dict):
     print(f"\n=== 搜索: \"{query}\" ===\n")
 
     if periphs:
-        print("▸ 外设:")
+        print("> 外设:")
         for p in periphs:
             pdata = p["data"]
             print(f"  {p['name']} — {pdata.get('description','')}")
@@ -183,7 +183,7 @@ def format_result(result: dict):
             print()
 
     if regs:
-        print("▸ 寄存器:")
+        print("> 寄存器:")
         for r in regs:
             rdata = r["data"]
             if isinstance(rdata, dict):
@@ -202,13 +202,13 @@ def format_result(result: dict):
             print()
 
     if bits:
-        print("▸ 位匹配:")
+        print("> 位匹配:")
         for b in bits:
             print(f"  {b['peripheral']}::{b['register']} bit {b['bit']}: {b['name']} — {b['desc']}")
         print()
 
     if recipes:
-        print("▸ 配方:")
+        print("> 配方:")
         for i, r in enumerate(recipes, 1):
             print(f"  [{i}] {r.get('title','')}")
             if r.get("code"):
@@ -273,7 +273,7 @@ def main():
             print(f"  基址: {pdata.get('base','')}  总线: {pdata.get('bus','')}")
             avail = pdata.get('available_on_c8')
             if avail is not None:
-                mark = '✓' if avail else '✗'
+                mark = 'Y' if avail else 'N'
                 print(f"  C8 可用: {mark}")
             regs = list(pdata.get("registers", {}).keys())
             print(f"  寄存器: {', '.join(regs)}")

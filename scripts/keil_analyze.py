@@ -20,6 +20,8 @@ import os
 from pathlib import Path
 from collections import defaultdict
 
+from wb_common import TOOLKIT_ROOT
+
 
 def load_error_db(db_path: str) -> dict:
     """加载错误知识库 JSON 文件"""
@@ -189,7 +191,7 @@ def analyze(log_path: str, db_path: str | None = None) -> dict:
     """
     # 默认知识库路径
     if db_path is None:
-        db_path = os.path.join(os.path.dirname(__file__), "keil-error-db.json")
+        db_path = os.path.join(TOOLKIT_ROOT, "data", "keil-error-db.json")
 
     db = load_error_db(db_path)
     entries = parse_log(log_path)

@@ -18,9 +18,9 @@ import json
 import os
 import sys
 
+from wb_common import TOOLKIT_ROOT, find_project_root
 
-SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-REF_PATH = os.path.join(SCRIPT_DIR, "stm32f103-ref.json")
+REF_PATH = os.path.join(TOOLKIT_ROOT, "data", "stm32f103-ref.json")
 
 
 def load_ref():
@@ -656,7 +656,8 @@ def gen_doc(periph_name: str, out_dir: str = "") -> str:
 
     # Write output
     if not out_dir:
-        out_dir = os.path.join(os.path.dirname(SCRIPT_DIR), "modules", periph_lower)
+        proj = find_project_root(os.getcwd()) or "."
+        out_dir = os.path.join(proj, "modules", periph_lower)
     os.makedirs(out_dir, exist_ok=True)
 
     dox_path = os.path.join(out_dir, f"{periph_lower}_doc.h")
