@@ -19,11 +19,29 @@ import sys
 from dataclasses import dataclass, field, asdict
 from datetime import datetime, timezone, timedelta
 
+from wb_common import find_project_root
 
-SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-FEEDBACK_DB = os.path.join(SCRIPT_DIR, "feedback_db.json")
-CALIBRATION = os.path.join(SCRIPT_DIR, "calibration.json")
-EVENTS_DIR = os.path.join(SCRIPT_DIR, "events")
+
+def _project_feedback_dir():
+    """工程 feedback 数据目录: 从 cwd 向上找工程根, 在
+    .workbench/feedback 或 .embeddedskills/feedback 中取存在的那个。"""
+    root = find_project_root(os.getcwd())
+    if not root:
+        return None
+    for d in (".workbench/feedback", ".embeddedskills/feedback"):
+        p = os.path.join(root, d)
+        if os.path.isdir(p):
+            return p
+    return None
+
+
+def _feedback_dir() -> str:
+    """解析工程 feedback 数据目录; 未发现工程时给出明确错误。"""
+    d = _project_feedback_dir()
+    if not d:
+        print("Error: 未找到工程根 (cwd 向上需有 .workbench/config.json 或 .embeddedskills/config.json)", file=sys.stderr)
+        sys.exit(1)
+    return d
 
 
 @dataclass
@@ -56,26 +74,28 @@ def now_iso() -> str:
 
 
 def load_feedback_db() -> dict:
-    if not os.path.exists(FEEDBACK_DB):
+    path = os.path.join(_feedback_dir(), "feedback_db.json")
+    if not os.path.exists(path):
         return {"total_events": 0, "by_pipeline": {"build_fix": 0, "hardfault": 0, "code_gen": 0}, "events": []}
-    with open(FEEDBACK_DB, 'r', encoding='utf-8') as f:
+    with open(path, 'r', encoding='utf-8') as f:
         return json.load(f)
 
 
 def save_feedback_db(data: dict) -> None:
-    with open(FEEDBACK_DB, 'w', encoding='utf-8', newline='\n') as f:
+    with open(os.path.join(_feedback_dir(), "feedback_db.json"), 'w', encoding='utf-8', newline='\n') as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
 
 
 def load_calibration() -> dict:
-    if not os.path.exists(CALIBRATION):
+    path = os.path.join(_feedback_dir(), "calibration.json")
+    if not os.path.exists(path):
         return {"build_fix": {}, "hardfault": {}, "code_gen": {}}
-    with open(CALIBRATION, 'r', encoding='utf-8') as f:
+    with open(path, 'r', encoding='utf-8') as f:
         return json.load(f)
 
 
 def save_calibration(data: dict) -> None:
-    with open(CALIBRATION, 'w', encoding='utf-8', newline='\n') as f:
+    with open(os.path.join(_feedback_dir(), "calibration.json"), 'w', encoding='utf-8', newline='\n') as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
 
 
@@ -90,7 +110,9 @@ def make_event_id(pipeline: str, timestamp: str | None = None) -> str:
 
 def log_event(event_data: dict | FeedbackEvent) -> str:
     """记录诊断事件 → 写入 events/ + 更新主索引 + 更新校准"""
-    os.makedirs(EVENTS_DIR, exist_ok=True)
+    fb_dir = _feedback_dir()
+    events_dir = os.path.join(fb_dir, "events")
+    os.makedirs(events_dir, exist_ok=True)
 
     # Accept FeedbackEvent dataclass as the canonical shape
     if isinstance(event_data, FeedbackEvent):
@@ -123,7 +145,7 @@ def log_event(event_data: dict | FeedbackEvent) -> str:
     eid = event_dict["id"]
 
     # 写入事件详情
-    event_path = os.path.join(EVENTS_DIR, f"{eid}.json")
+    event_path = os.path.join(events_dir, f"{eid}.json")
     with open(event_path, 'w', encoding='utf-8', newline='\n') as f:
         json.dump(event_dict, f, ensure_ascii=False, indent=2)
 
@@ -221,7 +243,7 @@ def find_similar(error_code: str) -> list[dict]:
     for event_summary in db.get("events", []):
         if event_summary.get("error_code") == error_code:
             eid = event_summary["id"]
-            event_path = os.path.join(EVENTS_DIR, f"{eid}.json")
+            event_path = os.path.join(_feedback_dir(), "events", f"{eid}.json")
             if os.path.exists(event_path):
                 with open(event_path, 'r', encoding='utf-8') as f:
                     full = json.load(f)
