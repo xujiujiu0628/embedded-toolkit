@@ -405,7 +405,7 @@ def main():
     if not board and not interface and not target:
         result = {
             "status": "error", "action": args.action,
-            "error": {"code": "missing_config", "message": "必须提供 --board 或 --interface + --target，或通过 .embeddedskills/config.json 配置"},
+            "error": {"code": "missing_config", "message": "必须提供 --board 或 --interface + --target，或通过 .workbench/config.json 配置"},
         }
         if args.as_json:
             output_json(result)

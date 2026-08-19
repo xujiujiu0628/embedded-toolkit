@@ -13,7 +13,7 @@ from typing import Any
 
 SKILL_DIR = Path(__file__).resolve().parent.parent
 SKILL_NAME = "serial"
-STATE_DIR_NAME = ".embeddedskills"
+STATE_DIR_NAME = ".workbench"
 STATE_FILE_NAME = "state.json"
 PROJECT_CONFIG_FILE = "config.json"
 
@@ -61,7 +61,7 @@ def workspace_root(workspace: str | None = None) -> Path:
 
 
 def load_project_config(workspace: str | None = None) -> dict:
-    """从 workspace/.embeddedskills/config.json 读取本 skill 的工程级配置"""
+    """从 workspace/.workbench/config.json 读取本 skill 的工程级配置"""
     proj_config = load_json_file(workspace_root(workspace) / STATE_DIR_NAME / PROJECT_CONFIG_FILE)
     return proj_config.get(SKILL_NAME, {})
 
@@ -77,7 +77,7 @@ def save_project_config(workspace: str | None = None, values: dict | None = None
 
 
 def load_workspace_state(workspace: str | None = None) -> dict:
-    """从 workspace/.embeddedskills/state.json 读取状态"""
+    """从 workspace/.workbench/state.json 读取状态"""
     return load_json_file(workspace_root(workspace) / STATE_DIR_NAME / STATE_FILE_NAME)
 
 
@@ -346,7 +346,7 @@ def get_serial_config(
     log_dir, src = resolve_param(
         "log_dir", None,
         project_config=proj_cfg, project_keys=["log_dir"],
-        default=".embeddedskills/logs/serial",
+        default=".workbench/logs/serial",
     )
     sources["log_dir"] = src or "default"
 

@@ -637,7 +637,7 @@ def gen_doc(periph_name: str, out_dir: str = "") -> str:
 {chr(10).join(' * ' + l for l in reg_table.split(chr(10))[:20])}
  *
  * @note This file is auto-generated. Regenerate with:
- *       python .embeddedskills/gen_periph.py --type doc --periph {periph_name}
+ *       python <工作区根>\\embedded-toolkit\\scripts\\gen_periph.py --type doc --periph {periph_name}
  */
 """
 
