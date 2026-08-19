@@ -13,11 +13,33 @@ import re
 import sys
 from datetime import datetime, timezone, timedelta
 
+from wb_common import TOOLKIT_ROOT, find_project_root
+
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-EMBEDDED_DIR = os.path.dirname(SCRIPT_DIR)
-EVENTS_DIR = os.path.join(SCRIPT_DIR, "events")
-ERROR_DB_PATH = os.path.join(EMBEDDED_DIR, "keil-error-db.json")
+ERROR_DB_PATH = os.path.join(TOOLKIT_ROOT, "data", "keil-error-db.json")
 SESSION_CACHE_PATH = os.path.join(SCRIPT_DIR, "session_fix_cache.json")
+
+
+def _project_feedback_dir():
+    """工程 feedback 数据目录: 从 cwd 向上找工程根, 在
+    .workbench/feedback 或 .embeddedskills/feedback 中取存在的那个。"""
+    root = find_project_root(os.getcwd())
+    if not root:
+        return None
+    for d in (".workbench/feedback", ".embeddedskills/feedback"):
+        p = os.path.join(root, d)
+        if os.path.isdir(p):
+            return p
+    return None
+
+
+def _feedback_dir() -> str:
+    """解析工程 feedback 数据目录; 未发现工程时给出明确错误。"""
+    d = _project_feedback_dir()
+    if not d:
+        print("Error: 未找到工程根 (cwd 向上需有 .workbench/config.json 或 .embeddedskills/config.json)", file=sys.stderr)
+        sys.exit(1)
+    return d
 
 
 def now_iso() -> str:
@@ -27,7 +49,7 @@ def now_iso() -> str:
 
 def load_event(event_id: str) -> dict | None:
     """加载事件详情 JSON"""
-    event_path = os.path.join(EVENTS_DIR, f"{event_id}.json")
+    event_path = os.path.join(_feedback_dir(), "events", f"{event_id}.json")
     if not os.path.exists(event_path):
         return None
     with open(event_path, 'r', encoding='utf-8') as f:
