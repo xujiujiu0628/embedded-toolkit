@@ -24,10 +24,13 @@ import time
 from collections import namedtuple
 from datetime import datetime, timedelta, timezone
 
+from wb_common import load_machine
+
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 WORKSPACE = os.path.dirname(SCRIPT_DIR)
-OPENOCD_EXE = r"C:\openocd\xpack-openocd-0.12.0-7\bin\openocd.exe"
+# 机器路径只允许存在于 machine.json (与 verify.py 同模式)
+OPENOCD_EXE = load_machine()["openocd_exe"]
 
 # CFSR 位域定义 (Cortex-M3)
 CFSR_BITS = {
