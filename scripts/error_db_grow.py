@@ -15,9 +15,7 @@ from datetime import datetime, timezone, timedelta
 
 from wb_common import TOOLKIT_ROOT, find_project_root
 
-SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 ERROR_DB_PATH = os.path.join(TOOLKIT_ROOT, "data", "keil-error-db.json")
-SESSION_CACHE_PATH = os.path.join(SCRIPT_DIR, "session_fix_cache.json")
 
 
 def _project_feedback_dir():
@@ -40,6 +38,12 @@ def _feedback_dir() -> str:
         print("Error: 未找到工程根 (cwd 向上需有 .workbench/config.json 或 .embeddedskills/config.json)", file=sys.stderr)
         sys.exit(1)
     return d
+
+
+def _session_cache_path() -> str:
+    """会话级修复缓存路径 — per-project（跟随工程 feedback 目录），
+    拆分前位于 .embeddedskills/feedback/session_fix_cache.json。"""
+    return os.path.join(_feedback_dir(), "session_fix_cache.json")
 
 
 def now_iso() -> str:
@@ -139,11 +143,12 @@ def generalization_score(unmatched_entry: dict, diagnosis: dict) -> tuple:
 
 
 def _cache_entry(event_id: str, new_entry: dict, score: float, hits: list) -> dict:
-    """泛化率不足 → 写入会话级缓存，等待人工 Reviewer 确认后晋升"""
+    """泛化率不足 → 写入会话级缓存（per-project），等待人工 Reviewer 确认后晋升"""
+    cache_path = _session_cache_path()
     cache = {"_meta": {}, "entries": []}
-    if os.path.exists(SESSION_CACHE_PATH):
+    if os.path.exists(cache_path):
         try:
-            with open(SESSION_CACHE_PATH, 'r', encoding='utf-8') as f:
+            with open(cache_path, 'r', encoding='utf-8') as f:
                 cache = json.load(f)
         except (json.JSONDecodeError, OSError):
             cache = {"_meta": {}, "entries": []}
@@ -162,7 +167,7 @@ def _cache_entry(event_id: str, new_entry: dict, score: float, hits: list) -> di
     cache.setdefault("entries", []).append(entry)
     cache.setdefault("_meta", {})["last_updated"] = now_iso()
 
-    with open(SESSION_CACHE_PATH, 'w', encoding='utf-8', newline='\n') as f:
+    with open(cache_path, 'w', encoding='utf-8', newline='\n') as f:
         json.dump(cache, f, ensure_ascii=False, indent=2)
 
     return {
