@@ -95,9 +95,23 @@ description: MUST USE when the user asks for a deep/adversarial review of a fini
 
 ### Step 4: feedback 落账
 
+⚠️ **必须在被审工程根目录下执行**（feedback_db 按 cwd 向上找 `.workbench/config.json`
+定位库；在 toolkit 根或任意非工程目录跑都会 exit 1）。审核 toolkit 自身这类
+无 `.workbench` 的对象时，约定落到任一活跃工程（如 stm32f103-adc-oled），
+并在 `target` 里写明真实审核对象。
+
 ```powershell
+cd <被审工程根>
 python <工作区根>\embedded-toolkit\scripts\feedback_db.py --log '{"pipeline":"fresh_check","mode":"design","target":"docs/superpowers/specs/xxx.md","verdict":"pass_with_reservations","findings":"C:0 H:3 M:4 L:6","outcome":"reported"}'
 ```
 
 字段固定：pipeline 恒为 `fresh_check`；verdict ∈ pass|pass_with_reservations|rework；
-findings 用 `C:x H:y M:z L:w` 计数串。落账失败不影响审核结论交付，事后补记即可。
+findings 用 `C:x H:y M:z L:w` 计数串。
+
+**判级判据**（落账可比性的锚）：Critical = 数据丢失/安全漏洞/主流程不可用；
+High = 声称与实现不符、或核心场景必现错误；Medium = 边界缺陷、文档债、
+可静默劣化的缺口；Low = 措辞、风格、推演性理论风险。
+
+已知语义（2026-08-26 首轮自审计确认）：白名单校验**仅告警不拦截**；
+`--stats` 只聚合修复循环校准——fresh_check 事件存于事件流（`events/*.json`），
+stats 查不到属预期，不是丢数据。落账失败不影响审核结论交付，事后补记即可。

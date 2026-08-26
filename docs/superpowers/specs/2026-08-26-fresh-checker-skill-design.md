@@ -69,8 +69,12 @@ frontmatter（name/description）→ When to Use → Instructions 分步。
  "findings": "C:<n> H:<n> M:<n> L:<n>", "outcome": "reported"}
 ```
 
-进现有 `feedback_db.py --stats/--calibrate` 统计面。"发现准确率"回填
-（findings 是否被后续证实）列为未来增强，本期不做。
+事件写入 `feedback_db.py` 的**事件流**（`<工程>/.workbench/feedback/events/*.json`，
+落账须在被审工程根目录执行；审核 toolkit 自身等无 `.workbench` 对象时约定落到
+活跃工程并在 target 注明）。注意语义（2026-08-26 首轮自审计 H-1 修正）：
+`--stats` 只聚合修复循环校准（calibration.json），fresh_check 记录在 stats 中
+不可见属预期——审计记录的检索走 events 目录与完整 JSON，不走成功率聚合。
+"发现准确率"回填（findings 是否被后续证实）列为未来增强，本期不做。
 
 ## 7. 验收标准
 
