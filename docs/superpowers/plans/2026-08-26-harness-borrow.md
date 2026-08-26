@@ -29,19 +29,19 @@
 **Interfaces:**
 - Produces: 干净的 git 基线，后续任务的 diff 只含自己的改动。
 
-- [ ] **Step 1: 跑存量单测确认现状是绿的**
+- [x] **Step 1: 跑存量单测确认现状是绿的**
 
 Run: `cd <工作区根>\embedded-toolkit && python -m unittest discover -s tests -v`
 Expected: 全部 PASS。若已有失败，停下来报告用户，不得在其上叠加。
 
-- [ ] **Step 2: 提交存量改动为基线 commit**
+- [x] **Step 2: 提交存量改动为基线 commit**
 
 ```bash
 git add -A
 git commit -m "chore: baseline before harness-borrow work (pending gcc_build/templates/state)"
 ```
 
-- [ ] **Step 3: 确认树干净**
+- [x] **Step 3: 确认树干净**
 
 Run: `git status --porcelain`
 Expected: 输出为空。
@@ -57,7 +57,7 @@ Expected: 输出为空。
 **Interfaces:**
 - Produces: `ExpectationError(ValueError)`；`load_expectations(workspace) -> list | None`（不存在返回 None，非法抛 ExpectationError）。Task 4 的 main() 与 Task 3 无关此函数内部实现。
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 新建 `tests/test_verify_expectations.py`：
 
@@ -132,12 +132,12 @@ class LoadExpectationsTests(unittest.TestCase):
             verify.load_expectations(self.tmp)
 ```
 
-- [ ] **Step 2: 跑测试确认失败**
+- [x] **Step 2: 跑测试确认失败**
 
 Run: `python -m unittest discover -s tests -p "test_verify_expectations.py" -v`
 Expected: FAIL/ERROR —— `AttributeError: module 'verify' has no attribute 'ExpectationError'`
 
-- [ ] **Step 3: 实现**
+- [x] **Step 3: 实现**
 
 verify.py 中 `def verify(...)` 定义之前插入：
 
@@ -194,12 +194,12 @@ def load_expectations(workspace):
     return data["expectations"]
 ```
 
-- [ ] **Step 4: 跑测试确认通过**
+- [x] **Step 4: 跑测试确认通过**
 
 Run: `python -m unittest discover -s tests -p "test_verify_expectations.py" -v`
 Expected: 7 tests PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add scripts/verify.py tests/test_verify_expectations.py
@@ -221,7 +221,7 @@ git commit -m "feat(verify): expectations.json 加载器与合法性校验"
   - `evaluate_expectations(output, expectations) -> {"results": [{"id","status","detail"?}], "verdict": "ok"|"fail", "xpass_ids": [str]}`
   - `cli_expectations(expect, expect_patterns, require_tgl) -> list[dict]`（保留 ID：`CLI-TEXT-nn` / `CLI-PAT-nn` / `CLI-REQUIRE-TGL`）
 
-- [ ] **Step 1: 写失败测试（追加到 test_verify_expectations.py 末尾）**
+- [x] **Step 1: 写失败测试（追加到 test_verify_expectations.py 末尾）**
 
 ```python
 class EvaluateExpectationsTests(unittest.TestCase):
@@ -279,12 +279,12 @@ class EvaluateExpectationsTests(unittest.TestCase):
         self.assertEqual(ev["verdict"], "fail")
 ```
 
-- [ ] **Step 2: 跑测试确认失败**
+- [x] **Step 2: 跑测试确认失败**
 
 Run: `python -m unittest discover -s tests -p "test_verify_expectations.py" -v`
 Expected: 新增 8 个 ERROR —— no attribute 'evaluate_expectations'（原有 7 个仍 PASS）
 
-- [ ] **Step 3: 实现（追加在 load_expectations 之后）**
+- [x] **Step 3: 实现（追加在 load_expectations 之后）**
 
 ```python
 def _expect_matched(item, output):
@@ -354,12 +354,12 @@ def cli_expectations(expect, expect_patterns, require_tgl):
     return items
 ```
 
-- [ ] **Step 4: 跑全部测试确认通过**
+- [x] **Step 4: 跑全部测试确认通过**
 
 Run: `python -m unittest discover -s tests -p "test_verify_expectations.py" -v`
 Expected: 15 tests PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add scripts/verify.py tests/test_verify_expectations.py
@@ -377,7 +377,7 @@ git commit -m "feat(verify): 四态判定纯函数 evaluate_expectations + CLI �
 - Consumes: Task 2/3 的三个函数。
 - Produces: CLI `--rebuild`、`--gate-run`；manifest 模式下 steps.verify 含 `results/xpass_ids`；`--json` 顶层含 `expect_mode`。legacy 行为逐字节不变（无 expectations.json 时）。
 
-- [ ] **Step 1: argparse 增旗标（L676 后）**
+- [x] **Step 1: argparse 增旗标（L676 后）**
 
 old_string：
 ```
@@ -394,7 +394,7 @@ new_string：
     args = parser.parse_args()
 ```
 
-- [ ] **Step 2: step_build 支持 rebuild（L286-296）**
+- [x] **Step 2: step_build 支持 rebuild（L286-296）**
 
 old_string：
 ```
@@ -433,7 +433,7 @@ new_string：
             build = step_build(config, builder, rebuild=args.rebuild)
 ```
 
-- [ ] **Step 3: main() 装载清单（L703-705 后）**
+- [x] **Step 3: main() 装载清单（L703-705 后）**
 
 old_string：
 ```
@@ -469,7 +469,7 @@ new_string：
         "expect": expect,
 ```
 
-- [ ] **Step 4: Step 5 判定块插 manifest 分支（L1022 起）**
+- [x] **Step 4: Step 5 判定块插 manifest 分支（L1022 起）**
 
 old_string：
 ```
@@ -524,7 +524,7 @@ new_string：
             )
 ```
 
-- [ ] **Step 5: feedback 落账加门禁静音（L1057-1074）**
+- [x] **Step 5: feedback 落账加门禁静音（L1057-1074）**
 
 old_string：
 ```
@@ -571,7 +571,7 @@ new_string：
             pass  # 反馈记录失败不影响主流程
 ```
 
-- [ ] **Step 6: XPASS 专属 agent_hint（L634-640）**
+- [x] **Step 6: XPASS 专属 agent_hint（L634-640）**
 
 old_string：
 ```
@@ -602,7 +602,7 @@ new_string：
                 )
 ```
 
-- [ ] **Step 7: 人读输出逐条渲染（L1132-1137）**
+- [x] **Step 7: 人读输出逐条渲染（L1132-1137）**
 
 old_string：
 ```
@@ -632,12 +632,12 @@ new_string（ASCII 标签，GBK 控制台安全）：
                   " - 请翻转对应 xfail 后重跑 <<<")
 ```
 
-- [ ] **Step 8: 回归全绿**
+- [x] **Step 8: 回归全绿**
 
 Run: `python -m unittest discover -s tests -v && python scripts/verify.py --help`
 Expected: 测试全 PASS；help 输出含 --rebuild 与 --gate-run。
 
-- [ ] **Step 9: Commit**
+- [x] **Step 9: Commit**
 
 ```bash
 git add scripts/verify.py
@@ -665,7 +665,7 @@ git commit -m "feat(verify): manifest 模式接线 (--rebuild/--gate-run, result
   - `finalize(ws, tag, record) -> bool`（写记录→复核→tag→回滚）
   - 退出码：0=通过，1=任一门失败
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 新建 `tests/test_release.py`：
 
@@ -757,12 +757,12 @@ class ReleaseGateTests(unittest.TestCase):
             self.ws, ".workbench", "releases", "v1.0.0.json")))
 ```
 
-- [ ] **Step 2: 跑测试确认失败**
+- [x] **Step 2: 跑测试确认失败**
 
 Run: `python -m unittest discover -s tests -p "test_release.py" -v`
 Expected: ImportError —— No module named 'release'
 
-- [ ] **Step 3: 实现 release.py（完整新建）**
+- [x] **Step 3: 实现 release.py（完整新建）**
 
 ```python
 #!/usr/bin/env python3
@@ -1020,17 +1020,17 @@ if __name__ == "__main__":
 
 注意：finalize 中 tag 子进程调用必须原样使用上面代码块的写法（不带 `-c user.*` 配置注入——tag message 不需要作者身份）。
 
-- [ ] **Step 4: 跑测试确认通过**
+- [x] **Step 4: 跑测试确认通过**
 
 Run: `python -m unittest discover -s tests -p "test_release.py" -v`
 Expected: 6 tests PASS
 
-- [ ] **Step 5: 全套件回归 + dry-run 冒烟（无板也应走到 G0.5 失败）**
+- [x] **Step 5: 全套件回归 + dry-run 冒烟（无板也应走到 G0.5 失败）**
 
 Run: `python -m unittest discover -s tests -v && python scripts/release.py --tag v0.0.0-smoke --project <工作区根>\stm32f103-adc-oled --dry-run`
 Expected: 单测全 PASS；冒烟输出 `G0.5 SWD 预检失败` 或 `G0 失败`（adc-oled 尚无 git），且**绝不产生** releases/ 文件。
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add scripts/release.py tests/test_release.py
@@ -1050,7 +1050,7 @@ git commit -m "feat(release): 发布门禁 G0~G3 + tag 安全序列 (dry-run/--a
 - Consumes: Task 4 的 manifest 模式。
 - Produces: FR-SYS-01 / FR-ADC-01 / FR-ADC-02 三条迁移期望 + FR-ALERT-01（xfail 演示种子，Task 7 实现）。
 
-- [ ] **Step 1: git init + gitignore + 基线 commit**
+- [x] **Step 1: git init + gitignore + 基线 commit**
 
 `.gitignore` 内容：
 
@@ -1077,7 +1077,7 @@ git commit -m "chore: baseline import (pre harness-borrow onboarding)"
 
 Expected: 提交不含 build/ 与 state.json。
 
-- [ ] **Step 2: 写 expectations.json**
+- [x] **Step 2: 写 expectations.json**
 
 `.workbench/expectations.json`：
 
@@ -1118,7 +1118,7 @@ Expected: 提交不含 build/ 与 state.json。
 
 注：原 config 的裸子串 `"ADC raw="` 被 FR-ADC-02 的整行正则涵盖，有意不再单独迁移（commit message 里注明）。
 
-- [ ] **Step 3: config.json 的 verify 块让位**
+- [x] **Step 3: config.json 的 verify 块让位**
 
 把 `.workbench/config.json` 中整个 `"verify": {...}` 块替换为：
 
@@ -1130,14 +1130,14 @@ Expected: 提交不含 build/ 与 state.json。
 
 （保留键名以防旧工具读它；expect/expect_patterns 移除，避免双源混淆。）
 
-- [ ] **Step 4: 提交**
+- [x] **Step 4: 提交**
 
 ```powershell
 git add .workbench
 git commit -m "feat: migrate verify expectations to manifest (+FR-ALERT-01 xfail seed); drop bare ADC raw= (subsumed by FR-ADC-02)"
 ```
 
-- [ ] **Step 5: [需板卡] 清单模式冒烟**
+- [x] **Step 5: [需板卡] 清单模式冒烟**
 
 ```powershell
 python <工作区根>\embedded-toolkit\scripts\verify.py --project <工作区根>\stm32f103-adc-oled
@@ -1145,7 +1145,7 @@ python <工作区根>\embedded-toolkit\scripts\verify.py --project <工作区根
 
 Expected: `[5] Verify: OK  mode=manifest`，四行 `[PASS] FR-SYS-01 / FR-ADC-01 / FR-ADC-02` + `[XFAIL] FR-ALERT-01`，总 Verdict PASS（XFAIL 保绿）。板子不在则 DEFER 到 Task 7。
 
-- [ ] **Step 6: Commit（若 Step 5 有微调）**
+- [x] **Step 6: Commit（若 Step 5 有微调）**
 
 ```powershell
 git add -A; git commit -m "fix: manifest smoke adjustments"  # 仅当有改动
@@ -1160,12 +1160,12 @@ git add -A; git commit -m "fix: manifest smoke adjustments"  # 仅当有改动
 
 前置：ST-Link 在位。以下每步记录实际输出；任何一步不符即停。
 
-- [ ] **Step 1: XFAIL 生效（条目级红、套件绿）**
+- [x] **Step 1: XFAIL 生效（条目级红、套件绿）**
 
 Run: `python <工作区根>\embedded-toolkit\scripts\verify.py --project <工作区根>\stm32f103-adc-oled`
 Expected: Verdict PASS；含 `[XFAIL] FR-ALERT-01`。（spec §9.1 的"红"指条目级 XFAIL 标记；套件按设计保绿。）
 
-- [ ] **Step 2: 实现告警 → XPASS 强制翻转**
+- [x] **Step 2: 实现告警 → XPASS 强制翻转**
 
 先定位采样 printf：`grep -n "ADC raw" User/main.c`。在该打印之后按现有变量名加：
 
@@ -1180,7 +1180,7 @@ if (mv > 3000)
 
 Expected: `Verdict: FAIL`，`[XPASS] FR-ALERT-01` + 落地信号提示行；last_failure.json 的 agent_hint 为 XPASS 专属文案。
 
-- [ ] **Step 3: 翻转 → 全绿**
+- [x] **Step 3: 翻转 → 全绿**
 
 把 FR-ALERT-01 改 `"xfail": false`（删掉 xfail_reason 或留注释均可——loader 允许 false 时不带 reason），重跑 verify。
 Expected: 四条全 `[PASS]`，Verdict PASS。
@@ -1189,7 +1189,7 @@ Expected: 四条全 `[PASS]`，Verdict PASS。
 git add -A; git commit -m "feat(adc): over-voltage ALERT line (FR-ALERT-01) + flip expectation"
 ```
 
-- [ ] **Step 4: dry-run 四门**
+- [x] **Step 4: dry-run 四门**
 
 ```powershell
 python <工作区根>\embedded-toolkit\scripts\release.py --project <工作区根>\stm32f103-adc-oled --tag v1.1.0 --dry-run
@@ -1197,7 +1197,7 @@ python <工作区根>\embedded-toolkit\scripts\release.py --project <工作区�
 
 Expected: `G0~G2 全过` + `[dry-run] ...`，且 `.workbench/releases/` 未产生文件、无新 tag。
 
-- [ ] **Step 5: 正式发布**
+- [x] **Step 5: 正式发布**
 
 ```powershell
 python <工作区根>\embedded-toolkit\scripts\release.py --project <工作区根>\stm32f103-adc-oled --tag v1.1.0
@@ -1206,18 +1206,18 @@ git log --oneline -1; git tag -l; git show v1.1.0 --stat
 
 Expected: `[OK] 已发布 v1.1.0`；annotated tag 指向含 ALERT 功能的 commit；`git status` 显示 releases/v1.1.0.json 已 staged（入库策略生效）。用户自行决定何时 push 与补 commit 记录文件。
 
-- [ ] **Step 6: 反向 A — 脏树拦截**
+- [x] **Step 6: 反向 A — 脏树拦截**
 
 改任意已跟踪文件不提交 → 重跑 Step 5 命令（换 tag v1.1.1）。
 Expected: `G0 失败: 工作树不干净`。还原改动。
 
-- [ ] **Step 7: 反向 B — xfail 拦截与豁免留痕**
+- [x] **Step 7: 反向 B — xfail 拦截与豁免留痕**
 
 临时把 FR-SYS-01 改 `"xfail": true, "xfail_reason": "验收反向测试"`，commit 后用 tag v1.1.1 重跑 release：
 Expected: `G2 存在未翻转 xfail: FR-SYS-01` 退出码 1；改用 `--allow-xfail` 重跑：
 Expected: 通过且记录中 `"xfail_waived": ["FR-SYS-01"]`。随后还原 FR-SYS-01 并 commit，删除 v1.1.1 的记录与 tag（`git tag -d v1.1.1`）保持仓库整洁。
 
-- [ ] **Step 8: blink legacy 回归**
+- [x] **Step 8: blink legacy 回归**
 
 ```powershell
 cd <工作区根>\stm32f103-blink
@@ -1233,7 +1233,7 @@ Expected: 与基线行为一致（Verdict PASS，无 mode=manifest 字样）—�
 **Files:**
 - Modify: `<工作区根>\embedded-toolkit\README.md`（存在则追加节，不存在则新建）
 
-- [ ] **Step 1: 追加以下内容**
+- [x] **Step 1: 追加以下内容**
 
 ```markdown
 ## 期望清单与发布门禁 (2026-08-26)
@@ -1251,7 +1251,7 @@ Expected: 与基线行为一致（Verdict PASS，无 mode=manifest 字样）—�
   build/ 与 state.json 忽略。
 ```
 
-- [ ] **Step 2: Commit**
+- [x] **Step 2: Commit**
 
 ```bash
 git add README.md
@@ -1263,3 +1263,27 @@ git commit -m "docs: expectations manifest + release gate usage"
 - 规格覆盖：§3→Task 2/3，§4→Task 3，§5→Task 4，§6→Task 5，§7→Task 6 Step 1，§8→Task 6，§9→Task 7，§12 基线风险→Task 1。
 - 类型一致性：evaluate_expectations 返回键（results/verdict/xpass_ids）在 T3/T4/T5 三处一致；statuses 取值 pass|xfail|xpass|fail 全文一致；release.run_gates/finalize 签名与其测试一致。
 - 已知取舍：finalize 的"脏树复核"放行记录文件自身（否则自锁）；Task 7 Step 1 把 spec"红"明确为条目级 XFAIL（套件按 §4 保绿）。
+
+## 执行附录（2026-08-26 实施日回填，含偏差记录）
+
+全部 8 任务完成。与计划文本的偏差：
+
+1. **T4 Step 5**：原计划的 feedback try/except 替换遗漏了挂在同一 try 上的
+   `finally: _output()`，首次运行语法错误——修复为顺序调用 `_output`（语义等价）。
+2. **T5**：finalize 的 porcelain 需 `-uall`（新仓首发布时目录行会误判 foreign）；
+   swd_probe 判据从"返回码+stdout"改为**内容导向**（OpenOCD 关键行在 stderr、
+   克隆 ST-Link 退出码不可靠），并补显式 `transport select swd` + 3 次重试
+   （对齐 hardfault.py 纪律）。测试 setUp 需配 repo 级 git 身份（本机无全局身份，
+   annotated tag 的 tagger 也需要）。
+3. **T7 Step 7**：反向 B 种子最初用 FR-SYS-01（横幅每帧都输出）→ 变成 XPASS 在
+   **G1 就被拦截**，轮不到 G2——门禁比设计更严的实证；改用不存在的 FR-DEMO-99
+   正确触发 G2，`--allow-xfail` 豁免留痕验证通过后已清理。
+4. **T7 Step 8（blink 回归）**：Verdict FAIL 为**存量固件问题**（输出止步于
+   `[init] LED ... OK`），非本次回归——A/B 对照（基线版 verify.py 同样失败）
+   证明 legacy 行为未变；回归目的达成，但 spec §9.7 "照常 PASS" 的预期本身
+   建立在未验证的假设上，blink 待独立排查。
+5. **T7 硬件中断**：Step 4 前板子 SWD 间歇失联（克隆 ST-Link 接触类问题），
+   G0.5 秒级预检如设计拦下；用户重新插拔后恢复。
+6. **审计加固轮**（当日第二轮 fresh-checker 审核 M1/M2/L5 后追加）：加载器堵四类
+   "烧录后才崩"清单缺陷（cg⇒patterns/预编译正则/JSONDecodeError 转译/NaN 拒绝）、
+   release 强制 hex 哈希入档、回滚清理空目录、新增 7 个测试（全套件 36 个）。
