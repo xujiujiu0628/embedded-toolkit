@@ -198,6 +198,14 @@ def finalize(ws, tag, record):
     with open(rec_p, "w", encoding="utf-8") as f:
         json.dump(record, f, ensure_ascii=False, indent=2)
     rec_rel = os.path.relpath(rec_p, ws).replace(os.sep, "/")
+
+    def _rollback():
+        os.remove(rec_p)
+        try:
+            os.rmdir(rec_dir)   # 回滚后不留空目录 (审计 L6)
+        except OSError:
+            pass
+
     _, head, _ = _git(["rev-parse", "HEAD"], ws)
     # -uall: 未跟踪目录展开为单文件 — 否则新仓首发布时 porcelain 只给
     # "?? .workbench/" 目录行, 记录文件会被误判为 foreign 而回滚
@@ -205,7 +213,7 @@ def finalize(ws, tag, record):
     foreign = [l for l in dirty.splitlines()
                if l.strip() and not l.strip().endswith(rec_rel)]
     if head != record["git_head"] or foreign:
-        os.remove(rec_p)
+        _rollback()
         print(f"打 tag 前复核失败: HEAD 变动或出现其他改动 ({foreign}), 记录已回滚",
               file=sys.stderr)
         return False
@@ -214,7 +222,7 @@ def finalize(ws, tag, record):
         capture_output=True, text=True, encoding="utf-8",
         errors="replace", timeout=30, cwd=ws)
     if r.returncode != 0:
-        os.remove(rec_p)
+        _rollback()
         print(f"打 tag 失败, 记录已回滚: {(r.stderr or '').strip()}",
               file=sys.stderr)
         return False
@@ -250,6 +258,12 @@ def main():
         sys.exit(1)
 
     record = build_record(ws, args.tag, ctx["results"], ctx["waived"])
+    # 审计 M2: hex 哈希是"烧的字节→验的字节→入档字节"互锁的锚,
+    # state.json 读不到 artifacts 时静默落档会让证据链无声断裂 → 强制中止
+    if "hex" not in record["artifacts"]:
+        print("错误: 发布记录缺 hex 哈希证据 (state.json last_build.artifacts "
+              "不可用) — clean rebuild 的字节未入档, 拒绝发布", file=sys.stderr)
+        sys.exit(1)
     if args.dry_run:
         print(f"[dry-run] 将写 .workbench/releases/{args.tag}.json 并打 tag "
               f"{args.tag}; results={len(record['results'])} 条, "

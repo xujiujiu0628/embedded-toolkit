@@ -1,3 +1,4 @@
+import json
 import os
 import shutil
 import subprocess
@@ -44,6 +45,32 @@ class ReleaseGateTests(unittest.TestCase):
         self.git("tag", "v1.0.0")
         errs = release.g0_checks(self.ws, "v1.0.0")
         self.assertTrue(any("已存在" in e for e in errs))
+
+    def test_g0_same_head_record_rejected(self):
+        # 审计 L5: 同 HEAD 既有记录的拒绝键此前无测试
+        _, head, _ = release._git(["rev-parse", "HEAD"], self.ws)
+        rec_dir = os.path.join(self.ws, ".workbench", "releases")
+        os.makedirs(rec_dir, exist_ok=True)
+        with open(os.path.join(rec_dir, "v2.0.0.json"), "w") as f:
+            json.dump({"tag": "v2.0.0", "git_head": head}, f)
+        errs = release.g0_checks(self.ws, "v2.0.0")
+        self.assertTrue(any("同 HEAD" in e for e in errs))
+
+    def test_finalize_rolls_back_on_tag_failure(self):
+        # 审计 L5: spec §10 点名的 tag 创建失败回滚路径
+        _, head, _ = release._git(["rev-parse", "HEAD"], self.ws)
+        rec = {"tag": "v1.0.0", "git_head": head, "branch": "master"}
+        real_run = release.subprocess.run
+
+        def fake_run(cmd, *a, **k):
+            if cmd[:3] == ["git", "tag", "-a"]:
+                return subprocess.CompletedProcess(cmd, 128, "", "mock tag failure")
+            return real_run(cmd, *a, **k)
+
+        with mock.patch.object(release.subprocess, "run", side_effect=fake_run):
+            self.assertFalse(release.finalize(self.ws, "v1.0.0", rec))
+        self.assertFalse(os.path.exists(os.path.join(
+            self.ws, ".workbench", "releases", "v1.0.0.json")))
 
     @mock.patch.object(release, "swd_probe", return_value=(True, "ok"))
     @mock.patch.object(release, "gate1")
