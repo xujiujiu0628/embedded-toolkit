@@ -20,6 +20,7 @@
 
 import argparse
 import json
+import math
 import os
 import re
 import socket
@@ -541,8 +542,13 @@ def load_expectations(workspace):
     path = os.path.join(workspace, ".workbench", "expectations.json")
     if not os.path.exists(path):
         return None
-    with open(path, "r", encoding="utf-8") as f:
-        data = json.load(f)
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+    except (json.JSONDecodeError, UnicodeDecodeError) as e:
+        # JSONDecodeError 是 ValueError 但不是 ExpectationError 子类,
+        # 不转译的话 main() 的 except 接不住 → 烧录后裸 traceback (审计 M1)
+        raise ExpectationError(f"清单不是合法 JSON/UTF-8: {e}") from e
     if not isinstance(data, dict) or not isinstance(data.get("expectations"), list) \
             or not data["expectations"]:
         raise ExpectationError("须为含非空 expectations 数组的 JSON 对象")
@@ -567,16 +573,28 @@ def load_expectations(workspace):
             all(isinstance(p, str) and p for p in pats)
         if ok_texts == ok_pats:  # 并存或皆缺均非法
             raise ExpectationError(f"{eid}: texts 与 patterns 须二选一(非空字符串数组)")
+        if ok_pats:
+            for p in pats:
+                try:
+                    re.compile(p)
+                except re.error as e:
+                    # 惰性编译会把非法正则拖到烧录后才炸 (审计 M1)
+                    raise ExpectationError(f"{eid}: 非法正则 {p!r}: {e}") from e
         if item.get("xfail") and (not isinstance(item.get("xfail_reason"), str)
                                   or not item["xfail_reason"].strip()):
             raise ExpectationError(f"{eid}: xfail=true 时 xfail_reason 必填")
         cg = item.get("capture_group")
         if cg is not None and (isinstance(cg, bool) or not isinstance(cg, int) or cg < 1):
             raise ExpectationError(f"{eid}: capture_group 须为正整数")
+        if cg is not None and not ok_pats:
+            # texts+capture_group 组合会在评估期 first=None AttributeError (审计 M1)
+            raise ExpectationError(f"{eid}: capture_group 须与 patterns 搭配")
         for bound in ("min", "max"):
             v = item.get(bound)
-            if v is not None and not isinstance(v, (int, float)):
-                raise ExpectationError(f"{eid}: {bound} 须为数值")
+            if v is not None and (isinstance(v, bool) or not isinstance(v, (int, float))
+                                  or not math.isfinite(v)):
+                # NaN 会绕过全部边界比较恒 pass (审计 M1)
+                raise ExpectationError(f"{eid}: {bound} 须为有限数值")
     return data["expectations"]
 
 

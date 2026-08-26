@@ -67,6 +67,39 @@ class LoadExpectationsTests(unittest.TestCase):
         with self.assertRaises(verify.ExpectationError):
             verify.load_expectations(self.tmp)
 
+    def test_capture_group_with_texts_raises(self):
+        # 审计 M1: 该组合会在评估期 first=None AttributeError
+        _write_manifest(self.tmp,
+                        [{"id": "A", "desc": "d", "texts": ["x"],
+                          "capture_group": 1}])
+        with self.assertRaises(verify.ExpectationError):
+            verify.load_expectations(self.tmp)
+
+    def test_invalid_regex_raises(self):
+        # 审计 M1: 惰性编译会把非法正则拖到烧录后才炸
+        _write_manifest(self.tmp,
+                        [{"id": "A", "desc": "d", "patterns": ["["]}])
+        with self.assertRaises(verify.ExpectationError):
+            verify.load_expectations(self.tmp)
+
+    def test_broken_json_raises_expectation_error(self):
+        # 审计 M1: JSONDecodeError 不是 ExpectationError, main() 接不住
+        wb = os.path.join(self.tmp, ".workbench")
+        os.makedirs(wb, exist_ok=True)
+        with open(os.path.join(wb, "expectations.json"), "w",
+                  encoding="utf-8") as f:
+            f.write("{not json")
+        with self.assertRaises(verify.ExpectationError):
+            verify.load_expectations(self.tmp)
+
+    def test_nan_bound_raises(self):
+        # 审计 M1: NaN 绕过全部边界比较恒 pass
+        _write_manifest(self.tmp,
+                        [{"id": "A", "desc": "d", "patterns": ["(\\d+)"],
+                          "capture_group": 1, "min": float("nan")}])
+        with self.assertRaises(verify.ExpectationError):
+            verify.load_expectations(self.tmp)
+
 
 class EvaluateExpectationsTests(unittest.TestCase):
     def test_pass(self):
@@ -109,6 +142,14 @@ class EvaluateExpectationsTests(unittest.TestCase):
             verify.evaluate_expectations("Hz=2", [item])["verdict"], "ok")
         self.assertEqual(
             verify.evaluate_expectations("Hz=1", [item])["verdict"], "fail")
+
+    def test_capture_group_max_boundary(self):
+        item = {"id": "R", "patterns": [r"Hz=(\d+)"], "capture_group": 1,
+                "max": 9}
+        self.assertEqual(
+            verify.evaluate_expectations("Hz=9", [item])["verdict"], "ok")
+        self.assertEqual(
+            verify.evaluate_expectations("Hz=10", [item])["verdict"], "fail")
 
     def test_cli_rows_and_tgl(self):
         items = verify.cli_expectations([], [], require_tgl=True)
