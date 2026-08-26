@@ -283,15 +283,19 @@ def run_cmd(cmd: list[str], timeout: int = 60) -> dict:
         return {"status": "error", "message": f"command timed out after {timeout}s"}
 
 
-def step_build(config: dict, builder: str = "keil") -> dict:
+def step_build(config: dict, builder: str = "keil",
+               rebuild: bool = False) -> dict:
     """步骤 1: 编译 (按 config.json builder 字段切换后端: keil | gcc)"""
+    if rebuild and builder != "gcc":
+        # YAGNI: keil 后端不接 --rebuild (blink legacy 不用该旗标)
+        return {"status": "error", "message": "--rebuild 仅支持 builder=gcc"}
     if builder == "gcc":
         gcc = config.get("gcc", {})
         project = gcc.get("project", "gcc-pilot/Makefile")
         target = gcc.get("target", "")
         log_dir = gcc.get("log_dir", ".workbench/build")
         # gcc/make 路径由 gcc_build 自行从 machine.json 解析
-        args = ["build", "--project", project,
+        args = ["rebuild" if rebuild else "build", "--project", project,
                 "--target", target, "--log-dir", log_dir, "--json"]
         return run_py(GCC_BUILD, args, timeout=300)
 
@@ -751,12 +755,20 @@ def _save_failure_context(result: dict, max_retries: int, capture_text: str = ""
                 "to adjust clock configuration."
             )
         else:
-            missing = steps.get("verify", {}).get("missing", [])
-            ctx["agent_hint"] = (
-                f"Semihosting OK but expected patterns missing: {missing}. "
-                "Check registry registration order and printf format in "
-                "modules/*/registry entries."
-            )
+            xpass_ids = steps.get("verify", {}).get("xpass_ids") or []
+            if xpass_ids:
+                ctx["agent_hint"] = (
+                    f"XPASS detected: {xpass_ids}. 功能已落地而清单仍标 xfail — "
+                    "把 .workbench/expectations.json 对应条目改为 "
+                    "xfail:false 后重跑."
+                )
+            else:
+                missing = steps.get("verify", {}).get("missing", [])
+                ctx["agent_hint"] = (
+                    f"Semihosting OK but expected patterns missing: {missing}. "
+                    "Check registry registration order and printf format in "
+                    "modules/*/registry entries."
+                )
 
     ctx["max_retries"] = max_retries
     ctx["timestamp"] = now_iso()
@@ -793,6 +805,10 @@ def main():
     parser.add_argument("--require-tgl", action="store_true",
                         help="断言 capture 中至少 1 条 TGL 事件 (手动按键验证用, "
                              "2026-08-16 review M1 门禁; 纯 boot 验证勿用)")
+    parser.add_argument("--rebuild", action="store_true",
+                        help="编译前先 clean (仅 builder=gcc; 发布门禁用)")
+    parser.add_argument("--gate-run", dest="gate_run", action="store_true",
+                        help="发布门禁发起的运行: 跳过 feedback_db 落账")
     args = parser.parse_args()
 
     # 工程根: --project > cwd 向上发现
@@ -823,11 +839,21 @@ def main():
     expect = verify_cfg.get("expect", [])
     description = verify_cfg.get("description", "")
 
+    # 期望清单模式: .workbench/expectations.json 存在则优先,
+    # 否则回退 legacy config.verify (blink/toggle 不受影响)
+    try:
+        expectations = load_expectations(WORKSPACE)
+    except ExpectationError as e:
+        print(f"错误: 期望清单非法: {e}", file=sys.stderr)
+        sys.exit(1)
+    expect_mode = "manifest" if expectations is not None else "legacy"
+
     result = {
         "pipeline": "build → analyze → flash → capture → verify",
         "started_at": started_at,
         "workspace": WORKSPACE,
         "toolkit_version": toolkit_version(),
+        "expect_mode": expect_mode,
         "expect": expect,
         "description": description,
         "retry_config": {"max_retries": max_retries, "retry_delay": retry_delay},
@@ -839,7 +865,7 @@ def main():
         build_attempts = []
         build_ok = False
         for attempt in range(max_retries + 1):
-            build = step_build(config, builder)
+            build = step_build(config, builder, rebuild=args.rebuild)
             build_info = {
                 "attempt": attempt + 1,
                 "status": build.get("status", "error"),
@@ -1138,6 +1164,26 @@ def main():
             "description": physical.get("error", "GPIO toggle frequency out of tolerance"),
             "needs_ai_judgement": True,
         }
+    elif expect_mode == "manifest":
+        # 期望清单模式: 四态判定; config expect* 不参与, 仅显式 CLI 断言叠加 (spec §5.3)
+        cli_items = cli_expectations([], [], getattr(args, "require_tgl", False))
+        ev = evaluate_expectations(captured_text, list(expectations) + cli_items)
+        verification_result = {
+            "status": ev["verdict"],
+            "all_expected_found": ev["verdict"] == "ok",
+            "matched": [r["id"] for r in ev["results"] if r["status"] == "pass"],
+            "missing": [r["id"] for r in ev["results"] if r["status"] == "fail"],
+            "results": ev["results"],
+            "xpass_ids": ev["xpass_ids"],
+            "description": description,
+            "needs_ai_judgement": True,
+        }
+        # capture 空兜底 (与 legacy 同款归因)
+        if capture_empty and flash_ran:
+            verification_result["description"] = (
+                "程序无输出（无 HardFault 迹象）: "
+                + verification_result.get("description", "")
+            )
     else:
         # 正则断言: 配置键 verify.expect_patterns (缺省空) + CLI --require-tgl 注入
         expect_patterns = list(verify_cfg.get("expect_patterns", []) or [])
@@ -1173,26 +1219,28 @@ def main():
     if result["status"] in ("fail", "timing_fail"):
         _save_failure_context(result, max_retries, capture_text=captured_text)
 
-    # 注入点 ③: 自动记录反馈事件（异步，失败不影响主流程）
-    try:
-        feedback_event = {
-            "pipeline": "hardfault" if has_hardfault else "build_fix",
-            "error_code": result.get("steps", {}).get("analyze", {}).get("errors", None),
-            "fault_type": result.get("steps", {}).get("hardfault", {}).get("fault_type"),
-            "build_result": _build_result_str(result),
-            "verify_result": "pass" if result["status"] == "ok" else "fail",
-            "outcome": "fixed" if result["status"] == "ok" else "still_broken",
-        }
-        if has_hardfault:
-            feedback_event["outcome"] = "still_broken"
-        subprocess.run(
-            [sys.executable, FEEDBACK_DB, "--log", json.dumps(feedback_event)],
-            capture_output=True, timeout=10, cwd=WORKSPACE
-        )
-    except Exception:
-        pass  # 反馈记录失败不影响主流程
-    finally:
-        _output(result, args.json)
+    # 注入点 ③: 自动记录反馈事件（异步，失败不影响主流程）。
+    # --gate-run 跳过: 门禁重跑/豁免运行不得污染校准统计 (spec 2026-08-26 §5)
+    if not getattr(args, "gate_run", False):
+        try:
+            feedback_event = {
+                "pipeline": "hardfault" if has_hardfault else "build_fix",
+                "error_code": result.get("steps", {}).get("analyze", {}).get("errors", None),
+                "fault_type": result.get("steps", {}).get("hardfault", {}).get("fault_type"),
+                "build_result": _build_result_str(result),
+                "verify_result": "pass" if result["status"] == "ok" else "fail",
+                "outcome": "fixed" if result["status"] == "ok" else "still_broken",
+            }
+            if has_hardfault:
+                feedback_event["outcome"] = "still_broken"
+            subprocess.run(
+                [sys.executable, FEEDBACK_DB, "--log", json.dumps(feedback_event)],
+                capture_output=True, timeout=10, cwd=WORKSPACE
+            )
+        except Exception:
+            pass  # 反馈记录失败不影响主流程
+
+    _output(result, args.json)
 
 
 def _build_result_str(result: dict) -> str:
@@ -1249,11 +1297,20 @@ def _output(result: dict, as_json: bool):
             print(f"[4c] Physical: {pg_s.get('status','?').upper()}{pg_info}")
 
         verify_s = steps.get("verify", {})
-        print(f"[5] Verify:   {verify_s.get('status', '?').upper()}")
+        mode_tag = "  mode=manifest" if verify_s.get("results") is not None else ""
+        print(f"[5] Verify:   {verify_s.get('status', '?').upper()}{mode_tag}")
         if verify_s.get("matched"):
             print(f"    Found:     {verify_s['matched']}")
         if verify_s.get("missing"):
             print(f"    Missing:   {verify_s['missing']}")
+        for r in verify_s.get("results") or []:
+            label = {"pass": "[PASS]", "xfail": "[XFAIL]", "xpass": "[XPASS]",
+                     "fail": "[FAIL]"}.get(r["status"], "[????]")
+            extra = f"  ({r['detail']})" if r.get("detail") else ""
+            print(f"    {label} {r['id']}{extra}")
+        if verify_s.get("xpass_ids"):
+            print(f"    >>> XPASS 落地信号: {', '.join(verify_s['xpass_ids'])}"
+                  " - 请翻转对应 xfail 后重跑 <<<")
 
         captured = result.get("captured_output", "")
         if captured:
