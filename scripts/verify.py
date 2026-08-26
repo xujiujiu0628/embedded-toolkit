@@ -22,8 +22,10 @@ import argparse
 import json
 import os
 import re
+import socket
 import subprocess
 import sys
+import threading
 import time
 from datetime import datetime, timezone, timedelta
 
@@ -36,10 +38,194 @@ from wb_common import (TOOLKIT_ROOT, find_project_root, load_machine,
 OPENOCD_EXE = load_machine()["openocd_exe"]
 
 KEIL_BUILD = os.path.join(TOOLKIT_ROOT, "scripts", "keil_build.py")       # 阶段2: 已折入工具库
+GCC_BUILD = os.path.join(TOOLKIT_ROOT, "scripts", "gcc_build.py")         # 阶段2: GNU 工具链后端 (builder=gcc)
 KEIL_ANALYZE = os.path.join(TOOLKIT_ROOT, "scripts", "keil_analyze.py")
 OPENOCD_SEMIHOSTING = os.path.join(TOOLKIT_ROOT, "scripts", "openocd_semihosting.py")  # 阶段2: 已折入工具库
 FEEDBACK_DB = os.path.join(TOOLKIT_ROOT, "scripts", "feedback_db.py")
 ERROR_DB_GROW = os.path.join(TOOLKIT_ROOT, "scripts", "error_db_grow.py")
+
+# ---------------------------------------------------------------------------
+# RTT 采集后端 (capture.backend="rtt") — SEGGER RTT over OpenOCD rtt server
+# 骨架沿用 openocd_semihosting.py 的助手惯例（本工具库按脚本复制，不做共享模块）
+# ---------------------------------------------------------------------------
+
+_RTT_TELNET_PORT = 4444
+# 与 hardfault.py / openocd_semihosting.py 同源的适配器致命错误串
+_RTT_CRITICAL_ERRORS = ["open failed", "init mode failed", "no device found",
+                        "cannot connect", "error connecting dp", "examination failed"]
+
+
+def _rtt_read_until_prompt(sock: socket.socket) -> str:
+    """读 telnet 直到 OpenOCD 的 '> ' 提示符（或超时/对端关闭）"""
+    buf = b""
+    while True:
+        decoded = buf.decode("utf-8", errors="replace")
+        if decoded.endswith("> ") or "\n> " in decoded or "\r> " in decoded:
+            pos = max(decoded.rfind("\n> "), decoded.rfind("\r> "))
+            if pos == -1 and decoded.endswith("> "):
+                pos = len(decoded) - 2
+            return decoded[:pos].strip() if pos >= 0 else decoded.strip()
+        try:
+            chunk = sock.recv(4096)
+            if not chunk:
+                return buf.decode("utf-8", errors="replace").strip()
+            buf += chunk
+        except socket.timeout:
+            return buf.decode("utf-8", errors="replace").strip()
+
+
+def _rtt_telnet(port: int, commands: list, timeout: float = 5.0) -> list:
+    """连一次 telnet，顺序发送多条命令并收集各自响应"""
+    sock = socket.create_connection(("127.0.0.1", port), timeout=timeout)
+    try:
+        sock.settimeout(timeout)
+        _rtt_read_until_prompt(sock)
+        out = []
+        for c in commands:
+            sock.sendall((c + "\n").encode("utf-8"))
+            out.append(_rtt_read_until_prompt(sock))
+        return out
+    finally:
+        sock.close()
+
+
+def _rtt_cleanup(proc):
+    if proc and proc.poll() is None:
+        try:
+            proc.terminate()
+            proc.wait(timeout=5)
+        except (subprocess.TimeoutExpired, OSError):
+            proc.kill()
+
+
+def _step_capture_rtt(timeout_s: int, rtt_cfg: dict) -> dict:
+    """步骤 4 (capture.backend=rtt): telnet 驱动持久会话 + RTT TCP 通道采集.
+
+    时序保证（为什么这样排）:
+      reset halt → resume → sleep boot_delay → rtt setup → rtt start → server start
+      ① rtt start 放在 resume+宽限之后: F103 SRAM 跨 NRST 保持, 若在 halt 态启动
+         会接上上一轮残留控制块 → 陈旧输出冲进捕获造成假 PASS；
+      ② TCP 连接在 server start 之后: 未读字节留在目标侧环形缓冲里,
+         接入后一次性补发, 早期输出零丢失。
+    返回契约与 semihosting 分支一致: steps.capture.{status,method,lines,...},
+    正文经私有键 "_text" 带回（派发方 pop 后写入 result["captured_output"]）。
+    """
+    port = int(rtt_cfg.get("port", 19021))
+    sram_base = rtt_cfg.get("sram_base", "0x20000000")
+    sram_size = int(rtt_cfg.get("sram_size", 2048))
+    cb_id = rtt_cfg.get("id", "SEGGER RTT")
+    boot_delay_ms = int(rtt_cfg.get("boot_delay_ms", 300))
+    connect_wait = float(rtt_cfg.get("connect_timeout_s", 3.0))
+
+    base_cmd = [OPENOCD_EXE, "-c", "bindto 127.0.0.1",
+                "-f", "interface/stlink.cfg", "-f", "target/stm32f1x.cfg"]
+    started = time.time()
+    last_err = "unknown"
+
+    for attempt in range(3):  # ST-Link 释放竞态重试纪律, 对齐 hardfault.py
+        proc = None
+        err_lines: list = []
+        try:
+            proc = subprocess.Popen(
+                base_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
+                text=True, encoding="utf-8", errors="replace",
+                creationflags=subprocess.CREATE_NEW_PROCESS_GROUP, cwd=WORKSPACE)
+
+            def _drain(p=proc, sink=err_lines):
+                for line in p.stderr:
+                    sink.append(line.rstrip())
+
+            threading.Thread(target=_drain, daemon=True).start()
+
+            # --- 等 ready: telnet 监听出现且进程存活无致命错误 ---
+            ready, why = False, ""
+            t0 = time.time()
+            while time.time() - t0 < 15.0:
+                if proc.poll() is not None:
+                    why = "openocd exited during startup"
+                    break
+                joined = "\n".join(err_lines)
+                if f"Listening on port {_RTT_TELNET_PORT}" in joined:
+                    # 监听可能先于适配器 init 失败打印 —— 给 0.3s 稳定期再判死刑
+                    time.sleep(0.3)
+                    bad = [e for e in err_lines
+                           if any(k in e.lower() for k in _RTT_CRITICAL_ERRORS)]
+                    if proc.poll() is not None:
+                        why = "openocd exited right after listen"
+                        break
+                    if bad:
+                        why = "; ".join(bad[-3:])
+                        break
+                    ready = True
+                    break
+                time.sleep(0.05)
+            if not ready:
+                raise RuntimeError(why or "openocd ready timeout")
+
+            # --- telnet 阶段 1: 复位运行 + 建立新鲜控制块的 RTT 服务 ---
+            resp = _rtt_telnet(_RTT_TELNET_PORT, [
+                "reset halt", "resume", f"sleep {boot_delay_ms}",
+                f'rtt setup {sram_base} {sram_size} "{cb_id}"',
+                "rtt start", "rtt polling_interval 100",
+                f"rtt server start {port} 0"])
+            blob = "\n".join(resp)
+            low = blob.lower()
+            if "control block" in low and "not found" in low:
+                # 定性失败, 不空转重试: 多为固件没编进 RTT 或 SRAM 范围不对
+                raise ValueError("rtt_control_block_not_found")
+            if "error" in low:
+                raise RuntimeError(blob.strip().splitlines()[-1][:200] if blob.strip() else "rtt command error")
+
+            # --- TCP 数据通道: 接入后读到 deadline ---
+            data_sock = None
+            tc0 = time.time()
+            while time.time() - tc0 < connect_wait:
+                try:
+                    data_sock = socket.create_connection(("127.0.0.1", port), timeout=0.5)
+                    break
+                except OSError:
+                    time.sleep(0.05)
+            if data_sock is None:
+                raise TimeoutError(f"rtt tcp connect timeout ({connect_wait}s)")
+
+            buf = bytearray()
+            deadline = time.time() + timeout_s
+            while time.time() < deadline:
+                data_sock.settimeout(max(0.05, min(0.5, deadline - time.time())))
+                try:
+                    chunk = data_sock.recv(4096)
+                    if chunk:
+                        buf += chunk
+                except socket.timeout:
+                    pass
+            data_sock.close()
+
+            text = buf.decode("utf-8", errors="replace")
+            return {
+                "status": "ok", "method": "rtt",
+                "timeout_sec": timeout_s,
+                "lines": len([ln for ln in text.splitlines() if ln.strip()]),
+                "duration_sec": round(time.time() - started, 1),
+                "raw_length": len(text),
+                "_text": text,
+            }
+
+        except ValueError as e:
+            last_err = str(e)
+            break  # 控制块类失败换多少次会话都一样
+        except Exception as e:
+            last_err = f"{type(e).__name__}: {e}" if not str(e) else str(e)
+            if attempt < 2:
+                time.sleep(3)
+        finally:
+            try:
+                if proc is not None and proc.poll() is None:
+                    _rtt_telnet(_RTT_TELNET_PORT, ["halt", "shutdown"], timeout=2.0)
+            except OSError:
+                pass
+            _rtt_cleanup(proc)
+
+    return {"status": "error", "method": "rtt", "lines": 0, "error": last_err}
 
 
 def now_iso() -> str:
@@ -97,8 +283,18 @@ def run_cmd(cmd: list[str], timeout: int = 60) -> dict:
         return {"status": "error", "message": f"command timed out after {timeout}s"}
 
 
-def step_build(config: dict) -> dict:
-    """步骤 1: Keil 编译"""
+def step_build(config: dict, builder: str = "keil") -> dict:
+    """步骤 1: 编译 (按 config.json builder 字段切换后端: keil | gcc)"""
+    if builder == "gcc":
+        gcc = config.get("gcc", {})
+        project = gcc.get("project", "gcc-pilot/Makefile")
+        target = gcc.get("target", "")
+        log_dir = gcc.get("log_dir", ".workbench/build")
+        # gcc/make 路径由 gcc_build 自行从 machine.json 解析
+        args = ["build", "--project", project,
+                "--target", target, "--log-dir", log_dir, "--json"]
+        return run_py(GCC_BUILD, args, timeout=300)
+
     keil = config.get("keil", {})
     project = keil.get("project", "blink.uvprojx")
     target = keil.get("target", "STM32F103C8_Blink")
@@ -110,8 +306,15 @@ def step_build(config: dict) -> dict:
     return run_py(KEIL_BUILD, args, timeout=120)
 
 
-def step_analyze(log_file: str) -> dict:
-    """步骤 2: 编译日志诊断"""
+def step_analyze(log_file: str, builder: str = "keil",
+                 build_metrics: dict | None = None) -> dict:
+    """步骤 2: 编译日志诊断 (gcc 后端自带 metrics, 跳过 ARMCC 知识库分析)"""
+    if builder == "gcc":
+        m = build_metrics or {}
+        return {"status": "ok",
+                "summary": {"errors": m.get("errors", 0),
+                            "warnings": m.get("warnings", 0),
+                            "matched": 0, "unmatched": 0}}
     return run_py(KEIL_ANALYZE, [log_file, "--json"], timeout=30)
 
 
@@ -482,6 +685,7 @@ def main():
         sys.exit(1)
     WORKSPACE = os.path.abspath(WORKSPACE)
     config = load_config(WORKSPACE)
+    builder = config.get("builder", "keil")   # 阶段2: 构建后端切换 (keil | gcc)
 
     # 工具库版本检查: 工程要求的最低版本
     cfg_min = config.get("toolkit_min_version")
@@ -516,7 +720,7 @@ def main():
         build_attempts = []
         build_ok = False
         for attempt in range(max_retries + 1):
-            build = step_build(config)
+            build = step_build(config, builder)
             build_info = {
                 "attempt": attempt + 1,
                 "status": build.get("status", "error"),
@@ -529,8 +733,8 @@ def main():
                 log_file = build.get("details", {}).get("log_file", "")
                 hex_file = build.get("details", {}).get("hex_file", "")
 
-                if log_file:
-                    analyze = step_analyze(log_file)
+                if log_file or builder == "gcc":
+                    analyze = step_analyze(log_file, builder, build.get("metrics"))
                     if analyze.get("status") == "ok":
                         build_ok = True
                         break
@@ -563,7 +767,8 @@ def main():
         }
 
         # ---- Step 2: Analyze ----
-        analyze = step_analyze(log_file) if log_file else {"status": "error"}
+        analyze = (step_analyze(log_file, builder, build.get("metrics"))
+                   if log_file or builder == "gcc" else {"status": "error"})
         result["steps"]["analyze"] = {
             "status": analyze.get("status", "error"),
             "errors": analyze.get("summary", {}).get("errors", 0),
@@ -636,84 +841,103 @@ def main():
     else:
         result["steps"]["flash"] = {"status": "skipped"}
 
-    # ---- Step 4: Capture Semihosting ----
-    # 直接调 OpenOCD: init → reset halt → semihosting enable → resume → sleep → halt → shutdown
-    # 这是手工验证过的可靠方式，不走复杂的 openocd_semihosting.py 脚本
-    # reset halt: 确定性起点 — 目标可能停在上一会话的 BKPT 冻结处 (printf 中途)
-    # 或 boot 中段 (I2C2 BUSY 等待), 仅 halt 续跑会得到不完整 boot 输出 (2026-08-16 教训)
+    # ---- Step 4: Capture (semihosting 默认 | capture.backend=rtt) ----
+    # 共同原则: reset halt 确定性起点 (2026-08-16 教训), 行过滤后进 verify()
     capture_started = time.time()
     capture_timeout = args.timeout
+    cap_backend = (config.get("capture", {}) or {}).get("backend", "semihosting")
+    captured_lines = []
+    captured_text = ""
 
-    openocd_cmd = [
-        OPENOCD_EXE,
-        "-f", "interface/stlink.cfg",
-        "-f", "target/stm32f1x.cfg",
-        "-c", "transport select swd",
-        "-c", "init",
-        "-c", "reset halt",
-        "-c", "arm semihosting enable",
-        "-c", "resume",
-        "-c", f"sleep {capture_timeout * 1000}",  # OpenOCD sleep 单位是 ms
-        "-c", "halt",
-        "-c", "shutdown",
-    ]
+    if cap_backend == "rtt":
+        cap = _step_capture_rtt(capture_timeout, config.get("capture", {}))
+        if cap.get("status") != "ok":
+            result["steps"]["capture"] = {
+                k: v for k, v in cap.items() if not k.startswith("_")
+            }
+            result["status"] = "capture_failed"
+            result["error"] = cap.get("error", "rtt capture failed")
+            _save_failure_context(result, max_retries)
+            _output(result, args.json)
+            return
+        captured_text = cap.pop("_text", "")
+        captured_lines = [ln for ln in captured_text.splitlines() if ln.strip()]
+        result["steps"]["capture"] = cap
+    else:
+        # 直接调 OpenOCD: init → reset halt → semihosting enable → resume → sleep → halt → shutdown
+        # 这是手工验证过的可靠方式，不走复杂的 openocd_semihosting.py 脚本
+        # reset halt: 确定性起点 — 目标可能停在上一会话的 BKPT 冻结处 (printf 中途)
+        # 或 boot 中段 (I2C2 BUSY 等待), 仅 halt 续跑会得到不完整 boot 输出 (2026-08-16 教训)
+        openocd_cmd = [
+            OPENOCD_EXE,
+            "-f", "interface/stlink.cfg",
+            "-f", "target/stm32f1x.cfg",
+            "-c", "transport select swd",
+            "-c", "init",
+            "-c", "reset halt",
+            "-c", "arm semihosting enable",
+            "-c", "resume",
+            "-c", f"sleep {capture_timeout * 1000}",  # OpenOCD sleep 单位是 ms
+            "-c", "halt",
+            "-c", "shutdown",
+        ]
 
-    try:
-        proc = subprocess.Popen(
-            openocd_cmd,
-            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-            text=True, encoding='utf-8', errors='replace',
-            cwd=WORKSPACE
-        )
-        stdout, stderr = proc.communicate(timeout=capture_timeout + 30)
+        try:
+            proc = subprocess.Popen(
+                openocd_cmd,
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                text=True, encoding='utf-8', errors='replace',
+                cwd=WORKSPACE
+            )
+            stdout, stderr = proc.communicate(timeout=capture_timeout + 30)
 
-        # 从 stdout+stderr 中提取 semihosting 文本行
-        # OpenOCD 的 log 行以 "Info:", "Warn:", "Error:", "Debug:" 开头
-        # semihosting 输出是裸文本行
-        import re as _re
-        _log_prefix = _re.compile(r'^(Info|Warn|Error|Debug)\s*:', _re.IGNORECASE)
-        _status_kw = ["Listening on port", "halted due to", "shutdown command",
-                       "GDB", "accepting", "dropped", "semihosting is enabled",
-                       "target state:", "DEPRECATED",
-                       "Licensed under GNU", "For bug reports",
-                       "xPSR:", "http://", "Info :", "Warn :", "xPack"]
+            # 从 stdout+stderr 中提取 semihosting 文本行
+            # OpenOCD 的 log 行以 "Info:", "Warn:", "Error:", "Debug:" 开头
+            # semihosting 输出是裸文本行
+            import re as _re
+            _log_prefix = _re.compile(r'^(Info|Warn|Error|Debug)\s*:', _re.IGNORECASE)
+            _status_kw = ["Listening on port", "halted due to", "shutdown command",
+                           "GDB", "accepting", "dropped", "semihosting is enabled",
+                           "target state:", "DEPRECATED",
+                           "Licensed under GNU", "For bug reports",
+                           "xPSR:", "http://", "Info :", "Warn :", "xPack"]
 
-        captured_lines = []
-        for line in (stdout + stderr).splitlines():
-            stripped = line.strip()
-            if not stripped:
-                continue
-            if _log_prefix.match(stripped):
-                continue
-            if any(kw in stripped for kw in _status_kw):
-                continue
-            captured_lines.append(stripped)
+            captured_lines = []
+            for line in (stdout + stderr).splitlines():
+                stripped = line.strip()
+                if not stripped:
+                    continue
+                if _log_prefix.match(stripped):
+                    continue
+                if any(kw in stripped for kw in _status_kw):
+                    continue
+                captured_lines.append(stripped)
 
-    except subprocess.TimeoutExpired:
-        proc.kill()
-        stdout, stderr = proc.communicate()
-        captured_lines = []
-    except Exception as e:
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            stdout, stderr = proc.communicate()
+            captured_lines = []
+        except Exception as e:
+            result["steps"]["capture"] = {
+                "status": "error", "method": "semihosting", "error": str(e)
+            }
+            result["status"] = "capture_failed"
+            result["error"] = str(e)
+            _save_failure_context(result, max_retries)
+            _output(result, args.json)
+            return
+
+        captured_text = "\n".join(captured_lines)
+        capture_elapsed = time.time() - capture_started
+
         result["steps"]["capture"] = {
-            "status": "error", "method": "semihosting", "error": str(e)
+            "status": "ok",
+            "method": "semihosting",
+            "timeout_sec": args.timeout,
+            "lines": len(captured_lines),
+            "duration_sec": round(capture_elapsed, 1),
+            "raw_length": len(captured_text)
         }
-        result["status"] = "capture_failed"
-        result["error"] = str(e)
-        _save_failure_context(result, max_retries)
-        _output(result, args.json)
-        return
-
-    captured_text = "\n".join(captured_lines)
-    capture_elapsed = time.time() - capture_started
-
-    result["steps"]["capture"] = {
-        "status": "ok",
-        "method": "semihosting",
-        "timeout_sec": args.timeout,
-        "lines": len(captured_lines),
-        "duration_sec": round(capture_elapsed, 1),
-        "raw_length": len(captured_text)
-    }
 
     # ---- Step 4b: HardFault 自动检测 ----
     # 触发条件 (修复 2026-08-12):
@@ -796,9 +1020,12 @@ def main():
             "needs_ai_judgement": True,
         }
     else:
-        expect_patterns = [r"TGL \d+"] if getattr(args, "require_tgl", False) else None
+        # 正则断言: 配置键 verify.expect_patterns (缺省空) + CLI --require-tgl 注入
+        expect_patterns = list(verify_cfg.get("expect_patterns", []) or [])
+        if getattr(args, "require_tgl", False):
+            expect_patterns.append(r"TGL \d+")
         verification_result = verify(captured_text, expect, description,
-                                     expect_patterns=expect_patterns)
+                                     expect_patterns=expect_patterns or None)
         # capture 空兜底: 确实烧录过但无输出且无 HardFault 迹象 → 归因准确
         if capture_empty and flash_ran:
             verification_result["description"] = (
