@@ -122,13 +122,13 @@ def log_event(event_data: dict | FeedbackEvent) -> str:
 
     # Validate pipeline
     pipeline = event_dict.get("pipeline", "build_fix")
-    valid_pipelines = {"build_fix", "hardfault", "code_gen"}
+    valid_pipelines = {"build_fix", "hardfault", "code_gen", "verify"}
     if pipeline not in valid_pipelines:
         print(f"Warning: unknown pipeline '{pipeline}'", file=sys.stderr)
 
     # Validate outcome
     outcome = event_dict.get("outcome", "")
-    valid_outcomes = {"fixed", "still_broken", "false_positive", ""}
+    valid_outcomes = {"fixed", "still_broken", "false_positive", "pass", "fail", ""}
     if outcome not in valid_outcomes:
         print(f"Warning: unknown outcome '{outcome}'", file=sys.stderr)
 
