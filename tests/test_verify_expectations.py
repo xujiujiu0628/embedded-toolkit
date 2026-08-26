@@ -66,3 +66,58 @@ class LoadExpectationsTests(unittest.TestCase):
                           "capture_group": 0}])
         with self.assertRaises(verify.ExpectationError):
             verify.load_expectations(self.tmp)
+
+
+class EvaluateExpectationsTests(unittest.TestCase):
+    def test_pass(self):
+        ev = verify.evaluate_expectations("boot ok",
+                                          [{"id": "A", "texts": ["ok"]}])
+        self.assertEqual(ev["verdict"], "ok")
+        self.assertEqual(ev["results"], [{"id": "A", "status": "pass"}])
+        self.assertEqual(ev["xpass_ids"], [])
+
+    def test_fail_with_detail(self):
+        ev = verify.evaluate_expectations("boot", [{"id": "A", "texts": ["ok"]}])
+        self.assertEqual(ev["verdict"], "fail")
+        self.assertEqual(ev["results"][0]["status"], "fail")
+        self.assertIn("missing texts", ev["results"][0]["detail"])
+
+    def test_xfail_keeps_suite_green(self):
+        ev = verify.evaluate_expectations(
+            "", [{"id": "A", "texts": ["ok"], "xfail": True}])
+        self.assertEqual((ev["verdict"], ev["results"][0]["status"]),
+                         ("ok", "xfail"))
+
+    def test_xpass_is_strict_red(self):
+        ev = verify.evaluate_expectations(
+            "ok", [{"id": "A", "texts": ["ok"], "xfail": True}])
+        self.assertEqual((ev["verdict"], ev["results"][0]["status"]),
+                         ("fail", "xpass"))
+        self.assertEqual(ev["xpass_ids"], ["A"])
+
+    def test_patterns_array_all_must_hit(self):
+        item = {"id": "A", "patterns": [r"\d+", r"[a-z]+"]}
+        self.assertEqual(
+            verify.evaluate_expectations("123", [item])["verdict"], "fail")
+        self.assertEqual(
+            verify.evaluate_expectations("123 abc", [item])["verdict"], "ok")
+
+    def test_capture_group_threshold_boundary(self):
+        item = {"id": "R", "patterns": [r"Hz=(\d+)"], "capture_group": 1,
+                "min": 2}
+        self.assertEqual(
+            verify.evaluate_expectations("Hz=2", [item])["verdict"], "ok")
+        self.assertEqual(
+            verify.evaluate_expectations("Hz=1", [item])["verdict"], "fail")
+
+    def test_cli_rows_and_tgl(self):
+        items = verify.cli_expectations([], [], require_tgl=True)
+        self.assertEqual([i["id"] for i in items], ["CLI-REQUIRE-TGL"])
+        ev = verify.evaluate_expectations("TGL 3 TGL 4", items)
+        self.assertEqual(ev["verdict"], "ok")
+
+    def test_verdict_fails_if_any_fail_among_xfails(self):
+        exp = [{"id": "A", "texts": ["a"], "xfail": True},
+               {"id": "B", "texts": ["b"]}]
+        ev = verify.evaluate_expectations("a c", exp)   # A=XFAIL, B=FAIL
+        self.assertEqual(ev["verdict"], "fail")

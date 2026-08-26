@@ -576,6 +576,73 @@ def load_expectations(workspace):
     return data["expectations"]
 
 
+def _expect_matched(item, output):
+    """单条期望匹配判定 (spec §3): texts 全命中 且 patterns 全命中;
+    capture_group/min/max 数值断言作用于 patterns[0] 首个 match。
+    返回 (matched, 失败细节)。"""
+    missing = [t for t in item.get("texts", []) if t not in output]
+    if missing:
+        return False, f"missing texts: {missing}"
+    first = None
+    for j, pat in enumerate(item.get("patterns", [])):
+        m = re.search(pat, output)
+        if not m:
+            return False, f"pattern 未命中: {pat!r}"
+        if j == 0:
+            first = m
+    cg = item.get("capture_group")
+    if cg is not None:
+        try:
+            value = float(first.group(cg))
+        except (IndexError, TypeError, ValueError):
+            return False, f"capture_group={cg} 提取失败"
+        lo = item.get("min")
+        hi = item.get("max")
+        if lo is not None and value < float(lo):
+            return False, f"值 {value} < min {lo}"
+        if hi is not None and value > float(hi):
+            return False, f"值 {value} > max {hi}"
+    return True, ""
+
+
+def evaluate_expectations(output, expectations):
+    """四态判定纯函数 (spec §4): PASS=匹配&非xfail; XFAIL=未匹配&xfail;
+    XPASS=匹配&xfail(严格红); FAIL=未匹配&非xfail。
+    verdict="ok" 当且仅当所有 status ∈ {pass, xfail}。无 IO, 可单测。"""
+    results = []
+    for item in expectations:
+        ok, detail = _expect_matched(item, output)
+        xfail = bool(item.get("xfail"))
+        if ok and not xfail:
+            status = "pass"
+        elif ok and xfail:
+            status = "xpass"
+        elif not ok and xfail:
+            status = "xfail"
+        else:
+            status = "fail"
+        r = {"id": item["id"], "status": status}
+        if detail and status in ("fail", "xpass"):
+            r["detail"] = detail
+        results.append(r)
+    verdict = "ok" if all(r["status"] in ("pass", "xfail") for r in results) else "fail"
+    return {"results": results, "verdict": verdict,
+            "xpass_ids": [r["id"] for r in results if r["status"] == "xpass"]}
+
+
+def cli_expectations(expect, expect_patterns, require_tgl):
+    """legacy CLI/config 叠加断言 → 合成保留 ID 行 (spec §5.3), 保证
+    --json 门禁证据完整。清单模式下 config expect* 不参与, 仅显式 CLI 断言叠加。"""
+    items = []
+    for i, t in enumerate(expect or []):
+        items.append({"id": f"CLI-TEXT-{i:02d}", "texts": [t]})
+    for i, p in enumerate(expect_patterns or []):
+        items.append({"id": f"CLI-PAT-{i:02d}", "patterns": [p]})
+    if require_tgl:
+        items.append({"id": "CLI-REQUIRE-TGL", "patterns": [r"TGL \d+"]})
+    return items
+
+
 def verify(output: str, expect: list[str], description: str = "", expect_patterns: list[str] = None) -> dict:
     """步骤 5: AI 验证 (机器预处理 + 留给 Claude 最终判断)
 
