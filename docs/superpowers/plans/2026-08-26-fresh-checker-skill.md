@@ -28,7 +28,7 @@
 - Produces: 可被 Claude Code 调度的个人 skill `fresh-checker`；Step 4 的落账 JSON 字段（Task 2 冒烟依赖）：
   `{"pipeline":"fresh_check","mode":"design|impl","target":"<str>","verdict":"pass|pass_with_reservations|rework","findings":"C:x H:y M:z L:w","outcome":"reported"}`
 
-- [ ] **Step 1: 写入以下全文**
+- [x] **Step 1: 写入以下全文**
 
 ````markdown
 ---
@@ -136,13 +136,13 @@ python <工作区根>\embedded-toolkit\scripts\feedback_db.py --log '{"pipeline"
 findings 用 `C:x H:y M:z L:w` 计数串。落账失败不影响审核结论交付，事后补记即可。
 ````
 
-- [ ] **Step 2: 结构自检清单**
+- [x] **Step 2: 结构自检清单**
 
 逐项核对写入的文件：frontmatter 含 name=fresh-checker 且 description 含触发词
 （深度审核/审计/fresh checker）；四条共同铁律逐字出现；两套模板各自含五个维度；
 Step 4 的 JSON 字段与规格 §6 一致（pipeline/mode/target/verdict/findings/outcome）。
 
-- [ ] **Step 3: Commit（镜像随 Task 2 一起提交）**
+- [x] **Step 3: Commit（镜像随 Task 2 一起提交）**
 
 本任务无 git 操作（~/.claude 非 git 仓）；镜像提交在 Task 2 Step 3。
 
@@ -157,7 +157,7 @@ Step 4 的 JSON 字段与规格 §6 一致（pipeline/mode/target/verdict/findin
 **Interfaces:**
 - Consumes: Task 1 的 canonical 文件；现有 `scripts/feedback_db.py --log/--stats`。
 
-- [ ] **Step 1: 拷贝并校验逐字节一致**
+- [x] **Step 1: 拷贝并校验逐字节一致**
 
 ```bash
 mkdir -p <工作区根>/embedded-toolkit/skills/fresh-checker
@@ -166,7 +166,7 @@ diff /c/Users/<用户名>/.claude/skills/fresh-checker/SKILL.md <工作区根>/e
 ```
 Expected: 输出 IDENTICAL。
 
-- [ ] **Step 2: feedback 管道冒烟**
+- [x] **Step 2: feedback 管道冒烟**
 
 ```bash
 python <工作区根>/embedded-toolkit/scripts/feedback_db.py --log '{"pipeline":"fresh_check","mode":"impl","target":"2026-08-26 harness-borrow batch1","verdict":"pass_with_reservations","findings":"C:0 H:0 M:3 L:6","outcome":"reported"}'
@@ -176,7 +176,7 @@ Expected: log 成功；stats 能查到 fresh_check 流水线记录（若 stats �
 pipeline 名，以 log 不报错为准并在 commit message 注明）。这条冒烟数据本身就是
 今天第二轮真实审计的存证。
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 cd <工作区根>/embedded-toolkit
