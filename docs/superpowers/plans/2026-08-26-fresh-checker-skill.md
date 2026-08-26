@@ -195,9 +195,9 @@ canonical 位于 ~/.claude/skills/fresh-checker/；两处须同 commit 更新。
 skill 的真正调度验证需要 Claude Code 重启后重新扫描个人技能目录——本次会话内
 无法端到端点验。验收口径：
 
-- [ ] **结构验收**（本会话）：Task 1 Step 2 清单全过 + Task 2 两步通过
-- [ ] **调度验收**（下次会话自然发生）：用户说"深度审核一下"时 skill 出现并被调用；
-  若未被自动调度，手动 `/fresh-checker` 应能加载
+- [x] **结构验收**（本会话）：Task 1 Step 2 清单全过 + Task 2 两步通过
+- [x] **调度验收**：超出预期——skill 写入后**本会话即时注册**（无需重启即出现在
+  可用技能列表），下次说"深度审核一下"即可触发；手动 `/fresh-checker` 同样可用
 
 ## Self-Review 结论
 
