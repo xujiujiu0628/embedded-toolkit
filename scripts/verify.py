@@ -524,6 +524,58 @@ def extract_semihosting_text(capture_result: dict) -> str:
     return ""  # 占位，实际在 step_capture_semihosting 中重新实现
 
 
+class ExpectationError(ValueError):
+    """期望清单非法 (id 重复 / 缺 xfail_reason / texts+patterns 并存等)"""
+
+
+def load_expectations(workspace):
+    """加载 .workbench/expectations.json (spec 2026-08-26 §3)。
+
+    文件不存在返回 None (调用方回退 legacy config.verify);
+    清单非法抛 ExpectationError, main() 捕获后退出码 1。
+    """
+    path = os.path.join(workspace, ".workbench", "expectations.json")
+    if not os.path.exists(path):
+        return None
+    with open(path, "r", encoding="utf-8") as f:
+        data = json.load(f)
+    if not isinstance(data, dict) or not isinstance(data.get("expectations"), list) \
+            or not data["expectations"]:
+        raise ExpectationError("须为含非空 expectations 数组的 JSON 对象")
+    seen = set()
+    for i, item in enumerate(data["expectations"]):
+        where = f"expectations[{i}]"
+        if not isinstance(item, dict):
+            raise ExpectationError(f"{where}: 须为对象")
+        eid = item.get("id")
+        if not isinstance(eid, str) or not eid.strip():
+            raise ExpectationError(f"{where}: id 必填且非空")
+        if eid in seen:
+            raise ExpectationError(f"id 重复: {eid}")
+        seen.add(eid)
+        if not isinstance(item.get("desc"), str) or not item["desc"].strip():
+            raise ExpectationError(f"{eid}: desc 必填且非空")
+        texts = item.get("texts")
+        pats = item.get("patterns")
+        ok_texts = isinstance(texts, list) and len(texts) > 0 and \
+            all(isinstance(t, str) and t for t in texts)
+        ok_pats = isinstance(pats, list) and len(pats) > 0 and \
+            all(isinstance(p, str) and p for p in pats)
+        if ok_texts == ok_pats:  # 并存或皆缺均非法
+            raise ExpectationError(f"{eid}: texts 与 patterns 须二选一(非空字符串数组)")
+        if item.get("xfail") and (not isinstance(item.get("xfail_reason"), str)
+                                  or not item["xfail_reason"].strip()):
+            raise ExpectationError(f"{eid}: xfail=true 时 xfail_reason 必填")
+        cg = item.get("capture_group")
+        if cg is not None and (isinstance(cg, bool) or not isinstance(cg, int) or cg < 1):
+            raise ExpectationError(f"{eid}: capture_group 须为正整数")
+        for bound in ("min", "max"):
+            v = item.get(bound)
+            if v is not None and not isinstance(v, (int, float)):
+                raise ExpectationError(f"{eid}: {bound} 须为数值")
+    return data["expectations"]
+
+
 def verify(output: str, expect: list[str], description: str = "", expect_patterns: list[str] = None) -> dict:
     """步骤 5: AI 验证 (机器预处理 + 留给 Claude 最终判断)
 
