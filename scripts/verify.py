@@ -916,7 +916,7 @@ def main():
             # Save failure context for Agent analysis
             _save_failure_context(result, max_retries)
             _output(result, args.json)
-            return
+            sys.exit(1)   # 失败早退必须非零 (审计: 原先恒 0 误导脚本化调用方)
 
         result["steps"]["build"] = {
             "status": "ok",
@@ -944,7 +944,7 @@ def main():
             result["error"] = f"Build has {analyze.get('summary', {}).get('errors', 0)} error(s)"
             _save_failure_context(result, max_retries)
             _output(result, args.json)
-            return
+            sys.exit(1)   # 失败早退必须非零 (审计: 原先恒 0 误导脚本化调用方)
         if analyze.get("summary", {}).get("unmatched", 0) > 0:
             result["steps"]["analyze"]["review_needed"] = True
             result["steps"]["analyze"]["review_command"] = "/review:build"
@@ -993,7 +993,7 @@ def main():
             result["error"] = f"Flash failed after {len(flash_attempts)} attempt(s)"
             _save_failure_context(result, max_retries)
             _output(result, args.json)
-            return
+            sys.exit(1)   # 失败早退必须非零 (审计: 原先恒 0 误导脚本化调用方)
 
         result["steps"]["flash"] = {
             "status": "ok",
@@ -1022,7 +1022,7 @@ def main():
             result["error"] = cap.get("error", "rtt capture failed")
             _save_failure_context(result, max_retries)
             _output(result, args.json)
-            return
+            sys.exit(1)   # 失败早退必须非零 (审计: 原先恒 0 误导脚本化调用方)
         captured_text = cap.pop("_text", "")
         captured_lines = [ln for ln in captured_text.splitlines() if ln.strip()]
         result["steps"]["capture"] = cap
@@ -1088,7 +1088,7 @@ def main():
             result["error"] = str(e)
             _save_failure_context(result, max_retries)
             _output(result, args.json)
-            return
+            sys.exit(1)   # 失败早退必须非零 (审计: 原先恒 0 误导脚本化调用方)
 
         captured_text = "\n".join(captured_lines)
         capture_elapsed = time.time() - capture_started
@@ -1259,6 +1259,8 @@ def main():
             pass  # 反馈记录失败不影响主流程
 
     _output(result, args.json)
+    # 退出码契约: ok=0, 其余(fail/timing_fail/hardfault 等)=1
+    sys.exit(0 if result.get("status") == "ok" else 1)
 
 
 def _build_result_str(result: dict) -> str:
