@@ -93,7 +93,9 @@ XPASS 采用严格模式：功能落地而清单未翻转 = 清单与现实不�
 总判定：所有非 xfail 全 PASS **且**所有 xfail 全 XFAIL → 绿；否则红。
 
 已知限制（文档明示，不建机制）：周期性输出在固定采集窗内的存在性匹配有天然抖动，
-偶发 FAIL 属正常，重跑即可。
+偶发 FAIL 属正常，重跑即可。数值断言（capture_group/min/max）只作用于 `patterns[0]`
+在全文的**首个 match**——后续采样行越界不会被抓到（审计 L3）；对"仅条件打印"类
+告警行无碍，对周期量阈值断言需固件侧保证单行或自报结论。
 
 ## 5. verify.py 扩展
 
@@ -101,7 +103,8 @@ XPASS 采用严格模式：功能落地而清单未翻转 = 清单与现实不�
    无 IO，四态判定 + 聚合全在里面；verify.py 调用它，release.py 经由 --json 间接消费，
    单测直接测它。
 2. **加载顺序**：`.workbench/expectations.json` > config.json `verify.expect` /
-   `expect_patterns`（legacy 回退，行为逐字节不变，blink 零影响）。
+   `expect_patterns`（legacy 回退；人读输出逐字节不变、blink 零影响；
+   `--json` 仅加法——顶层新增 `expect_mode` 键。2026-08-26 审计 L1 澄清）。
 3. **CLI 叠加断言**（`--require-tgl` 等）继续有效，在 results 中合成为保留 ID 行
    （前缀 `CLI-`，如 `CLI-REQUIRE-TGL`），保证 --json 消费者看到完整门禁证据。
 4. **新增旗标**：
@@ -145,9 +148,13 @@ python <toolkit>/scripts/release.py --tag vX.Y.Z [--project <dir>] [--dry-run] [
                  "elf": {"path": "...", "sha256": "..."}},
   "results": [{"id": "FR-ADC-01", "status": "pass"}],
   "xfail_waived": [],
-  "tools": {"gcc": "<version>", "verify": "<version>"}
+  "tools": {"toolkit": "<version>", "python": "<version>", "gcc": "<version>"}
 }
 ```
+
+门禁增强（2026-08-26 审计 M2）：G1 通过后若 state.json 取不到 hex 产物哈希，
+**立即中止**——clean rebuild 字节未入档等于证据链断裂，不允许静默落档。
+`tools` 字段以 toolkit/python/gcc 三键为准（与实现一致的有意偏离）。
 
 **tag 安全序列**（消除"记录已写、tag 失败"死区与 TOCTOU）：
 
