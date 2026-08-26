@@ -6,3 +6,17 @@
 - `data/` 通用知识库（stm32f103-ref.json / keil-error-db.json 跨工程共享）
 - `hooks/` 通用铁律检查（工程特定 hook 留在工程 .claude/hooks/）
 - `machine.json` 本机工具链绝对路径（唯一合法硬编码处）
+
+## 期望清单与发布门禁 (2026-08-26)
+
+- 工程存在 `.workbench/expectations.json` → verify 走清单四态判定
+  ([PASS]/[XFAIL]/[XPASS]/[FAIL]，XPASS 判红强制翻转)；不存在 → 回退
+  config.json `verify.expect*` legacy 行为，老工程零影响。
+- 规则：id 唯一必填；texts/patterns 二选一（数组内全命中）；xfail:true 必须
+  xfail_reason；可选 capture_group+min/max 数值断言。
+- 新旗标：`--rebuild`（clean 后重建，仅 gcc 后端）、`--gate-run`（门禁发起，
+  不落 feedback 库）。
+- 发布：`python scripts/release.py --tag vX.Y.Z [--dry-run] [--allow-xfail]`
+  — clean rebuild 全绿才打 annotated tag，记录落 `.workbench/releases/<tag>.json`。
+- `.workbench/` 版控策略：config.json / expectations.json / releases/ 入库；
+  build/ 与 state.json 忽略。
