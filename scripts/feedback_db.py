@@ -101,7 +101,8 @@ def save_calibration(data: dict) -> None:
 
 def make_event_id(pipeline: str, timestamp: str | None = None) -> str:
     """生成唯一事件 ID: bf_20260720_143000"""
-    prefix = {"build_fix": "bf", "hardfault": "hf", "code_gen": "cg"}.get(pipeline, "ev")
+    prefix = {"build_fix": "bf", "hardfault": "hf", "code_gen": "cg",
+              "verify": "vf", "fresh_check": "fc"}.get(pipeline, "ev")   # 审计 L3
     if timestamp is None:
         timestamp = now_iso()
     ts_clean = timestamp.replace(':', '').replace('-', '').replace('T', '_')
