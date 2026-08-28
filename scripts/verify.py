@@ -38,12 +38,12 @@ from wb_common import (TOOLKIT_ROOT, find_project_root, load_machine,
 
 OPENOCD_EXE = load_machine()["openocd_exe"]
 
-KEIL_BUILD = os.path.join(TOOLKIT_ROOT, "scripts", "keil_build.py")       # 阶段2: 已折入工具库
-GCC_BUILD = os.path.join(TOOLKIT_ROOT, "scripts", "gcc_build.py")         # 阶段2: GNU 工具链后端 (builder=gcc)
-KEIL_ANALYZE = os.path.join(TOOLKIT_ROOT, "scripts", "keil_analyze.py")
+GCC_BUILD = os.path.join(TOOLKIT_ROOT, "scripts", "gcc_build.py")         # 默认后端 (builder=gcc)
+# Keil 桥 (2026-08-28 退役入 legacy): builder 显式配 "keil" 时按需唤起, 见 scripts/legacy/keil/README.md
+KEIL_BUILD = os.path.join(TOOLKIT_ROOT, "scripts", "legacy", "keil", "keil_build.py")
+KEIL_ANALYZE = os.path.join(TOOLKIT_ROOT, "scripts", "legacy", "keil", "keil_analyze.py")
 OPENOCD_SEMIHOSTING = os.path.join(TOOLKIT_ROOT, "scripts", "openocd_semihosting.py")  # 阶段2: 已折入工具库
 FEEDBACK_DB = os.path.join(TOOLKIT_ROOT, "scripts", "feedback_db.py")
-ERROR_DB_GROW = os.path.join(TOOLKIT_ROOT, "scripts", "error_db_grow.py")
 
 # ---------------------------------------------------------------------------
 # RTT 采集后端 (capture.backend="rtt") — SEGGER RTT over OpenOCD rtt server
@@ -284,9 +284,9 @@ def run_cmd(cmd: list[str], timeout: int = 60) -> dict:
         return {"status": "error", "message": f"command timed out after {timeout}s"}
 
 
-def step_build(config: dict, builder: str = "keil",
+def step_build(config: dict, builder: str = "gcc",
                rebuild: bool = False) -> dict:
-    """步骤 1: 编译 (按 config.json builder 字段切换后端: keil | gcc)"""
+    """步骤 1: 编译 (按 config.json builder 字段切换后端: gcc | keil[legacy])"""
     if rebuild and builder != "gcc":
         # YAGNI: keil 后端不接 --rebuild (blink legacy 不用该旗标)
         return {"status": "error", "message": "--rebuild 仅支持 builder=gcc"}
@@ -311,7 +311,7 @@ def step_build(config: dict, builder: str = "keil",
     return run_py(KEIL_BUILD, args, timeout=120)
 
 
-def step_analyze(log_file: str, builder: str = "keil",
+def step_analyze(log_file: str, builder: str = "gcc",
                  build_metrics: dict | None = None) -> dict:
     """步骤 2: 编译日志诊断 (gcc 后端自带 metrics, 跳过 ARMCC 知识库分析)"""
     if builder == "gcc":
@@ -838,7 +838,7 @@ def main():
         sys.exit(1)
     WORKSPACE = os.path.abspath(WORKSPACE)
     config = load_config(WORKSPACE)
-    builder = config.get("builder", "keil")   # 阶段2: 构建后端切换 (keil | gcc)
+    builder = config.get("builder", "gcc")   # 构建后端 (gcc | keil[legacy], 2026-08-28 默认翻转为 gcc)
 
     # 工具库版本检查: 工程要求的最低版本
     cfg_min = config.get("toolkit_min_version")
