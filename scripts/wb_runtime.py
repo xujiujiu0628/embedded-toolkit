@@ -1,4 +1,9 @@
-"""keil skill 私有运行时工具。"""
+"""工作台共享运行时工具（原 keil_runtime.py，2026-08-28 Keil 退役时中性化更名）。
+
+供 gcc_build / legacy keil 桥等所有构建后端复用：状态引擎（state.json）、
+JSON 契约输出、工程/环境级配置读写。SKILL_NAME 仅作各函数的 skill 参数默认值，
+不代表本模块从属于 Keil。
+"""
 
 from __future__ import annotations
 
@@ -10,6 +15,8 @@ from datetime import datetime
 from pathlib import Path
 from shutil import which
 from typing import Any
+
+from wb_common import TOOLKIT_ROOT
 
 
 STATE_DIR_NAME = ".workbench"
@@ -24,58 +31,44 @@ def now_iso() -> str:
     return datetime.now().astimezone().isoformat(timespec="seconds")
 
 
-def default_config_path(script_file: str) -> Path:
-    # 阶段2: 脚本已折入工具库，环境级配置改读 TOOLKIT/config/<skill>.json
-    return Path(script_file).resolve().parents[1] / "config" / f"{SKILL_NAME}.json"
+def default_config_path(script_file: str | None = None, skill: str = SKILL_NAME) -> Path:
+    # 环境级配置统一锚定 TOOLKIT/config/<skill>.json（不再按脚本位置反推层级，
+    # 脚本移入任意子目录后路径依然正确；script_file 参数仅为旧调用方兼容，已不使用）
+    return Path(TOOLKIT_ROOT) / "config" / f"{skill}.json"
 
 
-def load_local_config(script_file: str | None = None) -> dict:
-    """加载 skill/config.json（环境级配置）
-    
-    路径：当前脚本所在 skill 目录下的 config.json
+def load_local_config(script_file: str | None = None, skill: str = SKILL_NAME) -> dict:
+    """加载 TOOLKIT/config/<skill>.json（环境级配置）
+
+    参数: skill - 配置段名（如 "keil"）；script_file 兼容旧调用位，已不使用。
     """
-    if script_file is None:
-        # 获取调用者的文件路径
-        import inspect
-        frame = inspect.currentframe()
-        if frame and frame.f_back:
-            script_file = frame.f_back.f_globals.get("__file__", "")
-        if not script_file:
-            return {}
-    config_path = default_config_path(script_file)
+    config_path = default_config_path(skill=skill)
     return load_json_file(config_path)
 
 
-def save_local_config(data: dict, script_file: str | None = None) -> Path | None:
-    """保存环境级配置到 skill/config.json"""
-    if script_file is None:
-        import inspect
-        frame = inspect.currentframe()
-        if frame and frame.f_back:
-            script_file = frame.f_back.f_globals.get("__file__", "")
-        if not script_file:
-            return None
-    config_path = default_config_path(script_file)
+def save_local_config(data: dict, script_file: str | None = None, skill: str = SKILL_NAME) -> Path | None:
+    """保存环境级配置到 TOOLKIT/config/<skill>.json"""
+    config_path = default_config_path(skill=skill)
     existing = load_json_file(config_path)
     existing.update(data)
     save_json_file(config_path, existing)
     return config_path
 
 
-def load_project_config(workspace: str | None = None) -> dict:
-    """从 workspace/.workbench/config.json 读取本 skill 的工程级配置
-    
-    参数: workspace - 工作区路径，None 时使用 cwd
+def load_project_config(workspace: str | None = None, skill: str = SKILL_NAME) -> dict:
+    """从 workspace/.workbench/config.json 读取指定 skill 段的工程级配置
+
+    参数: workspace - 工作区路径，None 时使用 cwd；skill - 顶层段名（如 "keil"/"gcc"）
     返回: 该 skill 对应的配置字典（如 config["keil"] 或 config["gcc"]）
     """
     ws = workspace_root(workspace)
     config_file = ws / STATE_DIR_NAME / PROJECT_CONFIG_FILE_NAME
     data = load_json_file(config_file)
-    return data.get(SKILL_NAME, {})
+    return data.get(skill, {})
 
 
-def save_project_config(workspace: str | None = None, values: dict | None = None) -> Path | None:
-    """写回工程级配置到 workspace/.workbench/config.json
+def save_project_config(workspace: str | None = None, values: dict | None = None, skill: str = SKILL_NAME) -> Path | None:
+    """写回工程级配置到 workspace/.workbench/config.json 的 <skill> 段
 
     - 只更新本 skill 的配置部分，不覆盖其他 skill 的配置
     - 目录不存在时自动创建 .workbench/
@@ -85,7 +78,7 @@ def save_project_config(workspace: str | None = None, values: dict | None = None
     ws = workspace_root(workspace)
     config_file = ws / STATE_DIR_NAME / PROJECT_CONFIG_FILE_NAME
     data = load_json_file(config_file)
-    data[SKILL_NAME] = {**(data.get(SKILL_NAME, {})), **values}
+    data[skill] = {**(data.get(skill, {})), **values}
     save_json_file(config_file, data)
     return config_file
 
