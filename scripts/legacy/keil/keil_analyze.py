@@ -20,7 +20,9 @@ import os
 from pathlib import Path
 from collections import defaultdict
 
-from wb_common import TOOLKIT_ROOT
+# legacy/keil/ → parents[2] = scripts/ (wb_common 所在)
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from wb_common import TOOLKIT_ROOT  # noqa: E402
 
 
 def load_error_db(db_path: str) -> dict:
