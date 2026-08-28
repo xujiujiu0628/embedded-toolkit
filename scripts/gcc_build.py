@@ -22,7 +22,7 @@ ROOT_DIR = Path(__file__).resolve().parents[1]  # embedded-toolkit/ (machine.jso
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
-from keil_runtime import (  # noqa: E402
+from wb_runtime import (  # noqa: E402
     hidden_subprocess_kwargs,
     load_json_file,
     load_project_config,
