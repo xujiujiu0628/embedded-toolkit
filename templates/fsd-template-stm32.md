@@ -1,7 +1,7 @@
 # STM32 功能规格书（FSD）模板 v1.0
 
 > 适配自 [SensorsIot/Embedded-AI-Harness](https://github.com/SensorsIot/Embedded-AI-Harness) 的 AICLP 方法论（MIT），
-> 面向本工作台（STM32F103 + Keil/ARMCC + HAL/CubeMX + verify.py 闭环 + semihosting 验证）。
+> 面向本工作台（STM32F103 + GCC(make) + HAL/CubeMX + verify.py 闭环 + RTT 采集验证）。
 >
 > **用法**：复制本文件到工程根目录 `docs/FSD.md`，按 0.1 复杂度缩放决定保留哪些章节，
 > 删掉所有 `<!-- 注释 -->` 和示例段落，逐章填充。需求写进**所属组件的章节**，不进全局 FR 节。
@@ -143,7 +143,7 @@ FSD(规格) = 设定点 | 固件 = 被控对象 | 测试 = 传感器 | 红 = 误
 ## 11. 日志与可观测性（semihosting printf / UART 日志 / 心跳）
 ## 12. 错误处理（三层错误码：模块错误 / 调用链 / 系统级）
 ## 13. 安全（威胁画像先行；STM32 常见：看门狗、临界区、错误处理不留未定义状态）
-## 14. 构建与工具链（Keil Target 配置、ARMCC V5 版本、IncludePath 约束）
+## 14. 构建与工具链（builder=gcc：arm-none-eabi-gcc 版本、Makefile/CubeMX 生成、IncludePath 约束）
 
 <!-- 用到的留，用不到的整章删除（可加注释说明省略原因），不要写 N/A -->
 
@@ -432,7 +432,7 @@ verification:
 
 ```
 契约(FSD) → 测试在 test-plan 声明 → 可执行测试(标 WILL_FAIL/xfail)
-  → 代码 → 构建(Keil) → 烧录(ST-Link) → 真机验证(verify.py)
+  → 代码 → 构建(GCC) → 烧录(ST-Link) → 真机验证(verify.py)
   → 记录结果+提交 → 绿
 ```
 
