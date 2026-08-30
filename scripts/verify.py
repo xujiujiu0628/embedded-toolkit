@@ -330,6 +330,11 @@ def step_analyze(log_file: str, builder: str = "gcc",
 
 def step_flash(hex_file: str) -> dict:
     """步骤 3: OpenOCD 烧录"""
+    if not hex_file:
+        # F-007: blink 退役后旧默认 obj/blink.hex 已移除; --no-build 无产物须明说
+        return {"status": "error",
+                "message": ("无可用 hex 产物 (--no-build 且 state.json 无 "
+                            "last_build.hex_file): 先完整构建一次")}
     if not os.path.exists(os.path.join(WORKSPACE, hex_file)):
         return {"status": "error", "message": f"hex file not found: {hex_file}"}
 
@@ -518,20 +523,6 @@ shutdown
             "Timing constraints violated — roll back to Drafter to adjust clock tree."
         )
     return out
-
-
-def extract_semihosting_text(capture_result: dict) -> str:
-    """从 openocd_semihosting.py 的返回结果中提取纯文本输出
-    openocd_semihosting.py 在 --json 模式下通过 emit_stream_record 输出
-    格式为 JSON 行: {"type":"stream","text":"LED ON\\r\\n",...}
-    """
-    # semihosting 脚本在成功时直接输出到 stdout，不通过 return result
-    # 我们需要重新考虑如何捕获...
-
-    # 实际上 openocd_semihosting.py 直接打印 JSON 行到 stdout
-    # 而不是返回单个 JSON 对象。run_py 只能解析单个 JSON 对象。
-    # 需要用不同方式调用。
-    return ""  # 占位，实际在 step_capture_semihosting 中重新实现
 
 
 class ExpectationError(ValueError):
@@ -951,6 +942,7 @@ def main():
     if not args.no_build:
         build_attempts = []
         build_ok = False
+        analyze = None   # F-008: build 循环内的分析结果, 循环后复用不再双跑
         for attempt in range(max_retries + 1):
             build = step_build(config, builder, rebuild=args.rebuild)
             build_info = {
@@ -999,8 +991,10 @@ def main():
         }
 
         # ---- Step 2: Analyze ----
-        analyze = (step_analyze(log_file, builder, build.get("metrics"))
-                   if log_file or builder == "gcc" else {"status": "error"})
+        # F-008: 复用 build 循环内已算出的 analyze (keil 后端曾双跑 keil_analyze);
+        # 循环正常 break 时 analyze 必已赋值, None 仅在异常组合下出现
+        if analyze is None:
+            analyze = {"status": "error"}
         result["steps"]["analyze"] = {
             "status": analyze.get("status", "error"),
             "errors": analyze.get("summary", {}).get("errors", 0),
@@ -1022,15 +1016,17 @@ def main():
                 "Use /review:build to run adversarial review before applying fixes."
             )
     else:
-        # 从 state.json 读取上次构建产物 (keil_build 写于工程 .workbench/state.json)
-        state_path = os.path.join(WORKSPACE, ".workbench", "state.json")
-        if os.path.exists(state_path):
-            with open(state_path, 'r', encoding='utf-8') as f:
-                state = json.load(f)
-            last = state.get("last_build", {})
-            hex_file = last.get("hex_file", "obj/blink.hex")
-        else:
-            hex_file = "obj/blink.hex"
+        # 从 state.json 读取上次构建产物 (gcc/keil 后端 build 时写入)
+        # F-007: 无产物走 step_flash 的明确报错, 不再回落 blink 退役残留路径
+        hex_file = ""
+        try:
+            state_path = os.path.join(WORKSPACE, ".workbench", "state.json")
+            if os.path.exists(state_path):
+                with open(state_path, 'r', encoding='utf-8') as f:
+                    state = json.load(f)
+                hex_file = state.get("last_build", {}).get("hex_file", "")
+        except (json.JSONDecodeError, UnicodeDecodeError, OSError):
+            hex_file = ""   # state.json 损坏不再裸 traceback, 走无产物报错
         result["steps"]["build"] = {"status": "skipped"}
         result["steps"]["analyze"] = {"status": "skipped"}
 
