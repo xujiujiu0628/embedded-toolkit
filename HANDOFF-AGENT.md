@@ -2,8 +2,9 @@
 
 > **本文读者**：被用户请来独立检查/改进本工作台的智能体（如 Z code）。你没参与过它的演进——
 > 本文是你的唯一上手材料，读完 §1-§5 即可开工。**主控（Claude Code）代管期不介入**，换回见 §6。
-> **上岗时间戳**：2026-08-30 14:48 +08:00（§6 越域核查以此为界）｜首现代管者：Z code｜分支：`handoff/zcode-20260830`
-> **状态**：首轮已于同日换回合入（merge 5c7515a，双验收通过）；F-003/F-005 待插板终判见日志。下次上岗时更新本行与时间戳。
+> **第二轮上岗时间戳**：____（主控发车前填；§6 越域核查以此为界）｜第二轮分支：`handoff/zcode-r2-<YYYYMMDD>`
+> **状态**：首轮（Z code，08-30，`handoff/zcode-20260830`）已全案闭环——双验收✅ + 插板终判四项真机全绿 +
+> F-015/016/017 主控当日补修 + A-02 对账完成（findings 末尾）。本文件现为**第二轮考卷**（§3 有专项题）。
 > 本文不含任何凭据；工作台不需要凭据。**不要去翻找密钥/token 类文件。**
 
 ## 1. 工作台是什么
@@ -24,8 +25,8 @@
 | `C:\Users\<用户名>\.claude\skills\` | 全局 skill：review-code / fresh-checker / feedback-log / review-hardfault | 只读（只进建议单） |
 | `<工作区根>\.claude\`、`<工作区根>\CLAUDE.md` | 工作区 hooks 与结构规则 | 只读（只进建议单） |
 
-本仓内部：`scripts/`（28 个脚本，入口 verify.py，默认 builder=gcc）、`tests/`（**47 测试**，
-python -m unittest）、`data/`（stm32f103-ref.json 55 外设 + 错误库）、`hooks/`（3 条 C 代码铁律检查）、
+本仓内部：`scripts/`（29 个脚本，入口 verify.py，默认 builder=gcc；首轮新增 handoff_guard/release_audit）、
+`tests/`（**106 测试**，python -m unittest）、`data/`（stm32f103-ref.json 55 外设 + 错误库）、`hooks/`（3 条 C 代码铁律检查）、
 `skills/fresh-checker/`（canonical 镜像，与全局那一份**双处须同步**）、`templates/`、`machine.json`、
 `docs/superpowers/{specs,plans}`（设计档案）。blink 工程已退役归档，勿按现役对待。
 
@@ -42,6 +43,8 @@ python -m unittest）、`data/`（stm32f103-ref.json 55 外设 + 错误库）、
 | 7 | Keil 退役、GCC 为默认唯一 AI 链路 | 1e34524、6405b39 | `scripts/legacy/keil/` 留门区勿动 |
 | 8 | **有意搁置**：UART 串口补发布门禁脆弱性 | 主控评估记录 2026-08-27 | 严重度中低+成本高=不立项，报"你怎么不修 UART"属已知取舍 |
 | 9 | **有意搁置**：CMSIS 四份 Drivers 瘦身 | 待用户拍板 | 51M/份死重是已知现状 |
+| 10 | 首轮遗留 F-015/F-016/F-017 **均已修** | 920e187(F-005 三层) / 1819e18(F-015/16/17) | duration_sec 已进 toggle 契约=90；勿报"仍未修" |
+| 11 | `.agents/skills` 已刷到 7-skill 终态（A-02 兑现） | f4b5d4f 对账记录（哈希+CreationTime 举证） | 勿凭 mtime 判"没发生"——copy2 保源时间戳；`.zcode` 根措辞对齐(A-03)属主控侧遗留，非本仓缺陷 |
 
 ## 3. 代管期任务（你的考卷）
 
@@ -59,6 +62,30 @@ python -m unittest）、`data/`（stm32f103-ref.json 55 外设 + 错误库）、
    toolkit `skills/fresh-checker/` 与全局那份是否漂移（本应同步）· 两工程 `.workbench/`
    契约格式兼容性 · hooks 铁律有无绕过路径
 
+**第二轮专项题（用户钦定 A/B/C/D 全包；通用四级仍要"查了+结论"，但完成度按专项题验收）**：
+
+- **A · 首轮你自己没做完的调查**：
+  A1 release G1 的 expectations 时序窗口——G0 clean 判定与 G1 重跑之间替换/改坏
+  expectations.json，能否骗过门禁或制造假绿？给出复现（脚本/测试）或证明不可达。
+  A2 gcc_build `state.json` 写入竞态——双进程并发 build 同一工程：update_state_entry
+  读-改-写是否丢更新/写坏 JSON？结论 + 若真实则修复（原子写/加锁，带回归）。
+- **B · 写回型工具专项（F-017 同族扫描）**：全仓找"默认参数路径会写回配置/状态"的点
+  （save_project_config / update_state_entry / error_db_grow / load_project_config 各默认
+  段名用法…），逐个核：默认参数被触发时会写坏什么？每个写回点补**默认路径回归测试**
+  （首轮教训：verify 总显式传参所以主干无恙，手工路径一测就中）。
+- **C · 测试覆盖率推进**：`python -m coverage`（如缺则 unittest 手工圈定）找出零覆盖模块
+  （serial_*/openocd_* 后端/gen_periph/rm_lookup/token_stats 等），纯 mock 补回归，
+  **不得触硬件**；每模块提交前说明它真实消费方是谁（防为死代码造测试）。
+- **D · 文档对齐 + 小工具**：
+  D1 README/HANDOFF/AGENTS 数字与现状对齐（106 基线、29 脚本、release_audit 入 §1 地图）
+  D2 toolkit VERSION 0.1→0.2 + CHANGELOG.md 从 git 历史生成（条目须能对到 commit，防吹）
+  D3 新工具 `scripts/expectations_lint.py`：提交前静态校验 expectations.json（id 唯一/
+  texts+patterns 并存/缺 xfail_reason/pattern 可编译性——对齐 9594dbb 加载器的运行期规则，
+  把"烧录后才炸"提前到"git add 前就能抓"）；带正反例测试。
+- **判据方法论（首轮三例教训，本轮巡检必须照此办事）**：内容导向——版式类判据拿真档冒烟
+  （F-005）；复制/镜像类操作用 CreationTime+哈希取证而非 mtime（A-02 对账）；写回类默认
+  路径必须有测试（F-017）。
+
 **交付三档**：
 - ① **分级发现报告**：本分支 `docs/handoff/<YYYY-MM-DD>-findings.md`。每条：编号 F-00N +
   严重度 + `文件:行号` + **复现法**（命令/输入 → 实际 vs 期望）+ 建议。
@@ -69,7 +96,8 @@ python -m unittest）、`data/`（stm32f103-ref.json 55 外设 + 错误库）、
 ## 4. 环境接入
 
 - 测试（你的自检与验收都靠它）：在本仓根目录跑
-  `python -m unittest discover -s tests` → **当前基线 47 绿**。
+  `python -m unittest discover -s tests` → **当前基线 106 绿**（47→89→97→106 为两轮
+  修复的正常增长，勿把"测试变多"当漂移发现）。
 - 编译验证（无害，产物不上板）：`python -m unittest` 之外，可用
   `python scripts/gcc_build.py` 相关路径见工程 `.workbench/config.json`（只读）。
 - 工具链绝对路径**唯一来源 = `machine.json`**（只读！arm-gcc/make/openocd 位置都在里面）。
@@ -90,7 +118,7 @@ prose 文件豁免。被 guard 误杀可在日志提异议，主控仲裁后进 
 
 ## 5. 交接规矩（开工前必读）
 
-1. 上岗第一步（onboarding 自检，贴给用户/留在日志）：跑 47 套件，确认绿。
+1. 上岗第一步（onboarding 自检，贴给用户/留在日志）：跑 106 套件，确认绿。
 2. 工作分支：**`handoff/<你的名字>-<YYYYMMDD>`**。若主控已预建并检出（看 `git branch --show-current`）
    就直接用，**不要再 `-b`**；没有则自行 `git checkout -b`。一切 commit 只落这里；
    master 不属于你。允许 push 分支到 origin（备份），禁止碰 origin/master。
