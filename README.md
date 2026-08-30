@@ -1,5 +1,7 @@
 # embedded-toolkit
 
+> **外部智能体代管请先读 [`HANDOFF-AGENT.md`](HANDOFF-AGENT.md)**（权限边界/巡检任务/换回协议）。
+
 嵌入式 AI 工作台全局工具库。固件工程通过 `.workbench/config.json` 被脚本发现（cwd 向上查找）。
 
 - `scripts/` 工具脚本（verify.py 闭环验证入口；默认构建后端 GCC）
