@@ -16,8 +16,9 @@
    材料，含权限边界、任务考卷、环境接入、红线。**没有凭据，也不需要凭据，不要翻找密钥。**
 2. onboarding 自检：在本目录跑 `python -m unittest discover -s tests`，应见 **47 tests OK**。
    把这条命令和输出贴进你的第一条回复——这是「仅凭文档能跑通」的证据。
-3. 建你的工作分支并开工：`git checkout -b handoff/zcode-20260830`。此后**一切 commit 只落这个
-   分支**（可 push 分支备份，禁碰 master）。
+3. 工作分支 `handoff/zcode-20260830` 已由用户在建会话时创建并检出（若你的终端里 `git branch
+   --show-current` 不是它，先 `git checkout handoff/zcode-20260830`，**不要**再 -b 新建）。
+   此后**一切 commit 只落这个分支**（可 push 分支备份，禁碰 master）。
 4. 按 HANDOFF §3 巡检清单开工：代码级→机制级→文档级→系统级；发现逐条写
    `docs/handoff/2026-08-30-findings.md`（每条带 文件:行号+复现法+严重度），Critical/High
    直接修（修复必带回归测试，commit 格式 `fix(handoff): F-00N …`），非可写域只出建议单。

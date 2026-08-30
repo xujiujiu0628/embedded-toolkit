@@ -90,7 +90,8 @@ prose 文件豁免。被 guard 误杀可在日志提异议，主控仲裁后进 
 ## 5. 交接规矩（开工前必读）
 
 1. 上岗第一步（onboarding 自检，贴给用户/留在日志）：跑 47 套件，确认绿。
-2. 建工作分支：**`git checkout -b handoff/<你的名字>-<YYYYMMDD>`**，一切 commit 只落这里；
+2. 工作分支：**`handoff/<你的名字>-<YYYYMMDD>`**。若主控已预建并检出（看 `git branch --show-current`）
+   就直接用，**不要再 `-b`**；没有则自行 `git checkout -b`。一切 commit 只落这里；
    master 不属于你。允许 push 分支到 origin（备份），禁止碰 origin/master。
 3. commit 纪律：每个发现（组）一个 commit，message 格式 `fix(handoff): F-003 一句话`；
    修复类 commit **必须同时改/加 `tests/` 用例**；文档类 `docs(handoff): …`、发现报告 `chore(handoff): …`。
