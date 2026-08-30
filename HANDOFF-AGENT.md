@@ -122,3 +122,24 @@ prose 文件豁免。被 guard 误杀可在日志提异议，主控仲裁后进 
 ## 代管日志
 
 （代管者在此追加，格式见 §5 第 5 条）
+
+### 2026-08-30（Day 1，Z code）
+
+- **做了什么**：onboarding 三步全过（47 tests OK、分支 `handoff/zcode-20260830` 确认）；
+  §3 四级巡检完成——代码级（核心门禁链 verify/gcc_build/release/feedback_db/wb_runtime/
+  hardfault 逐行，其余 20+ 脚本模式级批量扫描+抽查）、机制级（G0-G3 绕过面/gate-run 旁路面/
+  releases 伪造面/§2 清单对照）、文档级（README/AGENTS/HANDOFF 无漂移，blink 残留 3 处）、
+  系统级（三 skill 根比对+两工程契约核查，全部只读）。
+- **产出**：`docs/handoff/2026-08-30-findings.md`（F-001~F-013 + M-1~M-4 + D-1~D-2）、
+  `docs/handoff/2026-08-30-advice.md`（A-01~A-05）。
+- **修复**：F-001（Critical）feedback_db 首次落账死锁——工程根存在但 feedback 目录不存在时
+  误报"未找到工程根"exit 1，verify 侧静默吞掉 → button-toggle 现役工程建成以来反馈零落账。
+  修复+4 例回归（`tests/test_feedback_db.py`），套件 51/51 绿，commit 4866fb5。
+- **关键结论**：§2 勿重做清单 8 个证据 commit 全部在案，**与现状无矛盾**；G0-G3 与
+  gate-run/rebuild 无旁路；fresh-checker 双份与 .zcode/.claude 双 skill 目录均无漂移。
+  Medium 未修项（F-002 config 容错 / F-003 采集超时丢输出 / F-004 落账无痕 / F-005
+  hardfault map 失效）按 §3 纪律留主控拍板，F-003/F-005 已标注**待真机终判**。
+- **下一步**：Day 2 拟深查 release G1 的 expectations 时序窗口（G0 clean 与 G1 重跑之间
+  config/expectations 的语义一致性）、gcc_build state.json 写入竞态、gen_periph/svd_to_json
+  逐行补扫、serial_mux（514 行）未细读部分。
+- **卡点**：无。guard 自查 clean（0 blocked / 0 warnings）。
