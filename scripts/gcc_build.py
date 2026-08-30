@@ -85,6 +85,18 @@ def _parse_log_metrics(log_file: Path) -> dict:
     return {"errors": errors, "warnings": warnings}
 
 
+def resolve_workspace_mode(args_project, args_workspace,
+                           workspace: Path, project_dir: Path) -> Path:
+    """F-015: --project 显式而 --workspace 未显式时, workspace 跟随工程根。
+
+    否则构建日志与工程级 gcc 段配置写回落在 cwd——2026-08-30 主控在 toolkit 根
+    跑 --project <绝对路径> 实锤, 当场造出 .workbench/ 伪工程。--workspace 显式
+    给出则一切以它为准 (逃生舱语义)。"""
+    if args_project and not args_workspace:
+        return Path(project_dir)
+    return Path(workspace)
+
+
 def _collect_artifacts(project_dir: Path, makefile_vars: dict, target: str) -> dict:
     """收集构建产物 (与 keil_build._collect_target_artifacts 同构)。"""
     build_dir = makefile_vars.get("BUILD_DIR", "build")
@@ -139,7 +151,8 @@ def main() -> None:
     parser.add_argument("--project", default=None, help="Makefile 路径或工程目录")
     parser.add_argument("--target", default=None, help="make TARGET (可选, 默认读 Makefile)")
     parser.add_argument("--log-dir", default=None, help="日志输出目录")
-    parser.add_argument("--workspace", default=None, help="workspace 根目录, 默认当前目录")
+    parser.add_argument("--workspace", default=None,
+                        help="workspace 根目录 (显式给最优先; 给了 --project 则跟随工程根; 否则 cwd)")
     parser.add_argument("--json", action="store_true", dest="as_json")
     args = parser.parse_args()
 
@@ -149,13 +162,21 @@ def main() -> None:
     machine = load_machine()
 
     # project: CLI > 工程级配置 gcc 段 > 默认 gcc-pilot/Makefile
-    project_config = load_project_config(str(workspace))
-    gcc_cfg = project_config.get("gcc", {}) if isinstance(project_config, dict) else {}
+    # F-017: load_project_config 本身就返回指定段 (默认段名是 keil 遗留)——
+    # 旧写法先默认调用再 .get("gcc") 拿到恒空的 {} , 手工不带 --target 运行
+    # 即把工程 config 的 target 写回清空 (2026-08-30 在 button-toggle 实锤)。
+    gcc_cfg = load_project_config(str(workspace), skill="gcc")
     project = args.project or gcc_cfg.get("project") or "gcc-pilot/Makefile"
+
+    makefile, project_dir = _resolve_makefile(project, workspace)
+    # F-015: workspace 跟随显式 --project 后, 工程级配置需按新根重读
+    ws2 = resolve_workspace_mode(args.project, args.workspace, workspace, project_dir)
+    if ws2 != workspace:
+        workspace = ws2
+        gcc_cfg = load_project_config(str(workspace), skill="gcc")
     target = args.target or gcc_cfg.get("target") or ""
     log_dir = args.log_dir or gcc_cfg.get("log_dir") or ".workbench/build"
 
-    makefile, project_dir = _resolve_makefile(project, workspace)
     log_path = Path(log_dir).expanduser()
     if not log_path.is_absolute():
         log_path = workspace / log_path
