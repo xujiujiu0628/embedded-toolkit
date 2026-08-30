@@ -25,10 +25,13 @@ SCRIPT = os.path.join(os.path.dirname(os.path.dirname(
 
 
 def _run(args, cwd):
+    # 锁死子进程输出编码: 否则 stderr 随父终端 code page 漂移 (GBK 控制台下
+    # 中文断言变乱码假失败——换回当日 Git Bash 实锤, F-001 测试自身补编码纪律)
+    env = dict(os.environ, PYTHONIOENCODING="utf-8")
     return subprocess.run(
         [sys.executable, SCRIPT] + args,
         capture_output=True, text=True, encoding="utf-8", errors="replace",
-        timeout=30, cwd=cwd)
+        timeout=30, cwd=cwd, env=env)
 
 
 class FeedbackDbFirstLogTests(unittest.TestCase):

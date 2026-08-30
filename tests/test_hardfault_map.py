@@ -70,5 +70,32 @@ class DefaultMapPathTests(unittest.TestCase):
         self.assertEqual(map_path, custom)
 
 
+class MapDegradationNoteTests(unittest.TestCase):
+    """换回复核补丁 (主控): 符号表为空必须告警, 不得静默降级。"""
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
+
+    def test_empty_symbols_missing_file_warns(self):
+        ghost = os.path.join(self.tmp, "nope.map")
+        note = hardfault._map_degradation_note(ghost, [])
+        self.assertIsNotNone(note)
+        self.assertIn("文件不存在", note)
+        self.assertIn(ghost.replace("\\", "/"), note.replace("\\", "/"))
+
+    def test_empty_symbols_existing_file_warns(self):
+        p = os.path.join(self.tmp, "empty.map")
+        with open(p, "w", encoding="utf-8") as f:
+            f.write("Archive member\n")  # 存在但解析不出全局符号
+        note = hardfault._map_degradation_note(p, hardfault.parse_map_symbols(p))
+        self.assertIsNotNone(note)
+        self.assertIn("无全局符号", note)
+
+    def test_nonempty_symbols_no_note(self):
+        self.assertIsNone(hardfault._map_degradation_note("whatever.map",
+                                                          [{"name": "main"}]))
+
+
 if __name__ == "__main__":
     unittest.main()

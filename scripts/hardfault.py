@@ -226,6 +226,16 @@ def classify_fault(regs: dict) -> dict:
     }
 
 
+def _map_degradation_note(map_path: str, symbols: list) -> str | None:
+    """符号表为空时给出降级告警 (换回复核 F-005 遗留半项: 自动发现失败后
+    兜底路径仍可能指向不存在的 map, 静默降级不可接受)。无降级返回 None。"""
+    if symbols:
+        return None
+    why = "文件不存在" if not os.path.exists(map_path) else "无全局符号"
+    return ("符号表为空 (%s: %s) — 地址解析已降级, 诊断仅寄存器级可信 "
+            "(F-005)" % (map_path, why))
+
+
 def parse_map_symbols(map_path: str) -> list[dict]:
     """解析 .map 文件的全局符号表, 返回 [{name, addr, size, type}, ...]"""
     symbols = []
@@ -416,6 +426,9 @@ def main():
     # 4. 解析符号表
     map_path = args.map or _default_map_path()
     symbols = parse_map_symbols(map_path)
+    note = _map_degradation_note(map_path, symbols)
+    if note:
+        print("WARNING: " + note, file=sys.stderr)
 
     # 5. 分类 Fault 类型
     fault = classify_fault(regs)

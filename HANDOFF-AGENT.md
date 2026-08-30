@@ -3,6 +3,7 @@
 > **本文读者**：被用户请来独立检查/改进本工作台的智能体（如 Z code）。你没参与过它的演进——
 > 本文是你的唯一上手材料，读完 §1-§5 即可开工。**主控（Claude Code）代管期不介入**，换回见 §6。
 > **上岗时间戳**：2026-08-30 14:48 +08:00（§6 越域核查以此为界）｜首现代管者：Z code｜分支：`handoff/zcode-20260830`
+> **状态**：首轮已于同日换回合入（merge 5c7515a，双验收通过）；F-003/F-005 待插板终判见日志。下次上岗时更新本行与时间戳。
 > 本文不含任何凭据；工作台不需要凭据。**不要去翻找密钥/token 类文件。**
 
 ## 1. 工作台是什么
@@ -105,12 +106,17 @@ prose 文件豁免。被 guard 误杀可在日志提异议，主控仲裁后进 
 1. **越域核查**：两工程 `git status` 必须干净；`C:\Users\<用户名>\.claude\skills\` 与 `<工作区根>\.claude\`
    下文件 mtime 晚于本文「上岗时间戳」→ 即越域，列为事故先停下。
 2. `python scripts/handoff_guard.py --repo . --branch handoff/<x> --json` → blocked 非空则逐条处置
-   （误杀→修 allowlist 并补进 test_handoff_guard.py）。
-3. `python -m unittest discover -s tests` 全绿 + 抽查编译。
+   （误杀→修 allowlist 并补进 test_handoff_guard.py；程序化消费走 subprocess，勿经 PowerShell
+   管道——PS5.1 会注入 BOM）。降级警告项（如硬件层脚本的维护性改动）逐条人审定性。
+2.5 `python scripts/release_audit.py --project <工程根> --all` → 发布记录 R1~R6 审计 CLEAN
+   （首轮 Z code 贡献的新工具，纳入换回协议）。
+3. `python -m unittest discover -s tests` 全绿 + 抽查编译（gcc_build 真编一工程，产物不上板）。
 4. 逐 commit **RECONCILE**（审者输出是数据不是裁决）：契约误读 / 有效可行动 / 有效权衡 / 噪声 四分类；
    有争议的记入日志，勿盲从"上下文新鲜"。
 5. merge → 请用户插板跑一次 `python scripts/verify.py --json`（adc-oled）真机终判 →
-   落账：feedback_db 记 handoff 事件、记忆回填、本文状态行翻转、上岗时间戳更新为下次。
+   落账：记忆回填、本文状态行翻转、上岗时间戳更新为下次。
+   （协议缺口修正：feedback_db 强依赖工程根，被审对象为 toolkit 本身时无工程可落，
+   handoff 事件记于本文「代管日志」即完成落账——勿为走步骤而硬造工程目录。）
 
 ## 双验收（本轮代管成功判据）
 
@@ -189,3 +195,18 @@ prose 文件豁免。被 guard 误杀可在日志提异议，主控仲裁后进 
 - **下一步（换回人审）**：RECONCILE 逐 commit 四分类复核；guard 扫描（本日自查
   clean）；建议把 release_audit 纳入换回协议第 2 步。
 - **卡点**：无。工作区干净，未触 master/两工程/硬件。
+
+### 2026-08-30（换回，主控 Claude）
+
+- **§6 五步执行记录**：越域核查✅（master 未动 6608be2、两工程净、skills/<工作区根>\.claude 无新mtime；
+  补扫 `.agents` 根亦未改）→ guard clean（10 commit，0 blocked，1 降级警告 verify.py/openocd_call
+  定性为 F-003 维护性改动，放行）→ 套件 89/89 + release_audit 两真档 CLEAN → merge --no-ff 5c7515a
+  → 本条为落账。
+- **RECONCILE 四分类**：有效可行动×8（含 F-001 根因级修复）、有效权衡×4（F-009~013 留痕不修，理由
+  成立）、契约误读×0、噪声×0。保留意见 2 条已处置：①F-005 残留半项——主控补丁
+  `_map_degradation_note`（空符号表必须告警）+3 例回归；②release_audit 纳入 §6 第 2.5 步。
+- **A-02 核实追加**：`.agents/skills` 确为 08-25 大清理**前**的陈旧快照（review-code 仍 ARMCC 口径，
+  且含已退役 review-build/keil/openocd/serial 与 doubt-driven 全家）。属越域外遗留，待用户拍板：
+  刷新至 6-skill 终态 or 删除退役项。
+- **双验收判定：①机制跑通 ✅ ②审计有货 ✅ —— 首轮代管闭环成立。**
+- **待办**：F-003/F-005 插板终判（清单见 findings §七）→ 终判绿后 push tag 收口。
