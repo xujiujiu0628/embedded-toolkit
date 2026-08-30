@@ -155,7 +155,7 @@ def run_gates(ws, tag, allow_xfail, timeout, openocd_exe):
                                 "waived": waived}
 
 
-def build_record(ws, tag, results, waived):
+def build_record(ws, tag, results, waived, contracts=None):
     artifacts = {}
     state_p = os.path.join(ws, ".workbench", "state.json")
     arts = {}
@@ -180,6 +180,9 @@ def build_record(ws, tag, results, waived):
         "timestamp": datetime.now().astimezone().isoformat(timespec="seconds"),
         "build_mode": "clean_rebuild",
         "artifacts": artifacts,
+        # F-015: 判绿锚点 — results 由哪份 expectations/config 内容产生 (来自
+        # G1 verify 输出的 contract_hashes; 旧版 verify 无此键时落空字典, R7 警告)
+        "contracts": contracts or {},
         "results": results,
         "xfail_waived": waived,
         "tools": {"toolkit": toolkit_version(),
@@ -257,7 +260,9 @@ def main():
     if not ok:
         sys.exit(1)
 
-    record = build_record(ws, args.tag, ctx["results"], ctx["waived"])
+    record = build_record(
+        ws, args.tag, ctx["results"], ctx["waived"],
+        contracts=(ctx.get("verify_result") or {}).get("contract_hashes"))
     # 审计 M2: hex 哈希是"烧的字节→验的字节→入档字节"互锁的锚,
     # state.json 读不到 artifacts 时静默落档会让证据链无声断裂 → 强制中止
     if "hex" not in record["artifacts"]:

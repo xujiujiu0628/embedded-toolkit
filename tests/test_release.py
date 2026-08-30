@@ -113,3 +113,20 @@ class ReleaseGateTests(unittest.TestCase):
         self.assertFalse(release.finalize(self.ws, "v1.0.0", rec))
         self.assertFalse(os.path.exists(os.path.join(
             self.ws, ".workbench", "releases", "v1.0.0.json")))
+
+    def test_build_record_carries_contract_hashes(self):
+        # F-015: 判绿锚点 — G1 verify 的 contract_hashes 必须抄进发布记录
+        _, head, _ = release._git(["rev-parse", "HEAD"], self.ws)
+        rec = release.build_record(
+            self.ws, "v2.0.0", [{"id": "A", "status": "pass"}], [],
+            contracts={"expectations_sha256": "ab" * 32,
+                       "config_sha256": "cd" * 32})
+        self.assertEqual(rec["git_head"], head)
+        self.assertEqual(rec["build_mode"], "clean_rebuild")
+        self.assertEqual(rec["contracts"], {"expectations_sha256": "ab" * 32,
+                                            "config_sha256": "cd" * 32})
+
+    def test_build_record_without_contracts_stays_empty(self):
+        # 旧版 verify 无 contract_hashes 键 → 空字典, R7 走警告路径
+        rec = release.build_record(self.ws, "v2.0.0", [], [])
+        self.assertEqual(rec["contracts"], {})

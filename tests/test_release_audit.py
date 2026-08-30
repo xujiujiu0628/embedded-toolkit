@@ -38,6 +38,13 @@ class ReleaseAuditTests(unittest.TestCase):
         git("config", "user.email", "t@t")
         with open(os.path.join(self.ws, "f.txt"), "w") as f:
             f.write("x")
+        # R7 契约文件: 发布时工作树 clean → 契约内容 == git_head 处内容
+        self.exp_data = '{"expectations": [{"id": "FR-A", "desc": "boot", "texts": ["OK"]}]}'.encode()
+        self.cfg_data = b'{"builder": "gcc"}'
+        with open(os.path.join(self.ws, ".workbench", "expectations.json"), "wb") as f:
+            f.write(self.exp_data)
+        with open(os.path.join(self.ws, ".workbench", "config.json"), "wb") as f:
+            f.write(self.cfg_data)
         git("add", "-A")
         git("commit", "-qm", "init")
         self.git = git
@@ -51,7 +58,8 @@ class ReleaseAuditTests(unittest.TestCase):
     def tearDown(self):
         shutil.rmtree(self.ws, ignore_errors=True)
 
-    def _record(self, tag="v1.1.0", results=None, waived=None, git_head=None):
+    def _record(self, tag="v1.1.0", results=None, waived=None, git_head=None,
+                contracts=None):
         return {
             "tag": tag, "git_head": git_head if git_head is not None else self.head,
             "branch": "master", "timestamp": "2026-08-30T12:00:00+08:00",
@@ -60,6 +68,10 @@ class ReleaseAuditTests(unittest.TestCase):
             "results": results if results is not None else [{"id": "FR-A", "status": "pass"}],
             "xfail_waived": waived if waived is not None else [],
             "tools": {"toolkit": "0.1", "python": "3.x", "gcc": "gnu-13"},
+            "contracts": contracts if contracts is not None else {
+                "expectations_sha256": _sha(self.exp_data),
+                "config_sha256": _sha(self.cfg_data),
+            },
         }
 
     def _write(self, record, tag="v1.1.0", commit_record=True, make_tag=True):
@@ -78,7 +90,40 @@ class ReleaseAuditTests(unittest.TestCase):
         out = release_audit.audit_record(self.ws, "v1.1.0", rel)
         self.assertEqual(out["verdict"], "clean", out["checks"])
         self.assertEqual([c["id"] for c in out["checks"]],
-                         ["R1", "R2", "R3", "R4", "R5", "R6"])
+                         ["R1", "R2", "R3", "R4", "R5", "R6", "R7"])
+
+    def test_old_record_without_contracts_warns(self):
+        # F-015: R7 之前的旧记录 (如 adc-oled v1.1.0) 缺绑定 → 警告不阻断
+        rec = self._record()
+        del rec["contracts"]
+        rel = self._write(rec)
+        out = release_audit.audit_record(self.ws, "v1.1.0", rel)
+        self.assertEqual(out["verdict"], "warned")
+        r7 = [c for c in out["checks"] if c["id"] == "R7"][0]
+        self.assertEqual(r7["status"], "warn")
+
+    def test_tampered_contract_hash_fails(self):
+        # F-015 核心场景: 记录声称按 A 清单判绿, tag 处实际是 B 清单 → 现形
+        rec = self._record(contracts={
+            "expectations_sha256": "0" * 64,
+            "config_sha256": _sha(self.cfg_data)})
+        rel = self._write(rec)
+        out = release_audit.audit_record(self.ws, "v1.1.0", rel)
+        self.assertEqual(out["verdict"], "failed")
+        r7 = [c for c in out["checks"] if c["id"] == "R7"][0]
+        self.assertEqual(r7["status"], "fail")
+        self.assertIn("expectations", r7["detail"])
+
+    def test_moved_record_contract_mismatch_fails(self):
+        # 把别的 HEAD 产出的记录搬到新 tag 下 (git_head 一致但契约内容不同) → fail
+        self.git("commit", "-qm", "touch", "--allow-empty")
+        rec = self._record(contracts={
+            "expectations_sha256": _sha(b'{"expectations": [{"id": "OTHER"}]}'),
+            "config_sha256": _sha(self.cfg_data)})
+        rel = self._write(rec)
+        out = release_audit.audit_record(self.ws, "v1.1.0", rel)
+        r7 = [c for c in out["checks"] if c["id"] == "R7"][0]
+        self.assertEqual(r7["status"], "fail")
 
     def test_tampered_hex_fails(self):
         rel = self._write(self._record())
