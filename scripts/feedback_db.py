@@ -76,12 +76,35 @@ def now_iso() -> str:
     return datetime.now(tz).isoformat(timespec="seconds")
 
 
-def load_feedback_db() -> dict:
-    path = os.path.join(_feedback_dir(), "feedback_db.json")
+def _load_json_or_rebuild(path: str, empty: dict, what: str) -> dict:
+    """F-014: 校准库损坏曾裸 traceback → 全部后续落账崩死, verify 侧留痕但
+    校准数据从此断流。损坏文件移至 <path>.corrupt 保留现场, 从空库重建;
+    事件详情在 events/*.json 孤悬可手工恢复, 不丢数据。"""
     if not os.path.exists(path):
-        return {"total_events": 0, "by_pipeline": {"build_fix": 0, "hardfault": 0, "code_gen": 0}, "events": []}
-    with open(path, 'r', encoding='utf-8') as f:
-        return json.load(f)
+        return empty
+    try:
+        with open(path, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    except (json.JSONDecodeError, UnicodeDecodeError, OSError) as e:
+        bak = path + ".corrupt"
+        try:
+            os.replace(path, bak)
+            print(f"Warning: {what} 损坏, 原文件移至 {bak}, 从空库重建: {e}",
+                  file=sys.stderr)
+        except OSError:
+            print(f"Warning: {what} 损坏且备份失败 ({e}), 从空库重建",
+                  file=sys.stderr)
+        return empty
+
+
+def load_feedback_db() -> dict:
+    return _load_json_or_rebuild(
+        os.path.join(_feedback_dir(), "feedback_db.json"),
+        {"total_events": 0,
+         "by_pipeline": {"build_fix": 0, "hardfault": 0, "code_gen": 0,
+                         "verify": 0, "fresh_check": 0},   # F-014: 补全流水线计数键
+         "events": []},
+        "feedback_db.json")
 
 
 def save_feedback_db(data: dict) -> None:
@@ -90,11 +113,10 @@ def save_feedback_db(data: dict) -> None:
 
 
 def load_calibration() -> dict:
-    path = os.path.join(_feedback_dir(), "calibration.json")
-    if not os.path.exists(path):
-        return {"build_fix": {}, "hardfault": {}, "code_gen": {}}
-    with open(path, 'r', encoding='utf-8') as f:
-        return json.load(f)
+    return _load_json_or_rebuild(
+        os.path.join(_feedback_dir(), "calibration.json"),
+        {"build_fix": {}, "hardfault": {}, "code_gen": {}},
+        "calibration.json")
 
 
 def save_calibration(data: dict) -> None:
