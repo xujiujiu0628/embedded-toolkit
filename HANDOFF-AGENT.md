@@ -23,8 +23,9 @@
 | `C:\Users\<用户名>\.claude\skills\` | 全局 skill：review-code / fresh-checker / feedback-log / review-hardfault | 只读（只进建议单） |
 | `<工作区根>\.claude\`、`<工作区根>\CLAUDE.md` | 工作区 hooks 与结构规则 | 只读（只进建议单） |
 
-本仓内部：`scripts/`（28 个脚本，入口 verify.py，默认 builder=gcc）、`tests/`（**47 测试**，
-python -m unittest）、`data/`（stm32f103-ref.json 55 外设 + 错误库）、`hooks/`（3 条 C 代码铁律检查）、
+本仓内部：`scripts/`（30 个脚本，入口 verify.py，默认 builder=gcc）、`tests/`（unittest
+回归套件，例数以 `python -m unittest discover -s tests` 实际输出为准）、`data/`
+（stm32f103-ref.json 55 外设 + 错误库）、`hooks/`（3 条 C 代码铁律检查）、
 `skills/fresh-checker/`（canonical 镜像，与全局那一份**双处须同步**）、`templates/`、`machine.json`、
 `docs/superpowers/{specs,plans}`（设计档案）。blink 工程已退役归档，勿按现役对待。
 
@@ -41,6 +42,8 @@ python -m unittest）、`data/`（stm32f103-ref.json 55 外设 + 错误库）、
 | 7 | Keil 退役、GCC 为默认唯一 AI 链路 | 1e34524、6405b39 | `scripts/legacy/keil/` 留门区勿动 |
 | 8 | **有意搁置**：UART 串口补发布门禁脆弱性 | 主控评估记录 2026-08-27 | 严重度中低+成本高=不立项，报"你怎么不修 UART"属已知取舍 |
 | 9 | **有意搁置**：CMSIS 四份 Drivers 瘦身 | 待用户拍板 | 51M/份死重是已知现状 |
+| 10 | **首轮已修勿重报**：F-001 落账死锁 / F-002 config 容错 / F-003 超时诚实化 / F-004 落账留痕 / F-005 hardfault map 自动发现 | 4866fb5、1baeed2、11eb319 | R2 起 #10/#11 为防重报条目；同文件**新**缺陷仍欢迎 |
+| 11 | **首轮已修勿重报**：F-014 校准库损坏容错、F-006/007/008/012 Low 组、release_audit.py（M-3） | afc7265、fa5efb4、eb1e4c9 | R2 修的 F-015 契约哈希 / F-016/017 写回家族属本轮新机制，同样勿重报 |
 
 ## 3. 代管期任务（你的考卷）
 
@@ -68,7 +71,8 @@ python -m unittest）、`data/`（stm32f103-ref.json 55 外设 + 错误库）、
 ## 4. 环境接入
 
 - 测试（你的自检与验收都靠它）：在本仓根目录跑
-  `python -m unittest discover -s tests` → **当前基线 47 绿**。
+  `python -m unittest discover -s tests` → 全绿为过（例数以实际输出为准，
+  不在本写死以免过期）。
 - 编译验证（无害，产物不上板）：`python -m unittest` 之外，可用
   `python scripts/gcc_build.py` 相关路径见工程 `.workbench/config.json`（只读）。
 - 工具链绝对路径**唯一来源 = `machine.json`**（只读！arm-gcc/make/openocd 位置都在里面）。
@@ -189,3 +193,26 @@ prose 文件豁免。被 guard 误杀可在日志提异议，主控仲裁后进 
 - **下一步（换回人审）**：RECONCILE 逐 commit 四分类复核；guard 扫描（本日自查
   clean）；建议把 release_audit 纳入换回协议第 2 步。
 - **卡点**：无。工作区干净，未触 master/两工程/硬件。
+
+### 2026-08-30（R2，第二轮异构审查，收官）
+
+- **开局矛盾（最有价值的发现）**：简报与磁盘三处不一致——简报称 §2 已有 11 行
+  (#10/#11 防重报条目)而磁盘 9 行；§3 称有专项题 A/B/C/D 而磁盘无；onboarding
+  称应见 106 tests 而实际 89。另简报提及"F-017 一测就中的教训"但 F-015~F-017
+  全仓无引用——推断主控的 R2 文档更新未落盘。按 §5 第 6 条：以简报为准执行，
+  矛盾记档（findings-r2 §〇），缺失的 #10/#11 已在本轮 docs commit 补齐。
+- **做了什么**：A（G1 expectations 时序窗口→F-015 发布记录绑定契约哈希 R7，
+  34a96e5；state.json 竞态→F-016 非原子写+损坏隔离，d7f950c）→ B（写回型工具
+  全仓扫→F-017 "损坏→清空"家族：gcc_build config 写回/三份 runtime
+  save_project_config/session_fix_cache，损坏拒绝写回或 .corrupt 隔离，原子写
+  .tmp+os.replace，351e021）→ C（零覆盖补测 21 例，cc54e45）→ D（expectations_
+  lint.py E1~E9 + 两工程真档冒烟 CLEAN，10507bd；VERSION 0.2+CHANGELOG+文档
+  对齐+findings-r2+本日志，本轮 docs commit）。
+- **产出**：`docs/handoff/2026-08-30-findings-r2.md`（F-015/016/017 + 四级巡检
+  结论 + 开局矛盾记录）；5 commit；套件 **155/155 绿**（89 基线 + 66 新增）。
+- **关键结论**：G0~G3 常规时序窗口已由 clean-tree+finalize foreign 检查关闭，
+  残余对抗窗口由 R7 契约锚关闭；R7 前旧记录（两工程 v1.x）审计将 CLEAN→WARNED
+  属预期；fresh-checker 三份零漂移；无新增待真机终判项。
+- **下一步（换回人审）**：RECONCILE 本轮 5 commit；guard 扫描；建议换回协议
+  第 3 步加 expectations_lint 秒检。
+- **卡点**：无。工作区干净，未触 master/两工程/硬件/machine.json/hooks/。
