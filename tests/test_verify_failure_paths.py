@@ -175,5 +175,26 @@ class FeedbackLoggingTests(unittest.TestCase):
         self.assertIn("OSError", state["error"])
 
 
+class StepFlashNoArtifactTests(unittest.TestCase):
+    """F-007: --no-build 无产物时明确报错, 不再回落 blink 退役残留 obj/blink.hex"""
+
+    def setUp(self):
+        old = verify.WORKSPACE
+        verify.WORKSPACE = tempfile.mkdtemp()
+        self.addCleanup(setattr, verify, "WORKSPACE", old)
+        self.addCleanup(shutil.rmtree, verify.WORKSPACE, ignore_errors=True)
+
+    def test_empty_hex_rejected_with_clear_message(self):
+        r = verify.step_flash("")
+        self.assertEqual(r["status"], "error")
+        self.assertIn("hex", r["message"])
+        self.assertNotIn("blink", r["message"])
+
+    def test_nonexistent_hex_still_rejected(self):
+        r = verify.step_flash("no/such/file.hex")
+        self.assertEqual(r["status"], "error")
+        self.assertIn("no/such/file.hex", r["message"])
+
+
 if __name__ == "__main__":
     unittest.main()
