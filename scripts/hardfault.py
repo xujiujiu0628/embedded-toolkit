@@ -236,6 +236,24 @@ def _map_degradation_note(map_path: str, symbols: list) -> str | None:
             "(F-005)" % (map_path, why))
 
 
+_GCC_SYM_RE = re.compile(r"^\s+0x([0-9a-fA-F]{1,16})\s+([A-Za-z_][A-Za-z0-9_.]*)$")
+
+
+def _parse_gcc_map_symbols(lines: list[str]) -> list[dict]:
+    """解析 GNU ld map 的符号行: 缩进的 `0xADDR  name` 两列形态。
+
+    排除 `. = ALIGN(...)` 等伪行 (name 须以字母/下划线开头);
+    三列以上 (section/addr/size/obj) 行不匹配。type/size/object 字段
+    ld map 不提供, 置空保持 schema 兼容。"""
+    symbols = []
+    for line in lines:
+        m = _GCC_SYM_RE.match(line.rstrip())
+        if m:
+            symbols.append({"name": m.group(2), "addr": int(m.group(1), 16),
+                            "type": "", "size": 0, "object": ""})
+    return symbols
+
+
 def parse_map_symbols(map_path: str) -> list[dict]:
     """解析 .map 文件的全局符号表, 返回 [{name, addr, size, type}, ...]"""
     symbols = []
@@ -244,6 +262,13 @@ def parse_map_symbols(map_path: str) -> list[dict]:
 
     with open(map_path, 'r', encoding='utf-8', errors='replace') as f:
         lines = f.readlines()
+
+    # GCC ld map 无 "Global Symbols" 段 — 插板终判实测 (F-005 全貌 = 死路径+
+    # ARMCC-only 解析器): 检出 GCC 版式则走 ld 分支, ARMCC 路径行为不变。
+    if lines and not any("Global Symbols" in ln for ln in lines):
+        gcc = _parse_gcc_map_symbols(lines)
+        if gcc:
+            return gcc
 
     in_global = False
     for line in lines:
@@ -295,7 +320,13 @@ def resolve_address(addr: int, symbols: list[dict]) -> dict | None:
     if best:
         offset = addr - best["addr"]
         return {"name": best["name"], "offset": offset, "size": best["size"]}
-    return None
+    # F-005 第三层 (插板终判实测): GCC ld map 符号无 size → 区间匹配恒空。
+    # 兜底=最近前导符号 (最大 addr ≤ 目标); ARMCC 主路径语义不变。
+    cand = [s for s in symbols if s["addr"] <= addr]
+    if not cand:
+        return None
+    sym = max(cand, key=lambda s: s["addr"])
+    return {"name": sym["name"], "offset": addr - sym["addr"], "size": sym["size"]}
 
 
 def classify_address_range(addr: int) -> str:
@@ -380,11 +411,15 @@ def _default_map_path() -> str:
     调用时 cwd=工程根, 手工运行在工程目录内同样可发现。"""
     root = find_project_root(os.getcwd())
     if root:
-        lst = os.path.join(root, "lst")
-        if os.path.isdir(lst):
-            maps = sorted(glob.glob(os.path.join(lst, "*.map")))
-            if maps:
-                return maps[0]
+        # build/ 优先: GCC 工程 map 在 build/ (2026-08-30 插板终判实测 —
+        # 只找 lst/ 是 Keil 时代口径, 对 adc-oled 恒 miss 落回死兜底);
+        # lst/ 兼容 Keil-era 工程。
+        for sub in ("build", "lst"):
+            d = os.path.join(root, sub)
+            if os.path.isdir(d):
+                maps = sorted(glob.glob(os.path.join(d, "*.map")))
+                if maps:
+                    return maps[0]
     return os.path.join(WORKSPACE, "lst", "blink.map")
 
 
