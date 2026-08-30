@@ -143,3 +143,24 @@ prose 文件豁免。被 guard 误杀可在日志提异议，主控仲裁后进 
   config/expectations 的语义一致性）、gcc_build state.json 写入竞态、gen_periph/svd_to_json
   逐行补扫、serial_mux（514 行）未细读部分。
 - **卡点**：无。guard 自查 clean（0 blocked / 0 warnings）。
+
+### 2026-08-30（Day 2，Z code）
+
+- **做了什么**：用户认可"失败路径必须留痕"改进方向并背书后，把 Day 1 定为 Medium 留拍板的
+  四项按 §5 纪律（带回归测试）全部修复：
+  - **F-004** 落账留痕：verify.py 抽出 `_log_feedback_event`，落账成功/`--gate-run` 跳过/
+    失败三态全部写入 `result.feedback`（含 event_id / reason / error），消费方不再无法区分；
+    原 `except: pass` 吞掉 feedback_db exit 1 的路径消除。
+  - **F-002** config 容错：`load_config` 损坏 JSON/非 UTF-8 抛 `ConfigError`，main 友好退出，
+    与 M1 的 ExpectationError 同款模式。
+  - **F-003** 超时诚实化：行过滤抽为 `_filter_capture_lines`（正常/超时共用口径），
+    OpenOCD 卡死超时走 `_finish_capture_timeout`——回收部分输出进 result 与 last_failure.json，
+    顶层判 capture_failed，不再伪装"程序无输出"。**待真机终判**。
+  - **F-005** hardfault 默认 map 自动发现（cwd 向上找工程 lst/*.map），blink 残留路径只作
+    兜底。**待真机终判**。
+- **产出**：2 个 fix commit（1baeed2 / 11eb319）+ 23 例新回归；套件 **70/70 绿**；
+  findings.md 状态回填。
+- **下一步**：Day 3 拟做收尾：serial_mux/openocd_gdb 等剩余脚本补扫结论、F-006~F-013 Low 项
+  的 except 逐条"留痕或注释理由"审计表、findings/advice 终稿、日志收官。
+- **卡点**：无。test_verify_failure_paths 运行时 _output 会向 stdout 打印两段 JSON
+  （_finish_capture_timeout 的诚实输出路径），unittest 不受影响，属预期行为。
