@@ -727,6 +727,19 @@ def _filter_capture_lines(raw: str) -> list:
     return lines
 
 
+def resolve_capture_timeout(cli_timeout, capture_cfg: dict | None) -> int:
+    """F-016: 采集窗优先级 CLI --timeout > 契约 capture.duration_sec > 默认 10。
+
+    真人按键类期望 (如 FR-KEY-01) 10s 硬窗几乎必错过——2026-08-30 插板终判
+    三轮空采实锤; 窗口长度属工程契约, 应可写进 config.json 而非每次背 CLI。"""
+    if cli_timeout is not None:
+        return cli_timeout
+    d = (capture_cfg or {}).get("duration_sec")
+    if isinstance(d, int) and not isinstance(d, bool) and d > 0:
+        return d
+    return 10
+
+
 def _finish_capture_timeout(proc, result: dict, capture_timeout: int,
                             max_retries: int, as_json: bool):
     """F-003: OpenOCD 卡死超时 — 回收部分输出并诚实判 capture_failed。
@@ -867,7 +880,8 @@ def main():
   python verify.py --json | jq .verdict    # JSON 输出
         """
     )
-    parser.add_argument("--timeout", type=int, default=10, help="采集超时秒数 (默认 10)")
+    parser.add_argument("--timeout", type=int, default=None,
+                        help="采集超时秒数 (优先 config capture.duration_sec, 再默认 10)")
     parser.add_argument("--project", default=None, help="工程根目录 (默认从 cwd 向上发现)")
     parser.add_argument("--no-build", action="store_true", help="跳过编译步骤")
     parser.add_argument("--no-flash", action="store_true", help="跳过烧录步骤")
@@ -1072,7 +1086,10 @@ def main():
     # ---- Step 4: Capture (semihosting 默认 | capture.backend=rtt) ----
     # 共同原则: reset halt 确定性起点 (2026-08-16 教训), 行过滤后进 verify()
     capture_started = time.time()
-    capture_timeout = args.timeout
+    capture_timeout = resolve_capture_timeout(args.timeout, config.get("capture", {}))
+    # F-016: 预告窗口 (stderr, 不污染 --json 的 stdout); 人工输入期望需知何时按键
+    print("[capture] 采集窗 %ds 自烧录/复位起开启 — 含人工输入期望请全程按键"
+          % capture_timeout, file=sys.stderr)
     cap_backend = (config.get("capture", {}) or {}).get("backend", "semihosting")
     captured_lines = []
     captured_text = ""
@@ -1139,7 +1156,7 @@ def main():
         result["steps"]["capture"] = {
             "status": "ok",
             "method": "semihosting",
-            "timeout_sec": args.timeout,
+            "timeout_sec": capture_timeout,
             "lines": len(captured_lines),
             "duration_sec": round(capture_elapsed, 1),
             "raw_length": len(captured_text)

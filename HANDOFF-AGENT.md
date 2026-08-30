@@ -218,3 +218,12 @@ prose 文件豁免。被 guard 误杀可在日志提异议，主控仲裁后进 
   （F-005 实为三层洋葱，已于 920e187 全修+5 回归）→ release_audit 两真档 CLEAN。
 - FR-KEY-01 第四轮真按键通过（TGL 0001-0070）；前三轮败于 --timeout 10s 默认窗——
   编目 F-016。**首轮代管全案终判：通过。**
+
+### 2026-08-30（主控补录，F-015/016/017）
+
+- 不等第二轮：当日修 F-015（workspace 跟随 --project）+ F-016（采集窗进契约，
+  toggle duration_sec=90，stderr 预告窗口）；E2E 事故重放衍生发现并修复 **F-017**
+  （load_project_config 段语义双重错误——不传 --target 的手工 gcc_build 会写坏工程 config）。
+- 106/106 全绿；toggle 契约 diff 仅 duration_sec 一处（target 已复原）。
+- 教训：写回型配置工具的**默认参数路径**必须被测试覆盖——verify 一直显式传参所以
+  主干无恙，手工路径从没测过，一测就中。
