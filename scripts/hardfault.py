@@ -5,7 +5,7 @@ HardFault 自动诊断器 — 通过 OpenOCD 读取故障寄存器并解析为�
 用法:
     python hardfault.py                          # 自动诊断当前连接的设备
     python hardfault.py --json                   # JSON 输出
-    python hardfault.py --map lst/blink.map      # 指定 map 文件路径
+    python hardfault.py --map path/to/firmware.map  # 指定 map 文件路径
 
 工作原理:
     1. OpenOCD init → halt → 读取所有寄存器 + SCB 故障寄存器
@@ -15,6 +15,7 @@ HardFault 自动诊断器 — 通过 OpenOCD 读取故障寄存器并解析为�
 """
 
 import argparse
+import glob
 import json
 import os
 import re
@@ -24,7 +25,7 @@ import time
 from collections import namedtuple
 from datetime import datetime, timedelta, timezone
 
-from wb_common import load_machine
+from wb_common import find_project_root, load_machine
 
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -361,9 +362,26 @@ def diagnose(regs: dict, symbols: list[dict]) -> str:
     return "\n".join(parts)
 
 
+def _default_map_path() -> str:
+    """默认 .map: 从 cwd 向上发现工程根, 取 lst/ 下第一个 .map。
+
+    F-005: 旧默认 <toolkit 仓根>/lst/blink.map 是 blink 退役残留 —
+    路径恒不存在 → 符号解析恒空, 诊断静默降级无告警。verify.py 子进程
+    调用时 cwd=工程根, 手工运行在工程目录内同样可发现。"""
+    root = find_project_root(os.getcwd())
+    if root:
+        lst = os.path.join(root, "lst")
+        if os.path.isdir(lst):
+            maps = sorted(glob.glob(os.path.join(lst, "*.map")))
+            if maps:
+                return maps[0]
+    return os.path.join(WORKSPACE, "lst", "blink.map")
+
+
 def main():
     parser = argparse.ArgumentParser(description="HardFault 自动诊断器")
-    parser.add_argument("--map", default=None, help=".map 文件路径 (默认 lst/blink.map)")
+    parser.add_argument("--map", default=None,
+                        help=".map 文件路径 (默认: cwd 向上发现工程 lst/*.map, F-005)")
     parser.add_argument("--json", action="store_true", help="JSON 格式输出")
     parser.add_argument("--raw", action="store_true", help="输出 OpenOCD 原始输出")
     args = parser.parse_args()
@@ -396,7 +414,7 @@ def main():
         regs["_note"] = "Target may not be in HardFault — PC/MSP is zero"
 
     # 4. 解析符号表
-    map_path = args.map or os.path.join(WORKSPACE, "lst", "blink.map")
+    map_path = args.map or _default_map_path()
     symbols = parse_map_symbols(map_path)
 
     # 5. 分类 Fault 类型

@@ -15,6 +15,7 @@ import os
 import re
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 
@@ -247,5 +248,4 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    import time
-    main()
+    main()  # F-006: import time 已上移模块顶部 — 被未来调用方 import 时不再 NameError

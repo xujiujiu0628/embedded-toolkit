@@ -122,3 +122,70 @@ prose 文件豁免。被 guard 误杀可在日志提异议，主控仲裁后进 
 ## 代管日志
 
 （代管者在此追加，格式见 §5 第 5 条）
+
+### 2026-08-30（Day 1，Z code）
+
+- **做了什么**：onboarding 三步全过（47 tests OK、分支 `handoff/zcode-20260830` 确认）；
+  §3 四级巡检完成——代码级（核心门禁链 verify/gcc_build/release/feedback_db/wb_runtime/
+  hardfault 逐行，其余 20+ 脚本模式级批量扫描+抽查）、机制级（G0-G3 绕过面/gate-run 旁路面/
+  releases 伪造面/§2 清单对照）、文档级（README/AGENTS/HANDOFF 无漂移，blink 残留 3 处）、
+  系统级（三 skill 根比对+两工程契约核查，全部只读）。
+- **产出**：`docs/handoff/2026-08-30-findings.md`（F-001~F-013 + M-1~M-4 + D-1~D-2）、
+  `docs/handoff/2026-08-30-advice.md`（A-01~A-05）。
+- **修复**：F-001（Critical）feedback_db 首次落账死锁——工程根存在但 feedback 目录不存在时
+  误报"未找到工程根"exit 1，verify 侧静默吞掉 → button-toggle 现役工程建成以来反馈零落账。
+  修复+4 例回归（`tests/test_feedback_db.py`），套件 51/51 绿，commit 4866fb5。
+- **关键结论**：§2 勿重做清单 8 个证据 commit 全部在案，**与现状无矛盾**；G0-G3 与
+  gate-run/rebuild 无旁路；fresh-checker 双份与 .zcode/.claude 双 skill 目录均无漂移。
+  Medium 未修项（F-002 config 容错 / F-003 采集超时丢输出 / F-004 落账无痕 / F-005
+  hardfault map 失效）按 §3 纪律留主控拍板，F-003/F-005 已标注**待真机终判**。
+- **下一步**：Day 2 拟深查 release G1 的 expectations 时序窗口（G0 clean 与 G1 重跑之间
+  config/expectations 的语义一致性）、gcc_build state.json 写入竞态、gen_periph/svd_to_json
+  逐行补扫、serial_mux（514 行）未细读部分。
+- **卡点**：无。guard 自查 clean（0 blocked / 0 warnings）。
+
+### 2026-08-30（Day 2，Z code）
+
+- **做了什么**：用户认可"失败路径必须留痕"改进方向并背书后，把 Day 1 定为 Medium 留拍板的
+  四项按 §5 纪律（带回归测试）全部修复：
+  - **F-004** 落账留痕：verify.py 抽出 `_log_feedback_event`，落账成功/`--gate-run` 跳过/
+    失败三态全部写入 `result.feedback`（含 event_id / reason / error），消费方不再无法区分；
+    原 `except: pass` 吞掉 feedback_db exit 1 的路径消除。
+  - **F-002** config 容错：`load_config` 损坏 JSON/非 UTF-8 抛 `ConfigError`，main 友好退出，
+    与 M1 的 ExpectationError 同款模式。
+  - **F-003** 超时诚实化：行过滤抽为 `_filter_capture_lines`（正常/超时共用口径），
+    OpenOCD 卡死超时走 `_finish_capture_timeout`——回收部分输出进 result 与 last_failure.json，
+    顶层判 capture_failed，不再伪装"程序无输出"。**待真机终判**。
+  - **F-005** hardfault 默认 map 自动发现（cwd 向上找工程 lst/*.map），blink 残留路径只作
+    兜底。**待真机终判**。
+- **产出**：2 个 fix commit（1baeed2 / 11eb319）+ 23 例新回归；套件 **70/70 绿**；
+  findings.md 状态回填。
+- **下一步**：Day 3 拟做收尾：serial_mux/openocd_gdb 等剩余脚本补扫结论、F-006~F-013 Low 项
+  的 except 逐条"留痕或注释理由"审计表、findings/advice 终稿、日志收官。
+- **卡点**：无。test_verify_failure_paths 运行时 _output 会向 stdout 打印两段 JSON
+  （_finish_capture_timeout 的诚实输出路径），unittest 不受影响，属预期行为。
+
+### 2026-08-30（Day 3，Z code，收官）
+
+- **做了什么**：用户授权后完成 Day 3 计划 + 第二层第 1 条：
+  - **F-014（新编目，Day 1 复盘漏项）**：feedback_db 校准库损坏裸崩全部落账 →
+    修复为"损坏移 .corrupt 保留现场 + 空库重建"（afc7265，4 例回归）；两步写语义
+    （事件先落盘、索引后更）以测试固化为可恢复设计；补全空库模板缺 verify/fresh_check
+    计数键。
+  - **Low 组处置**：F-006/007/008/012 修（fa5efb4，4 例回归），F-009/010/011/013
+    记录不修——逐条理由已写入 findings 处置表。
+  - **六脚本补扫**（约 3800 行）：深度模式扫描+人工抽查，无新发现；serial_mux 宽
+    except 均带正确副作用非吞错（findings §七有结论）。
+  - **release_audit.py（新工具，M-3 处置）**：发布记录事后审计 R1~R6（tag↔HEAD、
+    hex 重算哈希、results 自洽、结构完整、入库检查），只读不触硬件（eb1e4c9，
+    11 例篡改场景回归）；真实冒烟 adc-oled v1.1.0 → **CLEAN**。
+  - **插板验证清单**：findings §七给出换回后 5 步终判步骤（覆盖 F-001/004/003/005
+    的"待真机终判"项）。
+- **产出**：Day 3 共 3 个 commit（afc7265 / fa5efb4 / eb1e4c9）+ findings 终稿 §七；
+  套件 **89/89 绿**（47 基线 + 42 新增回归）。
+- **三天总账**：发现 F-001~F-014（1 Critical + 5 Medium 修复 + 4 Low 修复 + 4 记录
+  有据不修）+ 新工具 1 个 + 机制/文档/系统级结论与建议单；修复类 commit 全部带回归
+  测试；F-003/F-005 标待真机终判并给出插板步骤。
+- **下一步（换回人审）**：RECONCILE 逐 commit 四分类复核；guard 扫描（本日自查
+  clean）；建议把 release_audit 纳入换回协议第 2 步。
+- **卡点**：无。工作区干净，未触 master/两工程/硬件。
