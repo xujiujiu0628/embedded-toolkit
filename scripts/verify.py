@@ -235,12 +235,17 @@ def now_iso() -> str:
 
 
 def load_config(project_root: str) -> dict:
-    """加载工程级配置 (.workbench/config.json, 兜底 .embeddedskills)"""
+    """加载工程级配置 (.workbench/config.json, 兜底 .embeddedskills)
+
+    JSON 损坏/非 UTF-8 抛 ConfigError (main() 捕获后友好退出, F-002)"""
     for marker in (".workbench/config.json", ".embeddedskills/config.json"):
         config_path = os.path.join(project_root, marker)
         if os.path.isfile(config_path):
-            with open(config_path, encoding="utf-8") as f:
-                return json.load(f)
+            try:
+                with open(config_path, encoding="utf-8") as f:
+                    return json.load(f)
+            except (json.JSONDecodeError, UnicodeDecodeError) as e:
+                raise ConfigError(f"{config_path} 不可解析: {e}") from e
     raise FileNotFoundError("工程内未找到 .workbench/config.json")
 
 
@@ -533,6 +538,11 @@ class ExpectationError(ValueError):
     """期望清单非法 (id 重复 / 缺 xfail_reason / texts+patterns 并存等)"""
 
 
+class ConfigError(ValueError):
+    """工程配置非法 (.workbench/config.json JSON 损坏 / 非 UTF-8)。
+    与 M1 的 ExpectationError 同款前置拦截: 损坏文件报友好错误而非裸 traceback"""
+
+
 def load_expectations(workspace):
     """加载 .workbench/expectations.json (spec 2026-08-26 §3)。
 
@@ -700,6 +710,61 @@ def verify(output: str, expect: list[str], description: str = "", expect_pattern
     }
 
 
+_LOG_PREFIX_RE = re.compile(r'^(Info|Warn|Error|Debug)\s*:', re.IGNORECASE)
+_CAPTURE_STATUS_KW = ["Listening on port", "halted due to", "shutdown command",
+                      "GDB", "accepting", "dropped", "semihosting is enabled",
+                      "target state:", "DEPRECATED",
+                      "Licensed under GNU", "For bug reports",
+                      "xPSR:", "http://", "Info :", "Warn :", "xPack"]
+
+
+def _filter_capture_lines(raw: str) -> list:
+    """从 OpenOCD stdout+stderr 提取 semihosting 正文行。
+
+    OpenOCD 的 log 行以 "Info:/Warn:/Error:/Debug:" 开头, semihosting 输出是
+    裸文本行; 正常结束与超时收尸两条路径必须共用同一套过滤口径 (F-003)。"""
+    lines = []
+    for line in raw.splitlines():
+        stripped = line.strip()
+        if not stripped:
+            continue
+        if _LOG_PREFIX_RE.match(stripped):
+            continue
+        if any(kw in stripped for kw in _CAPTURE_STATUS_KW):
+            continue
+        lines.append(stripped)
+    return lines
+
+
+def _finish_capture_timeout(proc, result: dict, capture_timeout: int,
+                            max_retries: int, as_json: bool):
+    """F-003: OpenOCD 卡死超时 — 回收部分输出并诚实判 capture_failed。
+
+    旧行为丢弃已收输出并按 capture ok(lines=0) 入账, 把"采集工具超时"
+    伪装成"程序无输出"归因。正常路径 OpenOCD 必然经 sleep+halt+shutdown
+    退出, 超时只发生在工具自身卡死 — 输出不可信但部分留证仍有价值。
+    待真机终判: 修复前后需各跑一次真机确认归因链。"""
+    proc.kill()
+    try:
+        stdout, stderr = proc.communicate(timeout=5)
+    except Exception:
+        stdout, stderr = "", ""
+    partial = _filter_capture_lines((stdout or "") + (stderr or ""))
+    result["steps"]["capture"] = {
+        "status": "error", "method": "semihosting",
+        "timeout_sec": capture_timeout,
+        "lines": len(partial),
+        "partial_output": _sanitize_text("\n".join(partial))[:2000],
+        "error": (f"OpenOCD 未在 {capture_timeout + 30}s 内退出 — 采集超时"
+                  "是工具故障, 非'程序无输出' (F-003)"),
+    }
+    result["status"] = "capture_failed"
+    result["error"] = "capture 超时: OpenOCD 卡死, 部分输出已存失败现场"
+    _save_failure_context(result, max_retries, capture_text="\n".join(partial))
+    _output(result, as_json)
+    sys.exit(1)
+
+
 def _save_failure_context(result: dict, max_retries: int, capture_text: str = ""):
     """Save structured failure context for Agent analysis.
 
@@ -837,7 +902,11 @@ def main():
               file=sys.stderr)
         sys.exit(1)
     WORKSPACE = os.path.abspath(WORKSPACE)
-    config = load_config(WORKSPACE)
+    try:
+        config = load_config(WORKSPACE)
+    except ConfigError as e:
+        print(f"错误: 工程配置非法: {e}", file=sys.stderr)
+        sys.exit(1)
     builder = config.get("builder", "gcc")   # 构建后端 (gcc | keil[legacy], 2026-08-28 默认翻转为 gcc)
 
     # 工具库版本检查: 工程要求的最低版本
@@ -1053,33 +1122,11 @@ def main():
                 cwd=WORKSPACE
             )
             stdout, stderr = proc.communicate(timeout=capture_timeout + 30)
-
-            # 从 stdout+stderr 中提取 semihosting 文本行
-            # OpenOCD 的 log 行以 "Info:", "Warn:", "Error:", "Debug:" 开头
-            # semihosting 输出是裸文本行
-            import re as _re
-            _log_prefix = _re.compile(r'^(Info|Warn|Error|Debug)\s*:', _re.IGNORECASE)
-            _status_kw = ["Listening on port", "halted due to", "shutdown command",
-                           "GDB", "accepting", "dropped", "semihosting is enabled",
-                           "target state:", "DEPRECATED",
-                           "Licensed under GNU", "For bug reports",
-                           "xPSR:", "http://", "Info :", "Warn :", "xPack"]
-
-            captured_lines = []
-            for line in (stdout + stderr).splitlines():
-                stripped = line.strip()
-                if not stripped:
-                    continue
-                if _log_prefix.match(stripped):
-                    continue
-                if any(kw in stripped for kw in _status_kw):
-                    continue
-                captured_lines.append(stripped)
+            captured_lines = _filter_capture_lines(stdout + stderr)
 
         except subprocess.TimeoutExpired:
-            proc.kill()
-            stdout, stderr = proc.communicate()
-            captured_lines = []
+            _finish_capture_timeout(proc, result, capture_timeout,
+                                    max_retries, args.json)
         except Exception as e:
             result["steps"]["capture"] = {
                 "status": "error", "method": "semihosting", "error": str(e)
@@ -1237,30 +1284,53 @@ def main():
     if result["status"] in ("fail", "timing_fail"):
         _save_failure_context(result, max_retries, capture_text=captured_text)
 
-    # 注入点 ③: 自动记录反馈事件（异步，失败不影响主流程）。
+    # 注入点 ③: 自动记录反馈事件（异步，失败不影响主流程结论，但必须留痕 — F-004）。
     # --gate-run 跳过: 门禁重跑/豁免运行不得污染校准统计 (spec 2026-08-26 §5)
-    if not getattr(args, "gate_run", False):
-        try:
-            feedback_event = {
-                "pipeline": "hardfault" if has_hardfault else "build_fix",
-                "error_code": result.get("steps", {}).get("analyze", {}).get("errors", None),
-                "fault_type": result.get("steps", {}).get("hardfault", {}).get("fault_type"),
-                "build_result": _build_result_str(result),
-                "verify_result": "pass" if result["status"] == "ok" else "fail",
-                "outcome": "fixed" if result["status"] == "ok" else "still_broken",
-            }
-            if has_hardfault:
-                feedback_event["outcome"] = "still_broken"
-            subprocess.run(
-                [sys.executable, FEEDBACK_DB, "--log", json.dumps(feedback_event)],
-                capture_output=True, timeout=10, cwd=WORKSPACE
-            )
-        except Exception:
-            pass  # 反馈记录失败不影响主流程
+    result["feedback"] = _log_feedback_event(
+        result, getattr(args, "gate_run", False))
 
     _output(result, args.json)
     # 退出码契约: ok=0, 其余(fail/timing_fail/hardfault 等)=1
     sys.exit(0 if result.get("status") == "ok" else 1)
+
+
+def _log_feedback_event(result: dict, gate_run: bool) -> dict:
+    """注入点 ③: 反馈落账 — 失败不影响主流程结论, 但必须留痕 (F-004)。
+
+    落账跳过/失败曾是无痕审计盲区: button-toggle 工程 feedback 目录缺失,
+    校准数据静默断流数周无人知 (F-001 的放大器)。返回的 feedback 状态字典
+    随主流程 JSON 出档, 消费方可据此区分 落账成功/门禁跳过/落账失败。"""
+    state = {"logged": False}
+    if gate_run:
+        state["skipped"] = True
+        state["reason"] = "gate_run 不落校准库 (spec 2026-08-26 §5)"
+        return state
+    has_hardfault = result.get("status") == "hardfault"
+    verify_ok = result.get("status") == "ok"
+    event = {
+        "pipeline": "hardfault" if has_hardfault else "build_fix",
+        "error_code": result.get("steps", {}).get("analyze", {}).get("errors", None),
+        "fault_type": result.get("steps", {}).get("hardfault", {}).get("fault_type"),
+        "build_result": _build_result_str(result),
+        "verify_result": "pass" if verify_ok else "fail",
+        "outcome": "fixed" if verify_ok and not has_hardfault else "still_broken",
+    }
+    try:
+        proc = subprocess.run(
+            [sys.executable, FEEDBACK_DB, "--log", json.dumps(event)],
+            capture_output=True, text=True, encoding="utf-8", errors="replace",
+            timeout=10, cwd=WORKSPACE)
+        if proc.returncode == 0:
+            state["logged"] = True
+            try:
+                state["event_id"] = json.loads(proc.stdout).get("event_id", "")
+            except json.JSONDecodeError:
+                pass
+        else:
+            state["error"] = ((proc.stderr or "") + (proc.stdout or "")).strip()[-200:]
+    except Exception as e:
+        state["error"] = f"{type(e).__name__}: {e}"
+    return state
 
 
 def _build_result_str(result: dict) -> str:
