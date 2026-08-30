@@ -52,12 +52,16 @@ def now_iso() -> str:
 
 
 def load_event(event_id: str) -> dict | None:
-    """加载事件详情 JSON"""
+    """加载事件详情 JSON (损坏 → None + 留痕, 门控按 not_found 走)"""
     event_path = os.path.join(_feedback_dir(), "events", f"{event_id}.json")
     if not os.path.exists(event_path):
         return None
-    with open(event_path, 'r', encoding='utf-8') as f:
-        return json.load(f)
+    try:
+        with open(event_path, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    except (json.JSONDecodeError, UnicodeDecodeError, OSError) as e:
+        print(f"Warning: 事件文件不可解析 {event_path}: {e}", file=sys.stderr)
+        return None
 
 
 def check_gates(event_id: str) -> dict:
@@ -143,14 +147,28 @@ def generalization_score(unmatched_entry: dict, diagnosis: dict) -> tuple:
 
 
 def _cache_entry(event_id: str, new_entry: dict, score: float, hits: list) -> dict:
-    """泛化率不足 → 写入会话级缓存（per-project），等待人工 Reviewer 确认后晋升"""
+    """泛化率不足 → 写入会话级缓存（per-project），等待人工 Reviewer 确认后晋升
+
+    F-017: 缓存损坏 → 隔离到 .corrupt 保留现场后重建 (待人审条目孤悬可手工
+    恢复); 旧实现"损坏当空读入→覆写"会把待审条目无声清空。"""
     cache_path = _session_cache_path()
     cache = {"_meta": {}, "entries": []}
     if os.path.exists(cache_path):
         try:
             with open(cache_path, 'r', encoding='utf-8') as f:
-                cache = json.load(f)
-        except (json.JSONDecodeError, OSError):
+                loaded = json.load(f)
+            if not isinstance(loaded, dict) or not isinstance(loaded.get("entries", []), list):
+                raise ValueError("顶层须为含 entries 数组的对象")
+            cache = loaded
+        except (json.JSONDecodeError, UnicodeDecodeError, OSError, ValueError) as e:
+            corrupt = cache_path + ".corrupt"
+            try:
+                os.replace(cache_path, corrupt)
+                print(f"Warning: session_fix_cache.json 损坏, 原文件移至 "
+                      f"{corrupt}: {e}", file=sys.stderr)
+            except OSError:
+                print(f"Warning: session_fix_cache.json 损坏且隔离失败: {e}",
+                      file=sys.stderr)
             cache = {"_meta": {}, "entries": []}
 
     entry = dict(new_entry)
@@ -256,8 +274,17 @@ def grow(event_id: str, unmatched_entry: dict, diagnosis: dict) -> dict:
     if not os.path.exists(ERROR_DB_PATH):
         return {"status": "error", "message": f"keil-error-db.json not found at {ERROR_DB_PATH}"}
 
-    with open(ERROR_DB_PATH, 'r', encoding='utf-8') as f:
-        db = json.load(f)
+    # F-017: 知识库损坏 → 明确报错拒绝写入 (旧实现裸 traceback; 任何
+    # "当空读入继续写"的容错都会把整库清空, 这里数据安全优先)
+    try:
+        with open(ERROR_DB_PATH, 'r', encoding='utf-8') as f:
+            db = json.load(f)
+    except (json.JSONDecodeError, UnicodeDecodeError) as e:
+        return {"status": "error",
+                "message": f"keil-error-db.json 不可解析, 拒绝写入以免清空知识库: {e}"}
+    if not isinstance(db, dict):
+        return {"status": "error",
+                "message": "keil-error-db.json 顶层须为 JSON 对象, 拒绝写入"}
 
     # 检查不重复
     existing_codes = {e.get("code", "") for e in db.get("errors", [])}
