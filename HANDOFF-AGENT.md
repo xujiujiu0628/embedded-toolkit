@@ -210,3 +210,11 @@ prose 文件豁免。被 guard 误杀可在日志提异议，主控仲裁后进 
   刷新至 6-skill 终态 or 删除退役项。
 - **双验收判定：①机制跑通 ✅ ②审计有货 ✅ —— 首轮代管闭环成立。**
 - **待办**：F-003/F-005 插板终判（清单见 findings §七）→ 终判绿后 push tag 收口。
+
+### 2026-08-30（插板终判，主控 Claude）
+
+- §7 清单全过：adc-oled verify 全绿+feedback.logged(17:35) → toggle .workbench/feedback
+  **历史首建**、四次事件累计 → hardfault 真机 symbols_total 126、PC→HAL_GetTick+2
+  （F-005 实为三层洋葱，已于 920e187 全修+5 回归）→ release_audit 两真档 CLEAN。
+- FR-KEY-01 第四轮真按键通过（TGL 0001-0070）；前三轮败于 --timeout 10s 默认窗——
+  编目 F-016。**首轮代管全案终判：通过。**
