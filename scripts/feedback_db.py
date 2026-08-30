@@ -24,7 +24,10 @@ from wb_common import find_project_root
 
 def _project_feedback_dir():
     """工程 feedback 数据目录: 从 cwd 向上找工程根, 在
-    .workbench/feedback 或 .embeddedskills/feedback 中取存在的那个。"""
+    .workbench/feedback 或 .embeddedskills/feedback 中取存在的那个。
+    两者都尚不存在 (新工程/首次落账) 时返回首选 .workbench/feedback,
+    由 log_event 的 makedirs 创建; 仅"未找到工程根"才返回 None —
+    否则首次落账必然 exit 1 且被 verify 静默吞掉 (F-001)。"""
     root = find_project_root(os.getcwd())
     if not root:
         return None
@@ -32,7 +35,7 @@ def _project_feedback_dir():
         p = os.path.join(root, d)
         if os.path.isdir(p):
             return p
-    return None
+    return os.path.join(root, ".workbench", "feedback")
 
 
 def _feedback_dir() -> str:
