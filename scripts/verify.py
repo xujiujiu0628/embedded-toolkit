@@ -19,6 +19,7 @@
 """
 
 import argparse
+import hashlib
 import json
 import math
 import os
@@ -534,6 +535,33 @@ class ConfigError(ValueError):
     与 M1 的 ExpectationError 同款前置拦截: 损坏文件报友好错误而非裸 traceback"""
 
 
+def _sha256_file(path: str) -> str:
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(65536), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def contract_hashes(workspace: str, has_manifest: bool) -> dict:
+    """F-015: 判绿所依据契约的字节级哈希 — 发布记录的"判绿锚点"。
+
+    M2 给 hex 上哈希锚定了"烧的字节", 这里锚定"拿什么判的绿": results 由
+    expectations.json + config.json 的具体内容产生, 记录不绑定其哈希则
+    无法事后审计 results 与哪个版本的契约对应。config 取与 load_config
+    同序的第一个在场 marker; expectations 仅 manifest 模式存在。"""
+    out = {}
+    for marker in (".workbench/config.json", ".embeddedskills/config.json"):
+        p = os.path.join(workspace, marker)
+        if os.path.isfile(p):
+            out["config_sha256"] = _sha256_file(p)
+            break
+    if has_manifest:
+        out["expectations_sha256"] = _sha256_file(
+            os.path.join(workspace, ".workbench", "expectations.json"))
+    return out
+
+
 def load_expectations(workspace):
     """加载 .workbench/expectations.json (spec 2026-08-26 §3)。
 
@@ -932,6 +960,7 @@ def main():
         "workspace": WORKSPACE,
         "toolkit_version": toolkit_version(),
         "expect_mode": expect_mode,
+        "contract_hashes": contract_hashes(WORKSPACE, expect_mode == "manifest"),
         "expect": expect,
         "description": description,
         "retry_config": {"max_retries": max_retries, "retry_delay": retry_delay},
