@@ -12,6 +12,8 @@ annotated tag 都是本地 git 操作, 无签名 — 事后可被手工篡改而
   R5  记录结构完整性 (tag/git_head/timestamp/build_mode/artifacts/results/
       xfail_waived/tools 必填, tag 字段与文件名一致)
   R6  记录文件已被 git 提交入库 (未提交 = 警告级)
+  R7  契约哈希锚点 (F-015): 记录 contracts 的 expectations/config sha256
+      与 git show git_head: 重算一致 (不匹配 = fail; 旧记录缺绑定 = 警告)
 
 用法:
   python scripts/release_audit.py --project <工程根> --tag v1.1.0
@@ -37,6 +39,12 @@ def _git(args_, cwd):
     r = subprocess.run(["git"] + args_, capture_output=True, text=True,
                        encoding="utf-8", errors="replace", timeout=30, cwd=cwd)
     return r.returncode, (r.stdout or "").strip(), (r.stderr or "").strip()
+
+
+def _git_bytes(args_, cwd):
+    """git 命令字节输出 (R7 用: 哈希必须对原始字节算, 不经文本解码往返)"""
+    r = subprocess.run(["git"] + args_, capture_output=True, timeout=30, cwd=cwd)
+    return r.returncode, (r.stdout or b""), (r.stderr or b"").decode("utf-8", "replace")
 
 
 def sha256_file(path):
@@ -136,6 +144,40 @@ def audit_record(ws, tag, rel_path):
         _check(checks, "R6", "warn", "发布记录未被 git 跟踪 (发布后未提交)")
     else:
         _check(checks, "R6", "pass", "记录已入库")
+
+    # R7 契约哈希锚点 (F-015, 2026-08-30 R2): results 由哪份 expectations/config
+    # 产生 — G0 保证发布时工作树 clean, 故记录里的哈希必须等于 git_head 处的
+    # 文件内容; 不等 = 判绿依据与 tag 指向的代码错位 (篡改/搬移记录即现形)。
+    contracts = record.get("contracts")
+    if not isinstance(contracts, dict) or not contracts:
+        _check(checks, "R7", "warn", "记录缺契约哈希绑定 (R7 之前的旧版 release.py 产物)")
+    elif not record.get("git_head"):
+        _check(checks, "R7", "warn", "记录无 git_head, 契约哈希无从比对")
+    else:
+        r7_bad = []
+        r7_ok = 0
+        for key, rel in (("expectations_sha256", ".workbench/expectations.json"),
+                         ("config_sha256", ".workbench/config.json")):
+            want = contracts.get(key)
+            if not want:
+                continue   # legacy 模式无清单 / 缺该键 → 子项跳过
+            rc, blob, gerr = _git_bytes(["show", f"{record['git_head']}:{rel}"], ws)
+            if rc != 0:
+                _check(checks, "R7", "warn",
+                       f"{rel} 在 git_head 不可得: {gerr.strip()[:120]}")
+                continue
+            actual = hashlib.sha256(blob).hexdigest()
+            if actual != want:
+                r7_bad.append(f"{rel} 记录={want[:12]}.. 实际={actual[:12]}..")
+            else:
+                r7_ok += 1
+        if r7_bad:
+            _check(checks, "R7", "fail",
+                   "判绿依据与 git_head 内容错位: " + "; ".join(r7_bad))
+        elif r7_ok:
+            _check(checks, "R7", "pass", f"{r7_ok} 项契约哈希与 git_head 一致")
+        else:
+            _check(checks, "R7", "warn", "记录契约哈希均为空 (legacy 无清单?)")
 
     if any(c["status"] == "fail" for c in checks):
         verdict = "failed"

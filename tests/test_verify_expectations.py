@@ -19,6 +19,49 @@ def _write_manifest(ws, expectations):
                   ensure_ascii=False)
 
 
+class ContractHashTests(unittest.TestCase):
+    """F-015: contract_hashes — 判绿所依据契约的字节级哈希"""
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def _write_bytes(self, rel: str, data: bytes):
+        p = os.path.join(self.tmp, rel)
+        os.makedirs(os.path.dirname(p), exist_ok=True)
+        with open(p, "wb") as f:
+            f.write(data)
+
+    def test_manifest_mode_hashes_both(self):
+        self._write_bytes(".workbench/config.json", b'{"builder": "gcc"}')
+        self._write_bytes(".workbench/expectations.json", b'{"expectations": []}')
+        h = verify.contract_hashes(self.tmp, has_manifest=True)
+        import hashlib
+        self.assertEqual(h["config_sha256"],
+                         hashlib.sha256(b'{"builder": "gcc"}').hexdigest())
+        self.assertEqual(h["expectations_sha256"],
+                         hashlib.sha256(b'{"expectations": []}').hexdigest())
+
+    def test_legacy_mode_omits_expectations(self):
+        self._write_bytes(".workbench/config.json", b"{}")
+        h = verify.contract_hashes(self.tmp, has_manifest=False)
+        self.assertIn("config_sha256", h)
+        self.assertNotIn("expectations_sha256", h)
+
+    def test_empty_workspace_gives_empty(self):
+        self.assertEqual(verify.contract_hashes(self.tmp, has_manifest=False), {})
+
+    def test_hash_is_byte_sensitive(self):
+        # 内容哪怕只差一个换行, 哈希必须不同 (字节级锚点的意义)
+        self._write_bytes(".workbench/config.json", b'{"a": 1}')
+        h1 = verify.contract_hashes(self.tmp, has_manifest=False)["config_sha256"]
+        self._write_bytes(".workbench/config.json", b'{"a": 1}\n')
+        h2 = verify.contract_hashes(self.tmp, has_manifest=False)["config_sha256"]
+        self.assertNotEqual(h1, h2)
+
+
 class LoadExpectationsTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.mkdtemp()
