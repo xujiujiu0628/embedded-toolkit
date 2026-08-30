@@ -164,3 +164,28 @@ prose 文件豁免。被 guard 误杀可在日志提异议，主控仲裁后进 
   的 except 逐条"留痕或注释理由"审计表、findings/advice 终稿、日志收官。
 - **卡点**：无。test_verify_failure_paths 运行时 _output 会向 stdout 打印两段 JSON
   （_finish_capture_timeout 的诚实输出路径），unittest 不受影响，属预期行为。
+
+### 2026-08-30（Day 3，Z code，收官）
+
+- **做了什么**：用户授权后完成 Day 3 计划 + 第二层第 1 条：
+  - **F-014（新编目，Day 1 复盘漏项）**：feedback_db 校准库损坏裸崩全部落账 →
+    修复为"损坏移 .corrupt 保留现场 + 空库重建"（afc7265，4 例回归）；两步写语义
+    （事件先落盘、索引后更）以测试固化为可恢复设计；补全空库模板缺 verify/fresh_check
+    计数键。
+  - **Low 组处置**：F-006/007/008/012 修（fa5efb4，4 例回归），F-009/010/011/013
+    记录不修——逐条理由已写入 findings 处置表。
+  - **六脚本补扫**（约 3800 行）：深度模式扫描+人工抽查，无新发现；serial_mux 宽
+    except 均带正确副作用非吞错（findings §七有结论）。
+  - **release_audit.py（新工具，M-3 处置）**：发布记录事后审计 R1~R6（tag↔HEAD、
+    hex 重算哈希、results 自洽、结构完整、入库检查），只读不触硬件（eb1e4c9，
+    11 例篡改场景回归）；真实冒烟 adc-oled v1.1.0 → **CLEAN**。
+  - **插板验证清单**：findings §七给出换回后 5 步终判步骤（覆盖 F-001/004/003/005
+    的"待真机终判"项）。
+- **产出**：Day 3 共 3 个 commit（afc7265 / fa5efb4 / eb1e4c9）+ findings 终稿 §七；
+  套件 **89/89 绿**（47 基线 + 42 新增回归）。
+- **三天总账**：发现 F-001~F-014（1 Critical + 5 Medium 修复 + 4 Low 修复 + 4 记录
+  有据不修）+ 新工具 1 个 + 机制/文档/系统级结论与建议单；修复类 commit 全部带回归
+  测试；F-003/F-005 标待真机终判并给出插板步骤。
+- **下一步（换回人审）**：RECONCILE 逐 commit 四分类复核；guard 扫描（本日自查
+  clean）；建议把 release_audit 纳入换回协议第 2 步。
+- **卡点**：无。工作区干净，未触 master/两工程/硬件。
