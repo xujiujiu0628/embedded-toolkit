@@ -3,6 +3,24 @@
 格式约定: 每条含发现编号（代管期 findings 编目）与证据 commit。当前版本以
 `VERSION` 文件为准（`wb_common.toolkit_version()` 读取）。
 
+## 0.3 — 2026-08-31（开源门面，master）
+
+- **machine.json 出库+回退链**: 新克隆无 machine.json 时 `load_machine` 回退
+  入库模板 `machine.example.json` 并一次性警告（测试/离线工具直接可跑；占位
+  路径被真机用到以自解释 FileNotFoundError 报错，F-011 显式原则）；gcc_build
+  局部副本改委托单一实现；machine.json 转本机维护不再入库（1605e92、4e953c4、
+  6c32584）。
+- **个人路径中性化**: 历史文档 11 处 `C:\Users\<用户名>` 形态清洗为
+  `%USERPROFILE%`/`<用户名>` 写法；不重写 git 历史（约 30 个 git show 证据链
+  与 v0.2 tag 指向依赖现有 commit 图，理由见 commit body）（399657b）。
+- **提示去硬编码**: verify 失败现场 agent_hint 随 TOOLKIT_ROOT 推导、gen_periph
+  生成物注释改仓相对命令，含 4 例回归与源码静态守卫（23d288f）。
+- **门面套**: LICENSE(MIT) / requirements.txt(仅串口族 pyserial) /
+  GitHub Actions CI(ubuntu × py3.10/3.12，刻意不建 machine.json=陌生人路径
+  金丝雀) / CONTRIBUTING + ISSUE_TEMPLATE / README 全文重写。
+- Python 下限如实定 **3.10**（verify/hardfault/feedback_db 等使用 PEP 604
+  联合类型且无 future import）。套件随门面工作增长，例数以实跑为准。
+
 ## 0.2 — 2026-08-30（代管 R2，分支 handoff/zcode-r2-20260830）
 
 - **F-018**（原报告编号 F-015，换回对账重排，见

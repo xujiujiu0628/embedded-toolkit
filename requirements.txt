@@ -1,0 +1,5 @@
+# 核心闭环链（verify / gcc_build / release / release_audit / expectations_lint /
+# handoff_guard / feedback_db / rm_lookup / gen_periph / hardfault）与测试套
+# 零第三方依赖——本文件仅串口工具族需要：
+#   scripts/serial_runtime.py / serial_scan.py / serial_mux.py
+pyserial>=3.5
