@@ -24,7 +24,7 @@
 | `<工作区根>\embedded-toolkit`（本仓） | 引擎房：脚本/门禁/测试/知识库 | **唯一可写域** |
 | `<工作区根>\stm32f103-adc-oled` | 现役工程，v1.1.0 | 只读（只进建议单） |
 | `<工作区根>\stm32f103-button-toggle` | 现役工程，v1.0.0 | 只读（只进建议单） |
-| `C:\Users\<用户名>\.claude\skills\` | 全局 skill：review-code / fresh-checker / feedback-log / review-hardfault | 只读（只进建议单） |
+| `%USERPROFILE%\.claude\skills\` | 全局 skill：review-code / fresh-checker / feedback-log / review-hardfault | 只读（只进建议单） |
 | `<工作区根>\.claude\`、`<工作区根>\CLAUDE.md` | 工作区 hooks 与结构规则 | 只读（只进建议单） |
 
 本仓内部：`scripts/`（工具脚本集，入口 verify.py，默认 builder=gcc；handoff_guard / release_audit /
@@ -143,7 +143,7 @@ prose 文件豁免。被 guard 误杀可在日志提异议，主控仲裁后进 
 
 ## 6. 换回协议（给主控 Claude，用户说"换回来"时执行）
 
-1. **越域核查**：两工程 `git status` 必须干净；`C:\Users\<用户名>\.claude\skills\` 与 `<工作区根>\.claude\`
+1. **越域核查**：两工程 `git status` 必须干净；`%USERPROFILE%\.claude\skills\` 与 `<工作区根>\.claude\`
    下文件 mtime 晚于本文「上岗时间戳」→ 即越域，列为事故先停下。
 2. `python scripts/handoff_guard.py --repo . --branch handoff/<x> --json` → blocked 非空则逐条处置
    （误杀→修 allowlist 并补进 test_handoff_guard.py；程序化消费走 subprocess，勿经 PowerShell
