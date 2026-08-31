@@ -1,0 +1,7 @@
+{
+  "_help": "复制本文件为 machine.json 并把占位值改为本机绝对路径（machine.json 是本机文件，不入库）。四个键必须保留（消费方按下标取键）。uv4_exe 仅供 scripts/legacy/keil/ 退役桥使用，GCC 主链可留空字符串。缺失 machine.json 时工具库会回退到本模板并警告——测试与离线工具可跑，真机构建/烧录会因占位路径明确报错。",
+  "uv4_exe": "<Keil UV4.exe 绝对路径（仅 legacy 桥，可空串）>",
+  "openocd_exe": "<openocd.exe 绝对路径，如 xPack OpenOCD 的 bin 目录下>",
+  "gcc_path": "<arm-none-eabi-gcc 所在 bin 目录>",
+  "make_exe": "<make.exe 绝对路径（Windows 可用 MSYS2 的 usr/bin/make.exe）>"
+}
