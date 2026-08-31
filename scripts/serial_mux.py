@@ -16,6 +16,7 @@ from pathlib import Path
 from serial_runtime import (
     get_serial_config,
     load_workspace_state,
+    load_workspace_state_for_update,
     save_workspace_state,
     save_project_config,
     is_missing,
@@ -211,8 +212,8 @@ def start_mux(port: str, baudrate: int | None, workspace: str | None, vserial_li
             error={"code": "socat_missing", "message": "请安装 socat: apt install socat / pacman -S socat"},
         )
 
-    # 检查已运行的 mux
-    state = load_workspace_state(workspace)
+    # 检查已运行的 mux (F-019: 后续可能清理保存, 用隔离加载防"损坏→覆写")
+    state = load_workspace_state_for_update(workspace)
     existing = state.get(STATE_KEY)
     if existing:
         if is_mux_alive(existing):
@@ -353,7 +354,7 @@ def start_mux(port: str, baudrate: int | None, workspace: str | None, vserial_li
 
 def stop_mux(workspace: str | None = None):
     """停止串口多路复用"""
-    state = load_workspace_state(workspace)
+    state = load_workspace_state_for_update(workspace)
     mux_info = state.get(STATE_KEY)
 
     if not mux_info:
@@ -420,7 +421,7 @@ def is_mux_alive(mux_info: dict) -> bool:
 
 def status_mux(workspace: str | None = None):
     """查询 mux 状态"""
-    state = load_workspace_state(workspace)
+    state = load_workspace_state_for_update(workspace)
     mux_info = state.get(STATE_KEY)
 
     if not mux_info:
