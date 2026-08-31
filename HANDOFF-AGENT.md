@@ -2,9 +2,11 @@
 
 > **本文读者**：被用户请来独立检查/改进本工作台的智能体（如 Z code）。你没参与过它的演进——
 > 本文是你的唯一上手材料，读完 §1-§5 即可开工。**主控（Claude Code）代管期不介入**，换回见 §6。
-> **第二轮上岗时间戳**：2026-08-30 18:57 +08:00（§6 越域核查以此为界）｜第二轮分支：`handoff/zcode-r2-20260830`（基线 master 2bd0c17）
-> **状态**：首轮（Z code，08-30，`handoff/zcode-20260830`）已全案闭环——双验收✅ + 插板终判四项真机全绿 +
-> F-015/016/017 主控当日补修 + A-02 对账完成（findings 末尾）。本文件现为**第二轮考卷**（§3 有专项题）。
+> **第二轮上岗时间戳**：2026-08-30 18:57 +08:00（§6 越域核查以此为界）｜第二轮分支：`handoff/zcode-r2-20260830`
+> **状态**：首轮（Z code）已全案闭环（双验收✅ + 插板终判四项真机全绿）；第二轮（Z code R2）当日闭环，
+> **2026-08-31 主控换回对账完成**——fresh-check 无上下文外审判"通过但有保留"（C0/H1/M1/L2），High-1
+> （R2 分支起点偏移）已处置：编号重排 F-018/019/020、§2 清单合并、遗留登记 F-021~F-024，全案见
+> `docs/handoff/2026-08-31-r2-reconcile-notes.md`。本文件现为第三轮基线稿（上岗时间戳待开启）。
 > 本文不含任何凭据；工作台不需要凭据。**不要去翻找密钥/token 类文件。**
 
 ## 1. 工作台是什么
@@ -25,8 +27,10 @@
 | `C:\Users\<用户名>\.claude\skills\` | 全局 skill：review-code / fresh-checker / feedback-log / review-hardfault | 只读（只进建议单） |
 | `<工作区根>\.claude\`、`<工作区根>\CLAUDE.md` | 工作区 hooks 与结构规则 | 只读（只进建议单） |
 
-本仓内部：`scripts/`（29 个脚本，入口 verify.py，默认 builder=gcc；首轮新增 handoff_guard/release_audit）、
-`tests/`（**106 测试**，python -m unittest）、`data/`（stm32f103-ref.json 55 外设 + 错误库）、`hooks/`（3 条 C 代码铁律检查）、
+本仓内部：`scripts/`（工具脚本集，入口 verify.py，默认 builder=gcc；handoff_guard / release_audit /
+expectations_lint 为近两轮新增）、`tests/`（unittest 回归套件，**例数以
+`python -m unittest discover -s tests` 实际输出为准**，不在本文写死以免过期）、`data/`
+（stm32f103-ref.json 55 外设 + 错误库）、`hooks/`（3 条 C 代码铁律检查）、
 `skills/fresh-checker/`（canonical 镜像，与全局那一份**双处须同步**）、`templates/`、`machine.json`、
 `docs/superpowers/{specs,plans}`（设计档案）。blink 工程已退役归档，勿按现役对待。
 
@@ -43,8 +47,10 @@
 | 7 | Keil 退役、GCC 为默认唯一 AI 链路 | 1e34524、6405b39 | `scripts/legacy/keil/` 留门区勿动 |
 | 8 | **有意搁置**：UART 串口补发布门禁脆弱性 | 主控评估记录 2026-08-27 | 严重度中低+成本高=不立项，报"你怎么不修 UART"属已知取舍 |
 | 9 | **有意搁置**：CMSIS 四份 Drivers 瘦身 | 待用户拍板 | 51M/份死重是已知现状 |
-| 10 | 首轮遗留 F-015/F-016/F-017 **均已修** | 920e187(F-005 三层) / 1819e18(F-015/16/17) | duration_sec 已进 toggle 契约=90；勿报"仍未修" |
+| 10 | 首轮遗留 F-015/F-016/F-017 **均已修**（workspace 跟随 / 采集窗进契约 / config 段语义双重错误） | 920e187(F-005 三层) / 1819e18 | duration_sec 已进 toggle 契约=90；勿报"仍未修" |
 | 11 | `.agents/skills` 已刷到 7-skill 终态（A-02 兑现） | f4b5d4f 对账记录（哈希+CreationTime 举证） | 勿凭 mtime 判"没发生"——copy2 保源时间戳；`.zcode` 根措辞对齐(A-03)属主控侧遗留，非本仓缺陷 |
+| 12 | **首轮已修勿重报**：F-001 落账死锁 / F-002 config 容错 / F-003 超时诚实化 / F-004 落账留痕 / F-005 hardfault map 自动发现 | 4866fb5、1baeed2、11eb319（F-005 三层全修见 920e187） | 同文件**新**缺陷仍欢迎 |
+| 13 | **首轮已修勿重报**：F-014 校准库损坏容错、F-006/007/008/012 Low 组、release_audit.py（M-3） | afc7265、fa5efb4、eb1e4c9 | R2 修的 F-018 契约哈希 / F-019 原子写 / F-020 写回家族守卫同理勿重报；**已登记**的 F-021~F-024（对账记录 §3）是已知遗留，重报无新意 |
 
 ## 3. 代管期任务（你的考卷）
 
@@ -86,6 +92,9 @@
   （F-005）；复制/镜像类操作用 CreationTime+哈希取证而非 mtime（A-02 对账）；写回类默认
   路径必须有测试（F-017）。
 
+> R2 已答完此卷：处置结果见 `docs/handoff/2026-08-30-findings-r2.md`（A/B/C/D 全落地；
+> 三项发现重排为 F-018~F-020）与对账记录 §7 的逐 commit RECONCILE 四分类。
+
 **交付三档**：
 - ① **分级发现报告**：本分支 `docs/handoff/<YYYY-MM-DD>-findings.md`。每条：编号 F-00N +
   严重度 + `文件:行号` + **复现法**（命令/输入 → 实际 vs 期望）+ 建议。
@@ -96,8 +105,8 @@
 ## 4. 环境接入
 
 - 测试（你的自检与验收都靠它）：在本仓根目录跑
-  `python -m unittest discover -s tests` → **当前基线 106 绿**（47→89→97→106 为两轮
-  修复的正常增长，勿把"测试变多"当漂移发现）。
+  `python -m unittest discover -s tests` → 全绿为过。例数以实际输出为准
+  （历史曲线 47→89→97→106→155→172 系两轮代管修复的正常增长，勿把"测试变多"当漂移发现）。
 - 编译验证（无害，产物不上板）：`python -m unittest` 之外，可用
   `python scripts/gcc_build.py` 相关路径见工程 `.workbench/config.json`（只读）。
 - 工具链绝对路径**唯一来源 = `machine.json`**（只读！arm-gcc/make/openocd 位置都在里面）。
@@ -118,16 +127,19 @@ prose 文件豁免。被 guard 误杀可在日志提异议，主控仲裁后进 
 
 ## 5. 交接规矩（开工前必读）
 
-1. 上岗第一步（onboarding 自检，贴给用户/留在日志）：跑 106 套件，确认绿。
+1. 上岗第一步（onboarding 自检，贴给用户/留在日志）：在仓根跑全量 unittest 套件，确认绿
+   （例数以实际输出为准）。**确认你的分支起点就是宣告基线**（`git merge-base <你的分支> master`
+   应等于上岗戳 commit）——R2 的教训：起点偏移会让一切"简报 vs 磁盘矛盾"误归因给主控。
 2. 工作分支：**`handoff/<你的名字>-<YYYYMMDD>`**。若主控已预建并检出（看 `git branch --show-current`）
-   就直接用，**不要再 `-b`**；没有则自行 `git checkout -b`。一切 commit 只落这里；
-   master 不属于你。允许 push 分支到 origin（备份），禁止碰 origin/master。
+   就直接用，**不要再 `-b`**；但**用前先核对起点**（见第 1 条），不对立即停下报告，不要将错就错。
+   一切 commit 只落这里；master 不属于你。允许 push 分支到 origin（备份），禁止碰 origin/master。
 3. commit 纪律：每个发现（组）一个 commit，message 格式 `fix(handoff): F-003 一句话`；
    修复类 commit **必须同时改/加 `tests/` 用例**；文档类 `docs(handoff): …`、发现报告 `chore(handoff): …`。
 4. 禁止：顺手重构、批量改名/格式化、调整与本发现无关的代码（一次改动=一个可辩护的理由）。
 5. 每日收工在本文末尾「代管日志」**追加**一条：`### YYYY-MM-DD` + 做了什么/下一步/卡点。
    只追加，不重写别人的条目。
 6. 发现主控的"勿重做清单"（§2）与现状矛盾——不要按 §2 说的做，把矛盾记进日志（这可能是最有价值的发现）。
+   **但先核自己分支的起点**（第 1 条），多数"磁盘上不存在"其实是"你的树上不存在"。
 
 ## 6. 换回协议（给主控 Claude，用户说"换回来"时执行）
 
@@ -136,15 +148,17 @@ prose 文件豁免。被 guard 误杀可在日志提异议，主控仲裁后进 
 2. `python scripts/handoff_guard.py --repo . --branch handoff/<x> --json` → blocked 非空则逐条处置
    （误杀→修 allowlist 并补进 test_handoff_guard.py；程序化消费走 subprocess，勿经 PowerShell
    管道——PS5.1 会注入 BOM）。降级警告项（如硬件层脚本的维护性改动）逐条人审定性。
-2.5 `python scripts/release_audit.py --project <工程根> --all` → 发布记录 R1~R6 审计 CLEAN
-   （首轮 Z code 贡献的新工具，纳入换回协议）。
-3. `python -m unittest discover -s tests` 全绿 + 抽查编译（gcc_build 真编一工程，产物不上板）。
+2.5 `python scripts/release_audit.py --project <工程根> --all` → 发布记录 R1~R7 审计 CLEAN
+   （旧记录缺 contracts 时 R7 WARNED 属预期语义，见对账记录）。
+3. `python -m unittest discover -s tests` 全绿 + `python scripts/expectations_lint.py --project <工程根>`
+   两现役工程 CLEAN（秒级只读，R2 建议采纳）+ 抽查编译（gcc_build 真编一工程，产物不上板）。
 4. 逐 commit **RECONCILE**（审者输出是数据不是裁决）：契约误读 / 有效可行动 / 有效权衡 / 噪声 四分类；
    有争议的记入日志，勿盲从"上下文新鲜"。
 5. merge → 请用户插板跑一次 `python scripts/verify.py --json`（adc-oled）真机终判 →
    落账：记忆回填、本文状态行翻转、上岗时间戳更新为下次。
    （协议缺口修正：feedback_db 强依赖工程根，被审对象为 toolkit 本身时无工程可落，
-   handoff 事件记于本文「代管日志」即完成落账——勿为走步骤而硬造工程目录。）
+   handoff 事件记于本文「代管日志」即完成落账——勿为走步骤而硬造工程目录。
+   fresh_check 类事件则按 skill 约定落任一活跃工程并在 target 写明真实对象。）
 
 ## 双验收（本轮代管成功判据）
 
@@ -255,3 +269,53 @@ prose 文件豁免。被 guard 误杀可在日志提异议，主控仲裁后进 
 - 106/106 全绿；toggle 契约 diff 仅 duration_sec 一处（target 已复原）。
 - 教训：写回型配置工具的**默认参数路径**必须被测试覆盖——verify 一直显式传参所以
   主干无恙，手工路径从没测过，一测就中。
+
+### 2026-08-30（R2，第二轮异构审查，收官）
+
+- **开局矛盾（最有价值的发现）**：简报与磁盘三处不一致——简报称 §2 已有 11 行
+  (#10/#11 防重报条目)而磁盘 9 行；§3 称有专项题 A/B/C/D 而磁盘无；onboarding
+  称应见 106 tests 而实际 89。另简报提及"F-017 一测就中的教训"但 F-015~F-017
+  全仓无引用——推断主控的 R2 文档更新未落盘。按 §5 第 6 条：以简报为准执行，
+  矛盾记档（findings-r2 §〇），缺失的 #10/#11 已在本轮 docs commit 补齐。
+- **做了什么**：A（G1 expectations 时序窗口→F-015 发布记录绑定契约哈希 R7，
+  34a96e5；state.json 竞态→F-016 非原子写+损坏隔离，d7f950c）→ B（写回型工具
+  全仓扫→F-017 "损坏→清空"家族：gcc_build config 写回/三份 runtime
+  save_project_config/session_fix_cache，损坏拒绝写回或 .corrupt 隔离，原子写
+  .tmp+os.replace，351e021）→ C（零覆盖补测 21 例，cc54e45）→ D（expectations_
+  lint.py E1~E9 + 两工程真档冒烟 CLEAN，10507bd；VERSION 0.2+CHANGELOG+文档
+  对齐+findings-r2+本日志，本轮 docs commit）。
+- **产出**：`docs/handoff/2026-08-30-findings-r2.md`（F-015/016/017 + 四级巡检
+  结论 + 开局矛盾记录）；5 commit；套件 **155/155 绿**（89 基线 + 66 新增）。
+- **关键结论**：G0~G3 常规时序窗口已由 clean-tree+finalize foreign 检查关闭，
+  残余对抗窗口由 R7 契约锚关闭；R7 前旧记录（两工程 v1.x）审计将 CLEAN→WARNED
+  属预期；fresh-checker 三份零漂移；无新增待真机终判项。
+- **下一步（换回人审）**：RECONCILE 本轮 5 commit；guard 扫描；建议换回协议
+  第 3 步加 expectations_lint 秒检。
+- **卡点**：无。工作区干净，未触 master/两工程/硬件/machine.json/hooks/。
+
+### 2026-08-31（R2 换回对账，主控 Claude）
+
+- **外部核查**：fresh-check 无上下文对抗审计（只读+TEMP 复现实验）判"**通过但有保留**"
+  （C0/H1/M1/L2，落账 fc_20260831_122115+0800）：三项修复与 66 例回归独立复现成立
+  （含篡改契约端到端 R7=fail）、master 未动、禁线未触、guard 0/0。
+- **High-1 处置**：上一条"开局矛盾"的归因**系误判**——真相是 R2 分支起点偏移
+  （merge-base=9997ac2，reflog 证实 18:59:35 切分支时已存在且指旧终点；创建者推测为
+  ZCode UI 从当时检出的首轮分支预建，先例见 6608be2）。R2 三项发现重排为
+  **F-018/F-019/F-020**（原编号已被 1819e18 占用）；§2 勿重做清单合并为 13 行
+  （原 #10/#11 双方内容都保留）；悬空 hash 有重放对照表；逐 commit RECONCILE 四分类、
+  处置全表见 `docs/handoff/2026-08-31-r2-reconcile-notes.md`。上一条保留作者原貌不改写。
+- **遗留登记（第三轮排期）**：F-021 save_local_config"损坏→清空"同族漏网（环境级
+  config/，无调用方实害受限）/ F-022 release.py+error_db_grow 三处非原子写 /
+  F-023 固定 .tmp 名并发尾洞 / F-024 R7 比对路径不认 .embeddedskills 布局。
+- **.mcp.json 出库**：未跟踪项目级 MCP 配置（cortex-debug SSE，R2 末 commit 后 9 分钟出现，
+  5 commit 与报告均未提及，用户确认非本人添加）→ 已移至 `<工作区根>\archive\
+  mcp-from-toolkit-20260831\`（同盘移动保留时间戳证据，全局 cortex-debug 配置不受影响）。
+- **§6 五步执行记录**：越域核查 ✅（两工程 porcelain 全空、skills 与 <工作区根>\.claude 无
+  晚于 18:57 戳的 mtime）→ guard clean（6 commit，0 blocked / 0 warnings）→ 套件合入后
+  **172/172 绿**（155∪106，master 净增 17 零丢失）+ expectations_lint 两工程 CLEAN
+  （4 条/2 条）+ release_audit 两真档 WARNED（仅 R7 warn，F-018 旧记录预期语义）→
+  RECONCILE（notes §7：有效可行动×4，部分有效×1）→ 本次对账 merge → **本轮无新增插板项**，
+  F-018 端到端随下次真实发布自然终判。
+- **双验收判定**：①机制跑通 ✅（R2 当日闭环，"日志连续 ≥2 天"条款主控豁免——首轮已验证
+  多日形态，第二轮按专项题验收；新教训已回写 §5：上岗先核分支起点）②审计有货 ✅
+  （F-018~020 均带复现法+回归，且"一测就中"的复现法在外部核查中二次兑现）。

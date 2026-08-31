@@ -24,8 +24,9 @@ if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
 from wb_runtime import (  # noqa: E402
+    JSONCorruptError,
     hidden_subprocess_kwargs,
-    load_json_file,
+    load_json_strict,
     load_project_config,
     make_timing,
     now_iso,
@@ -114,6 +115,26 @@ def _collect_artifacts(project_dir: Path, makefile_vars: dict, target: str) -> d
     details["debug_file"] = details["elf_file"]
     details["flash_file"] = details["hex_file"]
     return details
+
+
+def merge_gcc_config(config_file: Path, makefile: Path, target: str,
+                     log_path: Path, workspace: Path) -> dict:
+    """写回工程级配置 gcc 段 (只改 gcc 段, 不碰其他段)。
+
+    F-020: 配置损坏时抛 JSONCorruptError 拒绝写回 — 旧实现经 load_json_file
+    把损坏当空文件, 写回后 config.json 只剩 gcc 段, 验证/采集/物理门控等
+    其他段无声蒸发 (损坏被构建行为放大成数据丢失)。"""
+    config_file, makefile = Path(config_file), Path(makefile)
+    log_path, workspace = Path(log_path), Path(workspace)
+    data = load_json_strict(config_file) if Path(config_file).exists() else {}
+    data["gcc"] = {
+        **data.get("gcc", {}),
+        "project": str(makefile.relative_to(workspace) if makefile.is_relative_to(workspace) else makefile),
+        "target": target,
+        "log_dir": str(log_path.relative_to(workspace) if log_path.is_relative_to(workspace) else log_path),
+    }
+    save_json_file(config_file, data)
+    return {"status": "ok"}
 
 
 def _run_make(project_dir: Path, action: str, target: str, log_file: Path,
@@ -253,17 +274,16 @@ def main() -> None:
             },
             str(workspace),
         )
-        # 写回工程级配置 gcc 段 (只改 gcc 段, 不碰其他段:
-        # load_project_config 返回 keil 段, 用它写回会覆盖 verify/openocd 等段)
+        # 写回工程级配置 gcc 段 (F-020: 损坏拒绝写回, 结果随 JSON 出档留痕)
         config_file = workspace / ".workbench" / "config.json"
-        data = load_json_file(config_file) if config_file.exists() else {}
-        data["gcc"] = {
-            **data.get("gcc", {}),
-            "project": str(makefile.relative_to(workspace) if makefile.is_relative_to(workspace) else makefile),
-            "target": target,
-            "log_dir": str(log_path.relative_to(workspace) if log_path.is_relative_to(workspace) else log_path),
-        }
-        save_json_file(config_file, data)
+        try:
+            result["config_writeback"] = merge_gcc_config(
+                config_file, makefile, target, log_path, workspace)
+        except JSONCorruptError as e:
+            print(f"Warning: 拒绝写回 config.json 以免清空其他配置段: {e}",
+                  file=sys.stderr)
+            result["config_writeback"] = {"status": "skipped_corrupt",
+                                          "reason": str(e)}
 
     output_json(result, indent=2)
 

@@ -26,6 +26,10 @@ def is_missing(value: Any) -> bool:
     return value is None or value == ""
 
 
+class JSONCorruptError(ValueError):
+    """JSON 文件损坏/非 UTF-8/顶层非对象 — 读改写场景必须显式处理 (F-020)。"""
+
+
 def load_json_file(path: str | Path) -> dict:
     """加载 JSON 文件，不存在返回空字典"""
     file_path = Path(path)
@@ -37,11 +41,27 @@ def load_json_file(path: str | Path) -> dict:
         return {}
 
 
+def load_json_strict(path: str | Path) -> dict:
+    """读改写专用加载: 损坏即抛 JSONCorruptError, 不存在返回 {}。"""
+    file_path = Path(path)
+    if not file_path.exists():
+        return {}
+    try:
+        data = json.loads(file_path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, UnicodeDecodeError) as e:
+        raise JSONCorruptError(f"{file_path} 不可解析: {e}") from e
+    if not isinstance(data, dict):
+        raise JSONCorruptError(f"{file_path} 顶层须为 JSON 对象")
+    return data
+
+
 def save_json_file(path: str | Path, data: dict) -> None:
-    """保存 JSON 文件，自动创建目录"""
+    """保存 JSON 文件，自动创建目录；原子写 (.tmp + os.replace, F-019)"""
     file_path = Path(path)
     file_path.parent.mkdir(parents=True, exist_ok=True)
-    file_path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    tmp_path = file_path.with_name(file_path.name + ".tmp")
+    tmp_path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    os.replace(tmp_path, file_path)
 
 
 def load_local_config() -> dict:
@@ -67,18 +87,50 @@ def load_project_config(workspace: str | None = None) -> dict:
 
 
 def save_project_config(workspace: str | None = None, values: dict | None = None) -> None:
-    """写回工程级配置，只更新本 skill 的部分"""
+    """写回工程级配置，只更新本 skill 的部分
+
+    F-020: 配置损坏时拒绝写回 (旧实现把损坏当空文件, 写回后 config.json
+    只剩 serial 段, 验证/构建等其他段无声蒸发)。"""
     if values is None:
         return
     proj_path = workspace_root(workspace) / STATE_DIR_NAME / PROJECT_CONFIG_FILE
-    proj_config = load_json_file(proj_path)
+    if proj_path.exists():
+        try:
+            proj_config = load_json_strict(proj_path)
+        except JSONCorruptError as e:
+            print(f"Warning: 拒绝写回 config.json 以免清空其他配置段, "
+                  f"请手工修复后重试: {e}", file=sys.stderr)
+            return
+    else:
+        proj_config = {}
     proj_config[SKILL_NAME] = {**proj_config.get(SKILL_NAME, {}), **values}
     save_json_file(proj_path, proj_config)
 
 
 def load_workspace_state(workspace: str | None = None) -> dict:
-    """从 workspace/.workbench/state.json 读取状态"""
+    """从 workspace/.workbench/state.json 读取状态 (只读: 损坏静默当空)"""
     return load_json_file(workspace_root(workspace) / STATE_DIR_NAME / STATE_FILE_NAME)
+
+
+def load_workspace_state_for_update(workspace: str | None = None) -> dict:
+    """读改写前的状态加载 (F-019): 损坏 → 隔离到 .corrupt 保留现场 → 按 {} 继续。
+
+    state.json 是可再生缓存, 不像 config.json 那样拒绝写回; 旧实现
+    "损坏当空读入→覆写"会让其他条目无声蒸发。"""
+    ws = workspace_root(workspace)
+    file_path = ws / STATE_DIR_NAME / STATE_FILE_NAME
+    try:
+        return load_json_strict(file_path)
+    except JSONCorruptError as e:
+        corrupt = file_path.with_name(file_path.name + ".corrupt")
+        try:
+            os.replace(file_path, corrupt)
+            print(f"Warning: state.json 损坏, 原文件移至 {corrupt}, "
+                  f"按新内容重建: {e}", file=sys.stderr)
+        except OSError:
+            print(f"Warning: state.json 损坏且隔离失败, 按新内容重建: {e}",
+                  file=sys.stderr)
+        return {}
 
 
 def save_workspace_state(state: dict, workspace: str | None = None) -> Path:
@@ -90,9 +142,9 @@ def save_workspace_state(state: dict, workspace: str | None = None) -> Path:
 
 
 def update_state_entry(category: str, record: dict, workspace: str | None = None) -> dict:
-    """更新状态条目"""
+    """更新状态条目 (F-019: 损坏隔离后重建, 不再当空文件覆写)"""
     ws = workspace_root(workspace)
-    state = load_workspace_state(workspace)
+    state = load_workspace_state_for_update(workspace)
     state[category] = _serialize_state_value({**record, "timestamp": record.get("timestamp") or now_iso()}, ws)
     file_path = save_workspace_state(state, workspace)
     return {
