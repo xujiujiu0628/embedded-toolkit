@@ -6,4 +6,5 @@
 - **被请来代管检查本工作台的智能体**：唯一入口是 [`HANDOFF-AGENT.md`](HANDOFF-AGENT.md)，
   从 §1 顺序读完 §1-§5 再开工；权限与禁线以该文为准。
 - 日常开发（主控会话）约定见 `README.md` 与 `<工作区根>\CLAUDE.md`。
-- 仓根 `machine.json` = 本机工具链路径唯一来源（只读）；测试：`python -m unittest discover -s tests`。
+- 仓根 `machine.json` = 本机工具链路径唯一来源（本机文件不入库，模板
+  `machine.example.json`，缺失时回退占位并警告）；测试：`python -m unittest discover -s tests`。
