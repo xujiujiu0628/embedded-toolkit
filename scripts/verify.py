@@ -842,7 +842,7 @@ def _save_failure_context(result: dict, max_retries: int, capture_text: str = ""
         ctx["agent_hint"] = (
             "Flash failed. Check: ST-Link connected? Board powered? "
             "SWD pins (PA13/SWDIO, PA14/SWCLK) not reconfigured as GPIO? "
-            "Try: python <工作区根>\\embedded-toolkit\\scripts\\hardfault.py "
+            f"Try: python {os.path.join(TOOLKIT_ROOT, 'scripts', 'hardfault.py')} "
             "to check connectivity."
         )
 
@@ -851,8 +851,9 @@ def _save_failure_context(result: dict, max_retries: int, capture_text: str = ""
         ctx["steps"]["capture"] = result.get("steps", {}).get("capture", {})
         ctx["agent_hint"] = (
             "Capture failed. Check: ST-Link connected? OpenOCD target "
-            "examine succeeded? Run: python <工作区根>\\embedded-toolkit\\"
-            "scripts\\hardfault.py to check SWD connectivity, then retry."
+            "examine succeeded? Run: python "
+            f"{os.path.join(TOOLKIT_ROOT, 'scripts', 'hardfault.py')} "
+            "to check SWD connectivity, then retry."
         )
 
     # 验证失败 (含 TIMING_FAIL): 写入 capture + verify + physical_gate 现场
