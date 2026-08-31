@@ -1,6 +1,6 @@
 # embedded-toolkit
 
-<!-- [![CI](https://github.com/xujiujiu0628/embedded-toolkit/actions/workflows/ci.yml/badge.svg)](https://github.com/xujiujiu0628/embedded-toolkit/actions/workflows/ci.yml) CI 首绿后解开此注释 -->
+[![CI](https://github.com/xujiujiu0628/embedded-toolkit/actions/workflows/ci.yml/badge.svg)](https://github.com/xujiujiu0628/embedded-toolkit/actions/workflows/ci.yml)
 
 **AI 写嵌入式固件的闭环验证工作台：代码可以由 AI 生成，但"算不算对"由机器说了算。**
 
