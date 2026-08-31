@@ -13,10 +13,12 @@ import sys
 import tempfile
 import unittest
 from contextlib import redirect_stderr
+from pathlib import Path
 from unittest import mock
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "scripts"))
 
+import gcc_build  # noqa: E402
 import wb_common  # noqa: E402
 
 EXAMPLE = {"uv4_exe": "<Keil UV4.exe 绝对路径>",
@@ -67,6 +69,18 @@ class MachineFallbackTests(unittest.TestCase):
             with self.assertRaises(FileNotFoundError) as cm:
                 wb_common.load_machine()
         self.assertIn("machine.example.json", str(cm.exception))
+
+    def test_gcc_build_shares_fallback(self):
+        """gcc_build 的 load_machine 必须与 wb_common 同链 (委托后单一实现)。"""
+        _write_json(os.path.join(self.tmp, "machine.example.json"), EXAMPLE)
+        with mock.patch.object(wb_common, "TOOLKIT_ROOT", self.tmp), \
+             mock.patch.object(gcc_build, "ROOT_DIR", Path(self.tmp)):
+            err = io.StringIO()
+            with redirect_stderr(err):
+                result = gcc_build.load_machine()
+            warned = err.getvalue()
+        self.assertEqual(result, EXAMPLE)
+        self.assertIn("machine.json", warned)
 
     def test_warning_emitted_only_once(self):
         _write_json(os.path.join(self.tmp, "machine.example.json"), EXAMPLE)
