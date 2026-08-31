@@ -27,7 +27,7 @@ def is_missing(value: Any) -> bool:
 
 
 class JSONCorruptError(ValueError):
-    """JSON 文件损坏/非 UTF-8/顶层非对象 — 读改写场景必须显式处理 (F-017)。"""
+    """JSON 文件损坏/非 UTF-8/顶层非对象 — 读改写场景必须显式处理 (F-020)。"""
 
 
 def load_json_file(path: str | Path) -> dict:
@@ -56,7 +56,7 @@ def load_json_strict(path: str | Path) -> dict:
 
 
 def save_json_file(path: str | Path, data: dict) -> None:
-    """保存 JSON 文件，自动创建目录；原子写 (.tmp + os.replace, F-016)"""
+    """保存 JSON 文件，自动创建目录；原子写 (.tmp + os.replace, F-019)"""
     file_path = Path(path)
     file_path.parent.mkdir(parents=True, exist_ok=True)
     tmp_path = file_path.with_name(file_path.name + ".tmp")
@@ -89,7 +89,7 @@ def load_project_config(workspace: str | None = None) -> dict:
 def save_project_config(workspace: str | None = None, values: dict | None = None) -> None:
     """写回工程级配置，只更新本 skill 的部分
 
-    F-017: 配置损坏时拒绝写回 (旧实现把损坏当空文件, 写回后 config.json
+    F-020: 配置损坏时拒绝写回 (旧实现把损坏当空文件, 写回后 config.json
     只剩 serial 段, 验证/构建等其他段无声蒸发)。"""
     if values is None:
         return
@@ -113,7 +113,7 @@ def load_workspace_state(workspace: str | None = None) -> dict:
 
 
 def load_workspace_state_for_update(workspace: str | None = None) -> dict:
-    """读改写前的状态加载 (F-016): 损坏 → 隔离到 .corrupt 保留现场 → 按 {} 继续。
+    """读改写前的状态加载 (F-019): 损坏 → 隔离到 .corrupt 保留现场 → 按 {} 继续。
 
     state.json 是可再生缓存, 不像 config.json 那样拒绝写回; 旧实现
     "损坏当空读入→覆写"会让其他条目无声蒸发。"""
@@ -142,7 +142,7 @@ def save_workspace_state(state: dict, workspace: str | None = None) -> Path:
 
 
 def update_state_entry(category: str, record: dict, workspace: str | None = None) -> dict:
-    """更新状态条目 (F-016: 损坏隔离后重建, 不再当空文件覆写)"""
+    """更新状态条目 (F-019: 损坏隔离后重建, 不再当空文件覆写)"""
     ws = workspace_root(workspace)
     state = load_workspace_state_for_update(workspace)
     state[category] = _serialize_state_value({**record, "timestamp": record.get("timestamp") or now_iso()}, ws)

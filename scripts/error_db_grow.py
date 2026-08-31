@@ -149,7 +149,7 @@ def generalization_score(unmatched_entry: dict, diagnosis: dict) -> tuple:
 def _cache_entry(event_id: str, new_entry: dict, score: float, hits: list) -> dict:
     """泛化率不足 → 写入会话级缓存（per-project），等待人工 Reviewer 确认后晋升
 
-    F-017: 缓存损坏 → 隔离到 .corrupt 保留现场后重建 (待人审条目孤悬可手工
+    F-020: 缓存损坏 → 隔离到 .corrupt 保留现场后重建 (待人审条目孤悬可手工
     恢复); 旧实现"损坏当空读入→覆写"会把待审条目无声清空。"""
     cache_path = _session_cache_path()
     cache = {"_meta": {}, "entries": []}
@@ -274,7 +274,7 @@ def grow(event_id: str, unmatched_entry: dict, diagnosis: dict) -> dict:
     if not os.path.exists(ERROR_DB_PATH):
         return {"status": "error", "message": f"keil-error-db.json not found at {ERROR_DB_PATH}"}
 
-    # F-017: 知识库损坏 → 明确报错拒绝写入 (旧实现裸 traceback; 任何
+    # F-020: 知识库损坏 → 明确报错拒绝写入 (旧实现裸 traceback; 任何
     # "当空读入继续写"的容错都会把整库清空, 这里数据安全优先)
     try:
         with open(ERROR_DB_PATH, 'r', encoding='utf-8') as f:

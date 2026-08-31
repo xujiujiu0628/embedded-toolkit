@@ -93,7 +93,7 @@ class ReleaseAuditTests(unittest.TestCase):
                          ["R1", "R2", "R3", "R4", "R5", "R6", "R7"])
 
     def test_old_record_without_contracts_warns(self):
-        # F-015: R7 之前的旧记录 (如 adc-oled v1.1.0) 缺绑定 → 警告不阻断
+        # F-018: R7 之前的旧记录 (如 adc-oled v1.1.0) 缺绑定 → 警告不阻断
         rec = self._record()
         del rec["contracts"]
         rel = self._write(rec)
@@ -103,7 +103,7 @@ class ReleaseAuditTests(unittest.TestCase):
         self.assertEqual(r7["status"], "warn")
 
     def test_tampered_contract_hash_fails(self):
-        # F-015 核心场景: 记录声称按 A 清单判绿, tag 处实际是 B 清单 → 现形
+        # F-018 核心场景: 记录声称按 A 清单判绿, tag 处实际是 B 清单 → 现形
         rec = self._record(contracts={
             "expectations_sha256": "0" * 64,
             "config_sha256": _sha(self.cfg_data)})

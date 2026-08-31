@@ -115,7 +115,7 @@ class ReleaseGateTests(unittest.TestCase):
             self.ws, ".workbench", "releases", "v1.0.0.json")))
 
     def test_build_record_carries_contract_hashes(self):
-        # F-015: 判绿锚点 — G1 verify 的 contract_hashes 必须抄进发布记录
+        # F-018: 判绿锚点 — G1 verify 的 contract_hashes 必须抄进发布记录
         _, head, _ = release._git(["rev-parse", "HEAD"], self.ws)
         rec = release.build_record(
             self.ws, "v2.0.0", [{"id": "A", "status": "pass"}], [],

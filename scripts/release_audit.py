@@ -12,7 +12,7 @@ annotated tag 都是本地 git 操作, 无签名 — 事后可被手工篡改而
   R5  记录结构完整性 (tag/git_head/timestamp/build_mode/artifacts/results/
       xfail_waived/tools 必填, tag 字段与文件名一致)
   R6  记录文件已被 git 提交入库 (未提交 = 警告级)
-  R7  契约哈希锚点 (F-015): 记录 contracts 的 expectations/config sha256
+  R7  契约哈希锚点 (F-018): 记录 contracts 的 expectations/config sha256
       与 git show git_head: 重算一致 (不匹配 = fail; 旧记录缺绑定 = 警告)
 
 用法:
@@ -145,7 +145,7 @@ def audit_record(ws, tag, rel_path):
     else:
         _check(checks, "R6", "pass", "记录已入库")
 
-    # R7 契约哈希锚点 (F-015, 2026-08-30 R2): results 由哪份 expectations/config
+    # R7 契约哈希锚点 (F-018, 2026-08-30 R2): results 由哪份 expectations/config
     # 产生 — G0 保证发布时工作树 clean, 故记录里的哈希必须等于 git_head 处的
     # 文件内容; 不等 = 判绿依据与 tag 指向的代码错位 (篡改/搬移记录即现形)。
     contracts = record.get("contracts")

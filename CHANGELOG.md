@@ -5,12 +5,13 @@
 
 ## 0.2 — 2026-08-30（代管 R2，分支 handoff/zcode-r2-20260830）
 
-- **F-015** 发布记录绑定契约哈希: verify 输出 `contract_hashes`
+- **F-018**（原报告编号 F-015，换回对账重排，见
+  `docs/handoff/2026-08-31-r2-reconcile-notes.md`）发布记录绑定契约哈希: verify 输出 `contract_hashes`
   （config/expectations 字节级 sha256），release 写入发布记录，
   release_audit 新增 **R7**（对照 `git show <git_head>:` 重算比对，
   错位=fail，R7 之前旧记录=warn）——关闭"G1 期间改契约再还原"的取证盲区
   （34a96e5）。
-- **F-016/F-017** 写回型工具损坏清空家族修复（三份 runtime 拷贝同修）:
+- **F-019/F-020**（原报告编号 F-016/F-017，换回对账重排）写回型工具损坏清空家族修复（三份 runtime 拷贝同修）:
   `save_project_config` 损坏**拒绝写回**；`update_state_entry` /
   serial_mux 读改写损坏**隔离 .corrupt 后重建**；`save_json_file` 改
   **原子写**（.tmp + os.replace，杜绝并发撕裂读）；error_db_grow 知识库
