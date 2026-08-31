@@ -1,4 +1,4 @@
-"""F-016/F-017 回归: 写回型工具的损坏容错与原子写 (2026-08-30 代管 R2).
+"""F-019/F-020 回归: 写回型工具的损坏容错与原子写 (2026-08-30 代管 R2).
 
 修复前的家族缺陷: load_json_file "损坏返回 {}" 被当作读改写基础 —
 配置/状态文件损坏时, 一次构建/采集/缓存写入会把整个文件重写成只剩
@@ -104,7 +104,7 @@ class SaveProjectConfigGuardTests(unittest.TestCase):
 
 
 class UpdateStateEntryGuardTests(unittest.TestCase):
-    """损坏 state.json: 隔离到 .corrupt 后按新条目重建 (缓存语义, F-016)"""
+    """损坏 state.json: 隔离到 .corrupt 后按新条目重建 (缓存语义, F-019)"""
 
     def setUp(self):
         self.tmp = tempfile.mkdtemp()
@@ -186,7 +186,7 @@ class LoadStateForUpdateTests(unittest.TestCase):
 
 
 class GccBuildWritebackTests(unittest.TestCase):
-    """gcc_build 的 config.json 写回 (F-017 旗舰路径: 构建即写回)"""
+    """gcc_build 的 config.json 写回 (F-020 旗舰路径: 构建即写回)"""
 
     def setUp(self):
         self.tmp = tempfile.mkdtemp()

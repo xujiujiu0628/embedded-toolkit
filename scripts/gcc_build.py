@@ -109,7 +109,7 @@ def merge_gcc_config(config_file: Path, makefile: Path, target: str,
                      log_path: Path, workspace: Path) -> dict:
     """写回工程级配置 gcc 段 (只改 gcc 段, 不碰其他段)。
 
-    F-017: 配置损坏时抛 JSONCorruptError 拒绝写回 — 旧实现经 load_json_file
+    F-020: 配置损坏时抛 JSONCorruptError 拒绝写回 — 旧实现经 load_json_file
     把损坏当空文件, 写回后 config.json 只剩 gcc 段, 验证/采集/物理门控等
     其他段无声蒸发 (损坏被构建行为放大成数据丢失)。"""
     config_file, makefile = Path(config_file), Path(makefile)
@@ -253,7 +253,7 @@ def main() -> None:
             },
             str(workspace),
         )
-        # 写回工程级配置 gcc 段 (F-017: 损坏拒绝写回, 结果随 JSON 出档留痕)
+        # 写回工程级配置 gcc 段 (F-020: 损坏拒绝写回, 结果随 JSON 出档留痕)
         config_file = workspace / ".workbench" / "config.json"
         try:
             result["config_writeback"] = merge_gcc_config(
