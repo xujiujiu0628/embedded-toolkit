@@ -5,7 +5,8 @@
   - 写工程 .workbench/state.json last_build (provider="gcc")
   - 写回工程级配置 gcc 段 (project/target/log_dir)
 
-机器路径唯一来源: toolkit/machine.json (gcc_path / make_exe)。
+机器路径唯一来源: toolkit/machine.json (gcc_path / make_exe; 本机文件不入库,
+模板=machine.example.json, 缺失时经 wb_common.load_machine 回退占位并警告)。
 """
 
 from __future__ import annotations
@@ -23,6 +24,7 @@ ROOT_DIR = Path(__file__).resolve().parents[1]  # embedded-toolkit/ (machine.jso
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
+from wb_common import load_machine  # noqa: E402  (单一实现, 含 example 回退链)
 from wb_runtime import (  # noqa: E402
     JSONCorruptError,
     hidden_subprocess_kwargs,
@@ -37,13 +39,6 @@ from wb_runtime import (  # noqa: E402
 )
 
 MAKE_JOBS = 8
-
-
-def load_machine() -> dict:
-    """读 toolkit/machine.json (本机工具链绝对路径)。"""
-    import json
-    with open(ROOT_DIR / "machine.json", encoding="utf-8") as f:
-        return json.load(f)
 
 
 def _resolve_makefile(project: str, workspace: Path) -> tuple[Path, Path]:
