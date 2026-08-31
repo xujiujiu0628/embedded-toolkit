@@ -1,0 +1,35 @@
+name: ✨ 功能建议
+description: 给闭环链添一块新能力
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: 想解决什么问题
+      description: 场景与痛点先于方案——什么样的工作在哪个环节卡住
+    validations:
+      required: true
+  - type: textarea
+    id: solution
+    attributes:
+      label: 期望的方案
+      description: 大致的命令/行为形态，伪代码或示例输出均可
+  - type: dropdown
+    id: stage
+    attributes:
+      label: 涉及流水线环节
+      multiple: true
+      options:
+        - 需求契约（expectations/lint）
+        - 生成与审查（hooks/review）
+        - 构建（gcc_build）
+        - 真机判定（verify/RTT/semihosting）
+        - 发布门禁（release/release_audit）
+        - 落账校准（feedback_db）
+        - 治理机制（guard/handoff）
+        - 其他
+  - type: checkboxes
+    id: pr
+    attributes:
+      options:
+        - label: 我愿意为这个功能提交 PR（需带回归测试，见 CONTRIBUTING）

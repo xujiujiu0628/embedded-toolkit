@@ -1,0 +1,50 @@
+name: 🐞 Bug 报告
+description: 构建/门禁/采集/工具链问题复现
+labels: ["bug"]
+body:
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: 发生了什么
+      description: 现象、期望行为、最小复现步骤（信息多一层永远比少一层好）
+    validations:
+      required: true
+  - type: textarea
+    id: command
+    attributes:
+      label: 命令与完整输出
+      description: >-
+        贴完整命令行与输出；verify 相关问题请贴
+        `python scripts/verify.py --json` 的 JSON 全文
+        （machine.json 内容不在其中，如担心隐私可删除盘符开头的路径行）
+    validations:
+      required: true
+  - type: textarea
+    id: toolchain
+    attributes:
+      label: 工具链版本
+      description: >-
+        `arm-none-eabi-gcc --version` 与 `openocd --version` 各自首行即可；
+        勿贴包含个人路径/用户名的行
+  - type: input
+    id: env
+    attributes:
+      label: OS 与 Python 版本
+      placeholder: "Windows 11 / Python 3.12.7"
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: 涉及工具
+      multiple: true
+      options:
+        - verify.py（闭环编排）
+        - gcc_build.py（GCC 构建后端）
+        - release.py / release_audit.py（发布门禁与审计）
+        - expectations_lint.py（契约校验）
+        - handoff_guard.py（代管禁线）
+        - feedback_db.py（落账校准）
+        - rm_lookup.py / gen_periph.py（知识库/生成）
+        - serial_* / openocd_*（串口与探针族）
+        - 其他 / 不确定
