@@ -66,6 +66,10 @@ R2 版 #10/#11（F-001~F-005 组 / F-014+Low 组+release_audit）顺位改 **#12
   contracts 的预期语义，与 findings-r2 §六-1 一致。
 - **越域核查**：两工程 porcelain 全空；skills 与 <工作区根>\.claude 无晚于上岗戳
   （08-30 18:57）的 mtime。仓根曾出现未跟踪 .mcp.json，已按 §3 处置出库。
+- **插板回归（用户主动要求，2026-08-31 13:29）**：adc-oled 全链真机 PASS——build
+  0e0w / flash Verified OK / RTT 34 行 / 4 条期望全 pass 无 XPASS / 落账
+  `bf_20260831_132926+0800`；F-018 的 `contract_hashes` 首次在真机 output 现身。
+  首跑因板子未插死于 `OpenOCD init failed`（flash_failed 诚实报错），插好后一次过。
 
 ## 6. 重放对照表（悬空 → 可达）
 
