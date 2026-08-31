@@ -1,6 +1,0 @@
-{
-  "uv4_exe": "D:\\KEIL5\\UV4\\UV4.exe",
-  "openocd_exe": "C:\\openocd\\xpack-openocd-0.12.0-7\\bin\\openocd.exe",
-  "gcc_path": "C:\\Program Files (x86)\\GNU Arm Embedded Toolchain\\10 2021.10\\bin",
-  "make_exe": "C:\\msys64\\usr\\bin\\make.exe"
-}
