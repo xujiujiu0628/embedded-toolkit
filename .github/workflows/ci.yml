@@ -1,0 +1,25 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+jobs:
+  unittest:
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.12"]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install optional deps (serial tools only)
+        run: pip install -r requirements.txt
+      # 注意：刻意【不创建】 machine.json —— CI 即"陌生人 clone"路径的金丝雀，
+      # 每跑一次都在验证 load_machine 回退链（machine.example.json）真的可用。
+      - name: Run test suite
+        run: python -m unittest discover -s tests
