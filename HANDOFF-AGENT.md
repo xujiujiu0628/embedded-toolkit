@@ -31,7 +31,8 @@
 expectations_lint 为近两轮新增）、`tests/`（unittest 回归套件，**例数以
 `python -m unittest discover -s tests` 实际输出为准**，不在本文写死以免过期）、`data/`
 （stm32f103-ref.json 55 外设 + 错误库）、`hooks/`（3 条 C 代码铁律检查）、
-`skills/fresh-checker/`（canonical 镜像，与全局那一份**双处须同步**）、`templates/`、`machine.json`、
+`skills/fresh-checker/`（canonical 镜像，与全局那一份**双处须同步**）、`templates/`、
+`machine.json`（本机文件不入库，模板=machine.example.json）、
 `docs/superpowers/{specs,plans}`（设计档案）。blink 工程已退役归档，勿按现役对待。
 
 ## 2. 已验证机制与有意决策——**勿重做、勿当 bug 报**
@@ -109,12 +110,14 @@ expectations_lint 为近两轮新增）、`tests/`（unittest 回归套件，**�
   （历史曲线 47→89→97→106→155→172 系两轮代管修复的正常增长，勿把"测试变多"当漂移发现）。
 - 编译验证（无害，产物不上板）：`python -m unittest` 之外，可用
   `python scripts/gcc_build.py` 相关路径见工程 `.workbench/config.json`（只读）。
-- 工具链绝对路径**唯一来源 = `machine.json`**（只读！arm-gcc/make/openocd 位置都在里面）。
+- 工具链绝对路径**唯一来源 = `machine.json`**（本机文件，arm-gcc/make/openocd 位置
+  都在里面；已出库不入库——缺失时工具库回退 `machine.example.json` 占位并警告，
+  **但真机操作前必须先生成真实 machine.json**，勿用占位路径上板）。
 - **硬件禁线（机器强制，`scripts/handoff_guard.py` 在换回时扫描你的分支）**：
 
 | 级别 | 禁什么 | 后果 |
 |---|---|---|
-| L1 文件禁线 | 改 `machine.json`、`hooks/`、`handoff_guard.py` 自身 | 阻断合入 |
+| L1 文件禁线 | 改 `hooks/`、`handoff_guard.py` 自身、`machine.json`（现为本机文件不再出现在 diff 中，force-add 提交仍拦） | 阻断合入 |
 | L2 硬件模式（**新增行**出现即查） | openocd 调用（含 -f/--command/flash/verify/init/target remote/resume/halt 语境）、烧录命令（flash write_image / protect / mass_erase / program .hex verify）、串口打开（serial.Serial / import serial / COM口）、RTT 端口 19021、gdb 连硬件（target remote / gdbserver） | 阻断合入* |
 | L3 警告 | 改 `verify.py`/`scripts/release.py` 却无 `tests/` 伴随改动 | 不阻断，进人审清单 |
 
