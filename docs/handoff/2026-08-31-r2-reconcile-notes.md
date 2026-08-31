@@ -51,11 +51,21 @@ master 版 #10（首轮遗留 F-015/016/017 已修）、#11（A-02 哈希举证�
 R2 版 #10/#11（F-001~F-005 组 / F-014+Low 组+release_audit）顺位改 **#12/#13**，
 其备注中的 R2 编号同步更新为 F-018/019/020。合并后清单共 13 行。
 
-## 5. 合入演练与合入后全量验证（执行后回填）
+## 5. 合入演练与合入后全量验证（2026-08-31 实测回填）
 
-- TODO：冲突面清单与解决记录
-- TODO：合入后套件基线数（预期 ≈ 155 + master 侧净增 − 重复）
-- TODO：guard / expectations_lint / release_audit 复验结果
+- **冲突面**：仅 `HANDOFF-AGENT.md` 一处内容冲突——按 §4 规则重建合并版（考卷/
+  清单 13 行/日志含双方全部条目）。`gcc_build.py` / `verify.py` 自动合并成功：
+  master 侧 resolve_workspace_mode（F-015）与 R2 侧 merge_gcc_config（F-020）、
+  采集窗契约化（F-016）与 contract_hashes（F-018）互不侵占，语义复核=172 例全绿。
+- **套件**：merge 后 **Ran 172, OK**（155 ∪ 106，master 净增 17 例零丢失——恰为
+  外部核查预估的 ≈172）。
+- **guard**：`handoff_guard --branch handoff/r2-reconcile-20260831 --json` →
+  verdict clean，6 commits，0 blocked / 0 warnings。
+- **expectations_lint**：adc-oled 4 条 CLEAN / button-toggle 2 条 CLEAN（exit 0）。
+- **release_audit**：两真档均 WARNED、仅 R7 warn、exit 0——F-018 旧记录缺
+  contracts 的预期语义，与 findings-r2 §六-1 一致。
+- **越域核查**：两工程 porcelain 全空；skills 与 <工作区根>\.claude 无晚于上岗戳
+  （08-30 18:57）的 mtime。仓根曾出现未跟踪 .mcp.json，已按 §3 处置出库。
 
 ## 6. 重放对照表（悬空 → 可达）
 
