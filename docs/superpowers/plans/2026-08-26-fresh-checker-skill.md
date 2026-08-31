@@ -11,7 +11,7 @@
 ## Global Constraints
 
 - 规格文件：`docs/superpowers/specs/2026-08-26-fresh-checker-skill-design.md`（本仓 e96718b 系列）
-- 规范路径：canonical = `C:\Users\<用户名>\.claude\skills\fresh-checker\SKILL.md`；镜像 = 本仓 `skills/fresh-checker/SKILL.md`；两处必须逐字节一致（同一次提交内同时更新）
+- 规范路径：canonical = `%USERPROFILE%\.claude\skills\fresh-checker\SKILL.md`；镜像 = 本仓 `skills/fresh-checker/SKILL.md`；两处必须逐字节一致（同一次提交内同时更新）
 - frontmatter 惯例沿 review-code：`name:` 小写连字符、`description:` 含触发词的英文长句
 - 反馈管道名固定 `fresh_check`；schema 见规格 §6，字段名不得改动
 - SKILL.md 内引用 toolkit 脚本用字面路径 `<工作区根>\embedded-toolkit\scripts\feedback_db.py`（文档性引用，不违反"机器路径只在 machine.json"——该铁律约束脚本运行期取径）
@@ -23,7 +23,7 @@
 ### Task 1: 创建 canonical SKILL.md
 
 **Files:**
-- Create: `C:\Users\<用户名>\.claude\skills\fresh-checker\SKILL.md`
+- Create: `%USERPROFILE%\.claude\skills\fresh-checker\SKILL.md`
 
 **Interfaces:**
 - Produces: 可被 Claude Code 调度的个人 skill `fresh-checker`；Step 4 的落账 JSON 字段（Task 2 冒烟依赖）：

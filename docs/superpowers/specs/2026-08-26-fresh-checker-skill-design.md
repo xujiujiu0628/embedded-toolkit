@@ -2,7 +2,7 @@
 
 - 日期：2026-08-26
 - 状态：设计已获用户批准（对话内呈现），待实施
-- 落点：`C:\Users\<用户名>\.claude\skills\fresh-checker\SKILL.md`（单文件，零新代码）
+- 落点：`%USERPROFILE%\.claude\skills\fresh-checker\SKILL.md`（单文件，零新代码）
 - 渊源：Harness 借鉴 #5 的轻量替代——本日两轮实战（harness-borrow 设计审 11 发现、
   实现审 3M+6L）证明了模式有效，本文将其从"临场手艺"固化为可复用剧本
 
