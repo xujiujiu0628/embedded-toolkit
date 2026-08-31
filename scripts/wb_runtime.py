@@ -72,7 +72,7 @@ def save_project_config(workspace: str | None = None, values: dict | None = None
 
     - 只更新本 skill 的配置部分，不覆盖其他 skill 的配置
     - 目录不存在时自动创建 .workbench/
-    - F-017: 配置损坏时**拒绝写回**返回 None — config.json 是验证契约,
+    - F-020: 配置损坏时**拒绝写回**返回 None — config.json 是验证契约,
       不能被构建行为清空 (旧实现把损坏当空文件, 写回后只剩本 skill 段)
     """
     if values is None:
@@ -151,7 +151,7 @@ class JSONCorruptError(ValueError):
     """JSON 文件损坏/非 UTF-8/顶层非对象 — 读改写场景必须显式处理。
 
     load_json_file 的"损坏返回 {}"对只读消费方是容错 (F-007), 对读改写方
-    是数据清空器: 当空读入 → 合并写入 → 存量内容无声蒸发 (F-017)。"""
+    是数据清空器: 当空读入 → 合并写入 → 存量内容无声蒸发 (F-020)。"""
 
 
 def load_json_file(path: str | Path) -> dict:
@@ -180,7 +180,7 @@ def load_json_strict(path: str | Path) -> dict:
 
 def save_json_file(path: str | Path, data: dict) -> None:
     """原子保存: 先写 .tmp 再 os.replace — 并发读方要么看到旧文件要么看到
-    新文件, 不再有半截 JSON (F-016: 撕裂读曾把下游引入"损坏→清空"链)"""
+    新文件, 不再有半截 JSON (F-019: 撕裂读曾把下游引入"损坏→清空"链)"""
     file_path = Path(path)
     file_path.parent.mkdir(parents=True, exist_ok=True)
     tmp_path = file_path.with_name(file_path.name + ".tmp")
@@ -214,7 +214,7 @@ def get_state_entry(state: dict | None, key: str) -> dict:
 
 
 def load_workspace_state_for_update(workspace: str | None = None) -> dict:
-    """读改写前的状态加载 (F-016): 损坏 → 隔离到 .corrypt 保留现场 → 按 {} 继续。
+    """读改写前的状态加载 (F-019): 损坏 → 隔离到 .corrupt 保留现场 → 按 {} 继续。
 
     state.json 是可再生缓存, 不像 config.json 那样拒绝写回; 隔离保证损坏
     原文可手工恢复, 旧实现"损坏当空读入→覆写"会让其他条目无声蒸发。"""

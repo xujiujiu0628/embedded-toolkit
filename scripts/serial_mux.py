@@ -212,7 +212,7 @@ def start_mux(port: str, baudrate: int | None, workspace: str | None, vserial_li
             error={"code": "socat_missing", "message": "请安装 socat: apt install socat / pacman -S socat"},
         )
 
-    # 检查已运行的 mux (F-016: 后续可能清理保存, 用隔离加载防"损坏→覆写")
+    # 检查已运行的 mux (F-019: 后续可能清理保存, 用隔离加载防"损坏→覆写")
     state = load_workspace_state_for_update(workspace)
     existing = state.get(STATE_KEY)
     if existing:

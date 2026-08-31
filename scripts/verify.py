@@ -544,7 +544,7 @@ def _sha256_file(path: str) -> str:
 
 
 def contract_hashes(workspace: str, has_manifest: bool) -> dict:
-    """F-015: 判绿所依据契约的字节级哈希 — 发布记录的"判绿锚点"。
+    """F-018: 判绿所依据契约的字节级哈希 — 发布记录的"判绿锚点"。
 
     M2 给 hex 上哈希锚定了"烧的字节", 这里锚定"拿什么判的绿": results 由
     expectations.json + config.json 的具体内容产生, 记录不绑定其哈希则

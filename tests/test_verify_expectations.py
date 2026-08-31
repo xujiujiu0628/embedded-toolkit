@@ -20,7 +20,7 @@ def _write_manifest(ws, expectations):
 
 
 class ContractHashTests(unittest.TestCase):
-    """F-015: contract_hashes — 判绿所依据契约的字节级哈希"""
+    """F-018: contract_hashes — 判绿所依据契约的字节级哈希"""
 
     def setUp(self):
         self.tmp = tempfile.mkdtemp()

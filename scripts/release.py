@@ -180,7 +180,7 @@ def build_record(ws, tag, results, waived, contracts=None):
         "timestamp": datetime.now().astimezone().isoformat(timespec="seconds"),
         "build_mode": "clean_rebuild",
         "artifacts": artifacts,
-        # F-015: 判绿锚点 — results 由哪份 expectations/config 内容产生 (来自
+        # F-018: 判绿锚点 — results 由哪份 expectations/config 内容产生 (来自
         # G1 verify 输出的 contract_hashes; 旧版 verify 无此键时落空字典, R7 警告)
         "contracts": contracts or {},
         "results": results,
