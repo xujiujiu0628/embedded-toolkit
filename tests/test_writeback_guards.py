@@ -10,20 +10,24 @@ truncate-write, 并发读方会看到半截 JSON, 正是"损坏→清空"链的�
 """
 import json
 import os
+import re
 import shutil
 import sys
 import tempfile
 import unittest
+from pathlib import Path
 from unittest import mock
 
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(
-    os.path.abspath(__file__))), "scripts"))
+SCRIPTS_DIR = os.path.join(os.path.dirname(os.path.dirname(
+    os.path.abspath(__file__))), "scripts")
+sys.path.insert(0, SCRIPTS_DIR)
 
 import wb_runtime  # noqa: E402
 import openocd_runtime  # noqa: E402
 import serial_runtime  # noqa: E402
 import gcc_build  # noqa: E402
 import error_db_grow  # noqa: E402
+import wb_common  # noqa: E402
 
 RUNTIMES = [wb_runtime, openocd_runtime, serial_runtime]
 CORRUPT = "{ 不是 JSON"
@@ -283,6 +287,111 @@ class ErrorDbGrowGuardTests(unittest.TestCase):
         with open(db_path, "rb") as f:
             self.assertEqual(f.read().decode("utf-8"), CORRUPT,
                              "知识库损坏必须原样保留")
+
+
+class TmpNameProcessScopedTests(unittest.TestCase):
+    """F-023: save_json_file 的 tmp 名须带 pid — 固定 <name>.tmp 在双进程
+    并发写同一目标时会互相顶掉 (两个写者共用一个 tmp, 混掺半成品)"""
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def test_tmp_carries_pid(self):
+        for mod in RUNTIMES:
+            with self.subTest(mod=mod.__name__):
+                p = os.path.join(self.tmp, f"pid.{mod.__name__}.json")
+                seen = {}
+                real_replace = os.replace
+
+                def fake(src, dst):
+                    seen["tmp"] = str(src)
+                    return real_replace(src, dst)
+
+                with mock.patch.object(mod.os, "replace", fake):
+                    mod.save_json_file(p, {"a": 1})
+                self.assertTrue(
+                    seen["tmp"].endswith(".%d.tmp" % os.getpid()),
+                    "tmp 名必须是 <file>.<pid>.tmp, 实得: " + seen["tmp"])
+                self.assertFalse(os.path.exists(p + ".tmp"))
+                with open(p, encoding="utf-8") as f:
+                    self.assertEqual(json.load(f), {"a": 1})
+
+
+class SharedAtomicWriteJsonTests(unittest.TestCase):
+    """F-022: wb_common.atomic_write_json — error_db_grow/release 等独立脚本
+    共用的原子写工具 (与 runtime 侧同口径: pid tmp + 强制 LF)"""
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def test_roundtrip_parent_mkdir_and_lf(self):
+        p = os.path.join(self.tmp, "deep", "nested.json")  # 父目录不存在→自动建
+        wb_common.atomic_write_json(p, {"k": "值"})
+        with open(p, "rb") as f:
+            raw = f.read()
+        self.assertNotIn(b"\r\n", raw, "行尾必须强制 LF (跨平台一致性)")
+        self.assertEqual(json.loads(raw.decode("utf-8")), {"k": "值"})
+        self.assertEqual(
+            [fn for fn in os.listdir(os.path.dirname(p)) if fn.endswith(".tmp")],
+            [], "不得残留 tmp")
+
+    def test_no_bare_json_writes_in_standalone_scripts(self):
+        # 静态判据: F-022 三处裸写 (error_db_grow:188,308 / release:201) 全部收口,
+        # 且防回潮 — open('w') 后 3 行内出现 json.dump 即违例
+        pat_open = re.compile(r"open\(.*['\"]w[bt]?['\"]")
+        offenders = []
+        for fname in ("error_db_grow.py", "release.py"):
+            with open(os.path.join(SCRIPTS_DIR, fname), encoding="utf-8") as f:
+                lines = f.readlines()
+            for i, ln in enumerate(lines):
+                if pat_open.search(ln) and any(
+                        "json.dump(" in w for w in lines[i + 1:i + 4]):
+                    offenders.append(f"{fname}:{i + 1}")
+        self.assertEqual([], offenders,
+                         "裸 JSON 写须改用 wb_common.atomic_write_json")
+
+
+class LocalConfigGuardTests(unittest.TestCase):
+    """F-021: wb_runtime.save_local_config 是读改写族 — 损坏 config 必须拒绝
+    写回返回 None 且原文不动 (与 save_project_config/F-020 同族契约;
+    openocd/serial 侧同名函数是整写语义, 不在本族)"""
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self.cfg = os.path.join(self.tmp, "config", "keil.json")
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def _patched(self):
+        return mock.patch.object(wb_runtime, "default_config_path",
+                                 lambda *a, **k: Path(self.cfg))
+
+    def test_corrupt_refused_not_wiped(self):
+        os.makedirs(os.path.dirname(self.cfg))
+        with open(self.cfg, "w", encoding="utf-8") as f:
+            f.write(CORRUPT)
+        with self._patched():
+            out = wb_runtime.save_local_config({"new_key": 1})
+        self.assertIsNone(out)
+        with open(self.cfg, "rb") as f:
+            self.assertEqual(f.read().decode("utf-8"), CORRUPT,
+                             "损坏原文必须原样保留 (可手工恢复)")
+
+    def test_healthy_merges_and_creates(self):
+        with self._patched():
+            out = wb_runtime.save_local_config({"port": "COM9"})
+        self.assertEqual(str(out), self.cfg)
+        with self._patched():
+            wb_runtime.save_local_config({"x": 2})
+        with open(self.cfg, encoding="utf-8") as f:
+            self.assertEqual(json.load(f), {"port": "COM9", "x": 2})
 
 
 if __name__ == "__main__":
