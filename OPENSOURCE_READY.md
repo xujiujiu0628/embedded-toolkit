@@ -20,26 +20,25 @@
 
 **新建**：`SENSITIVE_FINDINGS.md` ｜ `CODE_OF_CONDUCT.md` ｜ `SECURITY.md` ｜
 `.github/PULL_REQUEST_TEMPLATE.md` ｜ `OPENSOURCE_READY.md`
-**修改**：`.gitignore`（追加规则） ｜ `README.md`（徽章 + 贡献章节）
-以上改动**尚未 commit**（工作树待处理），建议拆分：
-
-```bash
-git add .gitignore README.md CODE_OF_CONDUCT.md SECURITY.md .github/PULL_REQUEST_TEMPLATE.md
-git commit -m "chore(opensource): 社区文件补全 — CoC2.1/SECURITY/PR 模板 + gitignore 全清单 + README 徽章与贡献入口"
-git add SENSITIVE_FINDINGS.md OPENSOURCE_READY.md
-git commit -m "docs(security): 敏感信息扫描报告与开源就绪清单"
-```
+**修改**：`.gitignore`（追加规则） ｜ `README.md`（徽章 + 贡献章节） ｜
+全仓历史 blob 与 message 脱敏重写 ｜ `tests/test_failure_hints.py` 守卫判据
+适配（重写致原断言变恒真，改通用盘符判据恢复原语义——本次唯一代码改动）
+已按 `chore(opensource)` + `docs(security)` 两 commit 入库（重写后 hash 见 `git log`）。
 
 ## 三、公开前待你拍板的事项（按序）
 
-1. **F-1 历史重写**：Windows 个人用户名残留 git 历史约 22 处（HEAD 已中性化）。
-   处置方案见 `SENSITIVE_FINDINGS.md`。**一旦公开再改，旧历史已被爬取即不可逆。**
-   ✅ **2026-09-01 维护者已拍板执行**（filter-repo 定向替换 + 机器路径映射，
-   全历史重写后 force push；重写前 commit 图已 bundle 归档）。
-2. ~~HEAD 的 47 处机器路径是否替换~~ ✅ 随重写一并处理：filter-repo 规则同时
-   映射 `盘符:\claude` 与 `<工作区根>` 两形态 → `<工作区根>`，HEAD 与历史一次洗清。
-3. **F-3 测试硬编码**：`tests/test_expectations_lint.py:18` 维持现状还是改 tempfile。
-4. **本地 3 个 `handoff/*` 分支**：是否推送/合并/留本地（内容含同类路径信息）。
+1. ✅ **F-1 历史重写（已完成 2026-09-01）**：个人用户名实测 27 处（全部
+   `Users<分隔符>` 形态）+ 机器路径三形态，filter-repo 两轮重写
+   （**坑：`--replace-text` 不作用于 commit/tag message，二轮用
+   `--message-callback`/`--tag-callback` 补**），终验零残留。
+   重写前 commit 图已 bundle 归档：`../archive/embedded-toolkit-prehistory-20260901.bundle`。
+2. ✅ **HEAD 机器路径**：随重写一次洗清（行内替换不增减行数，报告行号引用仍有效）。
+3. ⏳ **F-3 测试硬编码**：字面量已被洗为占位符 → 真档冒烟对本机也恒跳过，
+   tempfile 化已无历史包袱，建议列入下轮（见 SENSITIVE_FINDINGS F-3）。
+   **F-4（新登记）**：`test_cli_exit_codes_and_json` 在 Windows 非 UTF-8 终端下失败，
+   对照 bundle 基线证明为存量缺陷（与重写无关），修法见 SENSITIVE_FINDINGS F-4。
+4. **本地 3 个 `handoff/*` 分支**：已随全 ref 重写脱敏（commit hash 全变）；
+   是否推送/合并/留本地仍待拍板——内容已无 PII，仅过程性治理记录。
 
 ## 四、需要你在 GitHub 网页端手动完成
 
@@ -55,9 +54,9 @@ git commit -m "docs(security): 敏感信息扫描报告与开源就绪清单"
   让 SECURITY.md 的报告表单链接生效
 - [ ] （可选）仓库开启 Discussions，引导使用问答离开 issue 区
 
-## 五、现状核验（写本报告时实测）
+## 五、现状核验（2026-09-01 终版实测）
 
-- `master` 与 `origin/master` 同步于 `f12b5b3`（无未推送 commit；**本次新文件除外**）
+- 历史重写后 `master` 领先远端且**图形不共祖**——推送必须 `push --force`（master + 全部 tag）
 - CI 徽章已解锁（ubuntu × Python 3.10/3.12 双绿）
 - 工作树 86 个受跟踪文件，无 .env / 无私钥 / 无凭证
 - 本次准备未触碰任何脚本逻辑（任务约定），测试基线以 CI 与本地实跑为准
