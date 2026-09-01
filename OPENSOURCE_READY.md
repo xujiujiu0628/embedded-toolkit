@@ -39,17 +39,19 @@
    对照 bundle 基线证明为存量缺陷（与重写无关），修法见 SENSITIVE_FINDINGS F-4。
 4. **本地 3 个 `handoff/*` 分支**：已随全 ref 重写脱敏（commit hash 全变）；
    是否推送/合并/留本地仍待拍板——内容已无 PII，仅过程性治理记录。
+5. **F-5 时间线事实（已登记，2026-09-01 补）**：Events API 显示仓库 8/26 曾
+   公开一次、9/1 复转与脱敏推送最坏重叠约 20 分钟——低危残留，不再处理，
+   详见 `SENSITIVE_FINDINGS.md` F-5。
 
 ## 四、需要你在 GitHub 网页端手动完成
 
-- [ ] 完成上述 F-1 处置并推送后：**Settings → Danger Zone → Change visibility → Public**
-- [ ] **仓库描述（About）**：建议
+- [x] **转 Public**：✅ 2026-09-01 维护者完成（时间线与暴露窗口见 F-5）
+- [x] **仓库描述（About）**：✅ 2026-09-01 gh 落地
   `AI 写嵌入式固件的闭环验证工作台：代码可以由 AI 生成，但"算不算对"由真机说了算。STM32F103 / GCC / OpenOCD / RTT`
-- [ ] **Topics**：`stm32` `embedded` `firmware` `gcc` `openocd` `rtt` `ai-coding`
-  `claude-code` `ci` `hardware-in-the-loop`
-- [ ] **发布第一个 Release**：按 VERSION 如实取 **`v0.3`**（任务模板写 v1.0.0，
-  但本仓 VERSION=0.3、CHANGELOG 0.3 节证据齐全——建议版本号与账本一致，
-  v1.0.0 留给真机全链路跨平台验证后）；正文可从 CHANGELOG 0.3 节复制
+- [x] **Topics**：✅ 2026-09-01 gh 落地 10 项
+  （stm32 / embedded / firmware / gcc / openocd / rtt / ai-coding / claude-code / ci / hardware-in-the-loop）
+- [x] **第一个 Release**：✅ v0.3 已由维护者 08-31 发布（09-01 追加"账本说明"
+  节：历史重写策略反转声明、旧 hash 回放指引、tag 后 master 新增内容、已知事项索引）
 - [ ] （可选）Settings → Security → **Private vulnerability reporting** 打开，
   让 SECURITY.md 的报告表单链接生效
 - [ ] （可选）仓库开启 Discussions，引导使用问答离开 issue 区
