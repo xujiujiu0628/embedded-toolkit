@@ -58,6 +58,11 @@
   进程终止/信号/创建标志类平台差异仍属盲区。本轮补 `_step_capture_rtt()` 的
   mock-Popen 平台派发单元钉（Linux 模拟必传 creationflags=0——即 P0 崩溃类），
   真机 Linux 冒烟清单仍留社区/后续。
+- **F-031 处置（派发钉落地，咬合验证）**: `RttSpawnFlagsPlatformTests` 两例——
+  Linux 模拟断言三试全传 0、win32 模拟断言传真实常量（本机无常量则 skip），
+  顺带钉住 3 重试骨架与"进程即死必如实 error"。咬合验证：临时回退 F-027 修法
+  → 钉转红 → 还原 → 转绿，verify.py 字节回滚（diff 仅测试文件）。与 F-027
+  静态钉成对：属性级 + kwargs 级双层防线。
 - **F-032 登记（本轮施工）**: `serial_mux.py` PTY 虚拟串口层硬依赖 socat
   （:207 起 `which("socat")` 失败即 `socat_missing` 体面报错，非崩溃，但提示只给
   apt/pacman——Windows 用户零可行路径）。本轮收口错误消息与限制声明：明示 PTY 层为
