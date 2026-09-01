@@ -31,6 +31,11 @@
   （:42-45 实证：默认后端 `builder=gcc`，Keil 桥仅显式配置时按需唤起）。修法=两行
   改写为 GCC 默认 + legacy 桥注记，与 :43 口径一致；随下轮（F-029 契约统一或 F-026
   tempfile 化）顺手刷掉。
+- **F-030 处置（同轮提前带走）**: 头图 1/2 步已刷——Build→gcc_build.py（默认，
+  builder=keil 显式配置时唤起 legacy 桥）；Analyze→gcc 路径直传 build metrics，
+  keil 路径走 legacy 知识库（口径对照 step_analyze 实现）。
+- **F-033 处置（收口完成）**: 三分支 `git branch -d` 删除（-d 自带"仅认可已合并"
+  保险；删除输出留 8afd8dd/9cadade/0104dcb 三 SHA 供 reflog 回放）。
 - **F-029 登记（重复度量化，附限定条件）**: 三份 runtime（wb 379 / openocd 354 /
   serial 515 行）共有 22 个同名符号、三份合计 633 行、相对最大单份冗余 406 行
   （≈430-450 区间下沿，判据=同名符号行数并集）。**非纯复制，是同源分叉**：
@@ -63,10 +68,17 @@
   顺带钉住 3 重试骨架与"进程即死必如实 error"。咬合验证：临时回退 F-027 修法
   → 钉转红 → 还原 → 转绿，verify.py 字节回滚（diff 仅测试文件）。与 F-027
   静态钉成对：属性级 + kwargs 级双层防线。
-- **F-032 登记（本轮施工）**: `serial_mux.py` PTY 虚拟串口层硬依赖 socat
-  （:207 起 `which("socat")` 失败即 `socat_missing` 体面报错，非崩溃，但提示只给
-  apt/pacman——Windows 用户零可行路径）。本轮收口错误消息与限制声明：明示 PTY 层为
-  Linux/macOS-only、单读者+TCP 广播两层不受影响。
+- **F-032 登记+处置（限制声明，含登记语订正）**: `serial_mux.py` PTY 虚拟串口层硬
+  依赖 socat——施工时核实比登记更严重：`which("socat")` 检查在 `start_mux()` 最前
+  无条件执行，**无 socat 则整个 mux 起不来**（并非登记初稿所写"另两层不受影响"，
+  该不实表述已随本条订正）。错误消息与模块头图同步改为实情：PTY 层 Linux/macOS-only、
+  Windows 不支持；"与 PTY 解耦（--no-pty）"列为后续增强，未实现前不按部分功能规划。
+- **F-026 处置（冒烟 tempfile 化，同轮提前带走）**: 删除硬编码维护者路径占位符
+  （历史重写后已死）；改双段——合成全字段清单（texts/patterns+capture_group+
+  min-max/xfail+reason 三条目，钉"xfail 提示是唯一合法 warning"）任何机器任何
+  检出恒跑；真档冒烟能力保留为 `ETK_SMOKE_EXPECTATIONS` 环境变量 opt-in（本机
+  实测指向 adc-oled 真清单通过，2/2 无跳）。全量 **192 全绿**；skipped=1 语义
+  变更：不再是占位符死跳，改为 opt-in 主动跳过。
 - **F-033 登记（本轮处置）**: handoff 三分支（zcode-20260830 / zcode-r2-20260830 /
   r2-reconcile-20260831）`git branch --merged master` 全部命中——R2/R3 换回流程遗留，
   去留自 R2 挂账至今。本轮 `git branch -d` 收口删除（-d 自带已并入保险）。

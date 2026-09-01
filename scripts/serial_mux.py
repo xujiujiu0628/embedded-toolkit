@@ -1,4 +1,10 @@
-"""Serial 多路复用管理 — 单串口读者 + TCP 广播 + 虚拟 PTY"""
+"""Serial 多路复用管理 — 单串口读者 + TCP 广播 + 虚拟 PTY
+
+限制 (F-032): PTY 虚拟串口层硬依赖 socat, 仅 Linux/macOS 可用 (apt/pacman 安装);
+现阶段 mux 启动无条件先查 socat —— 无 socat (典型 Windows) 时 mux_start 体面
+返回 socat_missing, 整体不可用。"单读者+TCP 广播与 PTY 解耦 (--no-pty)" 列为
+后续增强, 未实现前勿按部分功能规划工作流。
+"""
 
 from __future__ import annotations
 
@@ -209,7 +215,10 @@ def start_mux(port: str, baudrate: int | None, workspace: str | None, vserial_li
             success=False,
             action="mux_start",
             summary="socat 未安装",
-            error={"code": "socat_missing", "message": "请安装 socat: apt install socat / pacman -S socat"},
+            error={"code": "socat_missing",
+                   "message": "mux 的 PTY 虚拟串口层依赖 socat (仅 Linux/macOS: "
+                              "apt install socat / pacman -S socat); 现阶段无 socat "
+                              "则整个 mux 不可用, Windows 不支持 (解耦为后续增强)"},
         )
 
     # 检查已运行的 mux (F-019: 后续可能清理保存, 用隔离加载防"损坏→覆写")

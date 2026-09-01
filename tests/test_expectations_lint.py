@@ -1,6 +1,10 @@
 """expectations_lint 回归 (R2 D 项, 2026-08-30).
 
-E1~E9 规则逐条 + 真档冒烟 (现役 adc-oled 工程清单, 只读)。
+E1~E9 规则逐条 + 合成全字段冒烟。
+
+F-026 订正: 原"真档冒烟"硬编码维护者本机 adc-oled 路径, 历史重写后变占位符
+恒跳过 (本机亦失效)——已改 tempfile 合成清单 (覆盖 texts/patterns/capture_group/
+min/max/xfail 全字段面); 真档冒烟改为环境变量 ETK_SMOKE_EXPECTATIONS opt-in。
 """
 import json
 import os
@@ -15,8 +19,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(
 
 import expectations_lint  # noqa: E402
 
-ADC_OLED = r"<工作区根>\stm32f103-adc-oled"
-ADC_OLED_EXP = os.path.join(ADC_OLED, ".workbench", "expectations.json")
+SMOKE_ENV = "ETK_SMOKE_EXPECTATIONS"  # 真档冒烟 opt-in: 指路径则 lint 之 (F-026)
 
 VALID = {"expectations": [
     {"id": "FR-A", "desc": "boot ok", "texts": ["LED ON"]},
@@ -158,10 +161,38 @@ class LintFileTests(unittest.TestCase):
         payload = json.loads(r.stdout)
         self.assertEqual(payload["verdict"], "error")
 
-    @unittest.skipUnless(os.path.isfile(ADC_OLED_EXP), "adc-oled 工程不在场")
-    def test_real_adc_oled_expectations_clean(self):
-        # 真档冒烟: 现役工程的清单必须过 lint (只读, 不触硬件)
-        out = expectations_lint.lint_file(ADC_OLED_EXP)
+
+class SyntheticSmokeTests(unittest.TestCase):
+    """F-026: 冒烟从"维护者本机真档"改为"tempfile 合成全字段清单"——任何
+    机器任何检出都应跑通; 真档冒烟保留能力, 经 ETK_SMOKE_EXPECTATIONS opt-in。"""
+
+    FULL_FEATURED = {"expectations": [
+        {"id": "FR-SYS-01", "desc": "启动横幅", "texts": ["=== boot ==="]},
+        {"id": "FR-ADC-02", "desc": "毫伏读数", "patterns": [r"mv=(\d{4})"],
+         "capture_group": 1, "min": 0, "max": 3300},
+        {"id": "FR-TGL-03", "desc": "已知缺陷留痕", "patterns": [r"TGL \d+"],
+         "xfail": True, "xfail_reason": "L3 回绕 deferred, 见台账"},
+    ]}
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.tmp, True)
+
+    def test_full_featured_manifest_clean_xfail_warned(self):
+        p = os.path.join(self.tmp, "expectations.json")
+        with open(p, "w", encoding="utf-8") as f:
+            json.dump(self.FULL_FEATURED, f, ensure_ascii=False)
+        out = expectations_lint.lint_file(p)
+        self.assertEqual(out["errors"], [], out["errors"])
+        self.assertEqual(out["item_count"], 3)
+        self.assertEqual(len(out["warnings"]), 1,
+                         "xfail 提示是唯一合法 warning: " + str(out["warnings"]))
+        self.assertIn("xfail", out["warnings"][0])
+
+    @unittest.skipUnless(os.path.isfile(os.environ.get(SMOKE_ENV, "")),
+                         f"未设 {SMOKE_ENV} 真档冒烟路径")
+    def test_real_project_expectations_clean_opt_in(self):
+        out = expectations_lint.lint_file(os.environ[SMOKE_ENV])
         self.assertEqual(out["errors"], [], out["errors"])
         self.assertGreaterEqual(out["item_count"], 1)
 
