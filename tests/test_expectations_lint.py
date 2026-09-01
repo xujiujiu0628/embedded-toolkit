@@ -140,6 +140,24 @@ class LintFileTests(unittest.TestCase):
         payload = json.loads(r.stdout)
         self.assertEqual(payload["verdict"], "error")
 
+    def test_json_output_utf8_regardless_of_console(self):
+        # F-025 回归: 曾随环境——Windows GBK 控制台下中文字段以 GBK 字节落管道,
+        # 父进程按 utf-8 解码崩溃。脚本自身强制 stdout/stderr UTF-8 后,
+        # 即使被强制成 GBK 环境, --json 输出仍必须是合法 UTF-8 JSON。
+        with open(self.path, "w", encoding="utf-8") as f:
+            f.write("{broken")
+        env = dict(os.environ, PYTHONIOENCODING="gbk")
+        r = subprocess.run(
+            [sys.executable,
+             os.path.join(os.path.dirname(os.path.dirname(
+                 os.path.abspath(__file__))), "scripts", "expectations_lint.py"),
+             self.path, "--json"],
+            capture_output=True, text=True, encoding="utf-8",
+            env=env, timeout=60)
+        self.assertEqual(r.returncode, 1)
+        payload = json.loads(r.stdout)
+        self.assertEqual(payload["verdict"], "error")
+
     @unittest.skipUnless(os.path.isfile(ADC_OLED_EXP), "adc-oled 工程不在场")
     def test_real_adc_oled_expectations_clean(self):
         # 真档冒烟: 现役工程的清单必须过 lint (只读, 不触硬件)
