@@ -26,8 +26,13 @@
   `[A-Za-z]:[\\/]{1,2}(Users|claude)` 恢复"防硬编码回潮"原语义。
 - **F-025 存量缺陷登记**: `test_cli_exit_codes_and_json` 在 Windows 非 UTF-8
   控制台失败（子进程 GBK 撞 utf-8 解码）；bundle 基线对照复现 → 与本轮操作
-  无关，CI（ubuntu）恒绿。修法留后轮（脚本 stdout reconfigure 或测试附
-  `PYTHONIOENCODING=utf-8`）。
+  无关，CI（ubuntu）恒绿。（登记原文留档，修复见下条。）
+- **F-025 修复（同日，TDD 先红后绿）**: `expectations_lint.main()` 起手强制
+  stdout/stderr UTF-8（惯用法对齐 `verify._output`，stderr 一并——人类模式
+  错误报告同为中文）；新增回归钉 `test_json_output_utf8_regardless_of_console`
+  将子进程环境强制 `PYTHONIOENCODING=gbk` 仍断言 --json 输出为合法 UTF-8 JSON
+  ——修前以同款 0xce 崩溃证红、修后证"随脚本不随环境"；全量套件 **182 全绿**
+  （skipped=1 为 F-026）。
 - **F-026 联动现状**: `test_expectations_lint.py` 真档冒烟路径字面量随重写
   变占位符，本机亦恒跳过（skipped+1）；tempfile 化已无历史包袱，列下轮。
 - **F-5 时间线登记**: Events API 显示仓库曾于 2026-08-26 公开一次（转私时点

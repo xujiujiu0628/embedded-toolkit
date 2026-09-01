@@ -35,8 +35,9 @@
 2. ✅ **HEAD 机器路径**：随重写一次洗清（行内替换不增减行数，报告行号引用仍有效）。
 3. ⏳ **F-3 测试硬编码**：字面量已被洗为占位符 → 真档冒烟对本机也恒跳过，
    tempfile 化已无历史包袱，建议列入下轮（见 SENSITIVE_FINDINGS F-3）。
-   **F-4（新登记）**：`test_cli_exit_codes_and_json` 在 Windows 非 UTF-8 终端下失败，
-   对照 bundle 基线证明为存量缺陷（与重写无关），修法见 SENSITIVE_FINDINGS F-4。
+   **F-4**：`test_cli_exit_codes_and_json` 在 Windows 非 UTF-8 终端下失败
+   （存量缺陷，对照 bundle 基线与重写无关）——✅ 同日已修（脚本强制 UTF-8 +
+   GBK 环境回归钉，182 全绿），详见 SENSITIVE_FINDINGS F-4。
 4. **本地 3 个 `handoff/*` 分支**：已随全 ref 重写脱敏（commit hash 全变）；
    是否推送/合并/留本地仍待拍板——内容已无 PII，仅过程性治理记录。
 5. **F-5 时间线事实（已登记，2026-09-01 补）**：Events API 显示仓库 8/26 曾
