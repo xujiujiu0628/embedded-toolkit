@@ -121,6 +121,8 @@ def _step_capture_rtt(timeout_s: int, rtt_cfg: dict) -> dict:
 
     base_cmd = [OPENOCD_EXE, "-c", "bindto 127.0.0.1",
                 "-f", "interface/stlink.cfg", "-f", "target/stm32f1x.cfg"]
+    # F-027: 该常量仅 Windows 存在, 裸用会让 Linux 在 rtt 分支直接 AttributeError
+    creationflags = subprocess.CREATE_NEW_PROCESS_GROUP if sys.platform == "win32" else 0
     started = time.time()
     last_err = "unknown"
 
@@ -131,7 +133,7 @@ def _step_capture_rtt(timeout_s: int, rtt_cfg: dict) -> dict:
             proc = subprocess.Popen(
                 base_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
                 text=True, encoding="utf-8", errors="replace",
-                creationflags=subprocess.CREATE_NEW_PROCESS_GROUP, cwd=WORKSPACE)
+                creationflags=creationflags, cwd=WORKSPACE)
 
             def _drain(p=proc, sink=err_lines):
                 for line in p.stderr:
