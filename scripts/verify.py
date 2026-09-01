@@ -13,7 +13,7 @@
     1. Build   → keil_build.py
     2. Analyze → keil_analyze.py  (有 error 则终止)
     3. Flash   → OpenOCD program
-    4. Capture → openocd_semihosting.py (采集 printf 输出)
+    4. Capture → verify.py 内置双路: semihosting 内联会话 (默认) | rtt (capture.backend)
     4c. Physical → OpenOCD ODR 轮询 GPIO 翻转频率 (物理层门控, 默认 skipped)
     5. Output  → 结构化 JSON 结果, Claude 对比期望判断 ✅/❌
 """
@@ -43,16 +43,15 @@ GCC_BUILD = os.path.join(TOOLKIT_ROOT, "scripts", "gcc_build.py")         # 默�
 # Keil 桥 (2026-08-28 退役入 legacy): builder 显式配 "keil" 时按需唤起, 见 scripts/legacy/keil/README.md
 KEIL_BUILD = os.path.join(TOOLKIT_ROOT, "scripts", "legacy", "keil", "keil_build.py")
 KEIL_ANALYZE = os.path.join(TOOLKIT_ROOT, "scripts", "legacy", "keil", "keil_analyze.py")
-OPENOCD_SEMIHOSTING = os.path.join(TOOLKIT_ROOT, "scripts", "openocd_semihosting.py")  # 阶段2: 已折入工具库
 FEEDBACK_DB = os.path.join(TOOLKIT_ROOT, "scripts", "feedback_db.py")
 
 # ---------------------------------------------------------------------------
 # RTT 采集后端 (capture.backend="rtt") — SEGGER RTT over OpenOCD rtt server
-# 骨架沿用 openocd_semihosting.py 的助手惯例（本工具库按脚本复制，不做共享模块）
+# 助手惯例与 openocd_* 系列对齐（本工具库按脚本复制，不做共享模块）
 # ---------------------------------------------------------------------------
 
 _RTT_TELNET_PORT = 4444
-# 与 hardfault.py / openocd_semihosting.py 同源的适配器致命错误串
+# 与 hardfault.py 同源的适配器致命错误串
 _RTT_CRITICAL_ERRORS = ["open failed", "init mode failed", "no device found",
                         "cannot connect", "error connecting dp", "examination failed"]
 
@@ -349,18 +348,6 @@ def step_flash(hex_file: str) -> dict:
         "-c", f"program {{{hex_abs}}} verify reset exit"
     ]
     return run_cmd(cmd, timeout=30)
-
-
-def step_capture_semihosting(timeout: int) -> dict:
-    """步骤 4: Semihosting 输出采集"""
-    args = [
-        "--interface", "interface/stlink.cfg",
-        "--target", "target/stm32f1x.cfg",
-        "--timeout", str(timeout),
-        "--reset",
-        "--json"
-    ]
-    return run_py(OPENOCD_SEMIHOSTING, args, timeout=timeout + 30)
 
 
 def step_physical_gate(pg_cfg: dict, timeout: int) -> dict:
@@ -1142,7 +1129,7 @@ def main():
         result["steps"]["capture"] = cap
     else:
         # 直接调 OpenOCD: init → reset halt → semihosting enable → resume → sleep → halt → shutdown
-        # 这是手工验证过的可靠方式，不走复杂的 openocd_semihosting.py 脚本
+        # 这是手工验证过的可靠方式（曾有独立 openocd_semihosting.py，F-028 删除，git 史可回放）
         # reset halt: 确定性起点 — 目标可能停在上一会话的 BKPT 冻结处 (printf 中途)
         # 或 boot 中段 (I2C2 BUSY 等待), 仅 halt 续跑会得到不完整 boot 输出 (2026-08-16 教训)
         openocd_cmd = [
