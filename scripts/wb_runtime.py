@@ -47,9 +47,21 @@ def load_local_config(script_file: str | None = None, skill: str = SKILL_NAME) -
 
 
 def save_local_config(data: dict, script_file: str | None = None, skill: str = SKILL_NAME) -> Path | None:
-    """保存环境级配置到 TOOLKIT/config/<skill>.json"""
+    """保存环境级配置到 TOOLKIT/config/<skill>.json
+
+    F-021: 配置损坏时**拒绝写回**返回 None — 本函数是读改写族,
+    把损坏当空文件会让一次写回清空其余键 (与 save_project_config/F-020 同契约)
+    """
     config_path = default_config_path(skill=skill)
-    existing = load_json_file(config_path)
+    if config_path.exists():
+        try:
+            existing = load_json_strict(config_path)
+        except JSONCorruptError as e:
+            print(f"Warning: 拒绝写回 {config_path.name} 以免清空其余键, "
+                  f"请手工修复后重试: {e}", file=sys.stderr)
+            return None
+    else:
+        existing = {}
     existing.update(data)
     save_json_file(config_path, existing)
     return config_path
@@ -183,7 +195,7 @@ def save_json_file(path: str | Path, data: dict) -> None:
     新文件, 不再有半截 JSON (F-019: 撕裂读曾把下游引入"损坏→清空"链)"""
     file_path = Path(path)
     file_path.parent.mkdir(parents=True, exist_ok=True)
-    tmp_path = file_path.with_name(file_path.name + ".tmp")
+    tmp_path = file_path.with_name(f"{file_path.name}.{os.getpid()}.tmp")  # F-023: pid 防双进程互顶
     tmp_path.write_text(json.dumps(data, ensure_ascii=False, indent=2),
                         encoding="utf-8")
     os.replace(tmp_path, file_path)

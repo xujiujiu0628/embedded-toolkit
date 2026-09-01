@@ -13,7 +13,7 @@ import re
 import sys
 from datetime import datetime, timezone, timedelta
 
-from wb_common import TOOLKIT_ROOT, find_project_root
+from wb_common import TOOLKIT_ROOT, atomic_write_json, find_project_root
 
 ERROR_DB_PATH = os.path.join(TOOLKIT_ROOT, "data", "keil-error-db.json")
 
@@ -185,8 +185,7 @@ def _cache_entry(event_id: str, new_entry: dict, score: float, hits: list) -> di
     cache.setdefault("entries", []).append(entry)
     cache.setdefault("_meta", {})["last_updated"] = now_iso()
 
-    with open(cache_path, 'w', encoding='utf-8', newline='\n') as f:
-        json.dump(cache, f, ensure_ascii=False, indent=2)
+    atomic_write_json(cache_path, cache)  # F-022: 原子写 (原裸 open('w') truncate)
 
     return {
         "status": "cached",
@@ -305,8 +304,7 @@ def grow(event_id: str, unmatched_entry: dict, diagnosis: dict) -> dict:
     meta["last_updated"] = now_iso()
 
     # 写入
-    with open(ERROR_DB_PATH, 'w', encoding='utf-8', newline='\n') as f:
-        json.dump(db, f, ensure_ascii=False, indent=2)
+    atomic_write_json(ERROR_DB_PATH, db)  # F-022: 原子写 (原裸 open('w') truncate)
 
     return {
         "status": "ok",

@@ -22,7 +22,7 @@ import time
 from datetime import datetime
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from wb_common import (TOOLKIT_ROOT, find_project_root,  # noqa: E402
+from wb_common import (TOOLKIT_ROOT, atomic_write_json, find_project_root,  # noqa: E402
                        load_machine, toolkit_version)
 
 VERIFY = os.path.join(TOOLKIT_ROOT, "scripts", "verify.py")
@@ -198,8 +198,7 @@ def finalize(ws, tag, record):
     rec_dir = os.path.join(ws, ".workbench", "releases")
     os.makedirs(rec_dir, exist_ok=True)
     rec_p = os.path.join(rec_dir, f"{tag}.json")
-    with open(rec_p, "w", encoding="utf-8") as f:
-        json.dump(record, f, ensure_ascii=False, indent=2)
+    atomic_write_json(rec_p, record)  # F-022: 发布记录是 R7/M2 取证锚, 撕裂即报废
     rec_rel = os.path.relpath(rec_p, ws).replace(os.sep, "/")
 
     def _rollback():

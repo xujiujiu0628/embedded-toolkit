@@ -59,7 +59,7 @@ def save_json_file(path: str | Path, data: dict) -> None:
     """保存 JSON 文件，自动创建目录；原子写 (.tmp + os.replace, F-019)"""
     file_path = Path(path)
     file_path.parent.mkdir(parents=True, exist_ok=True)
-    tmp_path = file_path.with_name(file_path.name + ".tmp")
+    tmp_path = file_path.with_name(f"{file_path.name}.{os.getpid()}.tmp")  # F-023: pid 防双进程互顶
     tmp_path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
     os.replace(tmp_path, file_path)
 
