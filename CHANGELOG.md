@@ -38,6 +38,27 @@
   `parameter_context` 三处签名各不相同——机械去重必破坏调用方。且
   test_writeback_guards.py:28 以 `RUNTIMES=[wb, ocd, serial]` 参数化把三形态钉进测试，
   合并时测试须同步改。路线：先统一契约，后谈提取公共模块。
+- **F-021/F-022/F-023 处置（原子写收口包，TDD 六签先红后绿）**: 三件同族打包。
+  F-021=`wb_runtime.save_local_config` 补 F-020 同款损坏拒写守卫（读改写族；
+  openocd/serial 侧同名函数为整写语义不在族内，维持不动）；F-022=新增共享工具
+  `wb_common.atomic_write_json`（pid tmp + 强制 LF + 自动建父目录），
+  `error_db_grow` 两处与 `release.py` 记录写三处裸 `open('w')+json.dump` 全部并入，
+  并落静态防回潮钉（两脚本内 open-w 后 3 行内 json.dump 即违例）；
+  F-023=三份 runtime `save_json_file` tmp 名改 `<file>.<pid>.tmp` 杜绝双进程互顶
+  （按脚本自含惯例保留三份拷贝，契约统一留 F-029）。新增 5 例，
+  全量 **188 全绿**（skipped=1 仍 F-026）。
+- **F-031 登记（本轮施工）**: Linux 真机路径整体未验证——F-027 修掉的是"已知崩溃点"
+  而非完成验证；README 自述"真机构建路径未验证、欢迎报告"，CI（ubuntu）只跑 mock 套件，
+  进程终止/信号/创建标志类平台差异仍属盲区。本轮补 `_step_capture_rtt()` 的
+  mock-Popen 平台派发单元钉（Linux 模拟必传 creationflags=0——即 P0 崩溃类），
+  真机 Linux 冒烟清单仍留社区/后续。
+- **F-032 登记（本轮施工）**: `serial_mux.py` PTY 虚拟串口层硬依赖 socat
+  （:207 起 `which("socat")` 失败即 `socat_missing` 体面报错，非崩溃，但提示只给
+  apt/pacman——Windows 用户零可行路径）。本轮收口错误消息与限制声明：明示 PTY 层为
+  Linux/macOS-only、单读者+TCP 广播两层不受影响。
+- **F-033 登记（本轮处置）**: handoff 三分支（zcode-20260830 / zcode-r2-20260830 /
+  r2-reconcile-20260831）`git branch --merged master` 全部命中——R2/R3 换回流程遗留，
+  去留自 R2 挂账至今。本轮 `git branch -d` 收口删除（-d 自带已并入保险）。
 
 ## Unreleased — 2026-09-01（开源准备：社区门面补全 + 历史脱敏重写）
 

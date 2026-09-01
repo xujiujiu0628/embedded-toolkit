@@ -65,3 +65,21 @@ def _ver_tuple(s):
 
 def version_ok(actual, minimum):
     return _ver_tuple(actual) >= _ver_tuple(minimum)
+
+
+def atomic_write_json(path, data):
+    """原子 JSON 写 (F-022): 进程级 tmp 名 + os.replace, 强制 LF 行尾。
+
+    error_db_grow / release 等独立脚本的读改写落盘统一走这里, 杜绝
+    truncate 写撕裂 (撕裂读会喂下游"损坏→清空"链, 同 F-019 教训)。
+    tmp 名带 pid = 双进程并发写同一目标不互顶 (F-023, 与 runtime 侧
+    save_json_file 同口径; runtime 按脚本自含惯例保留各自拷贝)。
+    """
+    path = str(path)
+    d = os.path.dirname(path)
+    if d:
+        os.makedirs(d, exist_ok=True)
+    tmp = f"{path}.{os.getpid()}.tmp"
+    with open(tmp, "w", encoding="utf-8", newline="\n") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+    os.replace(tmp, path)
