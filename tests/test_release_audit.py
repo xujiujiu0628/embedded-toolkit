@@ -125,6 +125,27 @@ class ReleaseAuditTests(unittest.TestCase):
         r7 = [c for c in out["checks"] if c["id"] == "R7"][0]
         self.assertEqual(r7["status"], "fail")
 
+    def test_embeddedskills_layout_contract_matched(self):
+        # F-024: R7 曾硬编码 .workbench/* 比对路径, .embeddedskills 布局工程
+        # (verify.contract_hashes 两布局都认) 恒 warn "不可得" — 盲区须双认
+        wb_exp = os.path.join(self.ws, ".workbench", "expectations.json")
+        wb_cfg = os.path.join(self.ws, ".workbench", "config.json")
+        os.remove(wb_exp)
+        os.remove(wb_cfg)
+        os.makedirs(os.path.join(self.ws, ".embeddedskills"))
+        with open(os.path.join(self.ws, ".embeddedskills", "expectations.json"), "wb") as f:
+            f.write(self.exp_data)
+        with open(os.path.join(self.ws, ".embeddedskills", "config.json"), "wb") as f:
+            f.write(self.cfg_data)
+        self.git("add", "-A")
+        self.git("commit", "-qm", "embeddedskills layout")
+        _, head2, _ = release_audit._git(["rev-parse", "HEAD"], self.ws)
+        rec = self._record(git_head=head2)
+        rel = self._write(rec)
+        r7 = [c for c in release_audit.audit_record(
+            self.ws, "v1.1.0", rel)["checks"] if c["id"] == "R7"][0]
+        self.assertEqual(r7["status"], "pass", r7["detail"])
+
     def test_tampered_hex_fails(self):
         rel = self._write(self._record())
         with open(os.path.join(self.ws, self.hex_rel), "wb") as f:
