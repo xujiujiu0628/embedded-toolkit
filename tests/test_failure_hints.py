@@ -1,12 +1,14 @@
 """失败现场 agent_hint 路径来源回归 (开源门面 C5/C6b).
 
-背景: 提示串曾硬编码维护者机器的绝对路径 (<工作区根>\\embedded-toolkit\\...),
+背景: 提示串曾硬编码维护者机器的工作区绝对路径 (盘符:\...\embedded-toolkit\...),
 对陌生 clone 是坏指引——verify 的失败提示必须随 TOOLKIT_ROOT 推导 (用 patch
 证明"跟着变量走"), gen_periph 的生成物注释必须用仓相对命令; 静态守卫防源码回潮
-(源码态是 Python 转义形 <工作区根>, 归一化后再查)。
+(2026-09-01 历史重写后改通用盘符判据: 任何 `盘符:/(Users|claude)` 形态都视为回潮,
+归一化转义后匹配)。
 """
 import json
 import os
+import re
 import shutil
 import sys
 import tempfile
@@ -46,8 +48,11 @@ class FlashCaptureHintTests(unittest.TestCase):
         self.assertIn(os.path.join(FAKE_TK, "scripts", "hardfault.py"), hint)
 
 
+_MAINTAINER_PATH = re.compile(r"[A-Za-z]:[\\/]{1,2}(Users|claude)")
+
+
 class NoHardcodedMaintainerPathsTest(unittest.TestCase):
-    """静态守卫: 提示/生成物源码不得嵌入维护者机器绝对路径。"""
+    """静态守卫: 提示/生成物源码不得嵌入维护者机器绝对路径 (通用盘符判据)。"""
 
     @staticmethod
     def _normalized(name):
@@ -55,10 +60,10 @@ class NoHardcodedMaintainerPathsTest(unittest.TestCase):
             return f.read().replace("\\\\", "\\")
 
     def test_gen_periph_source_clean(self):
-        self.assertNotIn("<工作区根>\\embedded-toolkit", self._normalized("gen_periph.py"))
+        self.assertIsNone(_MAINTAINER_PATH.search(self._normalized("gen_periph.py")))
 
     def test_verify_source_clean(self):
-        self.assertNotIn("<工作区根>\\embedded-toolkit", self._normalized("verify.py"))
+        self.assertIsNone(_MAINTAINER_PATH.search(self._normalized("verify.py")))
 
 
 if __name__ == "__main__":
