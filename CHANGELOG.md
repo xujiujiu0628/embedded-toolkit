@@ -26,6 +26,11 @@
   `OPENOCD_SEMIHOSTING`，头图第 4 步改写为"verify.py 内置双路: semihosting 内联 |
   rtt"；RTT 段首两处与内联 semihosting 分支内共三处悬空注释同步收口（末处保留
   "曾有其物，git 史可回放"记号）。删除前后全仓 grep 零代码引用；183 全绿不变。
+- **F-030 登记（头图陈旧，维护者拍板下轮顺手修）**: verify.py 头图流程第 1/2 步仍写
+  Build→keil_build.py / Analyze→keil_analyze.py——Keil 已于 2026-08-28 退役入 legacy
+  （:42-45 实证：默认后端 `builder=gcc`，Keil 桥仅显式配置时按需唤起）。修法=两行
+  改写为 GCC 默认 + legacy 桥注记，与 :43 口径一致；随下轮（F-029 契约统一或 F-026
+  tempfile 化）顺手刷掉。
 - **F-029 登记（重复度量化，附限定条件）**: 三份 runtime（wb 379 / openocd 354 /
   serial 515 行）共有 22 个同名符号、三份合计 633 行、相对最大单份冗余 406 行
   （≈430-450 区间下沿，判据=同名符号行数并集）。**非纯复制，是同源分叉**：
