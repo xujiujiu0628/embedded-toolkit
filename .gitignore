@@ -2,3 +2,37 @@ __pycache__/
 *.pyc
 machine.json
 .mcp.json
+.superpowers/
+
+# 虚拟环境 / 本地配置
+.env
+.env.local
+.env.*.local
+.venv/
+venv/
+env/
+config.local.*
+
+# 依赖与构建产物
+node_modules/
+dist/
+build/
+target/
+
+# 日志
+logs/
+*.log
+
+# 数据库文件
+*.db
+*.sqlite
+
+# 系统文件
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# IDE / 编辑器
+.vscode/
+.idea/
+*.swp

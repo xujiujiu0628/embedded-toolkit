@@ -1,6 +1,9 @@
 # embedded-toolkit
 
 [![CI](https://github.com/xujiujiu0628/embedded-toolkit/actions/workflows/ci.yml/badge.svg)](https://github.com/xujiujiu0628/embedded-toolkit/actions/workflows/ci.yml)
+![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)
+![Python](https://img.shields.io/badge/python-3.10%2B-blue)
+![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux-lightgrey)
 
 **AI 写嵌入式固件的闭环验证工作台：代码可以由 AI 生成，但"算不算对"由机器说了算。**
 
@@ -227,6 +230,17 @@ embedded-toolkit/
 - **F-024** `release_audit` R7 比对路径未覆盖 `.embeddedskills` 布局工程
 - 有意搁置：UART 串口补丁的发布门禁脆弱性（成本/收益不立项）；Linux 真机路径验证
 - 方向：多 MCU（ESP32）工具栈评估——见 docs 档案
+
+## 贡献
+
+请先读 [`.github/CONTRIBUTING.md`](.github/CONTRIBUTING.md)（环境准备 / 测试纪律 / 禁区）：
+
+- **Bug / 功能请求**：用 [Issue 模板](.github/ISSUE_TEMPLATE/) 提报（verify 相关
+  问题请附 `verify.py --json` 完整输出）
+- **PR**：按 [PULL_REQUEST_TEMPLATE.md](.github/PULL_REQUEST_TEMPLATE.md) 填写；
+  修 bug 必带回归测试
+- **安全问题**：请勿开公开 issue，按 [SECURITY.md](SECURITY.md) 私下报告
+- 社区行为准则见 [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)
 
 ## License
 
