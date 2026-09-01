@@ -3,6 +3,34 @@
 格式约定: 每条含发现编号（代管期 findings 编目）与证据 commit。当前版本以
 `VERSION` 文件为准（`wb_common.toolkit_version()` 读取）。
 
+## Unreleased — 2026-09-01（开源准备：社区门面补全 + 历史脱敏重写）
+
+- **社区门面补全**: 新增 `CODE_OF_CONDUCT.md`（Contributor Covenant 2.1 中译）/
+  `SECURITY.md`（私下报告渠道 + 响应时限 + 硬件免责）/
+  `.github/PULL_REQUEST_TEMPLATE.md`（对齐 CONTRIBUTING 测试纪律）；
+  `.gitignore` 补全标准清单（虚拟环境/依赖/日志/DB/系统/IDE）；README 加
+  License/Python/Platform 徽章与「贡献」入口。
+- **敏感信息扫描建档**: `SENSITIVE_FINDINGS.md`（15 类凭证模式全零）与
+  `OPENSOURCE_READY.md`。
+- **历史脱敏重写（git filter-repo × 两轮，决策反转）**: 对 0.3 节
+  "不重写 git 历史"的反转——公开前洗清个人 Windows 用户名（27 处，全部
+  Users 路径形态，定长 lookbehind 零误伤）与工作区盘符路径（三形态统一
+  映射 `<工作区根>`）。**坑（登记）**: `--replace-text` 不作用于 commit/tag
+  message，首轮漏 1 处，二轮 `--message-callback`/`--tag-callback` 补齐；
+  终验（log -p + 全部 %B + tag contents）零残留。**本账目与 docs 中引用的
+  重写前短 hash 全部失效**——重写前完整 commit 图封存于
+  `../archive/embedded-toolkit-prehistory-20260901.bundle`，clone 该 bundle
+  可按旧 hash 回放全部证据链（0.3 节括号内 hash 均指旧图）。
+- **守卫判据适配（重写伴随，本次唯一代码改动）**: `test_failure_hints.py`
+  静态守卫的断言目标被重写洗成占位符→恒真失效，改通用盘符判据
+  `[A-Za-z]:[\\/]{1,2}(Users|claude)` 恢复"防硬编码回潮"原语义。
+- **F-025 存量缺陷登记**: `test_cli_exit_codes_and_json` 在 Windows 非 UTF-8
+  控制台失败（子进程 GBK 撞 utf-8 解码）；bundle 基线对照复现 → 与本轮操作
+  无关，CI（ubuntu）恒绿。修法留后轮（脚本 stdout reconfigure 或测试附
+  `PYTHONIOENCODING=utf-8`）。
+- **F-026 联动现状**: `test_expectations_lint.py` 真档冒烟路径字面量随重写
+  变占位符，本机亦恒跳过（skipped+1）；tempfile 化已无历史包袱，列下轮。
+
 ## 0.3 — 2026-08-31（开源门面，master）
 
 - **machine.json 出库+回退链**: 新克隆无 machine.json 时 `load_machine` 回退
