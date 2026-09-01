@@ -3,6 +3,33 @@
 格式约定: 每条含发现编号（代管期 findings 编目）与证据 commit。当前版本以
 `VERSION` 文件为准（`wb_common.toolkit_version()` 读取）。
 
+## Unreleased — 2026-09-01（代管 R3：跨平台回收 + 外围模块补齐入账）
+
+- **F-027 登记+修复（P0，TDD 先红后绿）**: `verify.py::_step_capture_rtt()` 裸用
+  `subprocess.CREATE_NEW_PROCESS_GROUP`——该常量仅在 CPython `if _mswindows:` 分支内
+  绑定（subprocess.py:80-82 实证），Linux/macOS 上属性访问即 AttributeError；且 README
+  「5 分钟上手」第 1 步示例正是 `"backend": "rtt"`，照抄的 Linux 用户首次真机运行必崩。
+  默认 semihosting 走内联路径不经过该行，故长期未暴露。仓库其余 4 处同类常量
+  （openocd_gdb/itm/semihosting/telnet）全部带守卫——属遗漏，非设计选择。修复=搬既有
+  惯用法 `... if sys.platform == "win32" else 0`（提出重试循环外，单次计算）。
+  回归钉 `test_platform_guards.py` 静态判据：裸用 Windows-only subprocess 常量须与守卫
+  同行（`getattr(subprocess, …, 0)` 形态构造性安全豁免；legacy/ 不入扫描）——修前
+  红证仅命中 verify.py:134 单点，修后绿；全量 **183 全绿**（skipped=1 仍为 F-026）。
+- **F-028 登记（孤儿代码，待拍板，未动刀）**: `verify.py::step_capture_semihosting()`
+  全仓零调用（仅命中定义处），其唯一下游为 `OPENOCD_SEMIHOSTING` 常量（verify.py:46），
+  该常量唯一使用点即此死函数（:363）——死链完整终止于 `openocd_semihosting.py`
+  （544 行，自带 `__main__` 独立 CLI 形态，未入 README 工具表，零测试覆盖）。实际生效的
+  semihosting 是 verify.py 内联实现（:1145 注释自述"不走复杂脚本"）；verify.py:16 头图
+  仍写 Capture→openocd_semihosting.py，同属陈旧。处置选项（删除 / 保留并文档化为
+  手动工具 / 并入去重轮）留待维护者定夺。
+- **F-029 登记（重复度量化，附限定条件）**: 三份 runtime（wb 379 / openocd 354 /
+  serial 515 行）共有 22 个同名符号、三份合计 633 行、相对最大单份冗余 406 行
+  （≈430-450 区间下沿，判据=同名符号行数并集）。**非纯复制，是同源分叉**：
+  `make_result` serial 侧为 `success: bool` 位置参，wb/ocd 为 keyword-only `status: str`；
+  `parameter_context` 三处签名各不相同——机械去重必破坏调用方。且
+  test_writeback_guards.py:28 以 `RUNTIMES=[wb, ocd, serial]` 参数化把三形态钉进测试，
+  合并时测试须同步改。路线：先统一契约，后谈提取公共模块。
+
 ## Unreleased — 2026-09-01（开源准备：社区门面补全 + 历史脱敏重写）
 
 - **社区门面补全**: 新增 `CODE_OF_CONDUCT.md`（Contributor Covenant 2.1 中译）/
