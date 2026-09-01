@@ -30,6 +30,12 @@
   `PYTHONIOENCODING=utf-8`）。
 - **F-026 联动现状**: `test_expectations_lint.py` 真档冒烟路径字面量随重写
   变占位符，本机亦恒跳过（skipped+1）；tempfile 化已无历史包袱，列下轮。
+- **F-5 时间线登记**: Events API 显示仓库曾于 2026-08-26 公开一次（转私时点
+  不可考），9/1 复转 Public 与脱敏推送最坏重叠约 20 分钟——低危残留仅入账，
+  不向 GitHub support 提 purge（推理见 SENSITIVE_FINDINGS F-5）。
+- **v0.3 Release 追加账本说明节**: 维护者 08-31 手写正文保留原文（含已被
+  反转的"历史不重写"策略句，不删），文末拼接追加节声明反转、旧 hash 回放
+  指引与已知事项索引；description + 10 topics 经 gh 落地。
 
 ## 0.3 — 2026-08-31（开源门面，master）
 
