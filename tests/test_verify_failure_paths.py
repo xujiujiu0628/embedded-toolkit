@@ -5,6 +5,7 @@
 - F-003: OpenOCD 卡死超时 → 回收部分输出 + capture_failed (非谎报"程序无输出")
 - F-004: 反馈落账三条路径 (成功/门禁跳过/落账失败) 全部在 result.feedback 留痕
 """
+import io
 import json
 import os
 import shutil
@@ -194,6 +195,59 @@ class StepFlashNoArtifactTests(unittest.TestCase):
         r = verify.step_flash("no/such/file.hex")
         self.assertEqual(r["status"], "error")
         self.assertIn("no/such/file.hex", r["message"])
+
+
+class RttSpawnFlagsPlatformTests(unittest.TestCase):
+    """F-031 (F-027 的运行时姊妹钉): _step_capture_rtt 的 spawn 旗标必须随平台适配。
+
+    F-027 的静态钉管"裸用常量须有守卫同行" (属性级); 本测试管派发行为 (kwargs 级):
+    Linux 模拟下 creationflags 必为 0 —— 裸常量在该平台连属性都不存在 (P0 崩溃类),
+    win32 模拟下必传真实常量。假 Popen 进程即死, 顺带钉住 3 重试骨架与 error 如实上报。
+    """
+
+    class _DeadProc:
+        def __init__(self):
+            self.stderr = io.StringIO("")
+
+        def poll(self):
+            return 1
+
+        def terminate(self):
+            pass
+
+        def kill(self):
+            pass
+
+        def wait(self, timeout=None):
+            return 1
+
+    def _capture_calls(self, platform_str):
+        calls = []
+
+        def fake_popen(cmd, **kwargs):
+            calls.append(kwargs)
+            return self._DeadProc()
+
+        with mock.patch.object(verify.sys, "platform", platform_str), \
+                mock.patch.object(verify.subprocess, "Popen", fake_popen), \
+                mock.patch.object(verify.time, "sleep", lambda s: None):
+            out = verify._step_capture_rtt(1, {})
+        self.assertEqual(out["status"], "error")  # 进程即死必须如实 error, 不假绿
+        self.assertEqual(len(calls), 3, "ST-Link 竞态 3 重试纪律同钉")
+        return calls
+
+    def test_linux_sim_uses_zero_creationflags(self):
+        for kw in self._capture_calls("linux"):
+            self.assertEqual(
+                kw["creationflags"], 0,
+                "Linux 模拟下 creationflags 必须为 0 (F-027 崩溃类回归钉)")
+
+    @unittest.skipUnless(hasattr(subprocess, "CREATE_NEW_PROCESS_GROUP"),
+                         "本机无 Windows 常量")
+    def test_win32_sim_passes_real_constant(self):
+        for kw in self._capture_calls("win32"):
+            self.assertEqual(kw["creationflags"],
+                             subprocess.CREATE_NEW_PROCESS_GROUP)
 
 
 if __name__ == "__main__":
