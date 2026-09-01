@@ -102,6 +102,10 @@ commit `chore(security): 历史文档个人用户目录中性化` 只清洗了**
 建议修（后补轮）：脚本 stdout 强制 `reconfigure(encoding="utf-8")`，
 或测试对 subprocess 附 `PYTHONIOENCODING=utf-8` 环境。
 
+**处置结果（2026-09-01 同日，✅ 已修）**：采纳前者并扩展至 stderr（惯用法对齐
+`verify._output`）；回归钉强制子进程 GBK 环境仍断言 UTF-8 JSON——修前先证红
+（同款 0xce 崩溃）再证绿，全量 182 例全绿。
+
 ### F-5（时间线事实，处置执行后补记 2026-09-01）
 
 GitHub Events API 记录 `PublicEvent 2026-08-26T12:59:48Z`：本仓库**曾于 8/26

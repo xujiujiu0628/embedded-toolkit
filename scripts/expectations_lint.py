@@ -122,6 +122,13 @@ def lint_file(path):
 
 
 def main():
+    # F-025: 中文字段与错误报告按 ensure_ascii=False 输出, 必须与调用方环境
+    # 无关地落 UTF-8 (Windows 控制台默认 GBK, 父进程/AI 按 utf-8 解码曾崩溃)
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8")
+        except Exception:
+            pass
     ap = argparse.ArgumentParser(
         description="expectations.json 静态 lint (离线, 不触硬件)")
     ap.add_argument("path", nargs="?", default=None,
