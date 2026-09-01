@@ -43,6 +43,12 @@
   `parameter_context` 三处签名各不相同——机械去重必破坏调用方。且
   test_writeback_guards.py:28 以 `RUNTIMES=[wb, ocd, serial]` 参数化把三形态钉进测试，
   合并时测试须同步改。路线：先统一契约，后谈提取公共模块。
+  **计划已交**（`docs/superpowers/plans/2026-09-01-f029-runtime-dedup.md`）：
+  AST 两两比对实测重定分桶——5 字节同 / 7 仅 docstring 差 / 4 真分叉含同名异物 /
+  4 路径策略 / 2 机制分叉；登记期"serial make_result 契约分叉"经实测修正为
+  **入参签名分叉、输出本就 status 同族**（可适配器并轨），`make_timing`/
+  `parameter_context` 才是同名异物；另撞出 Windows pre-epoch 时间戳 OSError 边界。
+  施工按 6 Task TDD 推进，特征钉先行冻结 wire。
 - **F-021/F-022/F-023 处置（原子写收口包，TDD 六签先红后绿）**: 三件同族打包。
   F-021=`wb_runtime.save_local_config` 补 F-020 同款损坏拒写守卫（读改写族；
   openocd/serial 侧同名函数为整写语义不在族内，维持不动）；F-022=新增共享工具
