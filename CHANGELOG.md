@@ -20,8 +20,12 @@
   该常量唯一使用点即此死函数（:363）——死链完整终止于 `openocd_semihosting.py`
   （544 行，自带 `__main__` 独立 CLI 形态，未入 README 工具表，零测试覆盖）。实际生效的
   semihosting 是 verify.py 内联实现（:1145 注释自述"不走复杂脚本"）；verify.py:16 头图
-  仍写 Capture→openocd_semihosting.py，同属陈旧。处置选项（删除 / 保留并文档化为
-  手动工具 / 并入去重轮）留待维护者定夺。
+  仍写 Capture→openocd_semihosting.py，同属陈旧。
+- **F-028 处置（同日拍板，整链删除）**: 维护者选定删除方案——`git rm
+  openocd_semihosting.py`（544 行）+ 死函数 `step_capture_semihosting()` + 死常量
+  `OPENOCD_SEMIHOSTING`，头图第 4 步改写为"verify.py 内置双路: semihosting 内联 |
+  rtt"；RTT 段首两处与内联 semihosting 分支内共三处悬空注释同步收口（末处保留
+  "曾有其物，git 史可回放"记号）。删除前后全仓 grep 零代码引用；183 全绿不变。
 - **F-029 登记（重复度量化，附限定条件）**: 三份 runtime（wb 379 / openocd 354 /
   serial 515 行）共有 22 个同名符号、三份合计 633 行、相对最大单份冗余 406 行
   （≈430-450 区间下沿，判据=同名符号行数并集）。**非纯复制，是同源分叉**：
