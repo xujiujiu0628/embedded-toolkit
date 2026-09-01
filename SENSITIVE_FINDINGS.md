@@ -102,6 +102,21 @@ commit `chore(security): 历史文档个人用户目录中性化` 只清洗了**
 建议修（后补轮）：脚本 stdout 强制 `reconfigure(encoding="utf-8")`，
 或测试对 subprocess 附 `PYTHONIOENCODING=utf-8` 环境。
 
+### F-5（时间线事实，处置执行后补记 2026-09-01）
+
+GitHub Events API 记录 `PublicEvent 2026-08-26T12:59:48Z`：本仓库**曾于 8/26
+公开过一次**（之后转回 Private——转私不产生公开事件，具体时点不可考；9/1 再次
+转 Public 亦未产生第二条 PublicEvent）。两点含义：
+
+1. F-1 所述明文形态在 8/26 起即有过真实公开窗口（当时仓库几乎零关注，暴露面
+   仅为一个 5 位数字用户名、无邮箱/手机号/凭证语义——实际危害有限，但账本如实记）；
+2. 9/1 的转 Public 发生在 06:4x–07:1xZ 之间，与脱敏 force push（CI 接收于
+   07:13Z）几乎同刻——最坏情况存在约 20 分钟的旧图可见窗口；且旧 commit 对象
+   在 GitHub 下次 GC 前可能仍按 SHA 直链短暂可达。
+
+**处置决定**：判断为低危残留，不向 GitHub support 提 purge 申请；仅登记本节。
+若日后发现该用户名被关联到真实身份造成困扰，再议。
+
 ### 提示：本地未推送分支
 
 `handoff/zcode-20260830`、`handoff/zcode-r2-20260830`、`handoff/r2-reconcile-20260831`
