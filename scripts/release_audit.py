@@ -156,19 +156,29 @@ def audit_record(ws, tag, rel_path):
     else:
         r7_bad = []
         r7_ok = 0
-        for key, rel in (("expectations_sha256", ".workbench/expectations.json"),
-                         ("config_sha256", ".workbench/config.json")):
+        for key, rels in (("expectations_sha256",
+                           (".workbench/expectations.json",
+                            ".embeddedskills/expectations.json")),
+                          ("config_sha256",
+                           (".workbench/config.json",
+                            ".embeddedskills/config.json"))):
             want = contracts.get(key)
             if not want:
                 continue   # legacy 模式无清单 / 缺该键 → 子项跳过
-            rc, blob, gerr = _git_bytes(["show", f"{record['git_head']}:{rel}"], ws)
-            if rc != 0:
+            blob, used, gerr = None, None, ""
+            for rel in rels:  # F-024: 双布局都认, 与 verify.contract_hashes 同口径
+                rc, got, err = _git_bytes(["show", f"{record['git_head']}:{rel}"], ws)
+                if rc == 0:
+                    blob, used = got, rel
+                    break
+                gerr = err.strip()[:120]
+            if blob is None:
                 _check(checks, "R7", "warn",
-                       f"{rel} 在 git_head 不可得: {gerr.strip()[:120]}")
+                       f"契约文件两布局在 git_head 均不可得: {gerr}")
                 continue
             actual = hashlib.sha256(blob).hexdigest()
             if actual != want:
-                r7_bad.append(f"{rel} 记录={want[:12]}.. 实际={actual[:12]}..")
+                r7_bad.append(f"{used} 记录={want[:12]}.. 实际={actual[:12]}..")
             else:
                 r7_ok += 1
         if r7_bad:
