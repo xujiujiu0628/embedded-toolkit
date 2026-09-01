@@ -47,6 +47,12 @@
   F-023=三份 runtime `save_json_file` tmp 名改 `<file>.<pid>.tmp` 杜绝双进程互顶
   （按脚本自含惯例保留三份拷贝，契约统一留 F-029）。新增 5 例，
   全量 **188 全绿**（skipped=1 仍 F-026）。
+- **F-024 处置（R7 双布局认路，先红后绿）**: release_audit R7 比对路径由硬编码
+  `.workbench/*` 改为 `.workbench`→`.embeddedskills` 顺序双认（首中即停，优先序与
+  verify.contract_hashes 的 marker 序一致，杜绝"哈希取 A 路、比对找 B 路"假错位）；
+  两布局均未命中才 warn 且消息改为"两布局均不可得"。红证=新例
+  `test_embeddedskills_layout_contract_matched` 修前 warn 修后 pass；
+  篡改/搬移负例 15/15 无波损。
 - **F-031 登记（本轮施工）**: Linux 真机路径整体未验证——F-027 修掉的是"已知崩溃点"
   而非完成验证；README 自述"真机构建路径未验证、欢迎报告"，CI（ubuntu）只跑 mock 套件，
   进程终止/信号/创建标志类平台差异仍属盲区。本轮补 `_step_capture_rtt()` 的
