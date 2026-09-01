@@ -10,8 +10,8 @@
     python verify.py --json                 # JSON 输出 (供 Claude 判断)
 
 流程:
-    1. Build   → keil_build.py
-    2. Analyze → keil_analyze.py  (有 error 则终止)
+    1. Build   → gcc_build.py (默认 builder=gcc; 显式配 "keil" 时唤起 legacy 桥)
+    2. Analyze → gcc 路径直传 build metrics; keil 路径走 legacy keil_analyze 知识库 (有 error 则终止)
     3. Flash   → OpenOCD program
     4. Capture → verify.py 内置双路: semihosting 内联会话 (默认) | rtt (capture.backend)
     4c. Physical → OpenOCD ODR 轮询 GPIO 翻转频率 (物理层门控, 默认 skipped)
