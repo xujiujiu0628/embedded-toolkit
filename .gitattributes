@@ -1,0 +1,12 @@
+# 换行符策略（防腐方案 R8 → F-036）
+#
+# 实底：索引区 94/94 文件本就是 LF（git ls-files --eol 实证），此前工作树
+# "README LF / CHANGELOG CRLF / 部分脚本混用"三态并存，实为本机
+# core.autocrlf=true 的检出态假象——blob 层从未脏，无需 renormalize。
+#
+# 本文件把语义固化为仓库自身契约，不再依赖各机 autocrlf 个人设置：
+# 检出恒 LF，入库自动归一。跨平台 checkout 由此不再产生整文件换行噪声。
+#
+# 二进制：text=auto 的内容启发式已能自动跳过（当前仓内零二进制）；
+# 未来若某后缀被误判，再按 `*.<ext> binary` 逐条显式标注，不预写。
+* text=auto eol=lf

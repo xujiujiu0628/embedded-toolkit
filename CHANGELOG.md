@@ -3,7 +3,7 @@
 格式约定: 每条含发现编号（代管期 findings 编目）与证据 commit。当前版本以
 `VERSION` 文件为准（`wb_common.toolkit_version()` 读取）。
 
-## Unreleased — 2026-09-02（防腐纪律成文：CONTRIBUTING/AGENTS，F-035）
+## Unreleased — 2026-09-02（防腐纪律成文 + 换行符策略固化，F-035/036）
 
 - **F-035 登记+处置（成熟纪律仅靠惯例维持，docs only）**: 长期防腐方案三轮源码分析
   判定——本仓不缺防腐机制，缺机制覆盖面与成文化："先钉后拆"（F-029 六 Task 全程
@@ -16,6 +16,14 @@
   「文档同步（单一事实源）」，「测试与 PR 纪律」补先红后绿与注释 F 编号可追溯条；
   ② AGENTS.md 加「工程纪律速查」（执行侧摘要八行；明令与 CONTRIBUTING 分歧以
   后者为准——成文纪律的同时不制造新的双权威）。无代码改动；全量 **215 全绿**（skipped=1 仍 F-026 opt-in 活跳）。
+- **F-036 登记+处置（R8 换行符策略固化，chore，含方案判据修正）**: 方案基线判
+  「三态并存、需一次 renormalize」定性有误——`git ls-files --eol` 实证索引区
+  94/94 blob 本就统一 LF，三态只是本机 `core.autocrlf=true` 的检出态假象，
+  `git add --renormalize` 实为恒零 diff 的 no-op。处置=新增 `.gitattributes`
+  （`* text=auto eol=lf`，仓库自身固化"检出恒 LF、入库自动归一"，不再依赖各机
+  autocrlf 个人设置；当前零二进制，不预写 binary 规则，未来误判按
+  `*.<ext> binary` 逐条补），本地工作树强制重检出收敛 95/95 全 LF。无代码改动；
+  换行翻转行为零影响，全量 **215 全绿** 两跑实证（skipped=1 仍 F-026）。
 
 ## Unreleased — 2026-09-01~02（代管 R3：跨平台回收 + 外围模块补齐入账；次日 F-029 整车收口）
 
