@@ -184,7 +184,8 @@ python scripts/release.py --project <工程根> --tag v1.0.0 --dry-run
 
 ```text
 embedded-toolkit/
-├── scripts/            # 34 个工具脚本（入口 verify.py；legacy/keil/ 为退役留门区）
+├── scripts/            # 34 个 .py（入口 verify.py；共享层 wb_common + runtime_common
+│                       #   单一事实源 + wb/openocd/serial 三 runtime，F-029；legacy/keil/ 为退役留门区）
 ├── tests/              # unittest 回归套件（纯 mock，Win/Linux 全绿）
 ├── data/               # 知识库：55 外设参考 JSON + 错误库 + 已知限制
 ├── config/             # 串口/探针族的环境级配置
