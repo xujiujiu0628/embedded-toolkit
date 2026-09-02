@@ -25,6 +25,7 @@ sys.path.insert(0, SCRIPTS_DIR)
 import wb_runtime  # noqa: E402
 import openocd_runtime  # noqa: E402
 import serial_runtime  # noqa: E402
+import runtime_common  # noqa: E402  (F-029 T2 起 save_json_file 的 os.replace 住在这里)
 import gcc_build  # noqa: E402
 import error_db_grow  # noqa: E402
 import wb_common  # noqa: E402
@@ -291,7 +292,12 @@ class ErrorDbGrowGuardTests(unittest.TestCase):
 
 class TmpNameProcessScopedTests(unittest.TestCase):
     """F-023: save_json_file 的 tmp 名须带 pid — 固定 <name>.tmp 在双进程
-    并发写同一目标时会互相顶掉 (两个写者共用一个 tmp, 混掺半成品)"""
+    并发写同一目标时会互相顶掉 (两个写者共用一个 tmp, 混掺半成品)
+
+    F-029 T2 后 save_json_file 上提至 runtime_common (三 runtime 再导出同一
+    函数对象), patch 目标随之改为 runtime_common.os — mod.os 虽同为 os 单例,
+    openocd_runtime 已无 import os, 且"实现住哪就 patch 哪"才诚实。三 mod
+    循环保留: 验证的是各 mod.X 再导出面确实可达同一实现。"""
 
     def setUp(self):
         self.tmp = tempfile.mkdtemp()
@@ -310,7 +316,7 @@ class TmpNameProcessScopedTests(unittest.TestCase):
                     seen["tmp"] = str(src)
                     return real_replace(src, dst)
 
-                with mock.patch.object(mod.os, "replace", fake):
+                with mock.patch.object(runtime_common.os, "replace", fake):
                     mod.save_json_file(p, {"a": 1})
                 self.assertTrue(
                     seen["tmp"].endswith(".%d.tmp" % os.getpid()),
