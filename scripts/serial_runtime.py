@@ -10,58 +10,18 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from runtime_common import (  # noqa: F401  (再导出: 保持 mod.X 调用面, F-029)
+    # normalize_path 不并入: serial 自带独立契约 (可带 base、相对输入不 resolve), 见 F-029 T3 裁决
+    JSONCorruptError, _first_resolved, is_missing, load_json_file,
+    load_json_strict, now_iso, output_json, save_json_file,
+    workspace_root,
+)
 
 SKILL_DIR = Path(__file__).resolve().parent.parent
 SKILL_NAME = "serial"
 STATE_DIR_NAME = ".workbench"
 STATE_FILE_NAME = "state.json"
 PROJECT_CONFIG_FILE = "config.json"
-
-
-def now_iso() -> str:
-    return datetime.now().astimezone().isoformat(timespec="seconds")
-
-
-def is_missing(value: Any) -> bool:
-    return value is None or value == ""
-
-
-class JSONCorruptError(ValueError):
-    """JSON 文件损坏/非 UTF-8/顶层非对象 — 读改写场景必须显式处理 (F-020)。"""
-
-
-def load_json_file(path: str | Path) -> dict:
-    """加载 JSON 文件，不存在返回空字典"""
-    file_path = Path(path)
-    if not file_path.exists():
-        return {}
-    try:
-        return json.loads(file_path.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, OSError):
-        return {}
-
-
-def load_json_strict(path: str | Path) -> dict:
-    """读改写专用加载: 损坏即抛 JSONCorruptError, 不存在返回 {}。"""
-    file_path = Path(path)
-    if not file_path.exists():
-        return {}
-    try:
-        data = json.loads(file_path.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, UnicodeDecodeError) as e:
-        raise JSONCorruptError(f"{file_path} 不可解析: {e}") from e
-    if not isinstance(data, dict):
-        raise JSONCorruptError(f"{file_path} 顶层须为 JSON 对象")
-    return data
-
-
-def save_json_file(path: str | Path, data: dict) -> None:
-    """保存 JSON 文件，自动创建目录；原子写 (.tmp + os.replace, F-019)"""
-    file_path = Path(path)
-    file_path.parent.mkdir(parents=True, exist_ok=True)
-    tmp_path = file_path.with_name(f"{file_path.name}.{os.getpid()}.tmp")  # F-023: pid 防双进程互顶
-    tmp_path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
-    os.replace(tmp_path, file_path)
 
 
 def load_local_config() -> dict:
@@ -72,12 +32,6 @@ def load_local_config() -> dict:
 def save_local_config(data: dict) -> None:
     """保存环境级配置到 TOOLKIT/config/serial.json"""
     save_json_file(SKILL_DIR / "config" / f"{SKILL_NAME}.json", data)
-
-
-def workspace_root(workspace: str | None = None) -> Path:
-    if not is_missing(workspace):
-        return Path(str(workspace)).expanduser().resolve()
-    return Path.cwd().resolve()
 
 
 def load_project_config(workspace: str | None = None) -> dict:
@@ -180,14 +134,6 @@ def _serialize_state_value(value: Any, workspace: Path) -> Any:
         return Path(os.path.relpath(path.resolve(), workspace)).as_posix()
     except ValueError:
         return value
-
-
-def _first_resolved(mapping: dict, keys: list[str]) -> tuple[Any, str | None]:
-    for key in keys:
-        value = mapping.get(key)
-        if not is_missing(value):
-            return value, key
-    return None, None
 
 
 def resolve_param(
@@ -507,9 +453,3 @@ def open_serial_port(config: dict, use_mux: bool = True):
         stopbits=config["stopbits"],
         timeout=config["timeout_sec"],
     )
-
-
-def output_json(data: dict, *, indent: int = 2) -> None:
-    """输出 JSON 到 stdout"""
-    sys.stdout.reconfigure(encoding="utf-8")
-    print(json.dumps(data, ensure_ascii=False, indent=indent), flush=True)
