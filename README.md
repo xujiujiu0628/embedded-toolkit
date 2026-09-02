@@ -26,8 +26,9 @@
   绝不伪装成"程序无输出"
 - **AI 治理 AI**：`handoff_guard` 三级禁线机检外部智能体的代管分支
   （硬件禁触/文件禁区/主流程警告），两轮外部异构智能体独立审查已实战闭环
-- **170+ 例纯 mock 回归**：不碰硬件、零第三方依赖（仅串口工具需 pyserial）、
-  Windows/Linux 全绿（CI 每跑即验证"陌生人克隆"路径）
+- **纯 mock 回归套件**：不碰硬件、零第三方依赖（仅串口工具需 pyserial）、
+  Windows/Linux 全绿（CI 每跑即验证"陌生人克隆"路径）——例数以
+  `python -m unittest discover -s tests` 实跑为准（CONTRIBUTING 约定文档不写死数字）
 - **知识沉淀**：55 外设寄存器知识库 + 寄存器级外设代码生成 + 构建错误知识库
   自生长（五重门控防污染）
 
@@ -48,6 +49,9 @@ ALERT HIGH mv=3190
 ```
 
 对应的机器判定输出（`verify.py --json` 节选，全文真实可回放）：
+
+> 注：本段为 **0.2 时期**的真机实录，`toolkit_version` 字段如实保留当时的 `"0.2"`
+> （不随版本推进改写历史输出）。0.3 的输出字段结构与此一致，仅版本号与哈希值不同。
 
 ```jsonc
 {
@@ -225,12 +229,21 @@ embedded-toolkit/
 
 如实列出已编目的已知遗留（对外部审查的尊重：登记在册，不藏）：
 
-- **F-021** `save_local_config` 损坏→覆写同族漏网（环境级配置，当前无调用方）
-- **F-022** `release.py` / `error_db_grow.py` 三处非原子写（建议并入原子工具函数）
-- **F-023** 原子写固定 `.tmp` 文件名的并发尾洞（单操作者工作流下低风险）
-- **F-024** `release_audit` R7 比对路径未覆盖 `.embeddedskills` 布局工程
-- 有意搁置：UART 串口补丁的发布门禁脆弱性（成本/收益不立项）；Linux 真机路径验证
-- 方向：多 MCU（ESP32）工具栈评估——见 docs 档案
+- **F-031**（部分闭合）Linux 真机路径**整体未验证**——F-027 修掉的是"已知崩溃点"
+  （`verify.py` RTT 分支的平台守卫），不是完成验证；进程终止/信号/创建标志类平台
+  差异仍属盲区。已补 mock-Popen 平台派发钉（属性级 + kwargs 级双层），真机 Linux
+  冒烟清单留待社区/后续
+- **F-032**（限制声明，非缺陷）`serial_mux` PTY 虚拟串口层硬依赖 `socat`，
+  Linux/macOS-only，Windows 不支持；`which("socat")` 在 `start_mux()` 最前无条件执行，
+  无 socat 则整个 mux 起不来。`--no-pty` 解耦列为后续增强，未实现前不按部分功能规划
+- 有意搁置：UART 串口补丁的发布门禁脆弱性（成本/收益不立项）
+- 方向：多 MCU（ESP32）工具栈评估——见 docs 档案。前置项：把 `interface/*.cfg` /
+  `target/*.cfg` 从硬编码（当前 `verify.py` 7 处 / `release.py` 2 处 /
+  `hardfault.py` 2 处）收进 `config.json`
+
+> **F-021~F-030 已在本轮收口**（原子写收口包 / R7 双布局认路 / RTT 平台守卫 /
+> 孤儿链删除 / 三 runtime 契约统一 / 头图刷新），逐条处置记录与证据 commit 见
+> [`CHANGELOG.md`](CHANGELOG.md)。新发现请开 Issue，或走 `docs/handoff/` 代管流程登记。
 
 ## 贡献
 
