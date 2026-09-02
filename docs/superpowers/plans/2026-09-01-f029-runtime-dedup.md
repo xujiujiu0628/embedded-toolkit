@@ -8,6 +8,14 @@
 
 **Tech Stack:** Python ≥3.10（`str | None` 语法在用）、unittest、无新增第三方依赖。
 
+> **实施记录（2026-09-02，代管整车）**: 6 Task 全部完成，215 全绿。相对本计划登记期
+> 分桶的三处订正（特征钉 T1 阶段按现实重钉）: ① 状态读写族非"纯 docstring 差"——
+> **wb==serial 序列化 / ocd 原样**是真语义分叉，Task 4 表述"无 hook=ocd/serial 现状"
+> 有误（serial 也走序列化钩子）；② serial `normalize_path` 非超集（相对输入不 resolve）
+> → 裁决留本地；③ Task 5"缺失者补守卫"经实测撤销（环境级整写不读旧档，无风险）。
+> `resolve_param` 终判=三份整组留份（源标签/层级/锚定/异常策略均不同形）。
+> 净账：同形重复行浪费 195→4。处置全录见 CHANGELOG「F-029 处置」。
+
 ## 前期侦察结论（2026-09-01，AST 两两比对实测）
 
 22 个三处同名符号 + wb/ocd 私有共享 5 个（`build_artifacts` `compact_dict` `default_config_path` `get_state_entry` `hidden_subprocess_kwargs`），分桶：
@@ -42,7 +50,7 @@
 - Consumes: 三 runtime 现状（未改）
 - Produces: `RUNTIMES`、`wire_shape(obj)` 工具函数，后续所有 Task 靠它证明"搬完输出不变"
 
-- [ ] **Step 1: 写特征钉测试**（这些测试在改代码前就该全绿——它们是安全网，不是红测试）
+- [x] **Step 1: 写特征钉测试**（这些测试在改代码前就该全绿——它们是安全网，不是红测试）
 
 ```python
 """F-029 前置特征钉: 三 runtime 的 wire 契约在去重全程必须字节不变。
@@ -137,12 +145,12 @@ class WireContractTests(unittest.TestCase):
 
 注：`make_timing`/`make_result` 的确切入参以**跑通为准**——写测试时先 `inspect.signature` 核一遍现状入参形态，若上面示例与现状签名冲突，按现状改写测试（特征钉的原则是"记录现实"，不是"我希望的形状"）。
 
-- [ ] **Step 2: 运行确认全绿**
+- [x] **Step 2: 运行确认全绿**
 
 Run: `python -m unittest tests.test_runtime_contract -v`
 Expected: 全 OK（194 例左右：192 + 本文件若干）
 
-- [ ] **Step 3: 全量绿 + commit**
+- [x] **Step 3: 全量绿 + commit**
 
 ```bash
 python -m unittest discover -s tests   # 192+ 全绿 skipped=1
@@ -163,7 +171,7 @@ git commit -m "test(F-029 前置): runtime wire 特征钉+再导出面冻结—�
 - Consumes: Task 1 的钉
 - Produces: `runtime_common.{is_missing, now_iso, workspace_root, load_json_file, load_json_strict, JSONCorruptError, save_json_file, output_json, normalize_path}` 规范实现；三 runtime `from runtime_common import ...` 再导出
 
-- [ ] **Step 1: 建模块头 + 搬运 12 个符号**（`_first_resolved` 作为私有 helper 一并搬）
+- [x] **Step 1: 建模块头 + 搬运 12 个符号**（`_first_resolved` 作为私有 helper 一并搬）
 
 ```python
 """runtime 共享层 (F-029): wb/openocd/serial 三 runtime 的单一事实源。
@@ -189,7 +197,7 @@ from typing import Any
 
 注意：`save_json_file`/`output_json` 等若引用 `STATE_DIR_NAME` 之类模块常量，把常量参数化或随迁——先 grep `STATE_DIR_NAME` 确认引用链，有则在本模块声明同名常量由各 runtime 传值，**不引入 runtime 反向 import**。
 
-- [ ] **Step 2: 三 runtime 各删本地 def，改再导出**
+- [x] **Step 2: 三 runtime 各删本地 def，改再导出**
 
 每个 runtime 文件头加：
 
@@ -203,7 +211,7 @@ from runtime_common import (  # noqa: F401  (再导出: 保持 mod.X 调用面, 
 
 删除对应本地 def。serial 侧 `normalize_path` 是 8 行 wb 版 4 行的超集（多盘符归一逻辑）→ **serial 该符号暂留本地**，import 行不含 normalize_path，Task 3 一并裁决。
 
-- [ ] **Step 3: 红/绿验证 + 咬合抽检**
+- [x] **Step 3: 红/绿验证 + 咬合抽检**
 
 ```bash
 python -m unittest discover -s tests        # 全绿
@@ -211,7 +219,7 @@ python -m unittest tests.test_runtime_contract tests.test_writeback_guards -v
 ```
 Expected: 全 OK。再抽一钉自证等价：`python -c "import sys; sys.path.insert(0,'scripts'); import runtime_common, wb_runtime; print(runtime_common.now_iso.__module__ == 'runtime_common')"` → True。
 
-- [ ] **Step 4: CHANGELOG 记一行进度 + commit**
+- [x] **Step 4: CHANGELOG 记一行进度 + commit**
 
 ```bash
 git add -A
@@ -229,9 +237,9 @@ git commit -m "refactor(F-029 T2): runtime_common 建层——ALL3 五符号+doc
 **Interfaces:**
 - Produces: `runtime_common.make_result(*, status, action, summary, details=None, context=None, ...)`（wb/ocd 现状签名逐字）、`make_timing`、`parameter_context`、`compact_dict`、`build_artifacts`、`get_state_entry`、`hidden_subprocess_kwargs`
 
-- [ ] **Step 1:** wb/ocd 两份逐字节相同的 `make_result`(30r)/`make_timing`(2r)/`parameter_context`(7r)/`compact_dict`/`build_artifacts`/`get_state_entry`/`hidden_subprocess_kwargs` 上提进 runtime_common（wb 版原文），wb/ocd 改再导出。
-- [ ] **Step 2:** `normalize_path` 裁决：diff wb(4r) vs serial(8r)——serial 若为功能超集（多一层 base 归一），把超集上提为 `normalize_path(path, base=None)`，wb 版退化为 `base=None` 默认行为；若语义不等价（返回值不同）则 serial 留本地 + docstring 声明。**先写一个两版行为对照测试再决定**，不许凭行数猜。
-- [ ] **Step 3:** serial 的 `make_result` 改**薄适配器**（入参签名逐字冻结——六个 serial 工具调用点零改动，体内转调规范版）：
+- [x] **Step 1:** wb/ocd 两份逐字节相同的 `make_result`(30r)/`make_timing`(2r)/`parameter_context`(7r)/`compact_dict`/`build_artifacts`/`get_state_entry`/`hidden_subprocess_kwargs` 上提进 runtime_common（wb 版原文），wb/ocd 改再导出。
+- [x] **Step 2:** `normalize_path` 裁决：diff wb(4r) vs serial(8r)——serial 若为功能超集（多一层 base 归一），把超集上提为 `normalize_path(path, base=None)`，wb 版退化为 `base=None` 默认行为；若语义不等价（返回值不同）则 serial 留本地 + docstring 声明。**先写一个两版行为对照测试再决定**，不许凭行数猜。
+- [x] **Step 3:** serial 的 `make_result` 改**薄适配器**（入参签名逐字冻结——六个 serial 工具调用点零改动，体内转调规范版）：
 
 ```python
 def make_result(success: bool = True, action: str = "", summary: str = "",
@@ -244,8 +252,8 @@ def make_result(success: bool = True, action: str = "", summary: str = "",
 ```
 
 （适配器落地前先跑 Task 1 特征钉确认输出等价；若规范版对空 details 的处理与 serial 现状不同——如总是带键——则以**特征钉为准**微调规范版条件键，不许迁就 wb 现状变形 serial 输出。）
-- [ ] **Step 3b:** serial 的 `parameter_context`/`make_timing` 保本地，docstring 首行加：`"""serial 家族独立契约 (F-029 裁决): 与 wb/ocd 同名异物 (入参/返回均不同形), 非漏改, 勿'统一'。"""`
-- [ ] **Step 4:** 全绿 + commit `refactor(F-029 T3): wb/ocd 结果构造族上提, serial 同名异物显式留份`
+- [x] **Step 3b:** serial 的 `parameter_context`/`make_timing` 保本地，docstring 首行加：`"""serial 家族独立契约 (F-029 裁决): 与 wb/ocd 同名异物 (入参/返回均不同形), 非漏改, 勿'统一'。"""`
+- [x] **Step 4:** 全绿 + commit `refactor(F-029 T3): wb/ocd 结果构造族上提, serial 同名异物显式留份`
 
 ---
 
@@ -258,9 +266,9 @@ def make_result(success: bool = True, action: str = "", summary: str = "",
 **Interfaces:**
 - Produces: `runtime_common.update_state_entry(category, record, workspace=None, *, serialize=None)`（无 hook 时 = ocd/serial 现状行为；wb 传 `serialize=_serialize_state_value`）；`load_workspace_state`/`save_workspace_state`/`load_workspace_state_for_update` 上提（三份语义已实测同）
 
-- [ ] **Step 1:** state 三件套上提。`load_workspace_state_for_update` 的 wb↔ocd 差异已核实**纯 docstring**，取 wb 全文版。
-- [ ] **Step 2:** `update_state_entry` 先写行为对照测试钉住现状三分叉（wb 序列化 extra keys vs ocd/ser 原样存）→ 骨架上提 + hook 参数注入 → 对照测试仍绿即证等价。
-- [ ] **Step 3:** 全绿 + commit `refactor(F-029 T4): 状态读写族上提, update_state_entry 序列化 hook 化保 wb 行为`
+- [x] **Step 1:** state 三件套上提。`load_workspace_state_for_update` 的 wb↔ocd 差异已核实**纯 docstring**，取 wb 全文版。
+- [x] **Step 2:** `update_state_entry` 先写行为对照测试钉住现状三分叉（wb 序列化 extra keys vs ocd/ser 原样存）→ 骨架上提 + hook 参数注入 → 对照测试仍绿即证等价。
+- [x] **Step 3:** 全绿 + commit `refactor(F-029 T4): 状态读写族上提, update_state_entry 序列化 hook 化保 wb 行为`
 
 ---
 
@@ -269,7 +277,7 @@ def make_result(success: bool = True, action: str = "", summary: str = "",
 **Files:**
 - Modify: `scripts/runtime_common.py`、三 runtime；可能 Modify: `docs/`（若裁决留份）
 
-- [ ] **Step 1: 配置四函数族**（`load/save_local_config`、`load/save_project_config`）。三分叉根源是**路径策略**（wb=多 skill 参数、ocd=script_file 反推、serial=SKILL_DIR 锚定）与 wb 新加的 F-020/021 守卫。上提骨架：
+- [x] **Step 1: 配置四函数族**（`load/save_local_config`、`load/save_project_config`）。三分叉根源是**路径策略**（wb=多 skill 参数、ocd=script_file 反推、serial=SKILL_DIR 锚定）与 wb 新加的 F-020/021 守卫。上提骨架：
 
 ```python
 def save_project_config_common(config_file: Path, values: dict, skill: str,
@@ -290,9 +298,9 @@ def save_project_config_common(config_file: Path, values: dict, skill: str,
 ```
 
 各 runtime 的 `save_project_config(workspace=None, values=None, skill=...)` 变薄壳：算好自己的 `config_file` 后调用之。ocd/serial 现状**无** F-020 守卫的本地变体（其 F-020 版实现已同步存在——写测试核实各家现状守卫有无，缺失者**本次一并补齐守卫**并记入 CHANGELOG 行为变更：损坏时拒绝写回，属 fail-closed 增强，wire 正常路径不变）。
-- [ ] **Step 2: `resolve_param` 终判**。三分叉 39/42/34 行——先写三版**行为对照表测试**（同输入→各版输出），语义差若只在参数源清单（machine/config/env 顺序），上提为 `resolve_param(value, cli, source_map, precedence)` 参数化；若发现真语义冲突（如 serial 允许 int 转换而 wb 拒绝），**裁决=留三份 + 各 docstring 声明契约归属**，CHANGELOG 销账"F-029 部分收口"。禁止为凑去重率强改行为。
-- [ ] **Step 3: 收口账目**——重跑本计划开头的 AST 分桶脚本，输出"重复行净变化"进 CHANGELOG；`test_writeback_guards.py` 顶部 docstring"三份 runtime 拷贝同款同修"改为"共享层单一事实源"。
-- [ ] **Step 4:** 全绿 + commit + CHANGELOG F-029 状态更新（全收口 or 部分收口附裁决记录）
+- [x] **Step 2: `resolve_param` 终判**。三分叉 39/42/34 行——先写三版**行为对照表测试**（同输入→各版输出），语义差若只在参数源清单（machine/config/env 顺序），上提为 `resolve_param(value, cli, source_map, precedence)` 参数化；若发现真语义冲突（如 serial 允许 int 转换而 wb 拒绝），**裁决=留三份 + 各 docstring 声明契约归属**，CHANGELOG 销账"F-029 部分收口"。禁止为凑去重率强改行为。
+- [x] **Step 3: 收口账目**——重跑本计划开头的 AST 分桶脚本，输出"重复行净变化"进 CHANGELOG；`test_writeback_guards.py` 顶部 docstring"三份 runtime 拷贝同款同修"改为"共享层单一事实源"。
+- [x] **Step 4:** 全绿 + commit + CHANGELOG F-029 状态更新（全收口 or 部分收口附裁决记录）
 
 ---
 

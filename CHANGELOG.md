@@ -3,7 +3,7 @@
 格式约定: 每条含发现编号（代管期 findings 编目）与证据 commit。当前版本以
 `VERSION` 文件为准（`wb_common.toolkit_version()` 读取）。
 
-## Unreleased — 2026-09-01（代管 R3：跨平台回收 + 外围模块补齐入账）
+## Unreleased — 2026-09-01~02（代管 R3：跨平台回收 + 外围模块补齐入账；次日 F-029 整车收口）
 
 - **F-027 登记+修复（P0，TDD 先红后绿）**: `verify.py::_step_capture_rtt()` 裸用
   `subprocess.CREATE_NEW_PROCESS_GROUP`——该常量仅在 CPython `if _mswindows:` 分支内
@@ -49,6 +49,25 @@
   **入参签名分叉、输出本就 status 同族**（可适配器并轨），`make_timing`/
   `parameter_context` 才是同名异物；另撞出 Windows pre-epoch 时间戳 OSError 边界。
   施工按 6 Task TDD 推进，特征钉先行冻结 wire。
+- **F-029 处置（2026-09-02 整车完成，6 Task TDD 全绿）**: 新建共享层
+  `scripts/runtime_common.py`（295 行 / 25 规范符号，仅 stdlib、不 import 三 runtime 防环；
+  与"路径解析"定位的 `wb_common` 互不渗透），三 runtime 以再导出/薄壳维持 `mod.X`
+  调用面，17 个工具消费方零迁移。**AST 净账**（docstring 无关判据）：同名同形重复行
+  浪费 **195 → 4**（余 4 行为 wb/serial 序列化钩子薄壳，同形系设计使然）、同名异形
+  12 → 6 组全部显式留份 + docstring 钉；runtime 本体规模 wb 391→187、ocd 354→158、
+  serial 515→404。**三处订正**（对登记期分桶表）: ① `save_workspace_state`/
+  `update_state_entry` 非"纯 docstring 差"——**wb==serial 落盘序列化**（绝对路径→
+  workspace 相对 POSIX）、ocd 原样存，是真 wire 语义分叉，以 `serialize` hook 注入保
+  三家形态；② serial `normalize_path` 非 wb 版超集（相对输入不 resolve），裁决留本地；
+  ③ 计划"ocd/serial save_local_config 补守卫"项**撤销**——环境级配置一 skill 一文件、
+  整写不读旧档，天然无损坏丢键风险，守卫缺位系正当设计（裁决钉锁形）。
+  **留份判定**: `make_result` 双契约（serial `success:bool` 位置参冻结 + 空 details
+  省略/原样透传，薄适配器转调规范版，六 serial 工具输出字节兼容）；`resolve_param`
+  三家源标签/层级/normalize 锚定/异常策略不可调和，**整组留三份**——F-029 系契约
+  统一而非为去重率强并。配套: `tests/test_runtime_contract.py` 23 例特征钉+裁决钉
+  先按现实绿再施工（T1 前置），F-023 pid 用例 patch 目标按计划预案改 `runtime_common.os`
+  并记因；随实现搬出收口 STATE/PROJECT 死常量与两处 sys 死导入。全量 **215 全绿**
+  （skipped=1 仍 F-026 opt-in 活跳）。
 - **F-021/F-022/F-023 处置（原子写收口包，TDD 六签先红后绿）**: 三件同族打包。
   F-021=`wb_runtime.save_local_config` 补 F-020 同款损坏拒写守卫（读改写族；
   openocd/serial 侧同名函数为整写语义不在族内，维持不动）；F-022=新增共享工具
