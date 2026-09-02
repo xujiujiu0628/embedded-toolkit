@@ -6,7 +6,8 @@
 session_fix_cache 待人审条目被清空)。另: save_json_file 非原子
 truncate-write, 并发读方会看到半截 JSON, 正是"损坏→清空"链的源头。
 
-三份 runtime 拷贝 (wb/openocd/serial) 同款同修; 全部纯 mock, 不触硬件。
+F-029 后三 runtime (wb/openocd/serial) 走 runtime_common 共享层同一实现——单一
+事实源, 同款同修收敛一处 (本地仅再导出/钩子薄壳); 全部纯 mock, 不触硬件。
 """
 import json
 import os
