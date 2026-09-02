@@ -46,6 +46,22 @@
   示例改复数（与 fixture 同形，修后示例块实测 loader 3 条 + lint 零错）+
   test_singular_pattern_key_rejected 钉死单复数差异防回潮。教训归因：契约样例此前
   只在文档里"展示"，从未过 loader/lint 回路 —— F-038 入库回路后当轮即抓到本例。
+- **F-041 登记+处置（--doctor 环境预检 + swd_probe 下沉共享层，feat）**: 长期防腐
+  方案 §6.1 建议的工具链环境矩阵自检落地——`verify.py --doctor` 打印 toolkit/Python/
+  machine.json 四键/gcc/openocd/make/SWD 连通性后退出，报障随 issue 附
+  `--doctor --json` 输出，把"环境不同"类无效往返消灭在入口。关键设计：
+  ① **swd_probe 从 release.py 私有实现下沉至 openocd_runtime**——发布门禁 G0.5 与
+  doctor 共用同一命令与判据，防两处口径再漂移；对象同一性
+  （`openocd_runtime.swd_probe is release.swd_probe is verify.swd_probe`）由
+  test_doctor 钉死；② **占位路径永不执行**——machine.example.json 的 `<...>` 占位值
+  绝不触发子进程（mock 守卫钉死，触发即 AssertionError）；空/占位 → skipped 如实标注；
+  ③ doctor 分支先于工程发现，不依赖 .workbench 工程；machine.json 缺失走 load_machine
+  回退链并如实标 mode=fallback；④ 退出码恒 0——诊断报告，不是门禁；
+  ⑤ 版本行 stdout/stderr 合并取首行（OpenOCD 版本打印在 stderr 的实情）。
+  伴随微调：swd_probe attempts 参数化，末次失败不再空转 sleep；doctor 传 1 做单次
+  快探、门禁 G0.5 保持 3 次重试（语义不变，test_doctor 双向钉死）。
+  实测：本机真 machine.json 三工具 ok、无板时 swd=fail 如实报（非伪装）；全量
+  **231 全绿**（skipped=1 仍 F-026 opt-in 活跳）。
 
 ## Unreleased — 2026-09-01~02（代管 R3：跨平台回收 + 外围模块补齐入账；次日 F-029 整车收口）
 
