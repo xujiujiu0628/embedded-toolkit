@@ -20,9 +20,10 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-# 状态文件锚 (三 runtime 实测取值一致; 随状态读写族上提, F-029 T4)
+# 状态/配置文件锚 (三 runtime 实测取值一致; 随状态读写族/工程配置族上提, F-029 T4/T5)
 STATE_DIR_NAME = ".workbench"
 STATE_FILE_NAME = "state.json"
+PROJECT_CONFIG_FILE_NAME = "config.json"
 
 
 class JSONCorruptError(ValueError):
@@ -255,3 +256,40 @@ def update_state_entry(category: str, record: dict, workspace: str | None = None
         "updated_keys": [category],
         category: state[category],
     }
+
+
+# ── 工程配置读写族 (F-029 T5) ──────────────────────────────────────
+# 路径策略实测一致 (ws/.workbench/config.json)、读段/读改写体同源 → 上提规范版,
+# runtime 侧退为薄壳 (段名/skill 参数、values=None 语义、返回形态按族保留 —
+# serial 的 None no-op 是独立契约, 特征钉锁形)。
+# 不上提: 环境级 TOOLKIT/config/<skill>.json 族 —— wb merge+守卫 vs ocd/ser 整写
+# 系正当设计差异 (整写不读旧档, 无损坏丢键风险, 计划"补守卫"项经实测撤销),
+# 见 test_runtime_contract.LocalConfigContractTests。
+
+def project_config_file(workspace: str | None = None) -> Path:
+    return workspace_root(workspace) / STATE_DIR_NAME / PROJECT_CONFIG_FILE_NAME
+
+
+def load_skill_section(config_file: str | Path, skill: str) -> dict:
+    """读工程配置的某 skill 段 (只读消费方: 损坏静默当空, F-007)"""
+    return load_json_file(config_file).get(skill, {})
+
+
+def save_skill_section(config_file: str | Path, skill: str, values: dict) -> Path | None:
+    """读改写 config.json 的 skill 段 (F-020 契约): 损坏拒绝写回返回 None。
+
+    段值为 null 时按空段合并 (采纳 ocd 版 `or {}` 防御 —— wb/serial 旧版此处
+    会 TypeError, 属崩溃路径增强, 正常写回形态不变)。"""
+    file_path = Path(config_file)
+    if file_path.exists():
+        try:
+            data = load_json_strict(file_path)
+        except JSONCorruptError as e:
+            print(f"Warning: 拒绝写回 config.json 以免清空其他配置段, "
+                  f"请手工修复后重试: {e}", file=sys.stderr)
+            return None
+    else:
+        data = {}
+    data[skill] = {**(data.get(skill) or {}), **values}
+    save_json_file(file_path, data)
+    return file_path

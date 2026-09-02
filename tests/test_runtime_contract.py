@@ -19,6 +19,7 @@ import tempfile
 import time
 import unittest
 from pathlib import Path
+from unittest import mock
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(
     os.path.abspath(__file__))), "scripts"))
@@ -206,6 +207,121 @@ class SaveProjectConfigNoneValuesTests(WorkspaceTmpMixin, unittest.TestCase):
         openocd_runtime.save_project_config(self.tmp, None)
         with open(self._cfg(), encoding="utf-8") as f:
             self.assertEqual(json.load(f), {"openocd": {}})
+
+
+class ResolveParamContractTests(WorkspaceTmpMixin, unittest.TestCase):
+    """T5 终判证据: 三份 resolve_param 是三个独立契约——参数名、来源层级、
+    源标签 (会进 wire 的 parameter_sources)、normalize 锚定、异常策略全不同,
+    强行参数化=为去重率造回调框架 (计划明令禁止)。裁决: 各留本地。"""
+
+    def test_cli_wins_all_three(self):
+        self.assertEqual(wb_runtime.resolve_param("x", "v"), ("v", "cli"))
+        self.assertEqual(openocd_runtime.resolve_param("x", "v"), ("v", "cli"))
+        self.assertEqual(serial_runtime.resolve_param("x", "v"), ("v", "cli"))
+
+    def test_source_labels_diverge_on_the_wire(self):
+        # parameter_sources 值直接进工具 JSON 输出 —— 标签不同即契约不同
+        r_wb = wb_runtime.resolve_param("p", None, config={"k": "cv"}, config_keys=["k"])
+        self.assertEqual(r_wb, ("cv", "config:k"))
+        r_ocd = openocd_runtime.resolve_param("p", None, config={"k": "cv"}, config_keys=["k"])
+        self.assertEqual(r_ocd, ("cv", "config:k"))
+        r_loc = serial_runtime.resolve_param("p", None, local_config={"k": "lv"}, local_keys=["k"])
+        self.assertEqual(r_loc, ("lv", "local:k"), "serial 有 local 层且标签为 local:")
+        r_proj = serial_runtime.resolve_param("p", None, project_config={"k": "pv"}, project_keys=["k"])
+        self.assertEqual(r_proj, ("pv", "project:k"), "serial 有 project 层且标签为 project:")
+        # 层级顺序证据: serial local 先于 project
+        both = serial_runtime.resolve_param(
+            "p", None, local_config={"k": "L"}, local_keys=["k"],
+            project_config={"k": "P"}, project_keys=["k"])
+        self.assertEqual(both, ("L", "local:k"))
+
+    def test_default_and_required_policies(self):
+        self.assertEqual(serial_runtime.resolve_param("p", None, default=42), (42, "default"))
+        self.assertEqual(serial_runtime.resolve_param("p", None), (None, ""),
+                         "serial 全 miss 返回 (None,'') 不抛")
+        with self.assertRaises(ValueError):
+            wb_runtime.resolve_param("p", None, required=True)
+        with self.assertRaises(ValueError):
+            openocd_runtime.resolve_param("p", None, required=True)
+        with self.assertRaises(TypeError):  # serial 无 required 参数
+            serial_runtime.resolve_param("p", None, required=True)
+
+    def test_normalize_anchoring_is_semantically_different(self):
+        rel = "firmware.elf"
+        v_wb, _ = wb_runtime.resolve_param("file", rel, normalize_as_path=True,
+                                           workspace=self.tmp)
+        self.assertEqual(v_wb, str((Path(self.tmp) / rel).expanduser().resolve()),
+                         "wb 版按 workspace 锚定 (normalize_path_with_base)")
+        v_ocd, _ = openocd_runtime.resolve_param("file", rel, normalize_as_path=True)
+        self.assertEqual(v_ocd, str(Path(rel).expanduser().resolve()),
+                         "ocd 版按 cwd 锚定 —— 与 wb 相对路径结果不同")
+        self.assertNotEqual(v_wb, v_ocd, "tmp 必不等于 cwd: 锚定差是可测的真分叉")
+        with self.assertRaises(TypeError):
+            serial_runtime.resolve_param("file", rel, normalize_as_path=True)
+
+    def test_special_tiers_are_machine_name_coupled(self):
+        # wb: name=="uv4" 触发 machine:uv4_exe/auto:uv4; ocd: name=="exe" 触发
+        # machine:openocd_exe/path/default 兜底 —— 特判钩子各绑各的工具
+        _, s_wb = wb_runtime.resolve_param("uv4", None)
+        self.assertIn(s_wb, ("", "machine:uv4_exe", "auto:uv4"))
+        v_ocd, s_ocd = openocd_runtime.resolve_param("exe", None)
+        self.assertIn(s_ocd, ("machine:openocd_exe", "path", "default"))
+        self.assertTrue(v_ocd, "ocd exe 恒有兜底值 'openocd' 起步")
+        self.assertEqual(wb_runtime.resolve_param("other", None)[1], "",
+                         "wb 非 uv4 名无特判")
+
+
+class LocalConfigContractTests(WorkspaceTmpMixin, unittest.TestCase):
+    """T5 裁决证据: 环境级配置是"一 skill 一文件"——wb save_local 是读改写
+    merge (故有 F-021 守卫), ocd/serial 是整写 (不读旧文件, 不存在"损坏清空
+    其他段"风险, 无守卫系正当设计而非遗漏)。计划原稿"缺失者本次一并补齐守卫"
+    经实测撤销: 无缺口可补。裁决: 本族路径+机制均留本地, 只上提 project 族。"""
+
+    def test_wb_save_local_merges_top_level(self):
+        cfg_dir = Path(self.tmp) / "config"
+        cfg_dir.mkdir()
+        cfg = cfg_dir / "keil.json"
+        cfg.write_text(json.dumps({"keep": 1, "port": "COM1"}), encoding="utf-8")
+        with mock.patch.object(wb_runtime, "default_config_path",
+                               lambda *a, **k: cfg):
+            out = wb_runtime.save_local_config({"port": "COM9"})
+        self.assertEqual(out, cfg)
+        self.assertEqual(json.loads(cfg.read_text(encoding="utf-8")),
+                         {"keep": 1, "port": "COM9"})
+
+    def test_ocd_save_local_whole_write_replaces(self):
+        cfg_dir = Path(self.tmp) / "config"
+        cfg_dir.mkdir()
+        (cfg_dir / "openocd.json").write_text(json.dumps({"keep": 1}), encoding="utf-8")
+        fake_script = Path(self.tmp) / "scripts" / "tool.py"
+        fake_script.parent.mkdir()
+        fake_script.touch()
+        openocd_runtime.save_local_config({"new": 2}, str(fake_script))
+        self.assertEqual(
+            json.loads((cfg_dir / "openocd.json").read_text(encoding="utf-8")),
+            {"new": 2}, "ocd 整写契约: 未给键消失 (与 wb merge 相反, 现状即如此)")
+
+    def test_ocd_serial_save_local_overwrite_corrupt_without_guard(self):
+        # 损坏文件 + 整写 = 直接以新内容覆盖 —— 守卫缺位是安全设计 (整写不读旧档)
+        cfg_dir = Path(self.tmp) / "config"
+        cfg_dir.mkdir()
+        (cfg_dir / "serial.json").write_text("{ 坏 JSON", encoding="utf-8")
+        with mock.patch.object(serial_runtime, "SKILL_DIR", Path(self.tmp)):
+            serial_runtime.save_local_config({"fresh": 1})
+        self.assertEqual(
+            json.loads((cfg_dir / "serial.json").read_text(encoding="utf-8")),
+            {"fresh": 1})
+
+    def test_local_paths_all_resolve_under_toolkit_config(self):
+        # 路径策略三写法虽异, 今天的落点同一 (TOOLKIT/config/<skill>.json) —— 钉住落点
+        wb_p = wb_runtime.default_config_path(skill="gcc")
+        fake_script = Path(__file__).resolve()  # parents[1] = repo root = TOOLKIT_ROOT
+        ocd_p = openocd_runtime.default_config_path(str(fake_script))
+        ser_p = serial_runtime.SKILL_DIR / "config" / "serial.json"
+        for got, name in ((wb_p, "gcc"), (ocd_p, "openocd"), (ser_p, "serial")):
+            with self.subTest(skill=name):
+                self.assertEqual(got.parents[1], Path(wb_p).parents[1],
+                                 "三份环境级配置的 config 目录锚一致")
 
 
 if __name__ == "__main__":

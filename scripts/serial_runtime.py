@@ -5,7 +5,6 @@ from __future__ import annotations
 import json
 import os
 import signal
-import sys
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -13,8 +12,9 @@ from typing import Any
 from runtime_common import (  # noqa: F401  (再导出: 保持 mod.X 调用面, F-029)
     # normalize_path 不并入: serial 自带独立契约 (可带 base、相对输入不 resolve), 见 F-029 T3 裁决
     JSONCorruptError, _first_resolved, _serialize_state_value, is_missing,
-    load_json_file, load_json_strict, load_workspace_state,
-    load_workspace_state_for_update, now_iso, output_json, save_json_file,
+    load_json_file, load_json_strict, load_skill_section, load_workspace_state,
+    load_workspace_state_for_update, now_iso, output_json,
+    project_config_file, save_json_file, save_skill_section,
     workspace_root,
 )
 from runtime_common import make_result as _common_make_result  # F-029 T3: serial 适配器转调目标
@@ -23,8 +23,6 @@ from runtime_common import update_state_entry as _common_update_state_entry  # F
 
 SKILL_DIR = Path(__file__).resolve().parent.parent
 SKILL_NAME = "serial"
-STATE_DIR_NAME = ".workbench"
-PROJECT_CONFIG_FILE = "config.json"
 
 
 def load_local_config() -> dict:
@@ -39,29 +37,18 @@ def save_local_config(data: dict) -> None:
 
 def load_project_config(workspace: str | None = None) -> dict:
     """从 workspace/.workbench/config.json 读取本 skill 的工程级配置"""
-    proj_config = load_json_file(workspace_root(workspace) / STATE_DIR_NAME / PROJECT_CONFIG_FILE)
-    return proj_config.get(SKILL_NAME, {})
+    return load_skill_section(project_config_file(workspace), SKILL_NAME)
 
 
 def save_project_config(workspace: str | None = None, values: dict | None = None) -> None:
-    """写回工程级配置，只更新本 skill 的部分
+    """写回工程级配置，只更新本 skill 的部分 (F-029 T5 薄壳)
 
-    F-020: 配置损坏时拒绝写回 (旧实现把损坏当空文件, 写回后 config.json
-    只剩 serial 段, 验证/构建等其他段无声蒸发)。"""
+    F-020: 配置损坏时拒绝写回 — 体在 runtime_common.save_skill_section。
+    values=None 即 no-op 是 serial 家族独立契约 (wb/ocd 会建空段,
+    test_runtime_contract.SaveProjectConfigNoneValuesTests 锁形, 勿'对齐')。"""
     if values is None:
         return
-    proj_path = workspace_root(workspace) / STATE_DIR_NAME / PROJECT_CONFIG_FILE
-    if proj_path.exists():
-        try:
-            proj_config = load_json_strict(proj_path)
-        except JSONCorruptError as e:
-            print(f"Warning: 拒绝写回 config.json 以免清空其他配置段, "
-                  f"请手工修复后重试: {e}", file=sys.stderr)
-            return
-    else:
-        proj_config = {}
-    proj_config[SKILL_NAME] = {**proj_config.get(SKILL_NAME, {}), **values}
-    save_json_file(proj_path, proj_config)
+    save_skill_section(project_config_file(workspace), SKILL_NAME, values)
 
 
 def save_workspace_state(state: dict, workspace: str | None = None) -> Path:
@@ -99,7 +86,12 @@ def resolve_param(
     state_keys: list[str] | None = None,
     default: Any = None,
 ) -> tuple[Any, str]:
-    """统一参数解析，优先级: CLI > 环境级 > 工程级 > state > default"""
+    """统一参数解析，优先级: CLI > 环境级 > 工程级 > state > default
+
+    serial 家族专属契约 (F-029 T5 裁决: 三份独立, 留本地不并): 位置参形态、
+    local:/project:/state:/default 源标签直接进工具输出; 无 normalize、
+    无 required 异常 (全 miss 返回 (None, ""))。wb/ocd 同名函数各是独立契约,
+    见 test_runtime_contract.ResolveParamContractTests。"""
     if not is_missing(cli_value):
         return cli_value, "cli"
 
