@@ -3,7 +3,7 @@
 格式约定: 每条含发现编号（代管期 findings 编目）与证据 commit。当前版本以
 `VERSION` 文件为准（`wb_common.toolkit_version()` 读取）。
 
-## Unreleased — 2026-09-02（防腐纪律成文 + 换行符策略固化，F-035~037）
+## Unreleased — 2026-09-02（防腐纪律成文 + 换行符策略固化 + 契约 fixture，F-035~040）
 
 - **F-035 登记+处置（成熟纪律仅靠惯例维持，docs only）**: 长期防腐方案三轮源码分析
   判定——本仓不缺防腐机制，缺机制覆盖面与成文化："先钉后拆"（F-029 六 Task 全程
@@ -30,6 +30,22 @@
   CHANGELOG 契约变更段 / toolkit_min_version 评估，不适用须注明），使规则
   进入每次提 PR 的必经表单——单人项目里"清单即评审"。纯模板文字，零代码；
   全量 **215 全绿**（skipped=1 仍 F-026）。
+
+- **F-038 登记+处置（契约 fixture 入库，test+docs）**: `tests/fixtures/contract/`
+  收录 .workbench 契约最小合法样例（config.json + expectations.json），期望条目
+  覆盖全部九字段（id/desc/texts/patterns/capture_group/min/max/xfail/xfail_reason），
+  test_contract_fixtures 三关验证 —— lint 全绿（唯一 warning=xfail 提示，F-026 口径）/
+  loader 能吃（verify.load_config + wb_runtime.load_project_config + load_expectations）/
+  四态判定语义（全信号 pass+pass+xpass 且 xpass 强制判红、缺 TODO xfail、低于下限
+  fail 带 min 细节）；config 字段另钉与 README 公示值逐键一致。咬合验证：fixture
+  min/max 对调 → E9+语义两例红 → 还原 → 绿。schema 演化时 fixture 同步改，diff 即评审点。
+- **F-040 登记+处置（README 示例契约非法，docs，fixture 即发现）**: 「5 分钟上手」
+  第 2 步示例 FR-ADC-02 用单数 "pattern" 键，而 loader 与 lint 均只认复数 "patterns"
+  非空数组（load_expectations "texts 与 patterns 须二选一" 拦截）——照抄示例的用户在
+  verify 首步即收到 "期望清单非法"。红证=按示例原样构造实测 loader 拒绝；处置=README
+  示例改复数（与 fixture 同形，修后示例块实测 loader 3 条 + lint 零错）+
+  test_singular_pattern_key_rejected 钉死单复数差异防回潮。教训归因：契约样例此前
+  只在文档里"展示"，从未过 loader/lint 回路 —— F-038 入库回路后当轮即抓到本例。
 
 ## Unreleased — 2026-09-01~02（代管 R3：跨平台回收 + 外围模块补齐入账；次日 F-029 整车收口）
 
