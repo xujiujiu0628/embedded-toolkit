@@ -20,6 +20,10 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+# 状态文件锚 (三 runtime 实测取值一致; 随状态读写族上提, F-029 T4)
+STATE_DIR_NAME = ".workbench"
+STATE_FILE_NAME = "state.json"
+
 
 class JSONCorruptError(ValueError):
     """JSON 文件损坏/非 UTF-8/顶层非对象 — 读改写场景必须显式处理。
@@ -181,3 +185,73 @@ def parameter_context(*, provider: str, workspace: str | None = None, parameter_
     if not is_missing(config_path):
         context["config_path"] = normalize_path(str(config_path))
     return context
+
+
+# ── 状态读写族 (F-029 T4) ──────────────────────────────────────────
+# 三件套同源实现上提; save_workspace_state / update_state_entry 的落盘形态是
+# 真语义分叉 (实测订正, 非计划原稿的"纯 docstring 差"): wb==serial 序列化
+# (绝对路径→workspace 相对 POSIX, 即 _serialize_state_value), ocd 原样存。
+# 以 serialize 参数注入 — 默认 None 即 ocd 语义, wb/serial 薄壳绑钩。
+# 分叉形状由 test_runtime_contract.StateWireShapeTests 钉住, 防被"顺手统一"。
+
+def _serialize_state_value(value: Any, workspace: Path) -> Any:
+    if isinstance(value, dict):
+        return {key: _serialize_state_value(item, workspace) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_serialize_state_value(item, workspace) for item in value]
+    if not isinstance(value, str) or "://" in value:
+        return value
+
+    path = Path(value).expanduser()
+    if not path.is_absolute():
+        return value
+    try:
+        return Path(os.path.relpath(path.resolve(), workspace)).as_posix()
+    except ValueError:
+        return value
+
+
+def load_workspace_state(workspace: str | None = None) -> dict:
+    return load_json_file(workspace_root(workspace) / STATE_DIR_NAME / STATE_FILE_NAME)
+
+
+def load_workspace_state_for_update(workspace: str | None = None) -> dict:
+    """读改写前的状态加载 (F-019): 损坏 → 隔离到 .corrupt 保留现场 → 按 {} 继续。
+
+    state.json 是可再生缓存, 不像 config.json 那样拒绝写回; 隔离保证损坏
+    原文可手工恢复, 旧实现"损坏当空读入→覆写"会让其他条目无声蒸发。"""
+    ws = workspace_root(workspace)
+    file_path = ws / STATE_DIR_NAME / STATE_FILE_NAME
+    try:
+        return load_json_strict(file_path)
+    except JSONCorruptError as e:
+        corrupt = file_path.with_name(file_path.name + ".corrupt")
+        try:
+            os.replace(file_path, corrupt)
+            print(f"Warning: state.json 损坏, 原文件移至 {corrupt}, "
+                  f"按新内容重建: {e}", file=sys.stderr)
+        except OSError:
+            print(f"Warning: state.json 损坏且隔离失败, 按新内容重建: {e}",
+                  file=sys.stderr)
+        return {}
+
+
+def save_workspace_state(state: dict, workspace: str | None = None, *, serialize=None) -> Path:
+    ws = workspace_root(workspace)
+    file_path = ws / STATE_DIR_NAME / STATE_FILE_NAME
+    save_json_file(file_path, serialize(state, ws) if serialize else state)
+    return file_path
+
+
+def update_state_entry(category: str, record: dict, workspace: str | None = None, *, serialize=None) -> dict:
+    ws = workspace_root(workspace)
+    state = load_workspace_state_for_update(workspace)
+    entry = {**record, "timestamp": record.get("timestamp") or now_iso()}
+    state[category] = serialize(entry, ws) if serialize else entry
+    file_path = save_workspace_state(state, workspace, serialize=serialize)
+    return {
+        "workspace": str(ws),
+        "file": str(file_path),
+        "updated_keys": [category],
+        category: state[category],
+    }

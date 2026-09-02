@@ -12,16 +12,18 @@ from typing import Any
 
 from runtime_common import (  # noqa: F401  (再导出: 保持 mod.X 调用面, F-029)
     # normalize_path 不并入: serial 自带独立契约 (可带 base、相对输入不 resolve), 见 F-029 T3 裁决
-    JSONCorruptError, _first_resolved, is_missing, load_json_file,
-    load_json_strict, now_iso, output_json, save_json_file,
+    JSONCorruptError, _first_resolved, _serialize_state_value, is_missing,
+    load_json_file, load_json_strict, load_workspace_state,
+    load_workspace_state_for_update, now_iso, output_json, save_json_file,
     workspace_root,
 )
 from runtime_common import make_result as _common_make_result  # F-029 T3: serial 适配器转调目标
+from runtime_common import save_workspace_state as _common_save_workspace_state  # F-029 T4: 序列化钩子绑定
+from runtime_common import update_state_entry as _common_update_state_entry  # F-029 T4: 序列化钩子绑定
 
 SKILL_DIR = Path(__file__).resolve().parent.parent
 SKILL_NAME = "serial"
 STATE_DIR_NAME = ".workbench"
-STATE_FILE_NAME = "state.json"
 PROJECT_CONFIG_FILE = "config.json"
 
 
@@ -62,52 +64,16 @@ def save_project_config(workspace: str | None = None, values: dict | None = None
     save_json_file(proj_path, proj_config)
 
 
-def load_workspace_state(workspace: str | None = None) -> dict:
-    """从 workspace/.workbench/state.json 读取状态 (只读: 损坏静默当空)"""
-    return load_json_file(workspace_root(workspace) / STATE_DIR_NAME / STATE_FILE_NAME)
-
-
-def load_workspace_state_for_update(workspace: str | None = None) -> dict:
-    """读改写前的状态加载 (F-019): 损坏 → 隔离到 .corrupt 保留现场 → 按 {} 继续。
-
-    state.json 是可再生缓存, 不像 config.json 那样拒绝写回; 旧实现
-    "损坏当空读入→覆写"会让其他条目无声蒸发。"""
-    ws = workspace_root(workspace)
-    file_path = ws / STATE_DIR_NAME / STATE_FILE_NAME
-    try:
-        return load_json_strict(file_path)
-    except JSONCorruptError as e:
-        corrupt = file_path.with_name(file_path.name + ".corrupt")
-        try:
-            os.replace(file_path, corrupt)
-            print(f"Warning: state.json 损坏, 原文件移至 {corrupt}, "
-                  f"按新内容重建: {e}", file=sys.stderr)
-        except OSError:
-            print(f"Warning: state.json 损坏且隔离失败, 按新内容重建: {e}",
-                  file=sys.stderr)
-        return {}
-
-
 def save_workspace_state(state: dict, workspace: str | None = None) -> Path:
-    """保存状态"""
-    ws = workspace_root(workspace)
-    file_path = ws / STATE_DIR_NAME / STATE_FILE_NAME
-    save_json_file(file_path, _serialize_state_value(state, ws))
-    return file_path
+    """保存状态 (F-029 T4 薄壳): 序列化钩子同 wb (绝对路径→workspace 相对 POSIX)。"""
+    return _common_save_workspace_state(state, workspace, serialize=_serialize_state_value)
 
 
 def update_state_entry(category: str, record: dict, workspace: str | None = None) -> dict:
-    """更新状态条目 (F-019: 损坏隔离后重建, 不再当空文件覆写)"""
-    ws = workspace_root(workspace)
-    state = load_workspace_state_for_update(workspace)
-    state[category] = _serialize_state_value({**record, "timestamp": record.get("timestamp") or now_iso()}, ws)
-    file_path = save_workspace_state(state, workspace)
-    return {
-        "workspace": str(ws),
-        "file": str(file_path),
-        "updated_keys": [category],
-        category: state[category],
-    }
+    """更新状态条目 (F-029 T4 薄壳): 共享层骨架 + 序列化钩子, 行为逐字节不变
+    (原 F-019 隔离重建语义在骨架内)。"""
+    return _common_update_state_entry(category, record, workspace,
+                                      serialize=_serialize_state_value)
 
 
 def normalize_path(value: str | None, base: str | Path | None = None) -> str:
@@ -120,23 +86,6 @@ def normalize_path(value: str | None, base: str | Path | None = None) -> str:
     if base and not path.is_absolute():
         path = Path(base) / path
     return str(path.resolve()) if path.is_absolute() else str(path)
-
-
-def _serialize_state_value(value: Any, workspace: Path) -> Any:
-    if isinstance(value, dict):
-        return {key: _serialize_state_value(item, workspace) for key, item in value.items()}
-    if isinstance(value, list):
-        return [_serialize_state_value(item, workspace) for item in value]
-    if not isinstance(value, str) or "://" in value:
-        return value
-
-    path = Path(value).expanduser()
-    if not path.is_absolute():
-        return value
-    try:
-        return Path(os.path.relpath(path.resolve(), workspace)).as_posix()
-    except ValueError:
-        return value
 
 
 def resolve_param(

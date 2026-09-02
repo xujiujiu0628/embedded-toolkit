@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import os
 import sys
 from pathlib import Path
 from shutil import which
@@ -12,12 +11,15 @@ from typing import Any
 from runtime_common import (  # noqa: F401  (再导出: 保持 mod.X 调用面, F-029)
     JSONCorruptError, _first_resolved, build_artifacts, compact_dict,
     get_state_entry, hidden_subprocess_kwargs, is_missing, load_json_file,
-    load_json_strict, make_result, make_timing, normalize_path, now_iso,
-    output_json, parameter_context, save_json_file, workspace_root,
+    load_json_strict, load_workspace_state, load_workspace_state_for_update,
+    make_result, make_timing, normalize_path, now_iso, output_json,
+    parameter_context, save_json_file, save_workspace_state,
+    update_state_entry, workspace_root,
 )
 
+# ocd 侧状态读写 = 共享层默认语义 (原样存, 无序列化钩子);
+# 该分叉系实测真语义差 (wb==serial 才序列化), 见 test_runtime_contract
 STATE_DIR_NAME = ".workbench"
-STATE_FILE_NAME = "state.json"
 PROJECT_CONFIG_FILE_NAME = "config.json"
 SKILL_NAME = "openocd"
 
@@ -94,49 +96,6 @@ def save_project_config(workspace: str | None = None, values: dict | None = None
     full_config[SKILL_NAME] = {**(full_config.get(SKILL_NAME) or {}), **values}
 
     save_json_file(project_config_path, full_config)
-
-
-def load_workspace_state(workspace: str | None = None) -> dict:
-    return load_json_file(workspace_root(workspace) / STATE_DIR_NAME / STATE_FILE_NAME)
-
-
-def save_workspace_state(state: dict, workspace: str | None = None) -> Path:
-    file_path = workspace_root(workspace) / STATE_DIR_NAME / STATE_FILE_NAME
-    save_json_file(file_path, state)
-    return file_path
-
-
-def load_workspace_state_for_update(workspace: str | None = None) -> dict:
-    """读改写前的状态加载 (F-019): 损坏 → 隔离到 .corrupt 保留现场 → 按 {} 继续。
-
-    state.json 是可再生缓存, 不像 config.json 那样拒绝写回; 旧实现
-    "损坏当空读入→覆写"会让其他条目无声蒸发。"""
-    ws = workspace_root(workspace)
-    file_path = ws / STATE_DIR_NAME / STATE_FILE_NAME
-    try:
-        return load_json_strict(file_path)
-    except JSONCorruptError as e:
-        corrupt = file_path.with_name(file_path.name + ".corrupt")
-        try:
-            os.replace(file_path, corrupt)
-            print(f"Warning: state.json 损坏, 原文件移至 {corrupt}, "
-                  f"按新内容重建: {e}", file=sys.stderr)
-        except OSError:
-            print(f"Warning: state.json 损坏且隔离失败, 按新内容重建: {e}",
-                  file=sys.stderr)
-        return {}
-
-
-def update_state_entry(category: str, record: dict, workspace: str | None = None) -> dict:
-    state = load_workspace_state_for_update(workspace)
-    state[category] = {**record, "timestamp": record.get("timestamp") or now_iso()}
-    file_path = save_workspace_state(state, workspace)
-    return {
-        "workspace": str(workspace_root(workspace)),
-        "file": str(file_path),
-        "updated_keys": [category],
-        category: state[category],
-    }
 
 
 def _machine_openocd_exe() -> str:
