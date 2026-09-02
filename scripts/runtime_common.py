@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -99,3 +100,84 @@ def output_json(data: dict, *, indent: int = 2) -> None:
     """输出 JSON 到 stdout"""
     sys.stdout.reconfigure(encoding="utf-8")
     print(json.dumps(data, ensure_ascii=False, indent=indent), flush=True)
+
+
+# ── 进程/结果构造族 (F-029 T3) ──────────────────────────────────────
+# wb/ocd 两份逐字节相同, 上提为规范版 (wb 原文)。serial 侧: make_result 是
+# 转调本模块 make_result 的薄适配器 (success:bool 入参签名冻结);
+# make_timing/parameter_context 为同名异物, 契约归 serial 本地 (T3 裁决)。
+
+def hidden_subprocess_kwargs() -> dict:
+    """Windows 隐藏控制台 kwargs; 非 win32 恒 {} (F-027 平台守卫随体上提)。"""
+    if sys.platform != "win32":
+        return {}
+
+    startupinfo = subprocess.STARTUPINFO()
+    startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+    startupinfo.wShowWindow = getattr(subprocess, "SW_HIDE", 0)
+    return {
+        "creationflags": getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        "startupinfo": startupinfo,
+    }
+
+
+def get_state_entry(state: dict | None, key: str) -> dict:
+    if not isinstance(state, dict):
+        return {}
+    value = state.get(key, {})
+    return value if isinstance(value, dict) else {}
+
+
+def compact_dict(data: dict | None) -> dict:
+    if not isinstance(data, dict):
+        return {}
+    return {key: value for key, value in data.items() if value not in (None, "", [], {})}
+
+
+def build_artifacts(**paths: str) -> dict:
+    return {key: normalize_path(str(value)) for key, value in paths.items() if not is_missing(value)}
+
+
+def make_result(
+    *,
+    status: str,
+    action: str,
+    summary: str,
+    details: dict | None = None,
+    context: dict | None = None,
+    artifacts: dict | None = None,
+    metrics: dict | None = None,
+    state: dict | None = None,
+    next_actions: list[str] | None = None,
+    timing: dict | None = None,
+    error: dict | None = None,
+) -> dict:
+    result = {"status": status, "action": action, "summary": summary, "details": compact_dict(details)}
+    optional = {
+        "context": compact_dict(context),
+        "artifacts": compact_dict(artifacts),
+        "metrics": compact_dict(metrics),
+        "state": compact_dict(state),
+        "timing": compact_dict(timing),
+    }
+    for key, value in optional.items():
+        if value:
+            result[key] = value
+    if next_actions:
+        result["next_actions"] = [item for item in next_actions if item]
+    if error:
+        result["error"] = compact_dict(error)
+    return result
+
+
+def make_timing(started_at: str, elapsed_ms: int | float) -> dict:
+    return {"started_at": started_at, "finished_at": now_iso(), "elapsed_ms": int(elapsed_ms)}
+
+
+def parameter_context(*, provider: str, workspace: str | None = None, parameter_sources: dict | None = None, config_path: str | None = None) -> dict:
+    context = {"provider": provider, "workspace": str(workspace_root(workspace))}
+    if parameter_sources:
+        context["parameter_sources"] = compact_dict(parameter_sources)
+    if not is_missing(config_path):
+        context["config_path"] = normalize_path(str(config_path))
+    return context

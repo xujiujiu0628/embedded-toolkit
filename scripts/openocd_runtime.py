@@ -4,16 +4,16 @@ from __future__ import annotations
 
 import json
 import os
-import subprocess
 import sys
 from pathlib import Path
 from shutil import which
 from typing import Any
 
 from runtime_common import (  # noqa: F401  (再导出: 保持 mod.X 调用面, F-029)
-    JSONCorruptError, _first_resolved, is_missing, load_json_file,
-    load_json_strict, normalize_path, now_iso, output_json, save_json_file,
-    workspace_root,
+    JSONCorruptError, _first_resolved, build_artifacts, compact_dict,
+    get_state_entry, hidden_subprocess_kwargs, is_missing, load_json_file,
+    load_json_strict, make_result, make_timing, normalize_path, now_iso,
+    output_json, parameter_context, save_json_file, workspace_root,
 )
 
 STATE_DIR_NAME = ".workbench"
@@ -96,19 +96,6 @@ def save_project_config(workspace: str | None = None, values: dict | None = None
     save_json_file(project_config_path, full_config)
 
 
-def hidden_subprocess_kwargs() -> dict:
-    if sys.platform != "win32":
-        return {}
-
-    startupinfo = subprocess.STARTUPINFO()
-    startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
-    startupinfo.wShowWindow = getattr(subprocess, "SW_HIDE", 0)
-    return {
-        "creationflags": getattr(subprocess, "CREATE_NO_WINDOW", 0),
-        "startupinfo": startupinfo,
-    }
-
-
 def load_workspace_state(workspace: str | None = None) -> dict:
     return load_json_file(workspace_root(workspace) / STATE_DIR_NAME / STATE_FILE_NAME)
 
@@ -117,13 +104,6 @@ def save_workspace_state(state: dict, workspace: str | None = None) -> Path:
     file_path = workspace_root(workspace) / STATE_DIR_NAME / STATE_FILE_NAME
     save_json_file(file_path, state)
     return file_path
-
-
-def get_state_entry(state: dict | None, key: str) -> dict:
-    if not isinstance(state, dict):
-        return {}
-    value = state.get(key, {})
-    return value if isinstance(value, dict) else {}
 
 
 def load_workspace_state_for_update(workspace: str | None = None) -> dict:
@@ -213,61 +193,6 @@ def resolve_param(
     if required and is_missing(value):
         raise ValueError(f"缺少必要参数: {name}")
     return value, source
-
-
-def compact_dict(data: dict | None) -> dict:
-    if not isinstance(data, dict):
-        return {}
-    return {key: value for key, value in data.items() if value not in (None, "", [], {})}
-
-
-def build_artifacts(**paths: str) -> dict:
-    return {key: normalize_path(str(value)) for key, value in paths.items() if not is_missing(value)}
-
-
-def make_result(
-    *,
-    status: str,
-    action: str,
-    summary: str,
-    details: dict | None = None,
-    context: dict | None = None,
-    artifacts: dict | None = None,
-    metrics: dict | None = None,
-    state: dict | None = None,
-    next_actions: list[str] | None = None,
-    timing: dict | None = None,
-    error: dict | None = None,
-) -> dict:
-    result = {"status": status, "action": action, "summary": summary, "details": compact_dict(details)}
-    optional = {
-        "context": compact_dict(context),
-        "artifacts": compact_dict(artifacts),
-        "metrics": compact_dict(metrics),
-        "state": compact_dict(state),
-        "timing": compact_dict(timing),
-    }
-    for key, value in optional.items():
-        if value:
-            result[key] = value
-    if next_actions:
-        result["next_actions"] = [item for item in next_actions if item]
-    if error:
-        result["error"] = compact_dict(error)
-    return result
-
-
-def make_timing(started_at: str, elapsed_ms: int | float) -> dict:
-    return {"started_at": started_at, "finished_at": now_iso(), "elapsed_ms": int(elapsed_ms)}
-
-
-def parameter_context(*, provider: str, workspace: str | None = None, parameter_sources: dict | None = None, config_path: str | None = None) -> dict:
-    context = {"provider": provider, "workspace": str(workspace_root(workspace))}
-    if parameter_sources:
-        context["parameter_sources"] = compact_dict(parameter_sources)
-    if not is_missing(config_path):
-        context["config_path"] = normalize_path(str(config_path))
-    return context
 
 
 def emit_stream_record(*, source: str, channel_type: str, text: str, as_json: bool, stream_type: str = "text", channel: int | None = None, extra: dict | None = None) -> None:
