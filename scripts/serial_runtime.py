@@ -16,6 +16,7 @@ from runtime_common import (  # noqa: F401  (再导出: 保持 mod.X 调用面, 
     load_json_strict, now_iso, output_json, save_json_file,
     workspace_root,
 )
+from runtime_common import make_result as _common_make_result  # F-029 T3: serial 适配器转调目标
 
 SKILL_DIR = Path(__file__).resolve().parent.parent
 SKILL_NAME = "serial"
@@ -110,7 +111,9 @@ def update_state_entry(category: str, record: dict, workspace: str | None = None
 
 
 def normalize_path(value: str | None, base: str | Path | None = None) -> str:
-    """路径规范化"""
+    """路径规范化 — serial 独立契约 (F-029 T3 裁决): 相对输入不 resolve、可带
+    base; 与 runtime_common.normalize_path (恒 resolve 绝对) 语义不等价,
+    非超集非漏改, 勿'统一' (serial_log.py 等消费面依赖此形态)。"""
     if is_missing(value):
         return ""
     path = Path(str(value)).expanduser()
@@ -173,7 +176,9 @@ def resolve_param(
 
 
 def parameter_context(name: str, value: Any, source: str) -> dict:
-    """记录参数来源"""
+    """serial 家族独立契约 (F-029 裁决): 与 wb/ocd 同名异物 (入参/返回均
+    不同形 — 本版是 name/value/source 三元组, 规范版是 provider context dict),
+    非漏改, 勿'统一'。记录参数来源。"""
     return {"name": name, "value": value, "source": source}
 
 
@@ -184,12 +189,13 @@ def make_result(
     details: dict | None = None,
     error: dict | None = None,
 ) -> dict:
-    """统一结果格式"""
-    result = {
-        "status": "ok" if success else "error",
-        "action": action,
-        "summary": summary,
-    }
+    """serial 家族入口签名 (F-029): success:bool 位置参冻结不变, 输出 status 族
+    转调 runtime_common 规范实现。差异点按特征钉保留: 空 details **省略键**
+    (规范版恒带), details/error **原样透传** (规范版走 compact_dict) —
+    六个 serial 工具消费面字节兼容, 见 test_runtime_contract。"""
+    result = _common_make_result(status="ok" if success else "error",
+                                 action=action, summary=summary)
+    result.pop("details")
     if details:
         result["details"] = details
     if error:
@@ -198,7 +204,9 @@ def make_result(
 
 
 def make_timing(start_time: float) -> dict:
-    """执行时间记录"""
+    """serial 家族独立契约 (F-029 裁决): 与 wb/ocd 同名异物 — 本版收 epoch
+    float 现算耗时, 规范版收 (started_at, elapsed_ms) 做格式化, 非漏改,
+    勿'统一' (serial_monitor.py 消费面依赖本签名)。执行时间记录。"""
     elapsed = datetime.now().timestamp() - start_time
     return {
         "started_at": datetime.fromtimestamp(start_time).astimezone().isoformat(timespec="seconds"),
