@@ -39,6 +39,9 @@ from wb_common import (TOOLKIT_ROOT, find_project_root, load_machine,
 
 OPENOCD_EXE = load_machine()["openocd_exe"]
 
+from runtime_common import output_json  # noqa: E402  (F-041: doctor --json 复用共享层)
+from openocd_runtime import swd_probe  # noqa: E402  (F-041: SWD 探测与 release G0.5 同源)
+
 GCC_BUILD = os.path.join(TOOLKIT_ROOT, "scripts", "gcc_build.py")         # 默认后端 (builder=gcc)
 # Keil 桥 (2026-08-28 退役入 legacy): builder 显式配 "keil" 时按需唤起, 见 scripts/legacy/keil/README.md
 KEIL_BUILD = os.path.join(TOOLKIT_ROOT, "scripts", "legacy", "keil", "keil_build.py")
@@ -885,6 +888,126 @@ def _save_failure_context(result: dict, max_retries: int, capture_text: str = ""
         pass  # Non-critical
 
 
+# ---------------------------------------------------------------------------
+# 环境预检 --doctor (F-041): 打印工具链环境矩阵, 诊断专用。
+# 定位: release.py G0.5 "区分环境未备/固件真坏" 之前的自检; 报障随 issue 附
+# --doctor --json, 消灭"环境不同"类往返。是报告不是门禁 —— 退出码恒 0,
+# 占位路径永不执行 (test_doctor 安全钉死)。
+
+_DOCTOR_KEYS = ("uv4_exe", "openocd_exe", "gcc_path", "make_exe")
+
+
+def _first_version_line(cmd: list) -> tuple:
+    """运行版本命令, 返回 (ok, 首个非空行或错误串)。stdout/stderr 合并取行
+    (OpenOCD 版本行打印在 stderr)。"""
+    try:
+        r = subprocess.run(cmd, capture_output=True, text=True,
+                           encoding="utf-8", errors="replace", timeout=15)
+    except (subprocess.TimeoutExpired, FileNotFoundError, OSError) as e:
+        return False, str(e)
+    lines = [ln.strip() for ln in ((r.stdout or "") + (r.stderr or "")).splitlines()
+             if ln.strip()]
+    return (r.returncode == 0 or bool(lines)), (lines[0] if lines else "")
+
+
+def _check_tool(machine: dict, key: str, bare: str, version_args: tuple) -> dict:
+    """单工具检查。空/占位 → skipped (永不执行占位路径, 安全钉在 test_doctor);
+    键为目录 (gcc_path 型) → 目录下找可执行 (Windows 优先 .exe), 找不到 → warn;
+    键为文件 → 直接用; 版本命令失败 → warn (诊断报告不判门禁红)。"""
+    val = (machine.get(key) or "").strip()
+    if not val:
+        return {"status": "skipped", "detail": f"{key} 为空"}
+    if val.startswith("<"):
+        return {"status": "skipped",
+                "detail": f"{key} 为占位路径 (复制 machine.example.json 后填写)"}
+    if os.path.isdir(val):
+        exe = None
+        for name in ((bare + ".exe") if os.name == "nt" else bare, bare):
+            cand = os.path.join(val, name)
+            if os.path.isfile(cand):
+                exe = cand
+                break
+        if exe is None:
+            return {"status": "warn",
+                    "detail": f"{key} 目录下未找到 {bare}[.exe]: {val}"}
+    elif os.path.isfile(val):
+        exe = val
+    else:
+        return {"status": "warn", "detail": f"{key} 指向的路径不存在: {val}"}
+    ok, line = _first_version_line([exe, *version_args])
+    if not ok:
+        return {"status": "warn", "detail": f"版本命令失败: {exe}", "error": line[:200]}
+    return {"status": "ok", "detail": exe, "version": line[:120]}
+
+
+def doctor_report(probe: bool = True) -> dict:
+    """环境矩阵收集 (F-041)。machine.json 缺失时经 load_machine 回退链取占位值,
+    各工具按占位/缺失跳过 —— 本函数永不执行占位路径。probe=True 且 openocd
+    在场时做单次 SWD 探测 (attempts=1; 门禁 G0.5 用 3 次重试版)。"""
+    machine = load_machine()
+    machine_file = os.path.join(TOOLKIT_ROOT, "machine.json")
+    example_file = os.path.join(TOOLKIT_ROOT, "machine.example.json")
+    if os.path.isfile(machine_file):
+        mode = "machine.json"
+    elif os.path.isfile(example_file):
+        mode = "fallback: machine.example.json (占位值, 真机步骤会明确报错)"
+    else:
+        mode = "missing"
+
+    keys = {}
+    for k in _DOCTOR_KEYS:
+        v = (machine.get(k) or "").strip()
+        keys[k] = {"value_set": bool(v),
+                   "placeholder": v.startswith("<"),
+                   "path_exists": os.path.exists(v) if v else None}
+
+    tools = {"gcc": _check_tool(machine, "gcc_path", "arm-none-eabi-gcc", ("--version",)),
+             "openocd": _check_tool(machine, "openocd_exe", "openocd", ("--version",)),
+             "make": _check_tool(machine, "make_exe", "make", ("--version",))}
+
+    oc = (machine.get("openocd_exe") or "").strip()
+    if not oc or oc.startswith("<") or not os.path.isfile(oc):
+        swd = {"status": "skipped",
+               "detail": "openocd_exe 未配置/占位/不存在, 跳过 SWD 探测"}
+    elif probe:
+        ok, tail = swd_probe(oc, attempts=1)
+        swd = {"status": "ok" if ok else "fail", "detail": tail}
+    else:
+        swd = {"status": "skipped", "detail": "未请求探测"}
+
+    statuses = [tools[n]["status"] for n in ("gcc", "openocd", "make")] + [swd["status"]]
+    summary = {k: statuses.count(k) for k in ("ok", "warn", "fail", "skipped")}
+    return {"tool": "doctor", "toolkit_version": toolkit_version(),
+            "python": sys.version.split()[0],
+            "machine": {"mode": mode, "keys": keys},
+            "tools": tools, "swd": swd, "summary": summary}
+
+
+def _print_doctor(rep: dict) -> None:
+    print("== embedded-toolkit doctor ==")
+    print(f"toolkit : {rep['toolkit_version']}   python: {rep['python']}")
+    print(f"machine : {rep['machine']['mode']}")
+    for k, v in rep["machine"]["keys"].items():
+        flags = [lbl for lbl, on in (("空", not v["value_set"]),
+                                     ("占位", v["placeholder"]),
+                                     ("路径在场", v["path_exists"])) if on]
+        print(f"  {k:<11}: {', '.join(flags) if flags else '-'}")
+    for name in ("gcc", "openocd", "make"):
+        t = rep["tools"][name]
+        line = f"  {name:<9}: {t['status']}"
+        if t.get("version"):
+            line += f" — {t['version']}"
+        elif t.get("detail"):
+            line += f" — {t['detail']}"
+        if t.get("error"):
+            line += f" | {t['error']}"
+        print(line)
+    print(f"swd     : {rep['swd']['status']} — {rep['swd']['detail'][:120]}")
+    s = rep["summary"]
+    print(f"summary : ok={s['ok']} warn={s['warn']} fail={s['fail']} skipped={s['skipped']}")
+    print("(doctor 为诊断报告, 不做门禁判定; 报障请附 --doctor --json 输出)")
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="闭环验证 — Build → Analyze → Flash → Capture → Verify",
@@ -915,7 +1038,19 @@ def main():
                         help="编译前先 clean (仅 builder=gcc; 发布门禁用)")
     parser.add_argument("--gate-run", dest="gate_run", action="store_true",
                         help="发布门禁发起的运行: 跳过 feedback_db 落账")
+    parser.add_argument("--doctor", action="store_true",
+                        help="环境预检: 打印 toolkit/Python/machine.json 四键/gcc/openocd/"
+                             "make/SWD 连通性矩阵后退出 (诊断报告, 不做门禁判定, 退出码恒 0)")
     args = parser.parse_args()
+
+    if args.doctor:
+        # F-041: 诊断分支先于工程发现 —— doctor 不依赖 .workbench 工程
+        report = doctor_report()
+        if args.json:
+            output_json(report)
+        else:
+            _print_doctor(report)
+        return
 
     # 工程根: --project > cwd 向上发现
     global WORKSPACE
