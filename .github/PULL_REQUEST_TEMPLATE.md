@@ -30,6 +30,9 @@ Closes #(没有关联 issue 请写 `无`，并说明理由)
 - [ ] commit 符合 `type(scope): 中文描述` 规约
 - [ ] 未混入 `machine.json`、个人绝对路径或用户名（diff 自查一遍）
 - [ ] 行为变更已同步 `CHANGELOG.md` / `VERSION`（或在此说明为何不需要）
+- [ ] 涉及 schema / 工具 JSON 输出结构变更（公共 API）的，契约三件套已齐：
+      ① 同 commit 契约钉 ② CHANGELOG 契约变更段 ③ `toolkit_min_version` 已评估
+      （不适用请勾选并注明；细则见 CONTRIBUTING「契约变更三件套」）
 - [ ] 未触碰禁区（`hooks/`、`scripts/handoff_guard.py`），或已在关联 issue 中单独论证
 
 ## 破坏性变更
