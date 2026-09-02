@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import sys
 from pathlib import Path
 from shutil import which
 from typing import Any
@@ -11,16 +10,15 @@ from typing import Any
 from runtime_common import (  # noqa: F401  (再导出: 保持 mod.X 调用面, F-029)
     JSONCorruptError, _first_resolved, build_artifacts, compact_dict,
     get_state_entry, hidden_subprocess_kwargs, is_missing, load_json_file,
-    load_json_strict, load_workspace_state, load_workspace_state_for_update,
-    make_result, make_timing, normalize_path, now_iso, output_json,
-    parameter_context, save_json_file, save_workspace_state,
+    load_json_strict, load_skill_section, load_workspace_state,
+    load_workspace_state_for_update, make_result, make_timing, normalize_path,
+    now_iso, output_json, parameter_context, project_config_file,
+    save_json_file, save_skill_section, save_workspace_state,
     update_state_entry, workspace_root,
 )
 
 # ocd 侧状态读写 = 共享层默认语义 (原样存, 无序列化钩子);
 # 该分叉系实测真语义差 (wb==serial 才序列化), 见 test_runtime_contract
-STATE_DIR_NAME = ".workbench"
-PROJECT_CONFIG_FILE_NAME = "config.json"
 SKILL_NAME = "openocd"
 
 
@@ -63,10 +61,7 @@ def load_project_config(workspace: str | None = None) -> dict:
     参数: workspace - 工作区路径，None 时使用 cwd
     返回: 该 skill 对应的配置字典
     """
-    ws_root = workspace_root(workspace)
-    project_config_path = ws_root / STATE_DIR_NAME / PROJECT_CONFIG_FILE_NAME
-    full_config = load_json_file(project_config_path)
-    return full_config.get(SKILL_NAME, {})
+    return load_skill_section(project_config_file(workspace), SKILL_NAME)
 
 
 def save_project_config(workspace: str | None = None, values: dict | None = None) -> None:
@@ -74,28 +69,12 @@ def save_project_config(workspace: str | None = None, values: dict | None = None
     - 只更新本 skill 的配置部分，不覆盖其他 skill 的配置
     - 目录不存在时自动创建 .workbench/
     - openocd_runtime 中 skill_name 硬编码为 "openocd"
-    - F-020: 配置损坏时拒绝写回 (旧实现把损坏当空文件, 写回后 config.json
-      只剩本次写入的段, 其余配置段无声蒸发)
+    - F-020: 配置损坏时拒绝写回 (体在 runtime_common.save_skill_section,
+      F-029 T5 上提; 旧实现把损坏当空文件会让其他段无声蒸发)
     """
     if values is None:
         values = {}
-    ws_root = workspace_root(workspace)
-    project_config_path = ws_root / STATE_DIR_NAME / PROJECT_CONFIG_FILE_NAME
-
-    if project_config_path.exists():
-        try:
-            full_config = load_json_strict(project_config_path)
-        except JSONCorruptError as e:
-            print(f"Warning: 拒绝写回 config.json 以免清空其他配置段, "
-                  f"请手工修复后重试: {e}", file=sys.stderr)
-            return
-    else:
-        full_config = {}
-
-    # 只更新本 skill 的配置部分
-    full_config[SKILL_NAME] = {**(full_config.get(SKILL_NAME) or {}), **values}
-
-    save_json_file(project_config_path, full_config)
+    save_skill_section(project_config_file(workspace), SKILL_NAME, values)
 
 
 def _machine_openocd_exe() -> str:
@@ -121,6 +100,13 @@ def resolve_param(
     required: bool = False,
     normalize_as_path: bool = False,
 ) -> tuple[Any, str]:
+    """参数解析 — openocd 家族专属契约 (F-029 T5 裁决: 三份独立, 留本地不并)。
+
+    优先级 cli>config>state>machine:openocd_exe>path>default("openocd");
+    normalize 用 plain resolve (按 cwd 锚定, 与 wb 的 workspace 锚定不同);
+    required=True 缺值即抛。wb/serial 同名函数各是独立契约,
+    见 test_runtime_contract.ResolveParamContractTests。
+    """
     if not is_missing(cli_value):
         value = cli_value
         source = "cli"

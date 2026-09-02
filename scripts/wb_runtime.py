@@ -18,16 +18,14 @@ from wb_common import TOOLKIT_ROOT
 from runtime_common import (  # noqa: F401  (再导出: 保持 mod.X 调用面, F-029)
     JSONCorruptError, _first_resolved, _serialize_state_value, build_artifacts,
     compact_dict, get_state_entry, hidden_subprocess_kwargs, is_missing,
-    load_json_file, load_json_strict, load_workspace_state,
+    load_json_file, load_json_strict, load_skill_section, load_workspace_state,
     load_workspace_state_for_update, make_result, make_timing, normalize_path,
-    now_iso, output_json, parameter_context, save_json_file, workspace_root,
+    now_iso, output_json, parameter_context, project_config_file,
+    save_json_file, save_skill_section, workspace_root,
 )
 from runtime_common import save_workspace_state as _common_save_workspace_state  # F-029 T4: 序列化钩子绑定
 from runtime_common import update_state_entry as _common_update_state_entry  # F-029 T4: 序列化钩子绑定
 
-
-STATE_DIR_NAME = ".workbench"
-PROJECT_CONFIG_FILE_NAME = "config.json"
 
 # Skill name for project config
 SKILL_NAME = "keil"
@@ -75,10 +73,7 @@ def load_project_config(workspace: str | None = None, skill: str = SKILL_NAME) -
     参数: workspace - 工作区路径，None 时使用 cwd；skill - 顶层段名（如 "keil"/"gcc"）
     返回: 该 skill 对应的配置字典（如 config["keil"] 或 config["gcc"]）
     """
-    ws = workspace_root(workspace)
-    config_file = ws / STATE_DIR_NAME / PROJECT_CONFIG_FILE_NAME
-    data = load_json_file(config_file)
-    return data.get(skill, {})
+    return load_skill_section(project_config_file(workspace), skill)
 
 
 def save_project_config(workspace: str | None = None, values: dict | None = None, skill: str = SKILL_NAME) -> Path | None:
@@ -88,23 +83,11 @@ def save_project_config(workspace: str | None = None, values: dict | None = None
     - 目录不存在时自动创建 .workbench/
     - F-020: 配置损坏时**拒绝写回**返回 None — config.json 是验证契约,
       不能被构建行为清空 (旧实现把损坏当空文件, 写回后只剩本 skill 段)
+    - F-029 T5: 读改写体在 runtime_common.save_skill_section, 本函数为薄壳
     """
     if values is None:
         values = {}
-    ws = workspace_root(workspace)
-    config_file = ws / STATE_DIR_NAME / PROJECT_CONFIG_FILE_NAME
-    if config_file.exists():
-        try:
-            data = load_json_strict(config_file)
-        except JSONCorruptError as e:
-            print(f"Warning: 拒绝写回 config.json 以免清空其他配置段, "
-                  f"请手工修复后重试: {e}", file=sys.stderr)
-            return None
-    else:
-        data = {}
-    data[skill] = {**(data.get(skill, {})), **values}
-    save_json_file(config_file, data)
-    return config_file
+    return save_skill_section(project_config_file(workspace), skill, values)
 
 
 def normalize_path_with_base(value: str | None, base: str | Path | None = None) -> str:
@@ -168,6 +151,13 @@ def resolve_param(
     normalize_as_path: bool = False,
     workspace: str | None = None,
 ) -> tuple[Any, str]:
+    """参数解析 — wb 构建后端专属契约 (F-029 T5 裁决: 三份独立, 留本地不并)。
+
+    优先级 cli>config>state>machine:uv4_exe>auto:uv4; normalize 按 workspace
+    锚定 (normalize_path_with_base); required=True 缺值即抛 ValueError。
+    ocd/serial 同名函数各是独立契约 (层级/源标签/锚定/异常策略均不同形),
+    非漏改, 勿'统一' — 见 test_runtime_contract.ResolveParamContractTests。
+    """
     if not is_missing(cli_value):
         value = cli_value
         source = "cli"
