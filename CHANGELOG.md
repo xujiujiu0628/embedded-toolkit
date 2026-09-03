@@ -3,6 +3,24 @@
 格式约定: 每条含发现编号（代管期 findings 编目）与证据 commit。当前版本以
 `VERSION` 文件为准（`wb_common.toolkit_version()` 读取）。
 
+## Unreleased — 2026-09-03（进度台账，F-047）
+
+- **F-047（verify 进度台账可重放证据，feat+test）**: 9-02 方案四-2。当前
+  verify.py 跑出结果只落 feedback_db（校准用），不存 commit 锚点；事后
+  无法回答"v1.1.0 tag 之前最后一次 PASS 是哪天哪个 commit"。处置=双写：
+  ① `.workbench/state/checkpoints.jsonl` 追加台账（8 字段：ts/git_head/
+  git_branch/status/duration_sec/origin/step_keys/contract_hashes，给审计
+  链）；② `state.json["last_checkpoint"]` 覆盖（与 jsonl 末行同步，给消费
+  方读"上次状态"）。`_git_head()` 隔离 git 调用，失败回空字符串而非抛
+  （非 git 工程 / git 不可用）。主流程在 `_log_feedback_event` 之后
+  `_output` 之前调一次 `record_checkpoint`；落盘失败不阻断（审计非门禁，
+  stderr 告警即可）。**注意：当前 main() 只在正常出口落台账，早退路径
+  （build_failed/flash_failed/capture_failed）不落——这是已知覆盖缺口，
+  下次按需要补**。`record_checkpoint` / `_git_head` 单元 7 + main 集
+  成 1，共 8/8 绿；全量 **252/252 绿**（skipped=1 仍 F-026 opt-in）。
+  对 release audit：以后查"某 tag 之前最后一次 PASS"= `grep checkpoints.jsonl`
+  + 按 ts/commit 过滤，零人工翻 git log。
+
 ## Unreleased — 2026-09-03（HIL 入口可追溯，F-046）
 
 - **F-046（HIL 任务入口可追溯到 schedule/dispatch，feat+test）**: 9-02
