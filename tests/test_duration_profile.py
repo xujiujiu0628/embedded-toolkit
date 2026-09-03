@@ -72,25 +72,49 @@ class ReadCheckpointsTests(unittest.TestCase):
 
 
 class CollectStepDurationsTests(unittest.TestCase):
-    """F-050 单元: 按 step_keys 聚合, 未知 step 忽略"""
+    """F-050 单元: 真数据路径读 step_durations 字段 (自审 Finding 5)"""
 
-    def test_empty_checkpoints_returns_empty_dict(self):
-        out = duration_profile._collect_step_durations([])
+    def test_empty_checkpoints_returns_empty_dict_and_no_warnings(self):
+        out, warnings = duration_profile._collect_step_durations([])
         self.assertEqual(out, {k: [] for k in duration_profile.STEP_KEYS})
+        self.assertEqual(warnings, [])
 
-    def test_aggregate_by_step(self):
+    def test_aggregate_step_durations(self):
+        # 真数据: step_durations 字段存在 → 正常聚合
         cps = [
-            {"step_keys": ["build", "flash"], "duration_sec": 5.0},
-            {"step_keys": ["build"], "duration_sec": 7.0},
-            {"step_keys": ["unknown_step"], "duration_sec": 1.0},  # 忽略
+            {"step_durations": {"build": 3.4, "flash": 1.1, "capture": 7.8}},
+            {"step_durations": {"build": 4.0, "flash": 0.9}},
         ]
-        by_step = duration_profile._collect_step_durations(cps)
-        # 没有 result_lookup → 兜底用 duration_sec 顶替
-        self.assertEqual(by_step["build"], [5.0, 7.0])
-        self.assertEqual(by_step["flash"], [5.0])
+        by_step, warnings = duration_profile._collect_step_durations(cps)
+        self.assertEqual(by_step["build"], [3.4, 4.0])
+        self.assertEqual(by_step["flash"], [1.1, 0.9])
+        self.assertEqual(by_step["capture"], [7.8])
+        # 没凑数: warnings 空
+        self.assertEqual(warnings, [])
+
+    def test_legacy_format_emits_warning_not_fake_data(self):
+        # 旧 F-047 落盘格式: 无 step_durations 字段
+        # 自审 (2026-09-03) Finding 5 修: 不再静默用总耗时顶替, 显式 warn
+        cps = [
+            {"step_keys": ["build", "flash"], "duration_sec": 60.0},
+            {"step_keys": ["capture"], "duration_sec": 60.0},
+        ]
+        by_step, warnings = duration_profile._collect_step_durations(cps)
+        # 旧格式被跳过, by_step 全空
+        self.assertEqual(by_step["build"], [])
+        self.assertEqual(by_step["flash"], [])
         self.assertEqual(by_step["capture"], [])
-        # unknown_step 不进 by_step
-        self.assertNotIn("unknown_step", by_step)
+        # 警告有内容
+        self.assertEqual(len(warnings), 1)
+        self.assertIn("2 条 checkpoint", warnings[0])
+        self.assertIn("step_durations", warnings[0])
+
+    def test_unknown_step_ignored(self):
+        # step_durations 含不在 STEP_KEYS 里的 key → 跳过
+        cps = [{"step_durations": {"build": 3.0, "future_step": 99.0}}]
+        by_step, _ = duration_profile._collect_step_durations(cps)
+        self.assertEqual(by_step["build"], [3.0])
+        self.assertNotIn("future_step", by_step)
 
 
 class PercentileTests(unittest.TestCase):
