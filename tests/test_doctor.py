@@ -82,6 +82,9 @@ class DoctorReportTests(unittest.TestCase):
             self.assertIn(rep["tools"][name]["status"], ("ok", "warn", "skipped"))
         statuses = [rep["tools"][n]["status"] for n in ("gcc", "openocd", "make")]
         statuses.append(rep["swd"]["status"])
+        # F-048: fixture 也进 summary 计数 (与 tools/swd 平级)
+        if "fixtures" in rep:
+            statuses.append(rep["fixtures"]["status"])
         for k in ("ok", "warn", "fail", "skipped"):
             self.assertEqual(rep["summary"][k], statuses.count(k), k)
 
@@ -96,7 +99,8 @@ class DoctorReportTests(unittest.TestCase):
         with mock.patch.object(verify, "load_machine", return_value=placeholder), \
                 mock.patch.object(verify.subprocess, "run", side_effect=guard), \
                 mock.patch.object(openocd_runtime.subprocess, "run", side_effect=guard):
-            rep = verify.doctor_report(probe=True)
+            # F-048: skip_drift_check=True 跳过 git main 对比, 不让 fixture 体检破守卫
+            rep = verify.doctor_report(probe=True, skip_drift_check=True)
         self.assertTrue(all(v["placeholder"] for v in rep["machine"]["keys"].values()))
         for name in ("gcc", "openocd", "make"):
             self.assertEqual(rep["tools"][name]["status"], "skipped")
