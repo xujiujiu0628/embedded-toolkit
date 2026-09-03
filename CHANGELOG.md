@@ -3,6 +3,26 @@
 格式约定: 每条含发现编号（代管期 findings 编目）与证据 commit。当前版本以
 `VERSION` 文件为准（`wb_common.toolkit_version()` 读取）。
 
+<<<<<<< HEAD
+## Unreleased — 2026-09-03（doctor 体检扩 fixture 维度，F-048）
+
+- **F-048（doctor 体检接入 fixture 状态检查，feat+test）**: 9-02 方案四-5
+  （P0 余 2 单之一）。当前 doctor 只查工具链（gcc/openocd/make/SWD），
+  不查 fixture；fixture 漂移是嵌入式测试最隐蔽的雷（PC 测试 PASS 真
+  机挂）。处置=把 `tests/fixtures/contract/` 体检接到 `doctor_report`：
+  ① **在场性**：config.json / expectations.json 缺失 → status="fail"；
+  ② **漂移检测**：用 sha256 对比本地 vs 仓库 main 版（`git show main:...`
+  不污染工作树），漂移 → status="warn" + 列出 mismatches 字段名；
+  ③ 状态聚合进 `summary["fixture"]`（与 tools/swd 平级）。`_print_doctor`
+  新增 fixtures 行（带 drift / missing 备注）。`fixture_health()` 接
+  `skip_drift_check` 参数（测试场景：占位时显式跳过 git 调用，不破
+  "占位不跑子进程" 守卫）。`test_doctor.py` 旧 `test_structure_and_
+  summary_consistency` 同步加 fixture 计数（向后兼容：fixtures 缺失时
+  行为不变）。9/9 新测（`test_fixture_doctor.py`）+ 全量 **253/253
+  绿**（skipped=1 仍 F-026 opt-in）。对你 doctor 命令的影响：`--doctor`
+  默认开启漂移检测（轻量 git show，秒级），`--doctor --json` 多了
+  `fixtures` 字段 + `summary.fixture` 子项。
+
 ## Unreleased — 2026-09-03（进度台账，F-047）
 
 - **F-047（verify 进度台账可重放证据，feat+test）**: 9-02 方案四-2。当前

@@ -1124,7 +1124,89 @@ def _check_tool(machine: dict, key: str, bare: str, version_args: tuple) -> dict
     return {"status": "ok", "detail": exe, "version": line[:120]}
 
 
-def doctor_report(probe: bool = True) -> dict:
+# F-048: fixture 体检 (2026-09-02 方案四-5)
+#   - 检查 tests/fixtures/contract/{config,expectations}.json 是否在
+#   - 用 sha256 对比本地 vs 仓库 main 版, 漂移 = warn
+#   - 缺失 = fail (没有 fixture, 契约测试就缺锚点)
+#   整段离线, 只读 git 仓 (git show main:tests/fixtures/contract/<file>)
+def _fixture_main_sha(fixture_dir: str) -> dict:
+    """读 git main 分支上的 fixture 文件 sha256, 失败回空 dict.
+
+    用 `git show main:<path>` 而非 checkout —— 不污染工作树.
+    """
+    out = {}
+    try:
+        rel = os.path.relpath(fixture_dir, TOOLKIT_ROOT).replace(os.sep, "/")
+    except ValueError:
+        return out
+    for name in ("config.json", "expectations.json"):
+        try:
+            r = subprocess.run(
+                ["git", "show", f"main:{rel}/{name}"],
+                capture_output=True, cwd=TOOLKIT_ROOT, timeout=5,
+                encoding="utf-8", errors="replace")
+            if r.returncode == 0 and r.stdout:
+                h = hashlib.sha256()
+                h.update(r.stdout.encode("utf-8"))
+                out[f"{name.replace('.json', '')}_sha256"] = h.hexdigest()
+        except (OSError, subprocess.TimeoutExpired):
+            pass
+    return out
+
+
+def fixture_health(fixture_dir: str, *, skip_drift_check: bool = False) -> dict:
+    """F-048 体检: fixture 在场性 + 漂移检测.
+
+    Args:
+        fixture_dir: 工程 fixture 目录 (含 config.json + expectations.json)
+        skip_drift_check: True 时跳过 git main 对比 (测试场景: 占位时不应跑子进程)
+
+    Returns:
+        {status, config, expectations, drift}
+        status ∈ {ok, warn, fail, skipped}
+        - fail: 至少一个关键文件缺失
+        - warn: 文件在但与 main 漂移
+        - ok: 都在且无漂移
+        - skipped: 非 git 仓 (无法做漂移检测, 视作"无漂移信号")
+    """
+    config_p = os.path.join(fixture_dir, "config.json")
+    exp_p = os.path.join(fixture_dir, "expectations.json")
+    config_s = "ok" if os.path.isfile(config_p) else "missing"
+    exp_s = "ok" if os.path.isfile(exp_p) else "missing"
+
+    # 漂移检测: 本地 sha256 vs main sha256
+    drift = {"detected": False, "mismatches": []}
+    if config_s == "ok" and exp_s == "ok" and not skip_drift_check:
+        local = {}
+        for name, key in (("config.json", "config_sha256"),
+                          ("expectations.json", "expectations_sha256")):
+            try:
+                with open(os.path.join(fixture_dir, name), "rb") as f:
+                    local[key] = hashlib.sha256(f.read()).hexdigest()
+            except OSError:
+                pass
+        main_sha = _fixture_main_sha(fixture_dir)
+        if main_sha:
+            for k in ("config_sha256", "expectations_sha256"):
+                if k in local and k in main_sha and local[k] != main_sha[k]:
+                    drift["detected"] = True
+                    drift["mismatches"].append(k)
+    # 状态聚合
+    if config_s == "missing" or exp_s == "missing":
+        status = "fail"
+    elif drift["detected"]:
+        status = "warn"
+    else:
+        status = "ok"
+    return {
+        "status": status,
+        "config": {"status": config_s, "path": config_p},
+        "expectations": {"status": exp_s, "path": exp_p},
+        "drift": drift,
+    }
+
+
+def doctor_report(probe: bool = True, *, skip_drift_check: bool = False) -> dict:
     """环境矩阵收集 (F-041)。machine.json 缺失时经 load_machine 回退链取占位值,
     各工具按占位/缺失跳过 —— 本函数永不执行占位路径。probe=True 且 openocd
     在场时做单次 SWD 探测 (attempts=1; 门禁 G0.5 用 3 次重试版)。"""
@@ -1159,12 +1241,19 @@ def doctor_report(probe: bool = True) -> dict:
     else:
         swd = {"status": "skipped", "detail": "未请求探测"}
 
-    statuses = [tools[n]["status"] for n in ("gcc", "openocd", "make")] + [swd["status"]]
+    # F-048: fixture 体检 (2026-09-02 方案四-5) — 复用 TOOLKIT_ROOT 的 fixture 目录
+    #   不传 workspace 是因为 fixture 跟工具库同仓, 体检只看 tests/fixtures/contract/
+    #   skip_drift_check 让测试场景 (占位时不许跑子进程) 显式跳过 git 调用
+    fixture = fixture_health(os.path.join(TOOLKIT_ROOT, "tests", "fixtures", "contract"),
+                             skip_drift_check=skip_drift_check)
+    statuses = [tools[n]["status"] for n in ("gcc", "openocd", "make")] \
+        + [swd["status"], fixture["status"]]
     summary = {k: statuses.count(k) for k in ("ok", "warn", "fail", "skipped")}
+    summary["fixture"] = fixture["status"]   # F-048: fixture 子项与 tools/swd 平级
     return {"tool": "doctor", "toolkit_version": toolkit_version(),
             "python": sys.version.split()[0],
             "machine": {"mode": mode, "keys": keys},
-            "tools": tools, "swd": swd, "summary": summary}
+            "tools": tools, "swd": swd, "fixtures": fixture, "summary": summary}
 
 
 def _print_doctor(rep: dict) -> None:
@@ -1187,8 +1276,23 @@ def _print_doctor(rep: dict) -> None:
             line += f" | {t['error']}"
         print(line)
     print(f"swd     : {rep['swd']['status']} — {rep['swd']['detail'][:120]}")
+    # F-048: fixture 体检行 (与 tools/swd 平级)
+    fx = rep.get("fixtures", {})
+    if fx:
+        drift_note = ""
+        if fx.get("drift", {}).get("detected"):
+            mm = ", ".join(fx["drift"].get("mismatches", []))
+            drift_note = f" (drift: {mm})"
+        miss = []
+        if fx.get("config", {}).get("status") == "missing":
+            miss.append("config")
+        if fx.get("expectations", {}).get("status") == "missing":
+            miss.append("expectations")
+        miss_note = f" (missing: {', '.join(miss)})" if miss else ""
+        print(f"fixtures: {fx.get('status', '?')}{drift_note}{miss_note}")
     s = rep["summary"]
-    print(f"summary : ok={s['ok']} warn={s['warn']} fail={s['fail']} skipped={s['skipped']}")
+    print(f"summary : ok={s['ok']} warn={s['warn']} fail={s['fail']} skipped={s['skipped']}"
+          + (f" fixture={s['fixture']}" if "fixture" in s else ""))
     print("(doctor 为诊断报告, 不做门禁判定; 报障请附 --doctor --json 输出)")
 
 
