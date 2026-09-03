@@ -35,7 +35,7 @@ from datetime import datetime, timezone, timedelta
 WORKSPACE = None  # 工程根, main() 中 --project 或 cwd 向上发现后设置
 
 from wb_common import (TOOLKIT_ROOT, find_project_root, load_machine,
-                       toolkit_version, version_ok)
+                       toolkit_version, version_ok, atomic_write_json)
 
 OPENOCD_EXE = load_machine()["openocd_exe"]
 
@@ -653,8 +653,10 @@ def record_checkpoint(workspace: str, status: str, duration_sec: float,
                 # for_update 的损坏隔离纪律不适用于 read-modify-write 单点)
                 state = {}
         state["last_checkpoint"] = entry
-        with open(state_path, "w", encoding="utf-8") as f:
-            json.dump(state, f, ensure_ascii=False, indent=2)
+        # F-047 自审 (2026-09-03) 改: 改用 atomic_write_json (F-022 纪律),
+        # 防止进程在写 state.json 中途被 kill 导致 JSON 截断 → 下次读
+        # 走损坏 → 走 state={} → 丢全部历史键 (含 last_build).
+        atomic_write_json(state_path, state)
     except OSError:
         # 审计非门禁: 落盘失败不阻断主流程
         print(f"[warn] checkpoint 落盘失败: {jsonl_path}", file=sys.stderr)
