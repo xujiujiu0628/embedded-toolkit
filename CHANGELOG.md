@@ -3,7 +3,26 @@
 格式约定: 每条含发现编号（代管期 findings 编目）与证据 commit。当前版本以
 `VERSION` 文件为准（`wb_common.toolkit_version()` 读取）。
 
-<<<<<<< HEAD
+## Unreleased — 2026-09-03（覆盖缺口 lint 取代行数红线，F-049）
+
+- **F-049（scripts/ 覆盖缺口 lint 取代行数红线，feat+test）**: 9-02 方案
+  四-3。**仓内此前根本没有"行数红线"——只在 memory 里有方案意图，本
+  次按意图真做出工具**。行数是假命题：一个 200 行 const array 和一个
+  200 行状态机风险天差地别；工程师为过红线拆文件反而劣化可读性。覆盖
+  缺口才是真问题：工程师加新模块忘了给测试加 hook，PC 测试编译过但
+  路径没测到，要等真机复现才发现。新工具 `scripts/coverage_lint.py`
+  用 AST 扫 `tests/test_*.py` 的 import / from-import，收集所有引用
+  的模块名；列 `scripts/` 下"未被任何 test 引用"的 .py 文件：
+  ① 默认模式仅报告 (exit 0)；② `--strict` 发现未覆盖 exit 1 (CI 门
+  禁用)；③ `--json` 机器可读；④ `legacy/` 目录豁免（F-029 退役 keil
+  桥不强制覆盖）；⑤ `coverage_lint.py` 自身豁免（工具自检）。真仓
+  实测发现 **13 个未覆盖文件**（cube_to_keil / gen_periph / openocd
+  系列 5 个 / serial 系列 6 个）——CI 门禁开了就能早期抓。`test_
+  coverage_lint.py` 13/13 绿（AST 解析 6 + 文件配对 4 + CLI 3），
+  全量 **257/257 绿**（skipped=1 仍 F-026 opt-in）。对你 review /
+  release 流程的影响：新增"覆盖缺口"作为可选门禁（默认不开启），
+  行数从此**不再**作为任何 release 判据。
+
 ## Unreleased — 2026-09-03（doctor 体检扩 fixture 维度，F-048）
 
 - **F-048（doctor 体检接入 fixture 状态检查，feat+test）**: 9-02 方案四-5
