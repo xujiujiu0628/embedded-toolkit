@@ -1439,6 +1439,7 @@ def main():
 
     # ---- Step 1-2: Build + Analyze (with retry) ----
     if not args.no_build:
+        build_t0 = time.time()  # F-050: step-level timing, 给 duration_profile 用
         build_attempts = []
         build_ok = False
         analyze = None   # F-008: build 循环内的分析结果, 循环后复用不再双跑
@@ -1489,6 +1490,7 @@ def main():
             "hex_file": hex_file,
             "attempts": build_attempts,
             "retry_count": len(build_attempts) - 1,
+            "duration_sec": round(time.time() - build_t0, 1),  # F-050
         }
 
         # ---- Step 2: Analyze ----
@@ -1536,6 +1538,9 @@ def main():
     # ---- Step 3: Flash (with retry) ----
     # F-046: HIL 入口守卫 — 拒 manual 时给友好提示, exit 2 (区别于 0=成功/1=失败)
     if not args.no_flash:
+        flash_t0 = time.time()  # F-050: step-level timing
+        allowed, deny_reason = enforce_hil_origin(
+            args.task_origin, args.require_schedule_origin)
         allowed, deny_reason = enforce_hil_origin(
             args.task_origin, args.require_schedule_origin)
         if not allowed:
@@ -1577,6 +1582,7 @@ def main():
             "attempts": flash_attempts,
             "retry_count": len(flash_attempts) - 1,
             "origin": args.task_origin,   # F-046: 审计标记, release audit 一眼可辨手动 vs CI
+            "duration_sec": round(time.time() - flash_t0, 1),  # F-050
         }
         # F-046: 台账落盘 (audit-only, 失败不阻断主流程)
         append_audit_entry(WORKSPACE, args.task_origin, "flash", "ok",
@@ -1587,6 +1593,7 @@ def main():
     # ---- Step 4: Capture (semihosting 默认 | capture.backend=rtt) ----
     # 共同原则: reset halt 确定性起点 (2026-08-16 教训), 行过滤后进 verify()
     # F-046: capture 也是 HIL 步骤 — 守卫幂等, 第二次调用也是放行结果
+    capture_t0 = time.time()  # F-050: step-level timing
     allowed_capture, deny_reason_capture = enforce_hil_origin(
         args.task_origin, args.require_schedule_origin)
     if not allowed_capture:
@@ -1617,6 +1624,7 @@ def main():
         captured_text = cap.pop("_text", "")
         captured_lines = [ln for ln in captured_text.splitlines() if ln.strip()]
         cap["origin"] = args.task_origin   # F-046: 审计标记
+        cap["duration_sec"] = round(time.time() - capture_t0, 1)  # F-050
         result["steps"]["capture"] = cap
         # F-046: 台账落盘 (RTT 后端独立标记 origin, release audit 可按 origin 聚合)
         append_audit_entry(WORKSPACE, args.task_origin, "capture", "ok",
@@ -1677,6 +1685,8 @@ def main():
             "raw_length": len(captured_text),
             "origin": args.task_origin,   # F-046: 审计标记
         }
+        result["steps"]["capture"]["duration_sec"] = round(
+            time.time() - capture_t0, 1)  # F-050: 含守卫 + OpenOCD 全部耗时
         # F-046: 台账落盘 (semihosting 后端, 同上)
         append_audit_entry(WORKSPACE, args.task_origin, "capture", "ok",
                            " ".join(sys.argv))
