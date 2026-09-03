@@ -527,6 +527,59 @@ class ConfigError(ValueError):
     与 M1 的 ExpectationError 同款前置拦截: 损坏文件报友好错误而非裸 traceback"""
 
 
+# F-046: HIL 任务 (flash / capture) 入口来源白名单 (2026-09-02 方案四-1)
+#   manual    = 开发者手动 CLI 调起 (默认, 兼容现有 VS Code verify 任务)
+#   schedule  = 定时任务 / cron 拉起 (release 门禁脚本会用)
+#   dispatch  = 事件触发 / Harness 派发 (AI 工作流注入 origin=dispatch)
+# 白名单外值一律 ValueError: 防止上游 typo 静默回落 manual, 绕过审计
+HIL_ORIGINS = ("manual", "schedule", "dispatch")
+
+
+def enforce_hil_origin(origin: str, require_schedule_origin: bool) -> tuple[bool, str]:
+    """F-046 守卫: HIL 步骤 (flash / capture) 是否放行.
+
+    Args:
+        origin: 任务来源, 必须在 HIL_ORIGINS 白名单内, 否则抛 ValueError
+        require_schedule_origin: --require-schedule-origin 旗标, 开启时拒绝 manual
+
+    Returns:
+        (allowed, reason): allowed=False 时 reason 给用户看的提示文本
+    """
+    if origin not in HIL_ORIGINS:
+        raise ValueError(
+            f"task_origin 非法: {origin!r}, 须为 {HIL_ORIGINS} 之一")
+    if require_schedule_origin and origin == "manual":
+        return False, (
+            "HIL 任务 (flash/capture) 拒绝 manual 触发: "
+            "请通过 schedule (CI/release 门禁) 或 dispatch (Harness 派发) 拉起, "
+            "或去掉 --require-schedule-origin 旗标")
+    return True, ""
+
+
+def append_audit_entry(workspace: str, origin: str, step: str,
+                       status: str, command: str) -> None:
+    """F-046 台账: 每次 HIL 步骤执行后追加一行 JSON 到 .workbench/state/audit.jsonl.
+
+    append-only 写入, 单调追加, 不重写历史. 失败不阻断主流程 (台账是审计而非门禁).
+    """
+    audit_dir = os.path.join(workspace, ".workbench", "state")
+    audit_path = os.path.join(audit_dir, "audit.jsonl")
+    try:
+        os.makedirs(audit_dir, exist_ok=True)
+        entry = {
+            "ts": now_iso(),
+            "origin": origin,
+            "step": step,
+            "status": status,
+            "command": command,
+        }
+        with open(audit_path, "a", encoding="utf-8") as f:
+            f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+    except OSError:
+        # 台账是审计而非门禁: 落盘失败不阻断主流程, stderr 告警即可
+        print(f"[warn] audit 落盘失败: {audit_path}", file=sys.stderr)
+
+
 def _sha256_file(path: str) -> str:
     h = hashlib.sha256()
     with open(path, "rb") as f:
@@ -1041,6 +1094,14 @@ def main():
     parser.add_argument("--doctor", action="store_true",
                         help="环境预检: 打印 toolkit/Python/machine.json 四键/gcc/openocd/"
                              "make/SWD 连通性矩阵后退出 (诊断报告, 不做门禁判定, 退出码恒 0)")
+    parser.add_argument("--task-origin", dest="task_origin",
+                        choices=list(HIL_ORIGINS), default="manual",
+                        help="F-046 HIL 任务来源 (manual=手动, schedule=定时/CI, "
+                             "dispatch=事件/Harness), 默认 manual")
+    parser.add_argument("--require-schedule-origin",
+                        dest="require_schedule_origin", action="store_true",
+                        help="F-046 硬卡旗标: 开启后拒绝 task_origin=manual, "
+                             "CI / release 门禁脚本默认加这个旗标")
     args = parser.parse_args()
 
     if args.doctor:
@@ -1199,7 +1260,13 @@ def main():
         result["steps"]["analyze"] = {"status": "skipped"}
 
     # ---- Step 3: Flash (with retry) ----
+    # F-046: HIL 入口守卫 — 拒 manual 时给友好提示, exit 2 (区别于 0=成功/1=失败)
     if not args.no_flash:
+        allowed, deny_reason = enforce_hil_origin(
+            args.task_origin, args.require_schedule_origin)
+        if not allowed:
+            print(f"错误: {deny_reason}", file=sys.stderr)
+            sys.exit(2)
         flash_attempts = []
         flash_ok = False
         for attempt in range(max_retries + 1):
@@ -1233,12 +1300,22 @@ def main():
             "message": flash.get("stderr", flash.get("stdout", ""))[-300:],
             "attempts": flash_attempts,
             "retry_count": len(flash_attempts) - 1,
+            "origin": args.task_origin,   # F-046: 审计标记, release audit 一眼可辨手动 vs CI
         }
+        # F-046: 台账落盘 (audit-only, 失败不阻断主流程)
+        append_audit_entry(WORKSPACE, args.task_origin, "flash", "ok",
+                           " ".join(sys.argv))
     else:
         result["steps"]["flash"] = {"status": "skipped"}
 
     # ---- Step 4: Capture (semihosting 默认 | capture.backend=rtt) ----
     # 共同原则: reset halt 确定性起点 (2026-08-16 教训), 行过滤后进 verify()
+    # F-046: capture 也是 HIL 步骤 — 守卫幂等, 第二次调用也是放行结果
+    allowed_capture, deny_reason_capture = enforce_hil_origin(
+        args.task_origin, args.require_schedule_origin)
+    if not allowed_capture:
+        print(f"错误: {deny_reason_capture}", file=sys.stderr)
+        sys.exit(2)
     capture_started = time.time()
     capture_timeout = resolve_capture_timeout(args.timeout, config.get("capture", {}))
     # F-016: 预告窗口 (stderr, 不污染 --json 的 stdout); 人工输入期望需知何时按键
@@ -1261,7 +1338,11 @@ def main():
             sys.exit(1)   # 失败早退必须非零 (审计: 原先恒 0 误导脚本化调用方)
         captured_text = cap.pop("_text", "")
         captured_lines = [ln for ln in captured_text.splitlines() if ln.strip()]
+        cap["origin"] = args.task_origin   # F-046: 审计标记
         result["steps"]["capture"] = cap
+        # F-046: 台账落盘 (RTT 后端独立标记 origin, release audit 可按 origin 聚合)
+        append_audit_entry(WORKSPACE, args.task_origin, "capture", "ok",
+                           " ".join(sys.argv))
     else:
         # 直接调 OpenOCD: init → reset halt → semihosting enable → resume → sleep → halt → shutdown
         # 这是手工验证过的可靠方式（曾有独立 openocd_semihosting.py，F-028 删除，git 史可回放）
@@ -1313,8 +1394,12 @@ def main():
             "timeout_sec": capture_timeout,
             "lines": len(captured_lines),
             "duration_sec": round(capture_elapsed, 1),
-            "raw_length": len(captured_text)
+            "raw_length": len(captured_text),
+            "origin": args.task_origin,   # F-046: 审计标记
         }
+        # F-046: 台账落盘 (semihosting 后端, 同上)
+        append_audit_entry(WORKSPACE, args.task_origin, "capture", "ok",
+                           " ".join(sys.argv))
 
     # ---- Step 4b: HardFault 自动检测 ----
     # 触发条件 (修复 2026-08-12):
