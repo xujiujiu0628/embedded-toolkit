@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import subprocess
+import time
 from pathlib import Path
 from shutil import which
 from typing import Any
@@ -156,3 +158,33 @@ def emit_stream_record(*, source: str, channel_type: str, text: str, as_json: bo
         print(json.dumps(record, ensure_ascii=False), flush=True)
     else:
         print(text, end="" if text.endswith(("\n", "\r")) else "\n", flush=True)
+
+
+def swd_probe(openocd_exe: str, attempts: int = 3) -> tuple[bool, str]:
+    """SWD 连通性探测 (秒级)。原 release.py 私有实现下沉共享 (F-041):
+    发布门禁 G0.5 与 verify.py --doctor 共用同一命令与判据, 防两处口径漂移。
+
+    判定走内容而非返回码 (对齐 hardfault.py 哲学): OpenOCD 关键行在 stderr,
+    克隆适配器偶发非零退出; 连接失败形态是 "init mode failed / unable to connect"。
+    attempts: 门禁默认 3 次重试 (ST-Link 释放竞态纪律); doctor 传 1 做单次快探。"""
+    cmd = [openocd_exe,
+           "-f", "interface/stlink.cfg",
+           "-f", "target/stm32f1x.cfg",
+           "-c", "transport select swd",
+           "-c", "init", "-c", "targets", "-c", "shutdown"]
+    last = ""
+    for attempt in range(max(1, attempts)):
+        try:
+            r = subprocess.run(cmd, capture_output=True, text=True,
+                               encoding="utf-8", errors="replace", timeout=20)
+            last = ((r.stdout or "") + (r.stderr or ""))
+            if "shutdown command invoked" in last \
+                    and "init mode failed" not in last:
+                return True, last[-200:]
+        except subprocess.TimeoutExpired:
+            last = f"attempt {attempt + 1}: SWD 探测超时"
+        except Exception as e:
+            last = str(e)
+        if attempt < attempts - 1:
+            time.sleep(1)
+    return False, f"{last[-200:]}" if isinstance(last, str) else str(last)

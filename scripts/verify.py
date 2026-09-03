@@ -39,6 +39,9 @@ from wb_common import (TOOLKIT_ROOT, find_project_root, load_machine,
 
 OPENOCD_EXE = load_machine()["openocd_exe"]
 
+from runtime_common import output_json  # noqa: E402  (F-041: doctor --json 复用共享层)
+from openocd_runtime import swd_probe  # noqa: E402  (F-041: SWD 探测与 release G0.5 同源)
+
 GCC_BUILD = os.path.join(TOOLKIT_ROOT, "scripts", "gcc_build.py")         # 默认后端 (builder=gcc)
 # Keil 桥 (2026-08-28 退役入 legacy): builder 显式配 "keil" 时按需唤起, 见 scripts/legacy/keil/README.md
 KEIL_BUILD = os.path.join(TOOLKIT_ROOT, "scripts", "legacy", "keil", "keil_build.py")
@@ -524,6 +527,59 @@ class ConfigError(ValueError):
     与 M1 的 ExpectationError 同款前置拦截: 损坏文件报友好错误而非裸 traceback"""
 
 
+# F-046: HIL 任务 (flash / capture) 入口来源白名单 (2026-09-02 方案四-1)
+#   manual    = 开发者手动 CLI 调起 (默认, 兼容现有 VS Code verify 任务)
+#   schedule  = 定时任务 / cron 拉起 (release 门禁脚本会用)
+#   dispatch  = 事件触发 / Harness 派发 (AI 工作流注入 origin=dispatch)
+# 白名单外值一律 ValueError: 防止上游 typo 静默回落 manual, 绕过审计
+HIL_ORIGINS = ("manual", "schedule", "dispatch")
+
+
+def enforce_hil_origin(origin: str, require_schedule_origin: bool) -> tuple[bool, str]:
+    """F-046 守卫: HIL 步骤 (flash / capture) 是否放行.
+
+    Args:
+        origin: 任务来源, 必须在 HIL_ORIGINS 白名单内, 否则抛 ValueError
+        require_schedule_origin: --require-schedule-origin 旗标, 开启时拒绝 manual
+
+    Returns:
+        (allowed, reason): allowed=False 时 reason 给用户看的提示文本
+    """
+    if origin not in HIL_ORIGINS:
+        raise ValueError(
+            f"task_origin 非法: {origin!r}, 须为 {HIL_ORIGINS} 之一")
+    if require_schedule_origin and origin == "manual":
+        return False, (
+            "HIL 任务 (flash/capture) 拒绝 manual 触发: "
+            "请通过 schedule (CI/release 门禁) 或 dispatch (Harness 派发) 拉起, "
+            "或去掉 --require-schedule-origin 旗标")
+    return True, ""
+
+
+def append_audit_entry(workspace: str, origin: str, step: str,
+                       status: str, command: str) -> None:
+    """F-046 台账: 每次 HIL 步骤执行后追加一行 JSON 到 .workbench/state/audit.jsonl.
+
+    append-only 写入, 单调追加, 不重写历史. 失败不阻断主流程 (台账是审计而非门禁).
+    """
+    audit_dir = os.path.join(workspace, ".workbench", "state")
+    audit_path = os.path.join(audit_dir, "audit.jsonl")
+    try:
+        os.makedirs(audit_dir, exist_ok=True)
+        entry = {
+            "ts": now_iso(),
+            "origin": origin,
+            "step": step,
+            "status": status,
+            "command": command,
+        }
+        with open(audit_path, "a", encoding="utf-8") as f:
+            f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+    except OSError:
+        # 台账是审计而非门禁: 落盘失败不阻断主流程, stderr 告警即可
+        print(f"[warn] audit 落盘失败: {audit_path}", file=sys.stderr)
+
+
 def _sha256_file(path: str) -> str:
     h = hashlib.sha256()
     with open(path, "rb") as f:
@@ -885,6 +941,126 @@ def _save_failure_context(result: dict, max_retries: int, capture_text: str = ""
         pass  # Non-critical
 
 
+# ---------------------------------------------------------------------------
+# 环境预检 --doctor (F-041): 打印工具链环境矩阵, 诊断专用。
+# 定位: release.py G0.5 "区分环境未备/固件真坏" 之前的自检; 报障随 issue 附
+# --doctor --json, 消灭"环境不同"类往返。是报告不是门禁 —— 退出码恒 0,
+# 占位路径永不执行 (test_doctor 安全钉死)。
+
+_DOCTOR_KEYS = ("uv4_exe", "openocd_exe", "gcc_path", "make_exe")
+
+
+def _first_version_line(cmd: list) -> tuple:
+    """运行版本命令, 返回 (ok, 首个非空行或错误串)。stdout/stderr 合并取行
+    (OpenOCD 版本行打印在 stderr)。"""
+    try:
+        r = subprocess.run(cmd, capture_output=True, text=True,
+                           encoding="utf-8", errors="replace", timeout=15)
+    except (subprocess.TimeoutExpired, FileNotFoundError, OSError) as e:
+        return False, str(e)
+    lines = [ln.strip() for ln in ((r.stdout or "") + (r.stderr or "")).splitlines()
+             if ln.strip()]
+    return (r.returncode == 0 or bool(lines)), (lines[0] if lines else "")
+
+
+def _check_tool(machine: dict, key: str, bare: str, version_args: tuple) -> dict:
+    """单工具检查。空/占位 → skipped (永不执行占位路径, 安全钉在 test_doctor);
+    键为目录 (gcc_path 型) → 目录下找可执行 (Windows 优先 .exe), 找不到 → warn;
+    键为文件 → 直接用; 版本命令失败 → warn (诊断报告不判门禁红)。"""
+    val = (machine.get(key) or "").strip()
+    if not val:
+        return {"status": "skipped", "detail": f"{key} 为空"}
+    if val.startswith("<"):
+        return {"status": "skipped",
+                "detail": f"{key} 为占位路径 (复制 machine.example.json 后填写)"}
+    if os.path.isdir(val):
+        exe = None
+        for name in ((bare + ".exe") if os.name == "nt" else bare, bare):
+            cand = os.path.join(val, name)
+            if os.path.isfile(cand):
+                exe = cand
+                break
+        if exe is None:
+            return {"status": "warn",
+                    "detail": f"{key} 目录下未找到 {bare}[.exe]: {val}"}
+    elif os.path.isfile(val):
+        exe = val
+    else:
+        return {"status": "warn", "detail": f"{key} 指向的路径不存在: {val}"}
+    ok, line = _first_version_line([exe, *version_args])
+    if not ok:
+        return {"status": "warn", "detail": f"版本命令失败: {exe}", "error": line[:200]}
+    return {"status": "ok", "detail": exe, "version": line[:120]}
+
+
+def doctor_report(probe: bool = True) -> dict:
+    """环境矩阵收集 (F-041)。machine.json 缺失时经 load_machine 回退链取占位值,
+    各工具按占位/缺失跳过 —— 本函数永不执行占位路径。probe=True 且 openocd
+    在场时做单次 SWD 探测 (attempts=1; 门禁 G0.5 用 3 次重试版)。"""
+    machine = load_machine()
+    machine_file = os.path.join(TOOLKIT_ROOT, "machine.json")
+    example_file = os.path.join(TOOLKIT_ROOT, "machine.example.json")
+    if os.path.isfile(machine_file):
+        mode = "machine.json"
+    elif os.path.isfile(example_file):
+        mode = "fallback: machine.example.json (占位值, 真机步骤会明确报错)"
+    else:
+        mode = "missing"
+
+    keys = {}
+    for k in _DOCTOR_KEYS:
+        v = (machine.get(k) or "").strip()
+        keys[k] = {"value_set": bool(v),
+                   "placeholder": v.startswith("<"),
+                   "path_exists": os.path.exists(v) if v else None}
+
+    tools = {"gcc": _check_tool(machine, "gcc_path", "arm-none-eabi-gcc", ("--version",)),
+             "openocd": _check_tool(machine, "openocd_exe", "openocd", ("--version",)),
+             "make": _check_tool(machine, "make_exe", "make", ("--version",))}
+
+    oc = (machine.get("openocd_exe") or "").strip()
+    if not oc or oc.startswith("<") or not os.path.isfile(oc):
+        swd = {"status": "skipped",
+               "detail": "openocd_exe 未配置/占位/不存在, 跳过 SWD 探测"}
+    elif probe:
+        ok, tail = swd_probe(oc, attempts=1)
+        swd = {"status": "ok" if ok else "fail", "detail": tail}
+    else:
+        swd = {"status": "skipped", "detail": "未请求探测"}
+
+    statuses = [tools[n]["status"] for n in ("gcc", "openocd", "make")] + [swd["status"]]
+    summary = {k: statuses.count(k) for k in ("ok", "warn", "fail", "skipped")}
+    return {"tool": "doctor", "toolkit_version": toolkit_version(),
+            "python": sys.version.split()[0],
+            "machine": {"mode": mode, "keys": keys},
+            "tools": tools, "swd": swd, "summary": summary}
+
+
+def _print_doctor(rep: dict) -> None:
+    print("== embedded-toolkit doctor ==")
+    print(f"toolkit : {rep['toolkit_version']}   python: {rep['python']}")
+    print(f"machine : {rep['machine']['mode']}")
+    for k, v in rep["machine"]["keys"].items():
+        flags = [lbl for lbl, on in (("空", not v["value_set"]),
+                                     ("占位", v["placeholder"]),
+                                     ("路径在场", v["path_exists"])) if on]
+        print(f"  {k:<11}: {', '.join(flags) if flags else '-'}")
+    for name in ("gcc", "openocd", "make"):
+        t = rep["tools"][name]
+        line = f"  {name:<9}: {t['status']}"
+        if t.get("version"):
+            line += f" — {t['version']}"
+        elif t.get("detail"):
+            line += f" — {t['detail']}"
+        if t.get("error"):
+            line += f" | {t['error']}"
+        print(line)
+    print(f"swd     : {rep['swd']['status']} — {rep['swd']['detail'][:120]}")
+    s = rep["summary"]
+    print(f"summary : ok={s['ok']} warn={s['warn']} fail={s['fail']} skipped={s['skipped']}")
+    print("(doctor 为诊断报告, 不做门禁判定; 报障请附 --doctor --json 输出)")
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="闭环验证 — Build → Analyze → Flash → Capture → Verify",
@@ -915,7 +1091,27 @@ def main():
                         help="编译前先 clean (仅 builder=gcc; 发布门禁用)")
     parser.add_argument("--gate-run", dest="gate_run", action="store_true",
                         help="发布门禁发起的运行: 跳过 feedback_db 落账")
+    parser.add_argument("--doctor", action="store_true",
+                        help="环境预检: 打印 toolkit/Python/machine.json 四键/gcc/openocd/"
+                             "make/SWD 连通性矩阵后退出 (诊断报告, 不做门禁判定, 退出码恒 0)")
+    parser.add_argument("--task-origin", dest="task_origin",
+                        choices=list(HIL_ORIGINS), default="manual",
+                        help="F-046 HIL 任务来源 (manual=手动, schedule=定时/CI, "
+                             "dispatch=事件/Harness), 默认 manual")
+    parser.add_argument("--require-schedule-origin",
+                        dest="require_schedule_origin", action="store_true",
+                        help="F-046 硬卡旗标: 开启后拒绝 task_origin=manual, "
+                             "CI / release 门禁脚本默认加这个旗标")
     args = parser.parse_args()
+
+    if args.doctor:
+        # F-041: 诊断分支先于工程发现 —— doctor 不依赖 .workbench 工程
+        report = doctor_report()
+        if args.json:
+            output_json(report)
+        else:
+            _print_doctor(report)
+        return
 
     # 工程根: --project > cwd 向上发现
     global WORKSPACE
@@ -1064,7 +1260,13 @@ def main():
         result["steps"]["analyze"] = {"status": "skipped"}
 
     # ---- Step 3: Flash (with retry) ----
+    # F-046: HIL 入口守卫 — 拒 manual 时给友好提示, exit 2 (区别于 0=成功/1=失败)
     if not args.no_flash:
+        allowed, deny_reason = enforce_hil_origin(
+            args.task_origin, args.require_schedule_origin)
+        if not allowed:
+            print(f"错误: {deny_reason}", file=sys.stderr)
+            sys.exit(2)
         flash_attempts = []
         flash_ok = False
         for attempt in range(max_retries + 1):
@@ -1098,12 +1300,22 @@ def main():
             "message": flash.get("stderr", flash.get("stdout", ""))[-300:],
             "attempts": flash_attempts,
             "retry_count": len(flash_attempts) - 1,
+            "origin": args.task_origin,   # F-046: 审计标记, release audit 一眼可辨手动 vs CI
         }
+        # F-046: 台账落盘 (audit-only, 失败不阻断主流程)
+        append_audit_entry(WORKSPACE, args.task_origin, "flash", "ok",
+                           " ".join(sys.argv))
     else:
         result["steps"]["flash"] = {"status": "skipped"}
 
     # ---- Step 4: Capture (semihosting 默认 | capture.backend=rtt) ----
     # 共同原则: reset halt 确定性起点 (2026-08-16 教训), 行过滤后进 verify()
+    # F-046: capture 也是 HIL 步骤 — 守卫幂等, 第二次调用也是放行结果
+    allowed_capture, deny_reason_capture = enforce_hil_origin(
+        args.task_origin, args.require_schedule_origin)
+    if not allowed_capture:
+        print(f"错误: {deny_reason_capture}", file=sys.stderr)
+        sys.exit(2)
     capture_started = time.time()
     capture_timeout = resolve_capture_timeout(args.timeout, config.get("capture", {}))
     # F-016: 预告窗口 (stderr, 不污染 --json 的 stdout); 人工输入期望需知何时按键
@@ -1126,7 +1338,11 @@ def main():
             sys.exit(1)   # 失败早退必须非零 (审计: 原先恒 0 误导脚本化调用方)
         captured_text = cap.pop("_text", "")
         captured_lines = [ln for ln in captured_text.splitlines() if ln.strip()]
+        cap["origin"] = args.task_origin   # F-046: 审计标记
         result["steps"]["capture"] = cap
+        # F-046: 台账落盘 (RTT 后端独立标记 origin, release audit 可按 origin 聚合)
+        append_audit_entry(WORKSPACE, args.task_origin, "capture", "ok",
+                           " ".join(sys.argv))
     else:
         # 直接调 OpenOCD: init → reset halt → semihosting enable → resume → sleep → halt → shutdown
         # 这是手工验证过的可靠方式（曾有独立 openocd_semihosting.py，F-028 删除，git 史可回放）
@@ -1178,8 +1394,12 @@ def main():
             "timeout_sec": capture_timeout,
             "lines": len(captured_lines),
             "duration_sec": round(capture_elapsed, 1),
-            "raw_length": len(captured_text)
+            "raw_length": len(captured_text),
+            "origin": args.task_origin,   # F-046: 审计标记
         }
+        # F-046: 台账落盘 (semihosting 后端, 同上)
+        append_audit_entry(WORKSPACE, args.task_origin, "capture", "ok",
+                           " ".join(sys.argv))
 
     # ---- Step 4b: HardFault 自动检测 ----
     # 触发条件 (修复 2026-08-12):
