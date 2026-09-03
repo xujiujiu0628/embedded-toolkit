@@ -1126,23 +1126,58 @@ def _check_tool(machine: dict, key: str, bare: str, version_args: tuple) -> dict
 
 # F-048: fixture 体检 (2026-09-02 方案四-5)
 #   - 检查 tests/fixtures/contract/{config,expectations}.json 是否在
-#   - 用 sha256 对比本地 vs 仓库 main 版, 漂移 = warn
+#   - 用 sha256 对比本地 vs 仓库默认分支版, 漂移 = warn
 #   - 缺失 = fail (没有 fixture, 契约测试就缺锚点)
-#   整段离线, 只读 git 仓 (git show main:tests/fixtures/contract/<file>)
-def _fixture_main_sha(fixture_dir: str) -> dict:
-    """读 git main 分支上的 fixture 文件 sha256, 失败回空 dict.
+#   整段离线, 只读 git 仓 (git show <base>:tests/fixtures/contract/<file>)
+# 自审 (2026-09-03) 修: 此前硬编码 main 分支, 但本仓默认是 master,
+# CI runner fresh clone 上 main 不存在, 静默返空 dict → 误判 ok
+def _detect_default_branch() -> str:
+    """拿仓默认分支名. 优先 symbolic-ref origin/HEAD, fallback master, main.
 
-    用 `git show main:<path>` 而非 checkout —— 不污染工作树.
+    返回: 分支名字符串 (e.g. 'master', 'main', 'unknown')
+    """
+    try:
+        r = subprocess.run(
+            ["git", "symbolic-ref", "refs/remotes/origin/HEAD"],
+            capture_output=True, cwd=TOOLKIT_ROOT, timeout=5,
+            encoding="utf-8", errors="replace")
+        if r.returncode == 0 and r.stdout.strip():
+            # refs/remotes/origin/master → master
+            return r.stdout.strip().rsplit("/", 1)[-1]
+    except (OSError, subprocess.TimeoutExpired):
+        pass
+    # fallback: master 先, main 后 (本仓 master 是真默认, main 是老 GitHub 习惯)
+    for cand in ("master", "main"):
+        try:
+            r = subprocess.run(
+                ["git", "rev-parse", "--verify", f"refs/heads/{cand}"],
+                capture_output=True, cwd=TOOLKIT_ROOT, timeout=5,
+                encoding="utf-8", errors="replace")
+            if r.returncode == 0:
+                return cand
+        except (OSError, subprocess.TimeoutExpired):
+            continue
+    return "unknown"
+
+
+def _fixture_main_sha(fixture_dir: str) -> dict:
+    """读 git 默认分支上的 fixture 文件 sha256, 失败回空 dict.
+
+    用 `git show <base>:<path>` 而非 checkout —— 不污染工作树.
+    默认分支通过 _detect_default_branch() 推断, 支持 master/main.
     """
     out = {}
     try:
         rel = os.path.relpath(fixture_dir, TOOLKIT_ROOT).replace(os.sep, "/")
     except ValueError:
         return out
+    base = _detect_default_branch()
+    if base == "unknown":
+        return out   # 无法推断默认分支 → 静默返空, 漂移检测跳过
     for name in ("config.json", "expectations.json"):
         try:
             r = subprocess.run(
-                ["git", "show", f"main:{rel}/{name}"],
+                ["git", "show", f"{base}:{rel}/{name}"],
                 capture_output=True, cwd=TOOLKIT_ROOT, timeout=5,
                 encoding="utf-8", errors="replace")
             if r.returncode == 0 and r.stdout:
