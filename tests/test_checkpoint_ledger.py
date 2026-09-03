@@ -122,10 +122,12 @@ class GitHeadHelperTests(unittest.TestCase):
     """F-047 _git_head: 隔离调用 git, 失败时给空值而非抛"""
 
     def test_returns_commit_and_branch(self):
-        # 在 git 仓内跑 (worktree 本身就是 git 仓)
-        commit, branch = verify._git_head("D:/claude/embedded-toolkit")
-        self.assertTrue(commit)  # 非空
-        self.assertTrue(branch)  # 非空
+        # 推断当前测试文件所在工程根 (无论 CI / 本机都对, 不硬编码绝对路径)
+        here = os.path.dirname(os.path.abspath(__file__))
+        repo_root = os.path.dirname(here)  # tests/ -> 工程根
+        commit, branch = verify._git_head(repo_root)
+        self.assertTrue(commit, f"_git_head 在 git 仓 {repo_root} 应返非空 commit, 实际: {commit!r}")
+        self.assertTrue(branch, f"_git_head 在 git 仓 {repo_root} 应返非空 branch, 实际: {branch!r}")
 
     def test_non_git_dir_returns_empty_strings(self):
         commit, branch = verify._git_head(tempfile.gettempdir())
