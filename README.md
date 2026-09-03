@@ -141,7 +141,7 @@ STM32 工程。以下 `<工程根>` 指你的固件目录，脚本从任意 cwd 
 #    <工程根>/.workbench/expectations.json
 { "version": "1.0", "expectations": [
   { "id": "FR-SYS-01",  "desc": "启动完成横幅",   "texts": ["=== boot ===", "[init] CLK OK"] },
-  { "id": "FR-ADC-02",  "desc": "ADC 毫伏输出",   "pattern": "mv=(\\d{4})",
+  { "id": "FR-ADC-02",  "desc": "ADC 毫伏输出",   "patterns": ["mv=(\\d{4})"],
                                                     "capture_group": 1, "min": 3000, "max": 3400 },
   { "id": "FR-FUTURE-1","desc": "已知未做，挂起", "texts": ["TODO"],
     "xfail": true, "xfail_reason": "功能未实现，登记在案" }

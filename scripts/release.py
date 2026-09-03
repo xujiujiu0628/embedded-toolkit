@@ -18,12 +18,12 @@ import json
 import os
 import subprocess
 import sys
-import time
 from datetime import datetime
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from wb_common import (TOOLKIT_ROOT, atomic_write_json, find_project_root,  # noqa: E402
                        load_machine, toolkit_version)
+from openocd_runtime import swd_probe  # noqa: E402  (F-041: 下沉共享层, doctor 与 G0.5 同源)
 
 VERIFY = os.path.join(TOOLKIT_ROOT, "scripts", "verify.py")
 
@@ -58,34 +58,6 @@ def g0_checks(ws, tag):
         except Exception:
             errs.append(f"既有发布记录不可解析: {rec_p}")
     return errs
-
-
-def swd_probe(openocd_exe):
-    """G0.5: 秒级 SWD 探测。cfg 与 verify.step_flash 同源 (F103+STLink 舰队假设)。
-
-    判定走内容而非返回码 (对齐 hardfault.py 哲学): OpenOCD 关键行在 stderr,
-    克隆适配器偶发非零退出; 连接失败形态是 "init mode failed / unable to connect"。
-    3 次重试对齐 ST-Link 释放竞态纪律。"""
-    cmd = [openocd_exe,
-           "-f", "interface/stlink.cfg",
-           "-f", "target/stm32f1x.cfg",
-           "-c", "transport select swd",
-           "-c", "init", "-c", "targets", "-c", "shutdown"]
-    last = ""
-    for attempt in range(3):
-        try:
-            r = subprocess.run(cmd, capture_output=True, text=True,
-                               encoding="utf-8", errors="replace", timeout=20)
-            last = ((r.stdout or "") + (r.stderr or ""))
-            if "shutdown command invoked" in last \
-                    and "init mode failed" not in last:
-                return True, last[-200:]
-        except subprocess.TimeoutExpired:
-            last = f"attempt {attempt + 1}: SWD 探测超时"
-        except Exception as e:
-            last = str(e)
-        time.sleep(1)
-    return False, f"{last[-200:]}" if isinstance(last, str) else str(last)
 
 
 def gate1(ws, timeout):
