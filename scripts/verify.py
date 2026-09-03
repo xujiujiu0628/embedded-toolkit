@@ -614,11 +614,20 @@ def _git_head(workspace: str) -> tuple[str, str]:
 
 def record_checkpoint(workspace: str, status: str, duration_sec: float,
                       origin: str, step_keys: list,
-                      contract_hashes: dict) -> None:
+                      contract_hashes: dict, *,
+                      step_durations: dict | None = None,
+                      gate_run: bool = False) -> None:
     """F-047: 双写 — checkpoints.jsonl (append) + state.json last_checkpoint.
 
     与 F-046 audit.jsonl 关系: audit 记 HIL 步骤级 (flash/capture),
     checkpoint 记 verify 全流程级 (跑完一次落一条). 两者职责正交.
+
+    自审 (2026-09-03) 扩展:
+      - step_durations: 各 step 实际耗时 (F-050 时长画像数据源).
+        不传则留空 dict (向后兼容).
+      - gate_run=True: 门禁重跑/豁免运行, 跳过 jsonl append 但仍更新
+        state.json["last_checkpoint"] 标 status="gate_skip", 避免污染
+        release audit 的"上次 PASS"语义 (Finding 3).
     """
     if status not in CHECKPOINT_STATUSES:
         raise ValueError(
@@ -632,17 +641,24 @@ def record_checkpoint(workspace: str, status: str, duration_sec: float,
         "duration_sec": round(duration_sec, 1),
         "origin": origin,
         "step_keys": list(step_keys),
+        "step_durations": dict(step_durations) if step_durations else {},
         "contract_hashes": dict(contract_hashes),
     }
     state_dir = os.path.join(workspace, ".workbench", "state")
     jsonl_path = os.path.join(state_dir, "checkpoints.jsonl")
     state_path = os.path.join(workspace, ".workbench", "state.json")
+    # 自审 Finding 3: gate_run 不污染主台账, 但仍写 state.json (与
+    # _log_feedback_event 跳 gate_run 同口径, spec 2026-08-26 §5)
+    if gate_run:
+        entry["status"] = "gate_skip"
     try:
         os.makedirs(state_dir, exist_ok=True)
-        # 1) append-only 台账
-        with open(jsonl_path, "a", encoding="utf-8") as f:
-            f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+        if not gate_run:
+            # 1) append-only 台账 (gate 模式跳过, 防污染 release audit)
+            with open(jsonl_path, "a", encoding="utf-8") as f:
+                f.write(json.dumps(entry, ensure_ascii=False) + "\n")
         # 2) 同步 last_checkpoint 到 state.json (与现有 last_build 同构)
+        #    gate 模式也写, 但 status=gate_skip 标出, 给 release audit 区分
         state = {}
         if os.path.isfile(state_path):
             try:
@@ -660,6 +676,39 @@ def record_checkpoint(workspace: str, status: str, duration_sec: float,
     except OSError:
         # 审计非门禁: 落盘失败不阻断主流程
         print(f"[warn] checkpoint 落盘失败: {jsonl_path}", file=sys.stderr)
+
+
+def _record_checkpoint_early_exit(result: dict, args) -> None:
+    """F-047 自审 (2026-09-03) Finding 2: 早退路径落台账.
+
+    main() 各 sys.exit(1) 早退点 (build_failed / build_has_errors /
+    flash_failed / capture_failed) 调用此函数, 让 progress 台账覆盖
+    失败路径 — 不然 release audit 答不上"上次 build_failed 是哪天".
+
+    与正常出口的 record_checkpoint 调用点不同: 早退时 result.steps
+    已有部分填充, step_keys 来自已写入的 steps, step_durations
+    来自已有的 duration_sec 字段.
+    """
+    if "WORKSPACE" not in globals() or WORKSPACE is None:
+        return
+    step_keys = [k for k, v in (result.get("steps") or {}).items()
+                 if isinstance(v, dict) and v.get("status") not in ("skipped", None)]
+    step_durations = {}
+    for k in step_keys:
+        s = result["steps"].get(k, {})
+        d = s.get("duration_sec")
+        if isinstance(d, (int, float)) and d > 0:
+            step_durations[k] = float(d)
+    record_checkpoint(
+        workspace=WORKSPACE,
+        status=result.get("status", "unknown"),
+        duration_sec=result.get("elapsed_sec", 0.0),
+        origin=getattr(args, "task_origin", "manual"),
+        step_keys=step_keys,
+        contract_hashes=result.get("contract_hashes") or {},
+        step_durations=step_durations,
+        gate_run=getattr(args, "gate_run", False),
+    )
 
 
 def _sha256_file(path: str) -> str:
@@ -1288,6 +1337,8 @@ def main():
             # Save failure context for Agent analysis
             _save_failure_context(result, max_retries)
             _output(result, args.json)
+            # F-047 自审 Finding 2: 早退路径也必须落 checkpoint
+            _record_checkpoint_early_exit(result, args)
             sys.exit(1)   # 失败早退必须非零 (审计: 原先恒 0 误导脚本化调用方)
 
         result["steps"]["build"] = {
@@ -1318,6 +1369,8 @@ def main():
             result["error"] = f"Build has {analyze.get('summary', {}).get('errors', 0)} error(s)"
             _save_failure_context(result, max_retries)
             _output(result, args.json)
+            # F-047 自审 Finding 2: 早退路径也必须落 checkpoint
+            _record_checkpoint_early_exit(result, args)
             sys.exit(1)   # 失败早退必须非零 (审计: 原先恒 0 误导脚本化调用方)
         if analyze.get("summary", {}).get("unmatched", 0) > 0:
             result["steps"]["analyze"]["review_needed"] = True
@@ -1375,6 +1428,8 @@ def main():
             result["error"] = f"Flash failed after {len(flash_attempts)} attempt(s)"
             _save_failure_context(result, max_retries)
             _output(result, args.json)
+            # F-047 自审 Finding 2: 早退路径也必须落 checkpoint
+            _record_checkpoint_early_exit(result, args)
             sys.exit(1)   # 失败早退必须非零 (审计: 原先恒 0 误导脚本化调用方)
 
         result["steps"]["flash"] = {
@@ -1417,6 +1472,8 @@ def main():
             result["error"] = cap.get("error", "rtt capture failed")
             _save_failure_context(result, max_retries)
             _output(result, args.json)
+            # F-047 自审 Finding 2: 早退路径也必须落 checkpoint
+            _record_checkpoint_early_exit(result, args)
             sys.exit(1)   # 失败早退必须非零 (审计: 原先恒 0 误导脚本化调用方)
         captured_text = cap.pop("_text", "")
         captured_lines = [ln for ln in captured_text.splitlines() if ln.strip()]
@@ -1465,6 +1522,8 @@ def main():
             result["error"] = str(e)
             _save_failure_context(result, max_retries)
             _output(result, args.json)
+            # F-047 自审 Finding 2: 早退路径也必须落 checkpoint
+            _record_checkpoint_early_exit(result, args)
             sys.exit(1)   # 失败早退必须非零 (审计: 原先恒 0 误导脚本化调用方)
 
         captured_text = "\n".join(captured_lines)
