@@ -1539,8 +1539,7 @@ def main():
     # F-046: HIL 入口守卫 — 拒 manual 时给友好提示, exit 2 (区别于 0=成功/1=失败)
     if not args.no_flash:
         flash_t0 = time.time()  # F-050: step-level timing
-        allowed, deny_reason = enforce_hil_origin(
-            args.task_origin, args.require_schedule_origin)
+        # F-046 守卫 (F-050 自审发现: 此前曾误写两行同参数调用, 已删冗余)
         allowed, deny_reason = enforce_hil_origin(
             args.task_origin, args.require_schedule_origin)
         if not allowed:
