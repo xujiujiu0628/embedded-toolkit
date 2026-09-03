@@ -39,7 +39,7 @@ class RecordCheckpointTests(unittest.TestCase):
     """F-047 单元: 写 jsonl + 同步 last_checkpoint"""
 
     REQUIRED_KEYS = {"ts", "git_head", "git_branch", "status", "duration_sec",
-                     "origin", "step_keys", "contract_hashes"}
+                     "origin", "step_keys", "step_durations", "contract_hashes"}
 
     def setUp(self):
         self.ws = tempfile.mkdtemp()
@@ -192,6 +192,111 @@ class MainFlowCheckpointTests(unittest.TestCase):
         self.assertIn("step_keys", call_kwargs)
         self.assertIn("contract_hashes", call_kwargs)
         self.assertEqual(call_kwargs["origin"], "schedule")
+
+
+class StepDurationsTests(unittest.TestCase):
+    """自审 (2026-09-03): record_checkpoint 新增 step_durations 字段, 给 F-050 用"""
+
+    def setUp(self):
+        self.ws = tempfile.mkdtemp()
+        os.makedirs(os.path.join(self.ws, ".workbench"))
+
+    def tearDown(self):
+        shutil.rmtree(self.ws, ignore_errors=True)
+
+    def test_step_durations_persisted_to_jsonl(self):
+        with mock.patch.object(verify, "_git_head", return_value=("h", "main")):
+            verify.record_checkpoint(
+                self.ws, "ok", 12.3, "schedule", ["build", "flash", "capture"],
+                {}, step_durations={"build": 3.4, "flash": 1.1, "capture": 7.8})
+        jsonl = os.path.join(self.ws, ".workbench", "state", "checkpoints.jsonl")
+        with open(jsonl, encoding="utf-8") as f:
+            entry = json.loads(f.readline())
+        self.assertEqual(entry["step_durations"], {"build": 3.4, "flash": 1.1, "capture": 7.8})
+
+    def test_step_durations_optional_backward_compat(self):
+        # 不传 step_durations → 留空 dict (向后兼容, 旧调用方不受影响)
+        with mock.patch.object(verify, "_git_head", return_value=("h", "main")):
+            verify.record_checkpoint(self.ws, "ok", 1.0, "manual", ["build"], {})
+        jsonl = os.path.join(self.ws, ".workbench", "state", "checkpoints.jsonl")
+        with open(jsonl, encoding="utf-8") as f:
+            entry = json.loads(f.readline())
+        self.assertEqual(entry["step_durations"], {})
+
+
+class GateRunTests(unittest.TestCase):
+    """自审 (2026-09-03) Finding 3: gate_run 模式不污染主台账"""
+
+    def setUp(self):
+        self.ws = tempfile.mkdtemp()
+        os.makedirs(os.path.join(self.ws, ".workbench"))
+
+    def tearDown(self):
+        shutil.rmtree(self.ws, ignore_errors=True)
+
+    def test_gate_run_skips_jsonl_append(self):
+        # gate_run=True → jsonl 不写, 但 state.json 仍写 (status=gate_skip)
+        with mock.patch.object(verify, "_git_head", return_value=("h", "main")):
+            verify.record_checkpoint(self.ws, "ok", 1.0, "schedule", ["build"], {},
+                                     gate_run=True)
+        jsonl_path = os.path.join(self.ws, ".workbench", "state", "checkpoints.jsonl")
+        # jsonl 不应存在
+        self.assertFalse(os.path.isfile(jsonl_path),
+                         f"gate_run 不应写 jsonl, 但存在: {jsonl_path}")
+        # state.json 应写, status=gate_skip
+        state_path = os.path.join(self.ws, ".workbench", "state.json")
+        with open(state_path, encoding="utf-8") as f:
+            state = json.load(f)
+        self.assertEqual(state["last_checkpoint"]["status"], "gate_skip")
+        self.assertEqual(state["last_checkpoint"]["origin"], "schedule")
+
+    def test_normal_run_writes_jsonl(self):
+        # gate_run=False (默认) → jsonl 正常写
+        with mock.patch.object(verify, "_git_head", return_value=("h", "main")):
+            verify.record_checkpoint(self.ws, "ok", 1.0, "schedule", ["build"], {})
+        jsonl = os.path.join(self.ws, ".workbench", "state", "checkpoints.jsonl")
+        self.assertTrue(os.path.isfile(jsonl))
+
+
+class EarlyExitCoverageTests(unittest.TestCase):
+    """自审 (2026-09-03) Finding 2: 早退路径 (build/flash/capture failed)
+    必须落 checkpoint, 不然 release audit 答不上"上次 build_failed 是哪天"."""
+
+    def setUp(self):
+        self.ws = tempfile.mkdtemp()
+        os.makedirs(os.path.join(self.ws, ".workbench"))
+        with open(os.path.join(self.ws, ".workbench", "config.json"), "w",
+                  encoding="utf-8") as f:
+            json.dump({"builder": "gcc", "verify": {"expect": []},
+                       "capture": {"backend": "rtt"}}, f)
+
+    def tearDown(self):
+        shutil.rmtree(self.ws, ignore_errors=True)
+
+    def test_build_failed_records_checkpoint(self):
+        """build 失败早退时, record_checkpoint 仍被调到, status=build_failed"""
+        import io
+        from contextlib import redirect_stdout, redirect_stderr
+        old_cwd = os.getcwd()
+        os.chdir(self.ws)
+        try:
+            with mock.patch.object(sys, "argv", ["verify.py", "--task-origin", "schedule"]), \
+                 mock.patch.object(verify, "step_build",
+                                   return_value={"status": "error",
+                                                 "metrics": {"errors": 1, "warnings": 0},
+                                                 "details": {"log_file": "", "hex_file": ""}}), \
+                 mock.patch.object(verify, "record_checkpoint") as rc, \
+                 mock.patch.object(verify, "_log_feedback_event",
+                                   return_value={"logged": False}), \
+                 redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+                with self.assertRaises(SystemExit):
+                    verify.main()
+            # 关键: build_failed 早退也得调 record_checkpoint
+            rc.assert_called()
+            call_kwargs = rc.call_args.kwargs
+            self.assertEqual(call_kwargs["status"], "build_failed")
+        finally:
+            os.chdir(old_cwd)
 
 
 if __name__ == "__main__":
