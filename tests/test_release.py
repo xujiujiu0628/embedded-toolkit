@@ -99,6 +99,26 @@ class ReleaseGateTests(unittest.TestCase):
         self.assertTrue(ok)
         self.assertEqual(ctx["waived"], ["FR-B"])
 
+    def test_gate1_passes_f046_origin_flags(self):
+        # F-046 触发链补完: G1 重跑 verify 时必须传 task-origin=schedule
+        # + --require-schedule-origin, 防止有人绕过发布门禁走 manual 通道
+        # 或改回 --task-origin=manual 破防 schedule 通道承诺
+        import release
+        with mock.patch.object(release.subprocess, "run") as m_run:
+            m_run.return_value = subprocess.CompletedProcess(
+                args=[], returncode=0, stdout='{"status":"ok"}', stderr="")
+            release.gate1(self.ws, timeout=10)
+        # gate1 走 subprocess.run 的第一次调用就是 verify 调用
+        self.assertTrue(m_run.called, "gate1 应至少调用一次 subprocess.run")
+        cmd = m_run.call_args[0][0]
+        # 必须包含 F-046 的两个旗标, 且值必须是 schedule
+        self.assertIn("--task-origin", cmd, "F-046: 缺 --task-origin 旗标")
+        i = cmd.index("--task-origin")
+        self.assertEqual(cmd[i + 1], "schedule",
+                         f"F-046: task-origin 必须是 schedule, 实际 {cmd[i+1]!r}")
+        self.assertIn("--require-schedule-origin", cmd,
+                      "F-046: 缺 --require-schedule-origin 硬卡旗标")
+
     def test_finalize_success_tags_and_keeps_record(self):
         _, head, _ = release._git(["rev-parse", "HEAD"], self.ws)
         rec = {"tag": "v1.0.0", "git_head": head, "branch": "master"}
