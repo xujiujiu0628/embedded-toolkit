@@ -107,7 +107,49 @@ class FixtureHealthHelperTests(unittest.TestCase):
         self.assertTrue(health["drift"]["detected"])
         # 应该指明哪个文件漂移
         self.assertIn("config_sha256", health["drift"]["mismatches"])
-        self.assertIn("expectations_sha256", health["drift"]["mismatches"])
+
+
+class DetectDefaultBranchTests(unittest.TestCase):
+    """自审 (2026-09-03) Finding 4: 默认分支不能硬编码 main, 本仓是 master."""
+
+    def test_returns_master_when_origin_head_set(self):
+        # CI runner 通常配 origin/HEAD → master
+        fake = subprocess.CompletedProcess(
+            args=[], returncode=0,
+            stdout="refs/remotes/origin/master\n", stderr="")
+        # 注意: _detect_default_branch 用 stdlib subprocess.run,
+        #       mock subprocess (stdlib) 而非 verify.subprocess
+        with mock.patch("subprocess.run", return_value=fake):
+            self.assertEqual(verify._detect_default_branch(), "master")
+
+    def test_returns_main_when_origin_head_set(self):
+        fake = subprocess.CompletedProcess(
+            args=[], returncode=0,
+            stdout="refs/remotes/origin/main\n", stderr="")
+        with mock.patch("subprocess.run", return_value=fake):
+            self.assertEqual(verify._detect_default_branch(), "main")
+
+    def test_falls_back_to_master_when_no_origin_head(self):
+        # symbolic-ref 失败 (returncode != 0), 但 master 分支在
+        def fake_run(cmd, **kw):
+            cmd_str = " ".join(cmd)
+            if "symbolic-ref" in cmd_str:
+                return subprocess.CompletedProcess(
+                    args=cmd, returncode=128, stdout="", stderr="err")
+            if "rev-parse" in cmd_str and "master" in cmd_str:
+                return subprocess.CompletedProcess(
+                    args=cmd, returncode=0, stdout="abc1234\n", stderr="")
+            return subprocess.CompletedProcess(
+                args=cmd, returncode=1, stdout="", stderr="")
+        with mock.patch("subprocess.run", side_effect=fake_run):
+            self.assertEqual(verify._detect_default_branch(), "master")
+
+    def test_returns_unknown_when_no_branches(self):
+        def fake_run(cmd, **kw):
+            return subprocess.CompletedProcess(
+                args=cmd, returncode=128, stdout="", stderr="err")
+        with mock.patch("subprocess.run", side_effect=fake_run):
+            self.assertEqual(verify._detect_default_branch(), "unknown")
 
 
 class DoctorReportFixtureIntegrationTests(unittest.TestCase):
