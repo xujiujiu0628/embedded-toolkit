@@ -64,7 +64,10 @@ def gate1(ws, timeout):
     """G1: subprocess 重跑 verify (clean rebuild + 清单判定), 返回 JSON 结果。
     验证的就是开发者日常那条命令 — 门禁公信力所在。"""
     cmd = [sys.executable, VERIFY, "--json", "--rebuild",
-           "--gate-run", "--timeout", str(timeout)]
+           "--gate-run",
+           "--task-origin", "schedule",
+           "--require-schedule-origin",
+           "--timeout", str(timeout)]
     try:
         r = subprocess.run(cmd, capture_output=True, text=True,
                            encoding="utf-8", errors="replace",
