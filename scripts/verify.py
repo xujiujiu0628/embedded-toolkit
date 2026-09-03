@@ -580,6 +580,86 @@ def append_audit_entry(workspace: str, origin: str, step: str,
         print(f"[warn] audit 落盘失败: {audit_path}", file=sys.stderr)
 
 
+# F-047: 进度台账 (2026-09-02 方案四-2)
+#   - checkpoints.jsonl: append-only, 8 字段 (ts/git_head/git_branch/status/
+#     duration_sec/origin/step_keys/contract_hashes) — 审计链
+#   - state.json last_checkpoint: 覆盖式, 与 jsonl 末行同步 — 消费方读
+# 落盘失败不阻断 (与 F-046 audit.jsonl 同款审计非门禁纪律)
+CHECKPOINT_STATUSES = ("ok", "fail", "timing_fail", "hardfault",
+                       "build_failed", "build_has_errors", "flash_failed",
+                       "capture_failed", "build_clean_skipped")
+
+
+def _git_head(workspace: str) -> tuple[str, str]:
+    """F-047: 隔离 git 调用, 失败返回 ("", "") 而非抛.
+
+    返回 (短 commit hash, branch name). 非 git 目录 / git 不可用 → 空字符串.
+    """
+    try:
+        head_p = subprocess.run(
+            ["git", "rev-parse", "--short", "HEAD"],
+            capture_output=True, text=True, encoding="utf-8", errors="replace",
+            timeout=5, cwd=workspace)
+        branch_p = subprocess.run(
+            ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+            capture_output=True, text=True, encoding="utf-8", errors="replace",
+            timeout=5, cwd=workspace)
+        head = head_p.stdout.strip() if head_p.returncode == 0 else ""
+        branch = branch_p.stdout.strip() if branch_p.returncode == 0 else ""
+        # detached HEAD 时 git 报 "HEAD", 仍是有用信息, 不过滤
+        return head, branch
+    except (OSError, subprocess.TimeoutExpired):
+        return "", ""
+
+
+def record_checkpoint(workspace: str, status: str, duration_sec: float,
+                      origin: str, step_keys: list,
+                      contract_hashes: dict) -> None:
+    """F-047: 双写 — checkpoints.jsonl (append) + state.json last_checkpoint.
+
+    与 F-046 audit.jsonl 关系: audit 记 HIL 步骤级 (flash/capture),
+    checkpoint 记 verify 全流程级 (跑完一次落一条). 两者职责正交.
+    """
+    if status not in CHECKPOINT_STATUSES:
+        raise ValueError(
+            f"checkpoint status 非法: {status!r}, 须为 {CHECKPOINT_STATUSES} 之一")
+    git_head, git_branch = _git_head(workspace)
+    entry = {
+        "ts": now_iso(),
+        "git_head": git_head,
+        "git_branch": git_branch,
+        "status": status,
+        "duration_sec": round(duration_sec, 1),
+        "origin": origin,
+        "step_keys": list(step_keys),
+        "contract_hashes": dict(contract_hashes),
+    }
+    state_dir = os.path.join(workspace, ".workbench", "state")
+    jsonl_path = os.path.join(state_dir, "checkpoints.jsonl")
+    state_path = os.path.join(workspace, ".workbench", "state.json")
+    try:
+        os.makedirs(state_dir, exist_ok=True)
+        # 1) append-only 台账
+        with open(jsonl_path, "a", encoding="utf-8") as f:
+            f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+        # 2) 同步 last_checkpoint 到 state.json (与现有 last_build 同构)
+        state = {}
+        if os.path.isfile(state_path):
+            try:
+                with open(state_path, encoding="utf-8") as f:
+                    state = json.load(f)
+            except (json.JSONDecodeError, UnicodeDecodeError):
+                # 旧 state.json 损坏: 不丢其它键, 按空 dict 继续 (load_workspace_state
+                # for_update 的损坏隔离纪律不适用于 read-modify-write 单点)
+                state = {}
+        state["last_checkpoint"] = entry
+        with open(state_path, "w", encoding="utf-8") as f:
+            json.dump(state, f, ensure_ascii=False, indent=2)
+    except OSError:
+        # 审计非门禁: 落盘失败不阻断主流程
+        print(f"[warn] checkpoint 落盘失败: {jsonl_path}", file=sys.stderr)
+
+
 def _sha256_file(path: str) -> str:
     h = hashlib.sha256()
     with open(path, "rb") as f:
@@ -1540,6 +1620,20 @@ def main():
     # --gate-run 跳过: 门禁重跑/豁免运行不得污染校准统计 (spec 2026-08-26 §5)
     result["feedback"] = _log_feedback_event(
         result, getattr(args, "gate_run", False))
+
+    # F-047: 进度台账 — 双写 checkpoints.jsonl + state.json last_checkpoint
+    #   step_keys 收集本次实际跑过的步骤 (状态非 skipped), 给后续审计 "那次跑过哪些步"
+    #   contract_hashes 复用已有契约哈希, 把"判绿锚点"和"进度台账"绑一起
+    step_keys = [k for k, v in (result.get("steps") or {}).items()
+                 if isinstance(v, dict) and v.get("status") != "skipped"]
+    record_checkpoint(
+        workspace=WORKSPACE,
+        status=result.get("status", "unknown"),
+        duration_sec=result.get("elapsed_sec", 0.0),
+        origin=getattr(args, "task_origin", "manual"),
+        step_keys=step_keys,
+        contract_hashes=result.get("contract_hashes") or {},
+    )
 
     _output(result, args.json)
     # 退出码契约: ok=0, 其余(fail/timing_fail/hardfault 等)=1
