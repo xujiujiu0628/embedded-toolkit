@@ -3,7 +3,24 @@
 格式约定: 每条含发现编号（代管期 findings 编目）与证据 commit。当前版本以
 `VERSION` 文件为准（`wb_common.toolkit_version()` 读取）。
 
-## Unreleased — 2026-09-02（防腐纪律成文 + 换行符策略固化，F-035~037）
+## Unreleased — 2026-09-03（HIL 入口可追溯，F-046）
+
+- **F-046（HIL 任务入口可追溯到 schedule/dispatch，feat+test）**: 9-02
+  方案四-1。用户拍板 HIL 范围=flash+capture（build 是 PC 端不算，整流水线过
+  宽）；默认 `task_origin=manual` 兼容现有 VS Code 直接调子工具（build/flash/
+  debug 不走 verify.py，零影响），新增 `--task-origin {manual,schedule,dispatch}`
+  与 `--require-schedule-origin` 旗标；开启硬卡时 manual 拒绝并 exit 2（区别
+  于 0=成功/1=失败）；每次执行把 origin 写入 `result.steps.{flash,capture}.origin`
+  并追加 `.workbench/state/audit.jsonl` 一行 JSON（ts/origin/step/status/command）
+  ——台账是审计而非门禁，落盘失败不阻断主流程。`enforce_hil_origin()` + 
+  `append_audit_entry()` 单元测试 10 + main 集成测试 3（mock step_flash / 
+  _step_capture_rtt 验证守卫真的在 flash 前生效）；全量 **244 全绿**
+  （skipped=1 仍 F-026 opt-in 活跳）。对你 VS Code 工作的影响清单：手动
+  build/flash/debug 零影响；手动 verify 放行并打 `origin: "manual"` 标记，
+  release audit 一眼可辨手动 vs CI 攒的 PASS；CI/release 门禁脚本加
+  `--require-schedule-origin` 即可拦截手动跑。
+
+## Unreleased — 2026-09-02（防腐纪律成文 + 换行符策略固化 + 契约 fixture，F-035~040）
 
 - **F-035 登记+处置（成熟纪律仅靠惯例维持，docs only）**: 长期防腐方案三轮源码分析
   判定——本仓不缺防腐机制，缺机制覆盖面与成文化："先钉后拆"（F-029 六 Task 全程
@@ -30,6 +47,38 @@
   CHANGELOG 契约变更段 / toolkit_min_version 评估，不适用须注明），使规则
   进入每次提 PR 的必经表单——单人项目里"清单即评审"。纯模板文字，零代码；
   全量 **215 全绿**（skipped=1 仍 F-026）。
+
+- **F-038 登记+处置（契约 fixture 入库，test+docs）**: `tests/fixtures/contract/`
+  收录 .workbench 契约最小合法样例（config.json + expectations.json），期望条目
+  覆盖全部九字段（id/desc/texts/patterns/capture_group/min/max/xfail/xfail_reason），
+  test_contract_fixtures 三关验证 —— lint 全绿（唯一 warning=xfail 提示，F-026 口径）/
+  loader 能吃（verify.load_config + wb_runtime.load_project_config + load_expectations）/
+  四态判定语义（全信号 pass+pass+xpass 且 xpass 强制判红、缺 TODO xfail、低于下限
+  fail 带 min 细节）；config 字段另钉与 README 公示值逐键一致。咬合验证：fixture
+  min/max 对调 → E9+语义两例红 → 还原 → 绿。schema 演化时 fixture 同步改，diff 即评审点。
+- **F-040 登记+处置（README 示例契约非法，docs，fixture 即发现）**: 「5 分钟上手」
+  第 2 步示例 FR-ADC-02 用单数 "pattern" 键，而 loader 与 lint 均只认复数 "patterns"
+  非空数组（load_expectations "texts 与 patterns 须二选一" 拦截）——照抄示例的用户在
+  verify 首步即收到 "期望清单非法"。红证=按示例原样构造实测 loader 拒绝；处置=README
+  示例改复数（与 fixture 同形，修后示例块实测 loader 3 条 + lint 零错）+
+  test_singular_pattern_key_rejected 钉死单复数差异防回潮。教训归因：契约样例此前
+  只在文档里"展示"，从未过 loader/lint 回路 —— F-038 入库回路后当轮即抓到本例。
+- **F-041 登记+处置（--doctor 环境预检 + swd_probe 下沉共享层，feat）**: 长期防腐
+  方案 §6.1 建议的工具链环境矩阵自检落地——`verify.py --doctor` 打印 toolkit/Python/
+  machine.json 四键/gcc/openocd/make/SWD 连通性后退出，报障随 issue 附
+  `--doctor --json` 输出，把"环境不同"类无效往返消灭在入口。关键设计：
+  ① **swd_probe 从 release.py 私有实现下沉至 openocd_runtime**——发布门禁 G0.5 与
+  doctor 共用同一命令与判据，防两处口径再漂移；对象同一性
+  （`openocd_runtime.swd_probe is release.swd_probe is verify.swd_probe`）由
+  test_doctor 钉死；② **占位路径永不执行**——machine.example.json 的 `<...>` 占位值
+  绝不触发子进程（mock 守卫钉死，触发即 AssertionError）；空/占位 → skipped 如实标注；
+  ③ doctor 分支先于工程发现，不依赖 .workbench 工程；machine.json 缺失走 load_machine
+  回退链并如实标 mode=fallback；④ 退出码恒 0——诊断报告，不是门禁；
+  ⑤ 版本行 stdout/stderr 合并取首行（OpenOCD 版本打印在 stderr 的实情）。
+  伴随微调：swd_probe attempts 参数化，末次失败不再空转 sleep；doctor 传 1 做单次
+  快探、门禁 G0.5 保持 3 次重试（语义不变，test_doctor 双向钉死）。
+  实测：本机真 machine.json 三工具 ok、无板时 swd=fail 如实报（非伪装）；全量
+  **231 全绿**（skipped=1 仍 F-026 opt-in 活跳）。
 
 ## Unreleased — 2026-09-01~02（代管 R3：跨平台回收 + 外围模块补齐入账；次日 F-029 整车收口）
 
