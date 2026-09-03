@@ -48,36 +48,44 @@ def _read_checkpoints(workspace: str) -> list[dict]:
     return out
 
 
-def _collect_step_durations(checkpoints: list[dict], result_lookup=None) -> dict:
-    """聚合每个 step 的耗时列表 (秒).
+def _collect_step_durations(checkpoints: list[dict]) -> tuple[dict, list[str]]:
+    """聚合每个 step 的耗时列表 (秒). 真数据路径.
 
-    来源:
-      ① checkpoints.jsonl 每条 entry 的 step_keys (F-047 字段) → 已知跑过
-      ② result_lookup 是可选 callback(checkpoint) -> result dict, 用于读
-         steps[step].duration_sec (F-050 新加). 缺这个 callback → 用 entry
-         自带的 duration_sec 当 fallback (整流程耗时, 不是 step 级).
+    来源: checkpoints.jsonl 每条 entry 的 step_durations 字段 (F-047
+    落盘扩展, F-050 真数据路径).
+
+    Returns:
+        (by_step, warnings)
+        - by_step: {step_name: [duration_sec, ...]}
+        - warnings: 缺真数据时 (旧 F-047 无 step_durations 字段) 的
+          提示列表. 不静默拿总耗时顶替 (那是 fake 数据, 误导决策)
     """
     by_step: dict[str, list[float]] = {k: [] for k in STEP_KEYS}
+    warnings: list[str] = []
     if not checkpoints:
-        return by_step
+        return by_step, warnings
+    legacy_count = 0
     for cp in checkpoints:
-        step_keys = cp.get("step_keys", []) or []
-        for step in step_keys:
+        step_durations = cp.get("step_durations") or {}
+        if not step_durations:
+            # 旧 F-047 落盘格式无 step_durations 字段 (pre-F-050)
+            # 不静默用总耗时, 那会让所有 step 拿同一数, 假数据
+            legacy_count += 1
+            continue
+        for step, d in step_durations.items():
             if step not in by_step:
                 continue
-            d = None
-            if result_lookup is not None:
-                result = result_lookup(cp)
-                if isinstance(result, dict):
-                    s = result.get("steps", {}).get(step, {})
-                    if isinstance(s, dict) and "duration_sec" in s:
-                        d = float(s["duration_sec"])
-            if d is None:
-                # 兜底: 用整流程 duration_sec 顶替 (粗但不崩)
-                d = float(cp.get("duration_sec", 0) or 0)
-            if d > 0:
-                by_step[step].append(d)
-    return by_step
+            try:
+                dv = float(d)
+            except (TypeError, ValueError):
+                continue
+            if dv > 0:
+                by_step[step].append(dv)
+    if legacy_count:
+        warnings.append(
+            f"{legacy_count} 条 checkpoint 来自旧 F-047 落盘格式 (无 step_durations),"
+            " 已跳过 — 请升级 F-047 (PR #2 合并后自动激活真数据路径)")
+    return by_step, warnings
 
 
 def _percentile(xs: list[float], p: float) -> float:
@@ -163,6 +171,7 @@ def main() -> int:
     if args.demo:
         stats = _demo_stats()
         source = "demo (mock 数据, 非真机表现; 仅用于工具自检)"
+        warnings = []  # demo 模式无 warning
     else:
         ws = args.project or os.getcwd()
         # 与 wb_common.find_project_root 保持兼容, 简版
@@ -176,16 +185,20 @@ def main() -> int:
             print("错误: 未找到工程根 (含 .workbench/)", file=sys.stderr)
             return 1
         cps = _read_checkpoints(ws)
-        by_step = _collect_step_durations(cps, result_lookup=None)
+        by_step, warnings = _collect_step_durations(cps)
         stats = _summarize(by_step)
         source = f"real (checkpoints.jsonl, {len(cps)} 条 entry)"
 
     if args.json:
         out = {"tool": "duration_profile", "source": source, "stats": stats}
+        if warnings:
+            out["warnings"] = warnings
         print(json.dumps(out, ensure_ascii=False, indent=2))
     else:
         print(_format_text(stats))
         print(f"\n[source: {source}]")
+        for w in warnings:
+            print(f"[warn] {w}")
     return 0
 
 
