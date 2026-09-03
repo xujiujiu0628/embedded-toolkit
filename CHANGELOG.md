@@ -3,6 +3,23 @@
 格式约定: 每条含发现编号（代管期 findings 编目）与证据 commit。当前版本以
 `VERSION` 文件为准（`wb_common.toolkit_version()` 读取）。
 
+## Unreleased — 2026-09-03（HIL 入口可追溯，F-046）
+
+- **F-046（HIL 任务入口可追溯到 schedule/dispatch，feat+test）**: 9-02
+  方案四-1。用户拍板 HIL 范围=flash+capture（build 是 PC 端不算，整流水线过
+  宽）；默认 `task_origin=manual` 兼容现有 VS Code 直接调子工具（build/flash/
+  debug 不走 verify.py，零影响），新增 `--task-origin {manual,schedule,dispatch}`
+  与 `--require-schedule-origin` 旗标；开启硬卡时 manual 拒绝并 exit 2（区别
+  于 0=成功/1=失败）；每次执行把 origin 写入 `result.steps.{flash,capture}.origin`
+  并追加 `.workbench/state/audit.jsonl` 一行 JSON（ts/origin/step/status/command）
+  ——台账是审计而非门禁，落盘失败不阻断主流程。`enforce_hil_origin()` + 
+  `append_audit_entry()` 单元测试 10 + main 集成测试 3（mock step_flash / 
+  _step_capture_rtt 验证守卫真的在 flash 前生效）；全量 **244 全绿**
+  （skipped=1 仍 F-026 opt-in 活跳）。对你 VS Code 工作的影响清单：手动
+  build/flash/debug 零影响；手动 verify 放行并打 `origin: "manual"` 标记，
+  release audit 一眼可辨手动 vs CI 攒的 PASS；CI/release 门禁脚本加
+  `--require-schedule-origin` 即可拦截手动跑。
+
 ## Unreleased — 2026-09-02（防腐纪律成文 + 换行符策略固化 + 契约 fixture，F-035~040）
 
 - **F-035 登记+处置（成熟纪律仅靠惯例维持，docs only）**: 长期防腐方案三轮源码分析
