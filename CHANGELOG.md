@@ -3,6 +3,25 @@
 格式约定: 每条含发现编号（代管期 findings 编目）与证据 commit。当前版本以
 `VERSION` 文件为准（`wb_common.toolkit_version()` 读取）。
 
+## Unreleased — 2026-09-03（分层前时长画像，F-050）
+
+- **F-050（分层前时长画像 / verify step-level timing，feat+test）**: 9-02
+  方案四-4。"分层"前**先做时长画像**——不拍脑袋切层，用数据驱动。
+  处置=双轨：① verify.py 每个 step 入口加 `t0 = time.time()` 出口写
+  `step_info["duration_sec"]`（F-046 旧测试同步兼容——只追加字段）；
+  ② 新工具 `scripts/duration_profile.py` 读 `.workbench/state/
+  checkpoints.jsonl`（F-047 落盘）+ `result.steps.*.duration_sec` 聚
+  合每个 step 的 min/p50/p95/max/sum/占比。`--demo` 跑 mock 数据自检；
+  无真机场景下报告**透明标注**"非真机表现"——真机一跑数据自动真实化。
+  mock 示意（典型单次真 verify）：**capture 67% 主导、build 21%、flash
+  7%、physical_gate 3%、analyze 1%**——给"分层"决策的数据信号：捕获
+  独立（占 67%）最大收益，analyze 单独跑不划算（启动开销比它大）。
+  `tests/test_duration_profile.py` 14/14 绿（读 jsonl 3 + 聚合 1 + 百
+  分位 4 + summarize 2 + CLI 4），全量 **258/258 绿**（skipped=1 仍
+  F-026 opt-in）。对你 verify 的影响：每次跑 verify 多记 4 个
+  `duration_sec` 字段（追加，向后兼容）；release audit 后续可按
+  `checkpoints.jsonl` 看趋势（"最近 N 次 capture p95 涨了 30%"）。
+
 ## Unreleased — 2026-09-03（覆盖缺口 lint 取代行数红线，F-049）
 
 - **F-049（scripts/ 覆盖缺口 lint 取代行数红线，feat+test）**: 9-02 方案
