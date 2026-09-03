@@ -59,6 +59,28 @@ class FindReferencedModulesTests(unittest.TestCase):
             f.write("from baz import qux\n")
         mods = coverage_lint._find_referenced_modules(self.tmp)
         self.assertIn("baz", mods)
+        # alias 名字 (qux) 不再被当作"被引用的脚本名"
+        # 这是 F-049 自审 (2026-09-03) 修复: alias 是变量/类/函数, 不是文件名
+        self.assertNotIn("qux", mods)
+
+    def test_relative_from_import_no_alias_noise(self):
+        # 相对 import: from .x import y → y 不应被算成"被引用的脚本"
+        with open(os.path.join(self.tmp, "t1.py"), "w", encoding="utf-8") as f:
+            f.write("from . import helper\n")
+        mods = coverage_lint._find_referenced_modules(self.tmp)
+        self.assertIn("helper", mods)
+        # 'helper' 是 module 名, 不应同时塞 alias (此处 alias 同名)
+
+    def test_relative_from_import_with_aliases(self):
+        # 相对 import 带 alias: from .verify import main → 只算 'verify',
+        # 不算 'main' (main 是函数, 不是脚本)
+        with open(os.path.join(self.tmp, "t1.py"), "w", encoding="utf-8") as f:
+            f.write("from .verify import main as entry\n")
+        mods = coverage_lint._find_referenced_modules(self.tmp)
+        self.assertIn("verify", mods)
+        # alias 名 (main / entry) 都不应进 mods
+        self.assertNotIn("main", mods)
+        self.assertNotIn("entry", mods)
 
     def test_relative_import_collected(self):
         with open(os.path.join(self.tmp, "t1.py"), "w", encoding="utf-8") as f:

@@ -62,13 +62,20 @@ def _find_referenced_modules(tests_dir: str) -> set[str]:
                         if root_mod:
                             mods.add(root_mod)
                 elif isinstance(node, ast.ImportFrom):
-                    # from .x import y → 取 y (相对 import 时 module 可能是 None)
+                    # F-049 自审 (2026-09-03) 修: 此前 from-import 同时塞
+                    # module 名 + alias 名, 相对 import 时还误把 import
+                    # 进来的名字算成"被引用", 假阳/假阴都有. 修法:
+                    #   - module 非空: 取 module 根段
+                    #   - module 为空 (from . import x 形态): 取 alias 根段
+                    #   - alias 名字 (函数/类/变量) 一律不进 mods, 避免假阳
+                    target = None
                     if node.module:
-                        root_mod = node.module.split(".")[0].lstrip(".")
-                        if root_mod:
-                            mods.add(root_mod)
-                    for alias in node.names:
-                        mods.add(alias.name.split(".")[0])
+                        target = node.module.split(".")[0]
+                    elif node.level > 0 and node.names:
+                        # 相对 import 且 module 为空: from . import helper
+                        target = node.names[0].name.split(".")[0]
+                    if target:
+                        mods.add(target)
     return mods
 
 
