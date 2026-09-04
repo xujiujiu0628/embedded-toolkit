@@ -120,6 +120,29 @@ cp machine.example.json machine.json   # 编辑填入 gcc_path / make_exe / open
 pip install -r requirements.txt
 ```
 
+### 平台说明：Windows 首次跑测试的告警
+
+如果你是 **Windows + PowerShell**，第 2 步会看到十几条这样的乱码：
+
+```text
+Warning: session_fix_cache.json , ԭļ: ...: Expecting property name enclosed in double quotes: line 1 column 3 (char 2)
+```
+
+**这是终端编码问题，不是工具失败**——测试仍会输出 `OK (skipped=1)`。成因：
+
+- 工具链的反馈库（`error_db_grow.py` / `feedback_db.py`）发现缓存文件损坏时，**主动**把损坏文件隔离为 `.corrupt` 并重建——这是 F-020 的诚实化设计（绝不裸 traceback）
+- 它向 stderr 写的中文警告，Linux 终端能正常显示；Windows PowerShell 默认 GBK 解码
+- 整个流程是"预期告警 + 正确恢复"，不是 bug
+
+判定方法：忽略 stderr 的 Warning 行，看最后一行 `OK (skipped=1)` / `FAILED` 即为测试结果。CI 跑在 ubuntu（CONTRIBUTING 平台现状节），看不到这些告警。
+
+如果乱码让你无法读测试结果，可以强制 Python 用 UTF-8：
+
+```powershell
+$env:PYTHONIOENCODING = "utf-8"
+python -m unittest discover -s tests
+```
+
 ## 5 分钟上手
 
 前提：一个 CubeMX 生成、带顶层 `Makefile`（`TARGET=`/`BUILD_DIR=` 约定）的
