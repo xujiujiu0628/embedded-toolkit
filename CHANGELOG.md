@@ -3,6 +3,66 @@
 格式约定: 每条含发现编号（代管期 findings 编目）与证据 commit。当前版本以
 `VERSION` 文件为准（`wb_common.toolkit_version()` 读取）。
 
+## 0.4 — 2026-09-04（质量守门 + 契约统一）
+
+本版主题：**五条守门工具齐备 + runtime_common 共享层抽取 + HIL 入口可追溯**。
+50+ commit 兑现路线图 F-035~050 全链 + F-029 整车收口；F-号账目分散于下方
+6 段 Unreleased 按发现日期归档（回放粒度优先于合并重排），本节只做导览。
+
+### 五条守门工具
+
+- **HIL 入口可追溯（F-046）**：`release.py gate1` 启用 schedule origin 守卫
+  （`--require-schedule-origin`），flash / capture 必经台账。`6561e31`
+- **verify 进度台账（F-047）**：checkpoints.jsonl + state.json 双写，早退
+  路径不落账 + 落盘扩 step_durations + atomic_write_json 防撕裂。
+  `6e3ebbc / e5852e3 / f850154`
+- **fixture doctor（F-048）**：doctor 体检新增 fixture_health 三态判定
+  （在场 / 漂移 / 正常），git show main 对比不污染工作树。
+  `1231bb6 / 4dad1b2`
+- **scripts/ 覆盖缺口 lint（F-049）**：AST 扫 test_*.py import 找未被引用
+  scripts 文件，取代行数红线。`c7e2a48 / 7da9b27`
+- **分层前时长画像（F-050）**：verify step-level timing 埋点（build /
+  flash / capture / rtt 都有 duration_sec） + duration_profile 工具出
+  min/p50/p95/max/占比。`35bef57 / c4487b7 / 23103b3`
+
+### 契约统一
+
+- **F-029 runtime_common 共享层**：wb / openocd / serial 三 runtime 22
+  个同名符号抽取到 Layer 0.5 共享层（25 规范符号防环），AST 同形重复
+  浪费 **195→4 行**；17 工具消费方零迁移，特征钉先按现实绿（`serialize`
+  hook 注入保三家分叉、`normalize_path` serial 留份、`save_local_config`
+  守卫撤销——整写天然免损）。`17b58f3 / 7b81786 / 98a36f9 / 6d9a898 / 3c2dba6`
+
+### 防腐纪律 + 文档统一
+
+- **F-035** CONTRIBUTING 增「分层与复用 / 先钉后拆 / 契约三件套 / 文档单一
+  事实源」四节 + AGENTS.md 工程纪律速查
+- **F-036** .gitattributes = `* text=auto eol=lf`（R8 修正：仓本全 LF，
+  renormalize 恒 no-op；autocrlf 检出假象定性）
+- **F-037** PR 模板补契约三件套自查行
+- **F-038** 契约 fixture 入库 `.workbench 最小合法样例进 tests/fixtures/`
+- **F-039 / F-040** 真实 fixture 即时抓到 README 示例单数 pattern 非法
+- **F-034** README 账目同步：路线图撤下已收口 F-021~F-024 改列 F-031 / F-032
+  实况；特性条去写死用例数；效果预览 JSON 加注 0.2 时期实录
+- **66ca43f** README 新增 Windows 首次跑测试告警说明（GBK 乱码是 F-020 诚实
+  化设计被 Windows 终端解码失败，工具本身 OK）
+
+### 用户署名 + 仓配置
+
+- 用户署名重写 14 commit（`filter-branch` 用户身份统一，详 release notes
+  账本说明节）`xujiujiu0628(noreply)`
+- 仓内 git config 配上用户身份
+- 公开仓元数据：关 is_template / Projects；开 secret_scanning /
+  push_protection / dependabot_security_updates（9-04 同期）
+
+### 已知遗留（已登记）
+
+- **F-031** Linux 真机路径整体未验证
+- **F-032** serial_mux socat 限制按实情声明
+- ESP32 接入立项暂缓（无目标板，路线图决策 esptool + probe-rs 仍有效）
+
+---
+
 ## Unreleased — 2026-09-03（分层前时长画像，F-050）
 
 - **F-050（分层前时长画像 / verify step-level timing，feat+test）**: 9-02
