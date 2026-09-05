@@ -129,6 +129,15 @@
 
 ## 0.4 — 2026-09-04（质量守门 + 契约统一）
 
+> **本账目与 docs 中引用的"重写前短 hash 全部失效"**——同 0.3 节"开源准备"
+> （line 472~480）的声明。本节内容经两轮重写：① 0.3 公开准备 filter-repo
+> （脱敏 Windows 用户名+工作区盘符），重写前 commit 图封存于
+> `../archive/embedded-toolkit-prehistory-20260901.bundle`；② 0.4 复核前
+> 9-02 推送署名 filter-branch（xujiujiu0628 user-identity filter-branch），
+> 详见 [[push-user-identity-rule]]。引用本节 hash 前请用
+> `git rev-parse --verify <hash>^{commit}` 验证现行可解析；现行 0.4 节
+> 16 hash 引用经 F-051 复核 16/16 可解析。
+
 本版主题：**五条守门工具齐备 + runtime_common 共享层抽取 + HIL 入口可追溯**。
 50+ commit 兑现路线图 F-035~050 全链 + F-029 整车收口；F-号账目分散于下方
 6 段 Unreleased 按发现日期归档（回放粒度优先于合并重排），本节只做导览。
