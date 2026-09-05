@@ -127,6 +127,100 @@
   或明确授权；推送前检查清单（全量测试绿 / 工作区干净 / CHANGELOG 引用 hash
   可解析——历史重写后尤甚，见 F-051）；force-push 仅限维护者执行。纯文档零代码。
 
+## Unreleased — 2026-09-05（防腐方案 §3.3 拆解 7 模块收官 + 推送纪律成文 + 仓边界清理 + 修复收口）
+
+15 commit 累计，含 14 commit 已推 GitHub master（`96796ed..60d9bc0`）+ 1 commit
+本地领先（`dc94b12` 仓边界清理，待推）：
+
+- **F-054 处置（拆解前置：OPENOCD_EXE 模块级惰性化，refactor）**:
+  `scripts/verify.py` `scripts/hardfault.py` 曾有模块级 `OPENOCD_EXE =
+  load_machine()[...]`——import 期即文件 IO + stderr 回退警告，6 个测试文件被迫
+  注释豁免。常量改 `_openocd_exe()` 惰性函数，4 个使用点同步替换；新增
+  `test_import_hygiene` 钉（fresh-import spy + stderr 零输出 + 常量不再绑定，
+  先红后绿）；6 例测试豁免注释收编；CONTRIBUTING 禁令 #2 理由升级为"分层"
+  （verify 是 Layer 2 编排主体，防回潮机制不变）。verify.py 1832 行起点。
+  全量 306 全绿。
+- **F-055 处置（拆解步骤 2：expectations.py 拆分件，refactor）**: 期望契约层
+  5 符号摘出（166 行，零全局依赖、纯函数可单测）；verify 再导出 5 符号，35
+  处测试零修改（F-029 同款手法）；分层禁令 #2 兑现（新模块不 import verify /
+  无 machine 读取）。verify.py -154 行。全量 306 全绿。
+- **F-056 处置（拆解步骤 3：capture_rtt.py 拆分件，refactor）**: RTT 采集后端
+  4 符号摘出（204 行，行为逐字节不变）；`WORKSPACE` 全局改 `workspace` 参数，
+  OpenOCD 子进程 cwd 语义不变；2 参旧调用形态经缺省值 None 保持兼容
+  （`test_capture_rtt` 钉）。verify.py -187 行。新增 7 例真单测——RTT 时序
+  钉死 F-003 级防假 PASS（reset halt → resume → 宽限 → rtt setup → rtt start
+  → server start 逐条断言）、控制块未找到不重试、3 次竞态重试、存活会话
+  halt+shutdown 礼貌清理、2 参旧调用形态兼容。verify.py 1646 行。全量 313 全绿。
+- **F-057 处置（拆解步骤 4：physical_gate.py 拆分件，refactor）**: 物理层门控
+  整体摘出（188 行，WORKSPACE 全局改 workspace 参数 + openocd 路径惰性解析）；
+  新增 8 例真单测——TCL 生成逐片段钉（预热节奏注释 / 初始化边沿告警 /
+  read_memory / mask 十进制插值 / 结果行格式）、判定数学（4.0/s ok、4.8/s
+  timing_fail + 时钟树回滚文案）、三类 probe_error 路径（无稳态闪烁 / 读失败
+  率超限 / 无结果行 3 重试）、禁用态零开销守卫。verify.py -164 行。
+  全量 321 全绿。
+- **F-058 处置（拆解步骤 5a：doctor.py 拆分件，refactor）**: 环境预检家族整体
+  摘出（279 行，零 WORKSPACE 引用——F-041 的 workspace 无关设计兑现）；verify
+  再导出 5 符号，调度分支与 CLI 零改动；经验入账：首轮漏 4 个 import（hashlib/
+  os/subprocess/sys + swd_probe + wb_common），靠 import 报错逐个补；教训
+  复用：抽离后立即 AST 未定义名扫描。verify.py -261 行。全量 321 全绿。
+- **F-059 处置（拆解步骤 5b：checkpoint_ledger.py 拆分件，refactor）**: F-047
+  台账家族 4 符号摘出（120 行）；`_record_checkpoint_early_exit` 留守 verify
+  （读 WORKSPACE 全局与 result/args 的编排胶水）；wire 兼容 = verify 再导出
+  3 符号，10 处测试 patch 目标随迁（F-029 先例）；ts 走 `runtime_common.now_iso`
+  规范版（时刻不变）。verify.py -96 行。全量 321 全绿。
+- **F-060 处置（拆解步骤 5c：failure_context.py 拆分件，refactor）**: 失败现场
+  家族 4 符号摘出（156 行）；`_finish_capture_timeout` 留守 verify（嵌入
+  sys.exit(1) 与 _output 调用——派发胶水而非逻辑）；WORKSPACE 全局改
+  workspace 参数（7 处同步）；TOOLKIT_ROOT 自 wb_common 导入——agent_hint
+  指引随其推导；ts 走 runtime_common.now_iso。verify.py -136 行。
+  全量 322 全绿。
+- **F-061 处置（拆解步骤 5d 收官：capture_semihosting.py 拆分件，refactor）**:
+  semihosting 会话 2 符号摘出（64 行）；控制流契约（成功 → 返回 tuple；
+  超时 → raise `SemihostingTimeout` 携带 proc，模块不 kill 不收尸——F-003 的
+  回收/归因/exit(1) 全在 `_finish_capture_timeout` 留守）；非超时异常原样
+  抛出。verify.py -16 行（终点 977 行）。新增 3 例真单测（cmd 逐条钉、超时
+  载体不抢先 kill、非超时异常透传）。全量 325 全绿。**防腐方案 §3.3 拆解
+  收官**——verify.py 剩余 = 编排调度 + 报告输出（纯胶水）。
+- **F-062 处置（推送权限纪律成文，docs）**: CONTRIBUTING 增「推送纪律」节 +
+  AGENTS.md 速查补行（同节首见"治理史→本文件"归属说明）；推进动机：维护者
+  无 push 能力且无成文约束（当前 15+ 提交未推送即为待审状态）。处置=本地
+  commit → 维护者审核 → 维护者推送或明确授权；推送前检查清单（全量测试绿 /
+  工作区干净 / CHANGELOG 引用 hash 可解析——历史重写后尤甚，见 F-051）；
+  force-push 仅限维护者执行。**纯文档零代码**。
+- **F-051~053 修复收口（fresh-checker 复核 High 处置 9-05 上午）**:
+  - **F-063（H3 修复，code）**: `physical_gate.py` `fail_reads` 解析改
+    默认 -1 + ValueError 异常 + 负值 raise `probe_error`——
+    修前非法值（`abc` / 负号 / 缺失）静默默认 0 绕开"读失败率超限"分支；
+    修后探针实测 `fail_reads=abc` → status=probe_error。3 例新 test 钉
+    （缺失/负值/字母三路径）。全量 327 全绿。`71fb20a`。
+  - **F-064（H2 修复，docs）**: CHANGELOG 0.4 节标题下补"本账目与 docs 中
+    引用的'重写前短 hash 全部失效'——同 0.3 节 9-01 公开准备的声明"等效
+    段，覆盖两轮重写（0.3 filter-repo 脱敏 + 9-02 推送署名 filter-branch
+    user-identity）；引用本节 hash 前请用
+    `git rev-parse --verify <hash>^{commit}` 验证现行可解析。`c3bcb6d`。
+  - **F-065（H1 标注，docs）**: F-062 推送纪律节末尾 + AGENTS.md 速查同位
+    追加"本节性质"段，显式标"道德约束非技术卡"——本仓无任何 git hook /
+    pre-push / CI 阻断逻辑会拦截 Agent 推送，技术兜底在（1）GitHub 远端
+    分支保护 master 需 PR + ≥1 审 +（2）维护者人工审核；防"以为已卡死"
+    误读。`60d9bc0`。
+- **`19c9521 chore(setup-matt-pocock-skills)` 处置（agent 协作 skill 落地,
+  docs）**: 19 个 PR 待审期间按 Matt Pocock skills 框架注册工程——docs/agents/
+  三件套（issue-tracker / triage-labels / domain）+ AGENTS.md ## Agent skills
+  段指向上述文件；本次"AI 协作私约"迁出后该 commit 的 docs/agents/ 实际
+  已不在仓内（`dc94b12` 边界清理合并删除），但其本意"工作流登记"以新仓
+  `D:\claude\embedded-handoff\docs\agents\` 形式继续存在——按维护者
+  拍板，登记本节作为完整性记账。
+- **`dc94b12` 仓边界清理（refactor 0.4 边界）**: 维护者拍板公开工具库
+  embedded-toolkit 不应含维护者 ↔ Agent 协作私约——迁出 17 文件（AGENTS.md
+  / HANDOFF-AGENT.md / docs/agents/×3 / docs/handoff/×5 / docs/superpowers/×6
+  / skills/fresh-checker/×1）到新私有仓 `D:\claude\embedded-handoff\`
+  （独立 git 仓，commit `0845ea6`，不推 GitHub 远端）；本仓改写 3 文件
+  （CONTRIBUTING 删"推送纪律"段 + README 结构图/文档索引/末段去私约引用 +
+  handoff_guard.py docstring 引用改外链 + raw string 修正 SyntaxWarning
+  复用 F-053 教训）；**本仓净减 3511 行**。scripts/handoff_guard.py
+  保留——沙盒禁线机器判据是工具库本职而非私约，spec 文档迁出后由维护者
+  人工外链引用。
+
 ## 0.4 — 2026-09-04（质量守门 + 契约统一）
 
 > **本账目与 docs 中引用的"重写前短 hash 全部失效"**——同 0.3 节"开源准备"
