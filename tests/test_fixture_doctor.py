@@ -37,6 +37,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(
     os.path.abspath(__file__))), "scripts"))
 
 import verify  # noqa: E402
+import doctor  # noqa: E402  (F-058: doctor 家族拆分件)
 
 
 SCRIPTS = os.path.dirname(os.path.abspath(verify.__file__))
@@ -99,7 +100,7 @@ class FixtureHealthHelperTests(unittest.TestCase):
                   encoding="utf-8") as f:
             json.dump({"version": "1.0", "expectations": []}, f)
         # mock: 本地 hash vs 仓库 main hash 不同
-        with mock.patch.object(verify, "_fixture_main_sha",
+        with mock.patch.object(doctor, "_fixture_main_sha",
                                return_value={"config_sha256": "deadbeef" * 8,
                                              "expectations_sha256": "cafebabe" * 8}):
             health = verify.fixture_health(self.tmp_fixture)
