@@ -77,15 +77,23 @@ FEEDBACK_DB = os.path.join(TOOLKIT_ROOT, "scripts", "feedback_db.py")
 
 
 def _keil_bridge_paths():
-    """解析 Keil 退役桥路径; 启动时检测, 不在则 FileNotFoundError 指向 archive。
+    r"""解析 Keil 退役桥路径; 启动时检测, 不在则 FileNotFoundError 指向 archive。
 
     返回 (keil_build, keil_analyze) 两个脚本绝对路径。
+
+    2026-09-05 F-069a: 错误信息加引导 (L-2 fresh-checker 反馈)
+    — `<d-claude-root>` 是路径占位符, 用户需替换为本机用户主目录盘符
+    (默认 <d-claude-root> 即 D 盘, 详见 archive README 的「唤起本 archive 前必读」段)。
     """
     if not os.path.isdir(KEIL_BRIDGE_DIR):
         raise FileNotFoundError(
             f"Keil 退役桥不在 {KEIL_BRIDGE_DIR} (env=EMBEDDED_TOOLKIT_KEIL_ARCHIVE 或"
-            f" 默认 archive 路径)。按需唤起步骤见该目录 README.md, 或从 <d-claude-root>\\archive\\"
-            f"embedded-toolkit-keil-legacy-20260905\\ 物理副本拷回。")
+            f" 默认 archive 路径)。\n"
+            f"⚠ 提示: 路径中 `<d-claude-root>` 是占位符, 请替换为本机用户主目录"
+            f"盘符 (例如 <d-claude-root> 即本仓用户主目录, 默认 D 盘)。\n"
+            f"按需唤起步骤见该目录 README.md 的「唤起本 archive 前必读」段, 或"
+            f"从 <d-claude-root>\\archive\\embedded-toolkit-keil-legacy-20260905\\ "
+            f"物理副本拷回。")
     build = os.path.join(KEIL_BRIDGE_DIR, "scripts_legacy_keil", "keil_build.py")
     analyze = os.path.join(KEIL_BRIDGE_DIR, "scripts_legacy_keil", "keil_analyze.py")
     if not (os.path.isfile(build) and os.path.isfile(analyze)):
