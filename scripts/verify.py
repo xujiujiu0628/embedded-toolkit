@@ -53,6 +53,8 @@ from doctor import (doctor_report, fixture_health,  # noqa: E402  (F-058: 拆分
                     _print_doctor, _detect_default_branch, _fixture_main_sha)
 from checkpoint_ledger import (CHECKPOINT_STATUSES, _git_head,  # noqa: E402  (F-059: 拆分件再导出, 调用面不变)
                                record_checkpoint)
+from failure_context import (_filter_capture_lines,  # noqa: E402  (F-060: 拆分件再导出, 调用面不变)
+                              resolve_capture_timeout, _save_failure_context)
 
 GCC_BUILD = os.path.join(TOOLKIT_ROOT, "scripts", "gcc_build.py")         # 默认后端 (builder=gcc)
 # Keil 桥 (2026-08-28 退役入 legacy): builder 显式配 "keil" 时按需唤起, 见 scripts/legacy/keil/README.md
@@ -318,45 +320,6 @@ def verify(output: str, expect: list[str], description: str = "", expect_pattern
     }
 
 
-_LOG_PREFIX_RE = re.compile(r'^(Info|Warn|Error|Debug)\s*:', re.IGNORECASE)
-_CAPTURE_STATUS_KW = ["Listening on port", "halted due to", "shutdown command",
-                      "GDB", "accepting", "dropped", "semihosting is enabled",
-                      "target state:", "DEPRECATED",
-                      "Licensed under GNU", "For bug reports",
-                      "xPSR:", "http://", "Info :", "Warn :", "xPack"]
-
-
-def _filter_capture_lines(raw: str) -> list:
-    """从 OpenOCD stdout+stderr 提取 semihosting 正文行。
-
-    OpenOCD 的 log 行以 "Info:/Warn:/Error:/Debug:" 开头, semihosting 输出是
-    裸文本行; 正常结束与超时收尸两条路径必须共用同一套过滤口径 (F-003)。"""
-    lines = []
-    for line in raw.splitlines():
-        stripped = line.strip()
-        if not stripped:
-            continue
-        if _LOG_PREFIX_RE.match(stripped):
-            continue
-        if any(kw in stripped for kw in _CAPTURE_STATUS_KW):
-            continue
-        lines.append(stripped)
-    return lines
-
-
-def resolve_capture_timeout(cli_timeout, capture_cfg: dict | None) -> int:
-    """F-016: 采集窗优先级 CLI --timeout > 契约 capture.duration_sec > 默认 10。
-
-    真人按键类期望 (如 FR-KEY-01) 10s 硬窗几乎必错过——2026-08-30 插板终判
-    三轮空采实锤; 窗口长度属工程契约, 应可写进 config.json 而非每次背 CLI。"""
-    if cli_timeout is not None:
-        return cli_timeout
-    d = (capture_cfg or {}).get("duration_sec")
-    if isinstance(d, int) and not isinstance(d, bool) and d > 0:
-        return d
-    return 10
-
-
 def _finish_capture_timeout(proc, result: dict, capture_timeout: int,
                             max_retries: int, as_json: bool):
     """F-003: OpenOCD 卡死超时 — 回收部分输出并诚实判 capture_failed。
@@ -381,108 +344,9 @@ def _finish_capture_timeout(proc, result: dict, capture_timeout: int,
     }
     result["status"] = "capture_failed"
     result["error"] = "capture 超时: OpenOCD 卡死, 部分输出已存失败现场"
-    _save_failure_context(result, max_retries, capture_text="\n".join(partial))
+    _save_failure_context(result, max_retries, capture_text="\n".join(partial), workspace=WORKSPACE)
     _output(result, as_json)
     sys.exit(1)
-
-
-def _save_failure_context(result: dict, max_retries: int, capture_text: str = ""):
-    """Save structured failure context for Agent analysis.
-
-    Written to .workbench/build/last_failure.json so that
-    Claude Code agents can read and analyze the failure before
-    retrying with code fixes.
-
-    capture_text: 完整 semihosting 输出原文落盘 (人类可读输出被截断到 500 字符,
-    --json 才有完整文本 — 2026-08-16 TGL 验证教训, 失败现场必须完整可取证)
-    """
-    failure_path = os.path.join(WORKSPACE, ".workbench", "build", "last_failure.json")
-    os.makedirs(os.path.dirname(failure_path), exist_ok=True)
-
-    # Extract key diagnostic info
-    ctx = {
-        "status": result.get("status", "unknown"),
-        "error": result.get("error", ""),
-        "steps": {},
-        "agent_hint": "",
-    }
-    if capture_text:
-        ctx["captured_output"] = capture_text
-
-    build_s = result.get("steps", {}).get("build", {})
-    if build_s.get("status") == "build_failed":
-        ctx["steps"]["build"] = {
-            "attempts": build_s.get("attempts", []),
-            "last_errors": build_s.get("errors", "?"),
-            "last_warnings": build_s.get("warnings", "?"),
-        }
-        ctx["agent_hint"] = (
-            "Build failed. Check the build log at .workbench/build/ for "
-            "compiler errors. Common causes: missing include paths, ARMCC V5 "
-            "C90 incompatibility (no C++ comments, no mixed decl+code), "
-            "undefined symbols. Run /review:build if errors are unmatched in KB."
-        )
-
-    flash_s = result.get("steps", {}).get("flash", {})
-    if flash_s.get("status") == "flash_failed":
-        ctx["steps"]["flash"] = {
-            "attempts": flash_s.get("attempts", []),
-        }
-        ctx["agent_hint"] = (
-            "Flash failed. Check: ST-Link connected? Board powered? "
-            "SWD pins (PA13/SWDIO, PA14/SWCLK) not reconfigured as GPIO? "
-            f"Try: python {os.path.join(TOOLKIT_ROOT, 'scripts', 'hardfault.py')} "
-            "to check connectivity."
-        )
-
-    # 采集失败: 写入 capture 步骤现场
-    if result.get("status") == "capture_failed":
-        ctx["steps"]["capture"] = result.get("steps", {}).get("capture", {})
-        ctx["agent_hint"] = (
-            "Capture failed. Check: ST-Link connected? OpenOCD target "
-            "examine succeeded? Run: python "
-            f"{os.path.join(TOOLKIT_ROOT, 'scripts', 'hardfault.py')} "
-            "to check SWD connectivity, then retry."
-        )
-
-    # 验证失败 (含 TIMING_FAIL): 写入 capture + verify + physical_gate 现场
-    if result.get("status") in ("fail", "timing_fail"):
-        steps = result.get("steps", {})
-        ctx["steps"]["capture"] = steps.get("capture", {})
-        ctx["steps"]["verify"] = steps.get("verify", {})
-        if steps.get("physical_gate", {}).get("status") not in (None, "skipped"):
-            ctx["steps"]["physical_gate"] = steps["physical_gate"]
-        if result["status"] == "timing_fail":
-            ctx["agent_hint"] = (
-                "printf output matched but GPIO toggle frequency deviated "
-                "from expected. Check clock tree: HSE 8MHz -> PLL x9 -> 72MHz "
-                "(Core/Src/main.c SystemClock_Config). Roll back to Drafter "
-                "to adjust clock configuration."
-            )
-        else:
-            xpass_ids = steps.get("verify", {}).get("xpass_ids") or []
-            if xpass_ids:
-                ctx["agent_hint"] = (
-                    f"XPASS detected: {xpass_ids}. 功能已落地而清单仍标 xfail — "
-                    "把 .workbench/expectations.json 对应条目改为 "
-                    "xfail:false 后重跑."
-                )
-            else:
-                missing = steps.get("verify", {}).get("missing", [])
-                ctx["agent_hint"] = (
-                    f"Semihosting OK but expected patterns missing: {missing}. "
-                    "Check registry registration order and printf format in "
-                    "modules/*/registry entries."
-                )
-
-    ctx["max_retries"] = max_retries
-    ctx["timestamp"] = now_iso()
-
-    try:
-        with open(failure_path, 'w', encoding='utf-8') as f:
-            json.dump(ctx, f, ensure_ascii=False, indent=2)
-    except Exception:
-        pass  # Non-critical
 
 
 def main():
@@ -629,7 +493,7 @@ def main():
             result["status"] = "build_failed"
             result["error"] = f"Build failed after {len(build_attempts)} attempt(s)"
             # Save failure context for Agent analysis
-            _save_failure_context(result, max_retries)
+            _save_failure_context(result, max_retries, workspace=WORKSPACE)
             _output(result, args.json)
             # F-047 自审 Finding 2: 早退路径也必须落 checkpoint
             _record_checkpoint_early_exit(result, args)
@@ -662,7 +526,7 @@ def main():
         if analyze.get("status") == "error":
             result["status"] = "build_has_errors"
             result["error"] = f"Build has {analyze.get('summary', {}).get('errors', 0)} error(s)"
-            _save_failure_context(result, max_retries)
+            _save_failure_context(result, max_retries, workspace=WORKSPACE)
             _output(result, args.json)
             # F-047 自审 Finding 2: 早退路径也必须落 checkpoint
             _record_checkpoint_early_exit(result, args)
@@ -723,7 +587,7 @@ def main():
             }
             result["status"] = "flash_failed"
             result["error"] = f"Flash failed after {len(flash_attempts)} attempt(s)"
-            _save_failure_context(result, max_retries)
+            _save_failure_context(result, max_retries, workspace=WORKSPACE)
             _output(result, args.json)
             # F-047 自审 Finding 2: 早退路径也必须落 checkpoint
             _record_checkpoint_early_exit(result, args)
@@ -769,7 +633,7 @@ def main():
             }
             result["status"] = "capture_failed"
             result["error"] = cap.get("error", "rtt capture failed")
-            _save_failure_context(result, max_retries)
+            _save_failure_context(result, max_retries, workspace=WORKSPACE)
             _output(result, args.json)
             # F-047 自审 Finding 2: 早退路径也必须落 checkpoint
             _record_checkpoint_early_exit(result, args)
@@ -820,7 +684,7 @@ def main():
             }
             result["status"] = "capture_failed"
             result["error"] = str(e)
-            _save_failure_context(result, max_retries)
+            _save_failure_context(result, max_retries, workspace=WORKSPACE)
             _output(result, args.json)
             # F-047 自审 Finding 2: 早退路径也必须落 checkpoint
             _record_checkpoint_early_exit(result, args)
@@ -977,7 +841,7 @@ def main():
 
     # 验证失败 (fail/timing_fail) 时保存失败现场供 Agent 分析
     if result["status"] in ("fail", "timing_fail"):
-        _save_failure_context(result, max_retries, capture_text=captured_text)
+        _save_failure_context(result, max_retries, capture_text=captured_text, workspace=WORKSPACE)
 
     # 注入点 ③: 自动记录反馈事件（异步，失败不影响主流程结论，但必须留痕 — F-004）。
     # --gate-run 跳过: 门禁重跑/豁免运行不得污染校准统计 (spec 2026-08-26 §5)

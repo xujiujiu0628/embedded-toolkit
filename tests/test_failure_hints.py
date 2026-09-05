@@ -21,6 +21,7 @@ from unittest import mock
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "scripts"))
 
 import verify  # noqa: E402
+import failure_context  # noqa: E402  (F-060: 失败现场拆分件, TOOLKIT_ROOT 钉随迁)
 
 SCRIPTS_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "scripts")
 FAKE_TK = "X:\\fake-toolkit"
@@ -32,9 +33,10 @@ class FlashCaptureHintTests(unittest.TestCase):
         self.addCleanup(shutil.rmtree, self.tmp, True)
 
     def _hint_for(self, result):
-        with mock.patch.object(verify, "WORKSPACE", self.tmp), \
-             mock.patch.object(verify, "TOOLKIT_ROOT", FAKE_TK):
-            verify._save_failure_context(result, 0)
+        # F-060: _save_failure_context 随拆分件迁至 failure_context.py——
+        # workspace 改参数传入, TOOLKIT_ROOT 钉改指新模块（提示串随其推导）
+        with mock.patch.object(failure_context, "TOOLKIT_ROOT", FAKE_TK):
+            verify._save_failure_context(result, 0, workspace=self.tmp)
         with open(os.path.join(self.tmp, ".workbench", "build",
                                "last_failure.json"), encoding="utf-8") as f:
             return json.load(f)["agent_hint"]
@@ -67,6 +69,10 @@ class NoHardcodedMaintainerPathsTest(unittest.TestCase):
 
     def test_verify_source_clean(self):
         self.assertIsNone(_MAINTAINER_PATH.search(self._normalized("verify.py")))
+
+    def test_failure_context_source_clean(self):
+        # F-060: agent_hint 分流派发随拆分件迁至 failure_context.py, 守卫跟进
+        self.assertIsNone(_MAINTAINER_PATH.search(self._normalized("failure_context.py")))
 
 
 if __name__ == "__main__":
