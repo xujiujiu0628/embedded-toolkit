@@ -83,6 +83,19 @@
   经验入账：逐字搬迁块必须跑 AST 未定义名扫描——首轮漏 TOOLKIT_ROOT/hashlib/sys/
   swd_probe 四个 import，靠 import 报错逐个补不如一次性静态扫。
   verify.py 1482 → **1225 行**。全量 **321 全绿**（skipped=1 仍 F-026 opt-in 活跳）。
+- **F-059 处置（checkpoint_ledger.py 拆分件——verify.py 拆解步骤 5b，refactor，防腐方案 §3.3）**:
+  F-047 台账家族摘出成 scripts/checkpoint_ledger.py（120 行）：CHECKPOINT_STATUSES /
+  _git_head / record_checkpoint（双写逻辑）逐字搬迁；**_record_checkpoint_early_exit
+  留守 verify**——它是读 WORKSPACE 全局与 result/args 的编排胶水，留守使其对
+  record_checkpoint 的调用仍走 verify 再导出面，test_build_failed_records_checkpoint
+  的 patch 零修改。wire 兼容 = verify 再导出三符号，main() 调度、早退 5 调用点、
+  10 处测试调用零修改。测试 patch 目标随迁：test_checkpoint_ledger 10 处
+  `_git_head` 改钉 checkpoint_ledger 模块（record_checkpoint 内部解析已随迁，
+  verify 层 patch 不再可拦截——F-029 先例）。`atomic_write_json` 随唯一使用点
+  迁出 verify 的 import。已知语义微调（记账）：ts 由 verify 本地 now_iso（固定
+  +08:00）改为 runtime_common.now_iso 规范版（本地时区）——时刻不变，本机
+  +08:00 输出逐字节一致。verify.py 1225 → **1129 行**。
+  全量 **321 全绿**（skipped=1 仍 F-026 opt-in 活跳）。
 
 ## 0.4 — 2026-09-04（质量守门 + 契约统一）
 

@@ -33,6 +33,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(
     os.path.abspath(__file__))), "scripts"))
 
 import verify  # noqa: E402
+import checkpoint_ledger  # noqa: E402  (F-059: 台账拆分件, _git_head patch 目标随迁)
 
 
 class RecordCheckpointTests(unittest.TestCase):
@@ -50,7 +51,7 @@ class RecordCheckpointTests(unittest.TestCase):
 
     def test_writes_jsonl_with_eight_required_keys(self):
         # mock 阻断 git 调用, 验证字段集完整
-        with mock.patch.object(verify, "_git_head", return_value=("abc1234", "main")):
+        with mock.patch.object(checkpoint_ledger, "_git_head", return_value=("abc1234", "main")):
             verify.record_checkpoint(
                 workspace=self.ws, status="ok", duration_sec=12.3,
                 origin="schedule", step_keys=["build", "flash", "capture", "verify"],
@@ -69,7 +70,7 @@ class RecordCheckpointTests(unittest.TestCase):
 
     def test_appends_multiple_entries_in_order(self):
         # 同工程跑两次, jsonl 应有两行, 顺序按调用顺序
-        with mock.patch.object(verify, "_git_head", return_value=("h1", "main")):
+        with mock.patch.object(checkpoint_ledger, "_git_head", return_value=("h1", "main")):
             verify.record_checkpoint(self.ws, "ok", 1.0, "manual", ["build"], {})
             verify.record_checkpoint(self.ws, "fail", 2.0, "schedule", ["build"], {})
         jsonl_path = os.path.join(self.ws, ".workbench", "state", "checkpoints.jsonl")
@@ -82,7 +83,7 @@ class RecordCheckpointTests(unittest.TestCase):
 
     def test_last_checkpoint_synced_with_last_jsonl_line(self):
         # 关键契约: 读 last_checkpoint 必须等于 jsonl 末行
-        with mock.patch.object(verify, "_git_head", return_value=("xyz", "feat/x")):
+        with mock.patch.object(checkpoint_ledger, "_git_head", return_value=("xyz", "feat/x")):
             verify.record_checkpoint(self.ws, "ok", 5.0, "dispatch",
                                      ["flash", "capture"], {"config_sha256": "x"})
         state_path = os.path.join(self.ws, ".workbench", "state.json")
@@ -101,7 +102,7 @@ class RecordCheckpointTests(unittest.TestCase):
 
     def test_disk_failure_does_not_raise(self):
         # 审计非门禁: OSError mock, 不抛, 走 stderr 告警
-        with mock.patch.object(verify, "_git_head", return_value=("h", "main")), \
+        with mock.patch.object(checkpoint_ledger, "_git_head", return_value=("h", "main")), \
              mock.patch("builtins.open", side_effect=OSError("disk full")):
             # 不应抛
             try:
@@ -111,7 +112,7 @@ class RecordCheckpointTests(unittest.TestCase):
 
     def test_invalid_status_rejected(self):
         # 白名单外 status 抛 ValueError, 防止 typo 静默落到台账
-        with mock.patch.object(verify, "_git_head", return_value=("h", "main")):
+        with mock.patch.object(checkpoint_ledger, "_git_head", return_value=("h", "main")):
             with self.assertRaises(ValueError) as ctx:
                 verify.record_checkpoint(self.ws, "weird_status", 1.0, "manual",
                                         ["build"], {})
@@ -169,7 +170,7 @@ class MainFlowCheckpointTests(unittest.TestCase):
                                    return_value={"status": "ok", "method": "rtt",
                                                  "lines": 0, "duration_sec": 0.0,
                                                  "raw_length": 0}), \
-                 mock.patch.object(verify, "_git_head",
+                 mock.patch.object(checkpoint_ledger, "_git_head",
                                    return_value=("test_commit", "test_branch")), \
                  redirect_stdout(io.StringIO()), \
                  redirect_stderr(io.StringIO()):
@@ -205,7 +206,7 @@ class StepDurationsTests(unittest.TestCase):
         shutil.rmtree(self.ws, ignore_errors=True)
 
     def test_step_durations_persisted_to_jsonl(self):
-        with mock.patch.object(verify, "_git_head", return_value=("h", "main")):
+        with mock.patch.object(checkpoint_ledger, "_git_head", return_value=("h", "main")):
             verify.record_checkpoint(
                 self.ws, "ok", 12.3, "schedule", ["build", "flash", "capture"],
                 {}, step_durations={"build": 3.4, "flash": 1.1, "capture": 7.8})
@@ -216,7 +217,7 @@ class StepDurationsTests(unittest.TestCase):
 
     def test_step_durations_optional_backward_compat(self):
         # 不传 step_durations → 留空 dict (向后兼容, 旧调用方不受影响)
-        with mock.patch.object(verify, "_git_head", return_value=("h", "main")):
+        with mock.patch.object(checkpoint_ledger, "_git_head", return_value=("h", "main")):
             verify.record_checkpoint(self.ws, "ok", 1.0, "manual", ["build"], {})
         jsonl = os.path.join(self.ws, ".workbench", "state", "checkpoints.jsonl")
         with open(jsonl, encoding="utf-8") as f:
@@ -236,7 +237,7 @@ class GateRunTests(unittest.TestCase):
 
     def test_gate_run_skips_jsonl_append(self):
         # gate_run=True → jsonl 不写, 但 state.json 仍写 (status=gate_skip)
-        with mock.patch.object(verify, "_git_head", return_value=("h", "main")):
+        with mock.patch.object(checkpoint_ledger, "_git_head", return_value=("h", "main")):
             verify.record_checkpoint(self.ws, "ok", 1.0, "schedule", ["build"], {},
                                      gate_run=True)
         jsonl_path = os.path.join(self.ws, ".workbench", "state", "checkpoints.jsonl")
@@ -252,7 +253,7 @@ class GateRunTests(unittest.TestCase):
 
     def test_normal_run_writes_jsonl(self):
         # gate_run=False (默认) → jsonl 正常写
-        with mock.patch.object(verify, "_git_head", return_value=("h", "main")):
+        with mock.patch.object(checkpoint_ledger, "_git_head", return_value=("h", "main")):
             verify.record_checkpoint(self.ws, "ok", 1.0, "schedule", ["build"], {})
         jsonl = os.path.join(self.ws, ".workbench", "state", "checkpoints.jsonl")
         self.assertTrue(os.path.isfile(jsonl))
