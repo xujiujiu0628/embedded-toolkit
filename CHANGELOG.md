@@ -3,6 +3,56 @@
 格式约定: 每条含发现编号（代管期 findings 编目）与证据 commit。当前版本以
 `VERSION` 文件为准（`wb_common.toolkit_version()` 读取）。
 
+## Unreleased — 2026-09-05（F-070 陈旧分支清理：仓库卫生）
+
+- **F-070 处置（5 个陈旧 worktree 分支 + PR #6 worktree 留尾清理，chore）**:
+  2026-09-05 末次核验发现 8 个 GitHub 分支里 5 个是 9-03 R3 期间
+  F-046~F-050 5 个 PR 的 worktree 留尾（PR 全部已合并到 master，
+  但 worktree 远端分支未删）；按 9-03 拍板"5 worktree 全部清理"
+  原则（见 memory `embedded-toolkit-2026-09-03-reorg-complete.md`），
+  本应随 PR merge 立即 `git push origin --delete` 清远端，
+  留尾至 9-05 = 2 天陈旧债。
+
+  5 个陈旧分支（PR #1~5，已合并到 master）:
+  - `embedded-hil-origin-guard` (PR #1, F-046) @ c4f3a2a3
+  - `embedded-checkpoint-ledger` (PR #2, F-047) @ f850154a
+  - `embedded-fixture-doctor` (PR #3, F-048) @ 1231bb67
+  - `embedded-coverage-lint` (PR #4, F-049) @ c7e2a483
+  - `embedded-duration-profile` (PR #5, F-050) @ 23103b37
+
+  PR #6 worktree 留尾（`embedded-keil-archive-cleanup-20260905`
+  远端分支 + 本地 worktree `.claude/worktrees/keil-archive-cleanup`):
+  PR #6 2026-09-05 已合并，按 9-03 拍板本应 PR 合并后立即
+  `git worktree remove` + `git branch -D`；同样留尾至 9-05。
+
+  处置（`git push origin --delete` 一次性 5 远端分支 +
+  本地 worktree remove + branch -D）:
+
+  | 操作 | 前 | 后 |
+  |---|---|---|
+  | GitHub 远端分支 | 8 | 3 (master + PR #6 + PR #7) |
+  | 本地 worktree | 3 (master + PR #6 + PR #7) | 2 (master + PR #7) |
+  | 本地分支 (worktree 之外) | 0 | 0 |
+  | 陈旧分支数 | 6 (5 R3 + 1 PR #6) | 0 |
+
+  删前 sanity (5/5 远端分支 tip 验证):
+  - `git merge-base --is-ancestor <sha> master` 全部 YES
+  - 5 分支 tip 全在 master 历史里，删后无 commit 失达 (git commit
+    object 与 master 引用链独立，删分支名仅删引用不删对象)
+  - 0 未提交改动 / 0 未推 commit
+
+  GitHub 分支终态: `master` (3a253e4) + `embedded-keil-archive-
+  cleanup-20260905` (7f55d62) + `freshcheck-fixes-20260905`
+  (8895e24) — 3 个全在用，0 个陈旧。
+
+  教训: 9-03 拍板"worktree 清理"只清本地 worktree，未联动
+  `git push origin --delete` 远端分支，形成 2 天陈旧债。流程
+  改进建议: worktree 清理 checklist 加"远端分支删除"一项，
+  待办登记 (不在本 commit 范围)。
+
+  零行为变化，纯仓库卫生 commit。CHANGELOG 增 1 段，0 文件
+  代码改动。
+
 ## Unreleased — 2026-09-05（F-066~068 仓内清洁：删 token_stats + Keil 退役区拆 archive + 关联清理）
 
 - **F-066 处置（删 scripts/token_stats.py，chore+test）**: 维护者本人 Claude Code
