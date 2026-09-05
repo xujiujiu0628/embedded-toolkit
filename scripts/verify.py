@@ -37,7 +37,13 @@ WORKSPACE = None  # 工程根, main() 中 --project 或 cwd 向上发现后设�
 from wb_common import (TOOLKIT_ROOT, find_project_root, load_machine,
                        toolkit_version, version_ok, atomic_write_json)
 
-OPENOCD_EXE = load_machine()["openocd_exe"]
+def _openocd_exe() -> str:
+    """F-054: 原 OPENOCD_EXE 模块级常量惰性化——import 期零 IO。
+
+    旧形态在 import 期读 machine.json，缺失时还向 stderr 吐回退警告，
+    6 个测试文件被迫以注释豁免（CONTRIBUTING 禁令 #2 的存在理由之一）。
+    惰性化后 import 卫生由 test_import_hygiene 钉死。"""
+    return load_machine()["openocd_exe"]
 
 from runtime_common import output_json  # noqa: E402  (F-041: doctor --json 复用共享层)
 from openocd_runtime import swd_probe  # noqa: E402  (F-041: SWD 探测与 release G0.5 同源)
@@ -121,7 +127,7 @@ def _step_capture_rtt(timeout_s: int, rtt_cfg: dict) -> dict:
     boot_delay_ms = int(rtt_cfg.get("boot_delay_ms", 300))
     connect_wait = float(rtt_cfg.get("connect_timeout_s", 3.0))
 
-    base_cmd = [OPENOCD_EXE, "-c", "bindto 127.0.0.1",
+    base_cmd = [_openocd_exe(), "-c", "bindto 127.0.0.1",
                 "-f", "interface/stlink.cfg", "-f", "target/stm32f1x.cfg"]
     # F-027: 该常量仅 Windows 存在, 裸用会让 Linux 在 rtt 分支直接 AttributeError
     creationflags = subprocess.CREATE_NEW_PROCESS_GROUP if sys.platform == "win32" else 0
@@ -345,7 +351,7 @@ def step_flash(hex_file: str) -> dict:
 
     hex_abs = os.path.join(WORKSPACE, hex_file)
     cmd = [
-        OPENOCD_EXE,
+        _openocd_exe(),
         "-f", "interface/stlink.cfg",
         "-f", "target/stm32f1x.cfg",
         "-c", f"program {{{hex_abs}}} verify reset exit"
@@ -428,7 +434,7 @@ shutdown
         f.write(tcl)
 
     cmd = [
-        OPENOCD_EXE,
+        _openocd_exe(),
         "-f", "interface/stlink.cfg",
         "-f", "target/stm32f1x.cfg",
         "-c", "transport select swd",
@@ -1634,7 +1640,7 @@ def main():
         # reset halt: 确定性起点 — 目标可能停在上一会话的 BKPT 冻结处 (printf 中途)
         # 或 boot 中段 (I2C2 BUSY 等待), 仅 halt 续跑会得到不完整 boot 输出 (2026-08-16 教训)
         openocd_cmd = [
-            OPENOCD_EXE,
+            _openocd_exe(),
             "-f", "interface/stlink.cfg",
             "-f", "target/stm32f1x.cfg",
             "-c", "transport select swd",

@@ -15,7 +15,7 @@ import unittest
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(
     os.path.abspath(__file__))), "scripts"))
 
-import hardfault  # noqa: E402  (import 期读 machine.json, 本机存在)
+import hardfault  # noqa: E402  (F-054 后 import 期零 IO)
 
 
 def _mk_project(ws):
