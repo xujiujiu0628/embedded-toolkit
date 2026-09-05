@@ -70,6 +70,19 @@
   结果行格式）、判定数学（4.0/s ok、4.8/s timing_fail+时钟树回滚文案）、
   insufficient_samples、三类 probe_error、禁用态零开销守卫。修前这些逻辑
   需要真机才能走到，从未被断言过。全量 **321 全绿**（skipped=1 仍 F-026 opt-in 活跳）。
+- **F-058 处置（doctor.py 拆分件——verify.py 拆解步骤 5a，refactor，防腐方案 §3.3）**:
+  环境预检家族整体摘出成 scripts/doctor.py（279 行）：doctor_report / _print_doctor /
+  _check_tool / _first_version_line / _detect_default_branch / _fixture_main_sha /
+  fixture_health / _DOCTOR_KEYS 整块逐字搬迁（F-041 引入的原块）。差异仅 import
+  收归本模块（os/subprocess/sys/hashlib + openocd_runtime.swd_probe + wb_common 四件），
+  抽取脚本断言块内零 WORKSPACE 引用（F-041 的 workspace 无关设计在此兑现）。
+  wire 兼容 = verify 再导出五符号（doctor_report/fixture_health/_print_doctor/
+  _detect_default_branch/_fixture_main_sha），调度分支与 CLI 零改动。测试 patch 目标
+  随迁（F-029 先例）：test_doctor 三处 load_machine、test_fixture_doctor 一处
+  _fixture_main_sha 改钉 doctor 模块；subprocess.run 为共享模块对象原钉不动。
+  经验入账：逐字搬迁块必须跑 AST 未定义名扫描——首轮漏 TOOLKIT_ROOT/hashlib/sys/
+  swd_probe 四个 import，靠 import 报错逐个补不如一次性静态扫。
+  verify.py 1482 → **1225 行**。全量 **321 全绿**（skipped=1 仍 F-026 opt-in 活跳）。
 
 ## 0.4 — 2026-09-04（质量守门 + 契约统一）
 
