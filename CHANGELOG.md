@@ -43,6 +43,21 @@
   继续覆盖）。钉=既有 24 例判定 + fixture 三关 + 35 处调用面，钉全程保持全绿；
   verify.py 1832 行（F-050 时长画像显示 capture 占 67%，下一步步骤 3 摘 capture_rtt）。
   本条纯搬迁零新增用例，全量 **306 全绿**（skipped=1 仍 F-026 opt-in 活跳）。
+- **F-056 处置（capture_rtt.py 拆分件——verify.py 拆解步骤 3，refactor+test，防腐方案 §3.3）**:
+  RTT 采集后端整体摘出成 scripts/capture_rtt.py（204 行）：_step_capture_rtt（更名公开
+  step_capture_rtt）+ _rtt_telnet / _rtt_read_until_prompt / _rtt_cleanup + 两个 _RTT_*
+  常量。行为逐字节不变的两组差异：① WORKSPACE 全局改 workspace 参数（verify 调度点
+  传参，OpenOCD 子进程 cwd 语义不变）；② openocd 路径经 load_machine 惰性解析
+  （F-054 惯例）。wire 兼容 = verify `from capture_rtt import step_capture_rtt as
+  _step_capture_rtt` 再导出旧私有名——3 处测试钉零修改：2 处
+  mock.patch.object(verify, "_step_capture_rtt")（return_value 型 mock 任意签名兼容，
+  调度点加传 workspace 不破）+ F-031 运行时钉（patch 的是 sys/subprocess/time 共享
+  模块对象，对本模块同样生效）。verify.py 1646 行（-187），socket/threading import
+  随唯一使用点迁出。**红利**：新增 test_capture_rtt 七例——RTT 时序（reset halt →
+  resume → 宽限 → rtt setup → rtt start → server start 逐条断言，F-003 级防假 PASS
+  知识）拆分前从未被真断言，现为真单测；另钉控制块未找到不重试、3 次竞态重试、
+  存活会话 halt+shutdown 礼貌清理、_rtt_read_until_prompt 三态、2 参旧调用形态兼容。
+  全量 **313 全绿**（skipped=1 仍 F-026 opt-in 活跳）。
 
 ## 0.4 — 2026-09-04（质量守门 + 契约统一）
 
