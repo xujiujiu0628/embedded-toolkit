@@ -142,7 +142,11 @@ class FindUncoveredScriptsTests(unittest.TestCase):
         self.assertEqual(uncovered, ["b.py"])
 
     def test_legacy_subdir_excluded(self):
-        # legacy/ 是 F-029 退役 keil 桥, 不强制覆盖
+        # 2026-09-05 F-067b: Keil 退役区拆 archive 后 DIR_EXEMPT 清空,
+        # 但 legacy/ 目录在 os.walk 中仍可下钻; 未来再有工具置入时按需
+        # 重新加入 DIR_EXEMPT。本测试验证当前语义:
+        # legacy/ 子树下的 .py 文件**会**被报告 (与其他未覆盖脚本同等),
+        # 不再有"自动豁免"——这与 F-029 时期的"legacy/ 不强制覆盖"不同。
         os.makedirs(os.path.join(self.scripts, "legacy"))
         self._add_script("a.py")
         with open(os.path.join(self.scripts, "legacy", "old.py"), "w",
@@ -151,9 +155,10 @@ class FindUncoveredScriptsTests(unittest.TestCase):
         self._add_test("t1.py", "a")
         uncovered = coverage_lint._find_uncovered_scripts(
             self.scripts, self.tests)
-        # legacy/old.py 不在结果里
-        self.assertNotIn("legacy/old.py", uncovered)
-        self.assertEqual(uncovered, [])
+        # legacy/old.py 在结果里 (不再豁免)
+        self.assertIn("legacy/old.py", uncovered)
+        # a.py 不在 (有测试 a 引用)
+        self.assertNotIn("a.py", uncovered)
 
     def test_coverage_lint_self_excluded(self):
         # coverage_lint.py 自身是工具, 它的测试就是 coverage_lint_test.py
