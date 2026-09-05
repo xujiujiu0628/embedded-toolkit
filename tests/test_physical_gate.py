@@ -128,6 +128,27 @@ class PhysicalGateTests(unittest.TestCase):
         self.assertIn("OpenOCD boot log", out["stderr_tail"])
         self.assertEqual(len(sleeps), 2, "3 次重试间隔仅 2 次")
 
+    def test_probe_error_fail_reads_missing(self):
+        # F-063 修复守卫: fail_reads 缺失/负值/非法 → probe_error,
+        # 不再静默默认 0 绕开 "读失败率超限" 分支。
+        out = self._run(
+            stdout="PHYS_GATE_RESULT samples=100 edges=40 elapsed_ms=10000")
+        self.assertEqual(out["status"], "probe_error")
+        self.assertIn("missing/invalid fail_reads", out["error"])
+
+    def test_probe_error_fail_reads_negative(self):
+        out = self._run(
+            stdout="PHYS_GATE_RESULT samples=100 edges=40 elapsed_ms=10000 fail_reads=-1")
+        self.assertEqual(out["status"], "probe_error")
+        self.assertIn("missing/invalid fail_reads", out["error"])
+
+    def test_probe_error_fail_reads_non_integer(self):
+        # OpenOCD 真输出 'fail_reads=abc' 时, \d+ 不匹配 → 默认 -1 → 触发守卫
+        out = self._run(
+            stdout="PHYS_GATE_RESULT samples=100 edges=40 elapsed_ms=10000 fail_reads=abc")
+        self.assertEqual(out["status"], "probe_error")
+        self.assertIn("missing/invalid fail_reads", out["error"])
+
 
 if __name__ == "__main__":
     unittest.main()
