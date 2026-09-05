@@ -17,7 +17,7 @@
 - 契约（`.workbench/` schema / 工具 JSON 输出结构）变更：同 commit 契约钉 + CHANGELOG 契约变更段 + `toolkit_min_version` 评估。
 - 文档：状态类事实只进 CHANGELOG；"真实可回放"实录段不可变（重采整段替换）；例数以实跑为准不写死。
 - 生产脚本禁 `import verify`（Layer 2 编排主体；import 期副作用已于 F-054 清除）。
-- 推送纪律（F-062）：Agent 不直接 push 远端；本地 commit → 维护者审核 → 维护者推送或明确授权。
+- 推送纪律（F-062）：Agent 不直接 push 远端；本地 commit → 维护者审核 → 维护者推送或明确授权。**本纪律为道德约束非技术门禁**（F-065 标注）——本仓无任何 git hook / pre-push / CI 阻断逻辑拦截 Agent 推送，技术兜底在 GitHub 远端分支保护 + 维护者人工审核。详细见 `.github/CONTRIBUTING.md` 推送纪律节。
 
 ## Agent skills
 
