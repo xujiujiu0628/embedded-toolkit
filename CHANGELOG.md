@@ -22,6 +22,17 @@
   改 raw；新增 test_source_hygiene 钉：scripts/ + tests/ 全量逐文件 compile，
   SyntaxWarning 与 DeprecationWarning（3.10/3.11 上同类告警的旧名）均升格 error
   防回潮。外部复核时扫描全仓仅此 1 处。
+- **F-054 处置（verify/hardfault 模块级副作用惰性化，refactor，防腐方案 §3.3 步骤 1）**:
+  两脚本曾有模块级 `OPENOCD_EXE = load_machine()[...]`——import 即文件 IO，
+  machine.json 缺失时向 stderr 吐回退警告，6 个测试文件被迫注释豁免，CONTRIBUTING
+  禁令 #2 亦以此为存在理由之一。处置=verify 改 `_openocd_exe()` 惰性函数（4 个使用点
+  同步替换），hardfault 在 run_openocd_diag() 内惰性解析；新增 test_import_hygiene
+  钉（fresh-import 式绕过 sys.modules 缓存：load_machine spy 断言 import 期零调用 +
+  stderr 零输出 + 常量不再绑定）；6 例测试豁免注释收编；CONTRIBUTING 禁令 #2 /
+  AGENTS.md 速查同步改写——禁令保留，理由从"副作用"升级为"分层"，防回潮机制不变。
+  先红后绿：钉在修前 3/3 红（spy 命中），修后 3/3 绿。这是 verify.py 拆解
+  （防腐方案 §3.3）的前置步骤——此后拆出的模块不再背负 import 期 IO。
+  全量 **306 全绿**（skipped=1 仍 F-026 opt-in 活跳）。
 
 ## 0.4 — 2026-09-04（质量守门 + 契约统一）
 

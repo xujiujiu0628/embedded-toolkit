@@ -31,7 +31,7 @@ from wb_common import find_project_root, load_machine
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 WORKSPACE = os.path.dirname(SCRIPT_DIR)
 # 机器路径只允许存在于 machine.json (与 verify.py 同模式)
-OPENOCD_EXE = load_machine()["openocd_exe"]
+# F-054: OPENOCD_EXE 模块级常量已惰性化——import 期零 IO, 解析点在 run_openocd_diag()
 
 # CFSR 位域定义 (Cortex-M3)
 CFSR_BITS = {
@@ -74,8 +74,9 @@ def now_iso() -> str:
 
 def run_openocd_diag() -> str:
     """运行 OpenOCD 读取故障寄存器, 返回原始输出文本"""
+    openocd_exe = load_machine()["openocd_exe"]  # F-054: 惰性解析 (原模块级常量)
     cmd = [
-        OPENOCD_EXE,
+        openocd_exe,
         "-f", "interface/stlink.cfg",
         "-f", "target/stm32f1x.cfg",
         "-c", "transport select swd",
