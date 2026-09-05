@@ -1,6 +1,8 @@
 """GNU 工具链构建后端 (make + arm-none-eabi-gcc)。
 
-与 keil_build.py 同构契约, 供 verify.py 按 config.json builder 字段切换:
+2026-09-05 F-067b 起 Keil 退役区拆 archive, 本脚本是仓内唯一构建后端;
+与 keil_build.py 同构契约 (历史, Keil 已退役) 仅作两份实现对照参考,
+不再活调用。
   - JSON 输出: {status, action, metrics{errors,warnings}, details{...}}
   - 写工程 .workbench/state.json last_build (provider="gcc")
   - 写回工程级配置 gcc 段 (project/target/log_dir)
@@ -94,7 +96,7 @@ def resolve_workspace_mode(args_project, args_workspace,
 
 
 def _collect_artifacts(project_dir: Path, makefile_vars: dict, target: str) -> dict:
-    """收集构建产物 (与 keil_build._collect_target_artifacts 同构)。"""
+    """收集构建产物 (与 keil_build._collect_target_artifacts 同构, 历史, Keil 已退役 F-067b)。"""
     build_dir = makefile_vars.get("BUILD_DIR", "build")
     output_dir = project_dir / build_dir
     if not target:
@@ -249,7 +251,7 @@ def main() -> None:
             "message": f"make 退出码 {proc.returncode}, 日志: {log_file}",
         }
 
-    # 写 state.json last_build (与 keil_build 同构, verify.py --no-build 依赖)
+    # 写 state.json last_build (与 keil_build 同构, 历史, Keil 已退役 F-067b; verify.py --no-build 依赖)
     if args.action in ("build", "rebuild") and status == "ok":
         artifacts = {k: details[k] for k in ("axf_file", "hex_file", "flash_file",
                                              "debug_file", "output_dir", "log_file") if k in details}

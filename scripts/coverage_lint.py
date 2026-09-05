@@ -31,8 +31,10 @@ import sys
 # 豁免名单也接受 "未来要被新工具的测试覆盖" 之类, 当前只豁免自身
 SELF_EXEMPT = {"coverage_lint.py"}
 
-# 目录豁免: legacy/ 是 F-029 退役 keil 桥, 不强制覆盖
-DIR_EXEMPT = {"legacy"}
+# 目录豁免: 2026-09-05 (F-067b) Keil 退役区拆 archive 后, legacy/ 目录
+# 保留为空 (见 scripts/legacy/README.md), 不再有受跟踪文件。未来再有
+# 退役工具置入 legacy/ 时按需重新加入此豁免, 避免误报。
+DIR_EXEMPT: set[str] = set()
 
 
 def _find_referenced_modules(tests_dir: str) -> set[str]:

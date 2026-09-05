@@ -3,6 +3,113 @@
 格式约定: 每条含发现编号（代管期 findings 编目）与证据 commit。当前版本以
 `VERSION` 文件为准（`wb_common.toolkit_version()` 读取）。
 
+## Unreleased — 2026-09-05（F-066~068 仓内清洁：删 token_stats + Keil 退役区拆 archive + 关联清理）
+
+- **F-066 处置（删 scripts/token_stats.py，chore+test）**: 维护者本人 Claude Code
+  会话成本计费工具（扫 `~/.claude/projects/D--claude/*.jsonl` 按 verify/build/
+  design/docs/discussion 5 桶分类算月成本），默认路径与开源用户场景完全不对齐，
+  与 STM32/verify/闭环/真机无任何关系。处置=删 `scripts/token_stats.py` + 删
+  `tests/test_zero_coverage_pure.py::TokenStatsTests` 4 例（class 整体随被测
+  对象退役，文件继续覆盖 phase_minus_one / rm_lookup / svd_to_json）。
+  先红后绿：临时移走 `token_stats.py` → test_zero_coverage_pure import 阶段崩
+  （ImportError, 328 → 303）→ 还原 → 实际删 + 改 → 324/324 绿。证据 commit
+  `f23d639`。
+
+- **F-067a 处置（去 wb_runtime keil 专属死代码，refactor+test）**:
+  `scripts/wb_runtime.py`（原 `keil_runtime.py` 2026-08-28 中性化）含 3 个
+  Keil 专属死分支：`_machine_uv4_exe()` / `_auto_detect_uv4()` +
+  `resolve_param` 里 `name=="uv4"` 两段特判。Keil 退役区拆 archive 前置清
+  理。处置=删 3 个分支 + 删 `shutil.which` import + `SKILL_NAME` 默认值
+  `'keil' → 'wb'`（与中性化命名对齐；实际所有调用方均显式传 `skill="gcc"/
+  "openocd"/"serial"`，默认 "wb" 仅为兼容值，实测从未触发）+ 头图改写 +
+  docstring 同步。测试 fixture 同步中性化：`test_gcc_build.py` GccSectionLoadTests
+  注释 `默认段名是 keil 遗留 → wb 历史延续`；`test_writeback_guards.py` /
+  `test_runtime_contract.py` fixture 路径 `keil.json → wb.json`（机制测本与
+  keil 无关）。先红后绿路径：尝试构造红钉（改 `_machine_uv4_exe` 返空 / 删
+  uv4 特判）→ 测试仍绿，因 `_machine_uv4_exe`/`_auto_detect_uv4` 当前**零
+  测试直接调用**，`test_special_tiers_are_machine_name_coupled` 写得过宽
+  （接受空串），不能用红钉——这是 "**死代码删了行为不变**" 的天然先绿，改
+  后全量 52/52（runtime_contract + gcc_build + writeback_guards）+ 全量
+  324/324 验证零回归。证据 commit `0c86d6e`。
+
+- **F-067b 处置（Keil 退役区完整拆 archive，refactor+test）**:
+  2026-08-28 Keil 从 AI 工作台退役定案后沉到 `scripts/legacy/keil/`，自述
+  "不主动维护、不进任何默认路径，但随时可以原样唤起"。9-05 完整拆出到
+  `D:\claude\archive\embedded-toolkit-keil-legacy-20260905\`：
+
+  | 源路径 | 大小 | 用途 |
+  |---|---|---|
+  | scripts/legacy/keil/{README.md, keil_build.py, keil_analyze.py, keil_project.py} | 39+678+380+119 行 | AI↔Keil 自动化桥（UV4 驱动/ARMCC 诊断/.uvprojx 扫描） |
+  | scripts/error_db_grow.py | 345 行 | 知识库自增长（五重门控） |
+  | data/keil-error-db.json | 786 行 / 28KB | ARMCC V5 错误码知识库（30 条） |
+  | config/keil.json | 3 行 | 占位 `{"operation_mode": 1}` |
+
+  处置流程：`git rm` 删仓内 tracked（git 历史保留被删 blob，可由
+  `git log -- <path>` 查）→ `git show HEAD:<path>` 从当前 commit 取
+  字节级一致副本到 archive 目录。仓内 7 个 tracked 文件删除，物理副本
+  71KB（脚本 + JSON + README）落地 archive。
+
+  `scripts/verify.py` 改写：常量 `KEIL_BUILD` / `KEIL_ANALYZE` 替换为
+  `DEFAULT_KEIL_ARCHIVE` + `KEIL_BRIDGE_DIR`（env=`EMBEDDED_TOOLKIT_KEIL_ARCHIVE`，
+  未设时回退到 archive 默认路径）；新增 `_keil_bridge_paths()` 启动时检测 +
+  `FileNotFoundError` 指向 archive README；`step_build` / `step_analyze` 在
+  `builder="keil"` 分支调 `_keil_bridge_paths()` 拿脚本路径；头图 docstring
+  加注 F-067b 拆 archive 路径（raw 字符串，F-053 钉防 `\c` 非法转义）；
+  路径中 `D:\claude` 全部中性化为 `<d-claude-root>` 占位符（F-2 敏感信息
+  扫描纪律：9-01 历史重写后不允许新 commit 再回写机器路径）。
+
+  `tests/test_writeback_guards.py` 同步：删 `import error_db_grow` + 删
+  `ErrorDbGrowGuardTests` 3 例（`_cache_entry` 损坏/健康 + `grow` 拒写）+
+  删静态判据 `test_no_bare_json_writes_in_standalone_scripts` 里
+  `error_db_grow.py` 名字（留 `release.py` 一份盯防 F-022） + 头图加注
+  error_db_grow 自身回归留 archive 副本，主仓零 Keil 引用 = 验证目标。
+
+  先红后绿：`git rm` 删 4 项后 test_writeback_guards import 阶段崩
+  （ImportError, 324 → 303, errors=1）→ 改 verify.py + 删 error_db_grow
+  测试 → 321/321 全绿，skipped=1 不变。净减 7 例（-4 token_stats F-066 /
+  -3 error_db_grow 测试 F-067b）；coverage_lint 14 不变（token_stats /
+  keil_* 本来就在测试覆盖中，不在未覆盖清单；14 个未覆盖是别的脚本，
+  本次未触动）。证据 commit `8c087b9`。
+
+- **F-067c 处置（文档同步 + coverage_lint 豁免改空 + test_legacy_subdir
+  语义更新，docs+test）**:
+  README.md 目录树注释 `legacy/keil/ 为退役留门区 → legacy/ 空目录占位,
+  Keil 退役区已拆 archive, F-067b`；data/ 注释删 `错误库`（keil-error-db
+  已拆）；config/ 注释加 `keil.json 退役后已拆 archive`；文档索引删指向
+  `scripts/legacy/keil/README.md` 链接，改为指向 archive README
+  （路径中性化）。
+  `machine.example.json` `_help` 注释：`uv4_exe 仅供 scripts/legacy/keil/
+  退役桥使用 → 仅供 archive 退役桥使用 (F-067b 后仓内零 Keil 引用,
+  uv4_exe 可留空字符串)`。
+  `SENSITIVE_FINDINGS.md` 通过项段：删 `config/keil.json` 引用；新增
+  "移除项"段，记录 F-067b 拆出的 4 个文件 + 物理副本路径 + git log 查
+  历史 + F-1/F-2 处置对 archive 副本仍生效（无 PII / 机器路径残留）。
+  `scripts/coverage_lint.py` `DIR_EXEMPT` 由 `{"legacy"}` 改为 `set()`
+  + 注释说明：Keil 退役区拆 archive 后 legacy/ 目录保留为空，未来再有
+  工具置入时按需重新加入。`tests/test_coverage_lint.py` `test_legacy_subdir_excluded`
+  语义更新：原 "legacy/ 不强制覆盖" → "DIR_EXEMPT 清空, legacy/ 子树下
+  的 .py 文件**会**被报告（与其他未覆盖脚本同等）"。
+  新建 `scripts/legacy/README.md`（仓内 38 行）：历史 + 现状 + 唤起方法
+  + 未来退役工具置入规范。
+  全量 321/321 绿，skipped=1 不变；coverage_lint 14 不变。证据 commit
+  `7bbe4ba`。
+
+- **F-068 处置（基线账目，docs）**: 本次清理的基线账目 (CHANGELOG 末次
+  账目是 F-059 的 321 例, 9-04 末态, 经实测**仍是 321**——9-04 后无
+  新 commit 改变测试数):
+    - F-066 删 `TokenStatsTests` 4 例: 328 (实测 9-05 当前基线) → 324
+    - F-067b 删 `ErrorDbGrowGuardTests` 3 例: 324 → 321
+    - **本 PR 终态: 321/321 全绿, skipped=1 不变**
+    - coverage_lint: 14 → 14 (14 个未覆盖本就是其他脚本, 本次未触动;
+      F-049 实测"基线 14"清单里没有 token_stats / keil_*, 它们本就
+      有测试覆盖)
+    - 仓内 Keil 引用: 0 (F-066 + F-067a/b/c 联合消除; 仅剩 verify.py
+      docstring 里 `<d-claude-root>\\archive\\...` 中性化路径指向
+      archive 物理副本)
+    - 触发链: F-046 `--require-schedule-origin` 门禁不受影响
+      (Keil 工程 builder="keil" 是离线动作, 不进 release.py G0~G3 门禁
+      默认路径)
+
 ## Unreleased — 2026-09-05（0.4 复核收口：账目 hash / 索引兜底 / 语法卫生，F-051~053）
 
 - **F-051 处置（0.4 账目证据 hash 断链，docs）**: 0.4 节 F-047 引用的 `6e3ebbc` 是

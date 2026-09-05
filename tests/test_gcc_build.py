@@ -53,7 +53,8 @@ class WorkspaceDerivationTests(unittest.TestCase):
 class GccSectionLoadTests(unittest.TestCase):
     """F-017 回归: gcc_build 读工程配置必须用 skill="gcc" 段。
 
-    load_project_config 本身返回"某一段"(默认段名是 keil 遗留)；旧写法
+    load_project_config 本身返回"某一段"(默认段名 wb 是历史延续, 原 keil
+    2026-08-28 中性化、2026-09-05 退役区拆 archive 后改 wb); 旧写法
     `load_project_config(ws).get("gcc")` 恒得 {} → 手工运行不带 --target
     即把工程 config 的 target 写回清空 (2026-08-30 button-toggle 实锤)。
     """
@@ -75,7 +76,7 @@ class GccSectionLoadTests(unittest.TestCase):
         self.assertEqual(cfg.get("target"), "button-toggle")
 
     def test_old_pattern_proves_bug(self):
-        # 反证旧写法: 默认段(keil)在 gcc-only 配置下为空 → .get("gcc") 恒 {}
+        # 反证旧写法: 默认段(wb, 历史延续)在 gcc-only 配置下为空 → .get("gcc") 恒 {}
         from wb_runtime import load_project_config
         self.assertEqual(load_project_config(self.tmp).get("gcc", {}), {})
 

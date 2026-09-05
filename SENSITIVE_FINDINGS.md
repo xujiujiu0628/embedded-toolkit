@@ -129,10 +129,20 @@ GitHub Events API 记录 `PublicEvent 2026-08-26T12:59:48Z`：本仓库**曾于 
 
 ## 三、通过项（已核查、干净）
 
-- `config/keil.json` / `openocd.json` / `serial.json`：仅默认端口与空串占位，无机器路径、无凭证；
+- `config/openocd.json` / `serial.json`：仅默认端口与空串占位，无机器路径、无凭证；
 - `machine.example.json`：全部为 `<尖括号占位符>` ✓；
-- `data/*.json` 知识库、`.github/*` 模板与 CI：无命中；
+- `data/*.json` 知识库（`stm32f103-ref.json` / `f103_known_issues.json` /
+  `common_devices.json`）、`.github/*` 模板与 CI：无命中；
 - `machine.json`、`.mcp.json`、`.superpowers/`、`__pycache__/` 均未被跟踪且已在 `.gitignore`。
+
+### 移除项（2026-09-05 F-067b）
+
+- `config/keil.json` / `data/keil-error-db.json` / `scripts/error_db_grow.py` /
+  `scripts/legacy/keil/*` 已随 Keil 退役区从仓内拆出，物理副本位于
+  `D:\claude\archive\embedded-toolkit-keil-legacy-20260905\`。
+  历史可由 `git log -- <path>` 查（commit `8c087b9`），archive 副本
+  字节级一致。F-1/F-2 处置（9-01 历史重写）对这些文件仍生效，
+  archive 副本中亦无 PII / 机器路径残留。
 
 ---
 *本报告与 `OPENSOURCE_READY.md` 配套；F-1~F-3 处置决定权在维护者。*
