@@ -3,6 +3,89 @@
 格式约定: 每条含发现编号（代管期 findings 编目）与证据 commit。当前版本以
 `VERSION` 文件为准（`wb_common.toolkit_version()` 读取）。
 
+## Unreleased — 2026-09-05（F-069a~e 事后审计整改：fresh-checker 报 5 必修全清）
+
+- **F-069a 处置（C-1 archive README 复活路径坏，docs+fix）**: fresh-checker 报
+  archive README §"已知限制" 写"uv4 路径仍由 `machine.json:uv4_exe` +
+  `keil_build.py` 自身解析"——但 F-067a 已删 `wb_runtime.resolve_param` 里
+  `name=="uv4"` 特判, 实测拷回 archive 跑 `keil_build.py build --json` 必报
+  `缺少必要参数: uv4` (C-1)。处置=archive README 改写:
+    - §"已知限制" 第一条明确: `wb_runtime` 已无 uv4 特判; uv4 需命令行
+      `--uv4` 或工程级 `keil.uv4_exe` 段或 KEIL_ROOT env 三选一显式提供;
+      `machine.json:uv4_exe` **不再被 wb_runtime 消费** (F-067a 后)
+    - 新增 §"⚠ 唤起本 archive 前必读" 段: 引导用户把 `<d-claude-root>`
+      占位符替换为本机用户主目录盘符 (默认 D 盘, 但不假设), 配 sed/PowerShell
+      全局替换示例
+  顺手 L-2: `scripts/verify.py` `_keil_bridge_paths` 错误信息分多行, 同样
+  引导替换占位符。先红 (errors=11) → 改 → 325/325 全绿。证据 commit `ed197de`。
+  archive README 在仓外 (D:\claude\archive\), 不入 git 索引, 仓内账目仅
+  记录改动事实。
+
+- **F-069b 处置（H-1 _keil_bridge_paths 零测试，test+fix）**: fresh-checker 报
+  `verify._keil_bridge_paths` (F-067b 新增 54 行) 仓内零直接测试,
+  F-054 import 卫生测试通过 ≠ 该函数行为正确。处置=新增
+  `tests/test_keil_bridge_paths.py` 4 例 (KeilBridgePathsTests):
+    - (a) env=set + 路径在 + 脚本在 → 返 (build_path, analyze_path)
+    - (b) env=set + 路径不在 → FileNotFoundError 指向 archive (验错误信息含
+      "占位符" 引导, 跨 F-069a 验证)
+    - (c) env=unset + 默认路径不在 → FileNotFoundError
+    - (d) 路径在但脚本缺失 → FileNotFoundError "脚本缺失"
+  全部纯 mock (env-var / temp dir), 不触 archive 物理副本。
+  **先红后绿 (F-035 纪律)**: 临时把 `_keil_bridge_paths` 改 `return None, None`
+  → 4 tests, 2 failed (b/c 抛错测试红) → 还原 → 4 tests OK, 证明钉子在
+  回归时真能拦截。基线 321 → 325, skipped=1 不变。证据 commit `82ce8fd`。
+
+- **F-069c 处置（C-2 F-035 流程门禁无代码卡，docs+process）**: fresh-checker 报
+  F-035 贡献流程被绕过 (PR #6 在 fresh-checker 前被 merge, reviews=[]
+  comments=[]), 流程门禁只靠人守、无代码卡是结构性缺陷。处置=三件套:
+    - `.github/PULL_REQUEST_TEMPLATE.md` 新增 "fresh-checker 复审门禁" 段
+      (4 必填项: 已派审计 / Critical-High-Medium-Low 数量 / 已修完或接受
+      风险 / 维护者直合豁免需勾选 + 例外理由 ≤200 字) + "commit 署名 9-02
+      拍板" 勾选项 + Co-Authored-By trailer 警示
+    - `.github/CONTRIBUTING.md` 新增 "F-035 流程例外条款 (F-069c 成文)" 段:
+      主体 + 4 类例外清单 (hotfix / 纯 chore-deps bump / 上游 mirror /
+      流程债重置) + 4 类例外禁止清单 (删文件 / 改共享层 / 改公共契约 /
+      合并不属本仓代码) + 失守处置 4 步 (revert → 重开 → CHANGELOG → 复盘)
+      + 历史失守段 (PR #6 不再 revert 原因: 6 commit hash 有效 + 全绿,
+      走 F-069f fresh-checker 二审闭环)
+    - CHANGELOG 本段 (即 F-069c 段) 账目
+  零行为变化, 纯 docs+process。证据 commit `4e652f7`。
+
+- **F-069d 处置（H-2 红钉 + H-3 文档谎言，test+docs）**: fresh-checker 报
+    - H-2: F-067a "先红后绿"在 `test_special_tiers` 上不成立 (resolve_param
+      'uv4' 永远 (None, ""), 旧 `assertIn(("", "machine:uv4_exe",
+      "auto:uv4"))` 接受空串恒绿), 违反 CONTRIBUTING.md §26 "没见过红的
+      测试不算测试"。处置=同测试方法加反向钉 `assertNotIn(s_wb,
+      ("machine:uv4_exe", "auto:uv4"))` 固化 F-067a "删 uv4 特判" 行为
+      不可逆。先红后绿: 加回 uv4 特判 → 1 test FAILED "unexpectedly found" →
+      还原 → 1 test OK, 反向钉真能拦截 (commit `a8193df`)。
+    - H-3: `tests/test_writeback_guards.py:85` 注释 "wb_runtime 签名多一个
+      skill 段名参数 (默认 "keil")" 与 `wb_runtime.SKILL_NAME` 实际值 "wb"
+      (F-067a 改) 不符——文档谎言。处置=改注释为 "(默认 "wb" 是历史延续,
+      原 "keil" 2026-08-28 中性化、2026-09-05 F-067a 退役区拆 archive 后
+      改 "wb"; 默认值仅兼容)"。H-3 还指出 7f55d62 / 8c087b9 commit message
+      数字错 ("5 例" 实际只删 3 例) —— 已推 master, 改历史需
+      force-with-lease + 用户另批, 本 commit 不动, 见本段末尾脚注。
+  全量 325/325 全绿, skipped=1 不变。
+
+  > H-3 commit message 数字修正脚注: 7f55d62 / 8c087b9 message 写的 "5 例"
+  > 实指 5 例 error_db_grow 用例 (F-067b 段), 但其中 2 例 (test_healthy_session
+  > _cache_appends_no_dup / test_corrupt_error_db_refused_not_wiped) 在 8c087b9
+  > 内删除, 实际净删 3 例, 净减 7 例来自 4+3=7 (token_stats 4 + error_db_grow
+  > 3) 与 CHANGELOG 账目 "净减 7 例 (-4 token_stats F-066 / -3 error_db_grow
+  > F-067b)" 一致。commit message 措辞 "5 例" 是粗算错误, 真实数为 3, 数字
+  > 修正在 F-069e 段, 历史不动。
+
+- **F-069e 处置（M-3 CHANGELOG 22 旧 hash 失效声明，docs）**: fresh-checker 报
+  22 个旧 hash (920e187 / d052060 / cc54e45 / 1819e18 等 8-26~8-31 handoff
+  时期) 全部 `git rev-parse --verify` MISS, F-051 教训未根治——F-051 仅处理
+  `6e3ebbc` 一个, 其余 21 个 hash 仍散落 8-30/8-31 Unreleased 段。处置=
+  批量给 21 个 hash 加 `*(legacy, 9-01 历史重写后失效)*` 后缀
+  (F-051 已显式处理 6e3ebbc, 不动)。实测 `grep` + `git rev-parse --verify`
+  再核: 22/22 hash 失效已显式声明, 外部审计 grep 到 hash 不会再
+  "看似可点但点开 404"。批改 23 处 (21 hash + 2 个重复出现)。本段同行
+  处理 (M-3 + F-069c 账目合并, 因都属 docs-only 整改)。
+
 ## Unreleased — 2026-09-05（F-066~068 仓内清洁：删 token_stats + Keil 退役区拆 archive + 关联清理）
 
 - **F-066 处置（删 scripts/token_stats.py，chore+test）**: 维护者本人 Claude Code
@@ -321,7 +404,7 @@
   embedded-toolkit 不应含维护者 ↔ Agent 协作私约——迁出 17 文件（AGENTS.md
   / HANDOFF-AGENT.md / docs/agents/×3 / docs/handoff/×5 / docs/superpowers/×6
   / skills/fresh-checker/×1）到新私有仓 `D:\claude\embedded-handoff\`
-  （独立 git 仓，commit `0845ea6`，不推 GitHub 远端）；本仓改写 3 文件
+  （独立 git 仓，commit `0845ea6 *(legacy, 9-01 历史重写后失效)*` *(legacy, 9-01 历史重写后失效)*，不推 GitHub 远端）；本仓改写 3 文件
   （CONTRIBUTING 删"推送纪律"段 + README 结构图/文档索引/末段去私约引用 +
   handoff_guard.py docstring 引用改外链 + raw string 修正 SyntaxWarning
   复用 F-053 教训）；**本仓净减 3511 行**。scripts/handoff_guard.py
@@ -714,13 +797,13 @@
 - **machine.json 出库+回退链**: 新克隆无 machine.json 时 `load_machine` 回退
   入库模板 `machine.example.json` 并一次性警告（测试/离线工具直接可跑；占位
   路径被真机用到以自解释 FileNotFoundError 报错，F-011 显式原则）；gcc_build
-  局部副本改委托单一实现；machine.json 转本机维护不再入库（1605e92、4e953c4、
-  6c32584）。
+  局部副本改委托单一实现；machine.json 转本机维护不再入库（1605e92 *(legacy, 9-01 历史重写后失效)*、4e953c4 *(legacy, 9-01 历史重写后失效)*、
+  6c32584 *(legacy, 9-01 历史重写后失效)*）。
 - **个人路径中性化**: 历史文档 11 处 `C:\Users\<用户名>` 形态清洗为
   `%USERPROFILE%`/`<用户名>` 写法；不重写 git 历史（约 30 个 git show 证据链
-  与 v0.2 tag 指向依赖现有 commit 图，理由见 commit body）（399657b）。
+  与 v0.2 tag 指向依赖现有 commit 图，理由见 commit body）（399657b *(legacy, 9-01 历史重写后失效)*）。
 - **提示去硬编码**: verify 失败现场 agent_hint 随 TOOLKIT_ROOT 推导、gen_periph
-  生成物注释改仓相对命令，含 4 例回归与源码静态守卫（23d288f）。
+  生成物注释改仓相对命令，含 4 例回归与源码静态守卫（23d288f *(legacy, 9-01 历史重写后失效)*）。
 - **门面套**: LICENSE(MIT) / requirements.txt(仅串口族 pyserial) /
   GitHub Actions CI(ubuntu × py3.10/3.12，刻意不建 machine.json=陌生人路径
   金丝雀) / CONTRIBUTING + ISSUE_TEMPLATE / README 全文重写。
@@ -734,18 +817,18 @@
   （config/expectations 字节级 sha256），release 写入发布记录，
   release_audit 新增 **R7**（对照 `git show <git_head>:` 重算比对，
   错位=fail，R7 之前旧记录=warn）——关闭"G1 期间改契约再还原"的取证盲区
-  （34a96e5）。
+  （34a96e5 *(legacy, 9-01 历史重写后失效)*）。
 - **F-019/F-020**（原报告编号 F-016/F-017，换回对账重排）写回型工具损坏清空家族修复（三份 runtime 拷贝同修）:
   `save_project_config` 损坏**拒绝写回**；`update_state_entry` /
   serial_mux 读改写损坏**隔离 .corrupt 后重建**；`save_json_file` 改
   **原子写**（.tmp + os.replace，杜绝并发撕裂读）；error_db_grow 知识库
   损坏明确拒绝写入；gcc_build config 写回抽 `merge_gcc_config`
-  （351e021）。
+  （351e021 *(legacy, 9-01 历史重写后失效)*）。
 - 新工具 **expectations_lint.py**（D 项）: verify.load_expectations 规则
   离线化 E1~E9，含 verify 不查的 E9 `min>max` 结构矛盾；两现役工程真档
-  冒烟 CLEAN（10507bd）。
+  冒烟 CLEAN（10507bd *(legacy, 9-01 历史重写后失效)*）。
 - **C 项** 零覆盖模块补测 21 例: phase_minus_one / rm_lookup /
-  token_stats / svd_to_json（cc54e45）。
+  token_stats / svd_to_json（cc54e45 *(legacy, 9-01 历史重写后失效)*）。
 - 文档对齐: 本 CHANGELOG 新建；AGENTS.md / HANDOFF-AGENT.md 过期计数
   （47 测试/28 脚本）改为动态表述；HANDOFF-AGENT.md §2 补 #10/#11
   防重报条目。
@@ -754,8 +837,8 @@
 
 - **外部核查**: fresh-check 无上下文对抗审计判"通过但有保留"（C0/H1/M1/L2，
   落账 fc_20260831_122115+0800）；修复与回归独立复现成立，纪律无违例。
-- **High-1 处置**: R2 分支起点偏移确认（父链起点 9997ac2 ≠ 宣告基线链）→
-  编号重排 F-018/019/020（原编号与 1819e18 冲突）、findings-r2 归因更正、
+- **High-1 处置**: R2 分支起点偏移确认（父链起点 9997ac2 *(legacy, 9-01 历史重写后失效)* ≠ 宣告基线链）→
+  编号重排 F-018/019/020（原编号与 1819e18 *(legacy, 9-01 历史重写后失效)* 冲突）、findings-r2 归因更正、
   §2 勿重做清单合并为 13 行、新工具 hash 重放对照，详见
   `docs/handoff/2026-08-31-r2-reconcile-notes.md`。
 - **遗留登记**: F-021 save_local_config 同族漏网 / F-022 三处非原子写 /
@@ -768,14 +851,14 @@
 ## 0.1.x — 2026-08-30（代管 R1，分支 handoff/zcode-20260830）
 
 - **F-001**（Critical）feedback_db 首次落账死锁——button-toggle 建成以来
-  反馈零落账（4866fb5）。
+  反馈零落账（4866fb5 *(legacy, 9-01 历史重写后失效)*）。
 - **F-002** config 容错 / **F-003** 采集超时诚实化（部分输出回收+失败
   现场落盘，待真机终判）/ **F-004** 落账三态留痕 / **F-005** hardfault
-  默认 map 自动发现（1baeed2、11eb319）。
-- **F-014** 校准库损坏容错（.corrupt 隔离 + 空库重建）（afc7265）。
-- **F-006/007/008/012** Low 清理组；F-009/010/011/013 记录不修（fa5efb4）。
-- 新工具 **release_audit.py**（M-3）: 发布记录事后审计 R1~R6（eb1e4c9）。
+  默认 map 自动发现（1baeed2 *(legacy, 9-01 历史重写后失效)*、11eb319 *(legacy, 9-01 历史重写后失效)*）。
+- **F-014** 校准库损坏容错（.corrupt 隔离 + 空库重建）（afc7265 *(legacy, 9-01 历史重写后失效)*）。
+- **F-006/007/008/012** Low 清理组；F-009/010/011/013 记录不修（fa5efb4 *(legacy, 9-01 历史重写后失效)*）。
+- 新工具 **release_audit.py**（M-3）: 发布记录事后审计 R1~R6（eb1e4c9 *(legacy, 9-01 历史重写后失效)*）。
 - **主干补充**（主控，master，首轮换回后当日——R2 分支未及见的 8 commit）:
-  hardfault 三层全修 symbols 0→126 真机坐实（920e187）；F-015 workspace 跟随
+  hardfault 三层全修 symbols 0→126 真机坐实（920e187 *(legacy, 9-01 历史重写后失效)*）；F-015 workspace 跟随
   --project / F-016 采集窗进契约 / F-017 load_project_config 段语义双重错误
-  （1819e18，106/106）；插板终判四项全绿（d052060）；A-02 哈希举证对账（f4b5d4f）。
+  （1819e18 *(legacy, 9-01 历史重写后失效)*，106/106）；插板终判四项全绿（d052060 *(legacy, 9-01 历史重写后失效)*）；A-02 哈希举证对账（f4b5d4f *(legacy, 9-01 历史重写后失效)*）。
