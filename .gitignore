@@ -36,3 +36,7 @@ desktop.ini
 .vscode/
 .idea/
 *.swp
+
+# 嵌入伪工程防线 (F-015 前科 + F-052): .workbench/ 属固件工程；仓内出现即为
+# 事故产物（state.json / checkpoints.jsonl 等运行时台账），不入库
+.workbench/

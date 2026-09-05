@@ -3,6 +3,26 @@
 格式约定: 每条含发现编号（代管期 findings 编目）与证据 commit。当前版本以
 `VERSION` 文件为准（`wb_common.toolkit_version()` 读取）。
 
+## Unreleased — 2026-09-05（0.4 复核收口：账目 hash / 索引兜底 / 语法卫生，F-051~053）
+
+- **F-051 处置（0.4 账目证据 hash 断链，docs）**: 0.4 节 F-047 引用的 `6e3ebbc` 是
+  署名重写前短 hash（重写后现行历史为 `eef1851`）——0.3 重写曾声明"重写前短 hash
+  全部失效"，本次重写漏做等效声明。外部复核逐 hash 验证 0.4 节 16 个引用：15 OK
+  / 1 MISS，本条即该 MISS。处置=账目改指现行 hash。教训=历史重写后必须重跑
+  CHANGELOG 引用 hash 全量可解析性检查（`git rev-parse --verify <hash>^{commit}`）。
+- **F-052 处置（.workbench 运行时产物无索引兜底，chore）**: F-047 新增
+  checkpoints.jsonl 与既有 state.json / *.corrupt 均写入固件工程 `.workbench/`，
+  而本仓 .gitignore 无该条目——F-015 伪工程事故路径若在仓内复现，台账产物将进入
+  git status 并有误提交风险（实测 check-ignore 未命中）。处置=.gitignore 增
+  `.workbench/`；固件工程侧"config/expectations/releases 入库、state 忽略"的建议
+  不变（见 README）。
+- **F-053 处置（tests docstring 非法转义 SyntaxWarning，fix+test）**:
+  test_failure_hints.py:3 非原始 docstring 含 `\.`——Python 3.12+ 升格为
+  SyntaxWarning，coverage_lint 的 AST 全扫每轮都向 stderr 吐警告。处置=docstring
+  改 raw；新增 test_source_hygiene 钉：scripts/ + tests/ 全量逐文件 compile，
+  SyntaxWarning 与 DeprecationWarning（3.10/3.11 上同类告警的旧名）均升格 error
+  防回潮。外部复核时扫描全仓仅此 1 处。
+
 ## 0.4 — 2026-09-04（质量守门 + 契约统一）
 
 本版主题：**五条守门工具齐备 + runtime_common 共享层抽取 + HIL 入口可追溯**。
@@ -15,7 +35,7 @@
   （`--require-schedule-origin`），flash / capture 必经台账。`6561e31`
 - **verify 进度台账（F-047）**：checkpoints.jsonl + state.json 双写，早退
   路径不落账 + 落盘扩 step_durations + atomic_write_json 防撕裂。
-  `6e3ebbc / e5852e3 / f850154`
+  `eef1851 / e5852e3 / f850154`
 - **fixture doctor（F-048）**：doctor 体检新增 fixture_health 三态判定
   （在场 / 漂移 / 正常），git show main 对比不污染工作树。
   `1231bb6 / 4dad1b2`
