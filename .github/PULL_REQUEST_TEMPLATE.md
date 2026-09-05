@@ -25,6 +25,19 @@ Closes #(没有关联 issue 请写 `无`，并说明理由)
 粘贴测试输出尾部，例如: Ran 181 tests in 12.3s / OK
 ```
 
+## fresh-checker 复审门禁（F-035 流程必走，F-069c 起强制）
+
+PR 在合并前**必须**经 fresh-checker 复审 (派无上下文审计 agent, 跑实测取证
++ 分级发现, 详见 C:\Users\34354\.claude\skills\fresh-checker\SKILL.md)。
+
+- [ ] 已派 fresh-checker 审计, 报告已附在本 PR 评论或关联 issue 中
+- [ ] 报告中 Critical/High 数量: C:___ H:___ M:___ L:___
+- [ ] Critical/High 已修完, 或已在评审中显式说明接受风险 (含理由)
+- [ ] **如选择「维护者直合豁免」** (CONTRIBUTING.md §"F-035 流程例外条款"):
+  在下方「例外理由」段说明, 并勾选此框: [ ]
+
+> 例外理由 (不超过 200 字, 说明为什么本 PR 跳过 fresh-checker):
+
 ## 检查清单
 
 - [ ] commit 符合 `type(scope): 中文描述` 规约
@@ -34,6 +47,10 @@ Closes #(没有关联 issue 请写 `无`，并说明理由)
       ① 同 commit 契约钉 ② CHANGELOG 契约变更段 ③ `toolkit_min_version` 已评估
       （不适用请勾选并注明；细则见 CONTRIBUTING「契约变更三件套」）
 - [ ] 未触碰禁区（`hooks/`、`scripts/handoff_guard.py`），或已在关联 issue 中单独论证
+- [ ] **commit 署名符合 9-02 拍板 push 规则** (`xujiujiu0628` 用户主名, 详见
+      `C:\Users\34354\.claude\projects\D--claude\memory\push-user-identity-rule.md`)
+- [ ] commit message 的 `Co-Authored-By` trailer 是否包含 Claude Code:
+      如含, 在下方说明是否违反 push 规则 (默认应不含, 9-01 历史重写成本即消 AI 痕迹)
 
 ## 破坏性变更
 

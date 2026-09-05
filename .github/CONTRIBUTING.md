@@ -117,6 +117,49 @@ F-034 的教训：同一事实存在两个权威副本必然漂移。规则：
 - `machine.json` 不入库；`machine.example.json` 的四键结构是契约
   （消费方按下标取键）
 
+## F-035 流程例外条款（F-069c 成文）
+
+**PR 在合并前必须经 fresh-checker 复审**——派无上下文审计 agent
+（`~/.claude/skills/fresh-checker/SKILL.md` 模板）跑实测取证 + 分级发现。
+本仓 F-035 流程门禁**只靠人守、无代码卡**（branch protection 未开），
+PR 模板的"fresh-checker 复审门禁"段是最低成本的可见卡口——**不勾等于
+无声破例**。
+
+### 例外清单（需 PR 模板勾选「维护者直合豁免」+ 在「例外理由」段说明）
+
+| 例外情形 | 适用条件 | 责任 |
+|---|---|---|
+| **hotfix**：生产事故 / 文档紧急勘误 | 安全漏洞修复、GitHub 渲染崩坏、CI workflow 不可用 | PR 描述写明事故 + 修复时间窗 |
+| **纯 chore/deps bump**：依赖版本号无功能变化 | requirements.txt / 锁文件 / CI 镜像 tag bump | 附 changelog 链接 + diff stat |
+| **合并自上游**：外部 PR mirror 同步 | 外部 contributor PR 经完整复审 | 链接外部 PR 编号 |
+| **流程债重置**：fresh-checker 报 Critical/High 但修复需多日 | 必须先开 tracking issue, 写明根因 + 修复 plan | tracking issue 链接 + ETA |
+
+### 例外禁止清单（无论任何理由都不豁免）
+
+- **删文件 / git rm**（F-067b 类）：必须先 fresh-checker 审 archive 路径 +
+  字节级一致性
+- **改共享层**（`wb_common.py` / `runtime_common.py`）：F-029 留份裁决层
+  改动, 必须先特征钉后拆
+- **改公共契约**（`.workbench/config.json` schema / `expectations.json` /
+  `machine.example.json` 四键 / 任何工具 JSON 输出结构）：契约三件套必须
+  同 PR 齐, 不可拆分
+- **合并不属本仓的代码**（外部 fork sync 除外）
+
+### 失守处置
+
+若发现 PR 未经 fresh-checker 即合并 (GitHub API `reviews=[]` + 模板
+「fresh-checker 复审门禁」段未勾选)：
+1. **立即 revert** merge commit
+2. 重开 PR + 走完整 fresh-checker 流程
+3. 在 CHANGELOG 加一条流程账目
+4. 复盘失守根因 (PR 模板漏勾 / 维护者遗忘 / 其他) + 落改进 commit
+
+> **历史失守**: PR #6 (F-066~068 token_stats + Keil 退役区拆 archive) 在
+> 2026-09-05 创建后 26 分钟被直接合并, 未走 fresh-checker。事后由
+> fresh-checker 派 agent 复审 (C-2 标记) + 本 F-069c 落流程条款成文。
+> PR 6 本身不再 revert (commit 6 枚已落 master, 6 commit hash 有效, 全部
+> 测试 321/321 绿; 走 fresh-checker-二审 (F-069f) 闭环)。
+
 ## 判据方法论（历史教训浓缩）
 
 - 写回型工具的**默认参数路径**必须有测试（显式传参的主干无恙≠安全）
