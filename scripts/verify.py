@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""
+r"""
 闭环验证编排器 — 一键完成 编译→分析→烧录→采集→验证
 
 用法:
@@ -10,12 +10,19 @@
     python verify.py --json                 # JSON 输出 (供 Claude 判断)
 
 流程:
-    1. Build   → gcc_build.py (默认 builder=gcc; 显式配 "keil" 时唤起 legacy 桥)
-    2. Analyze → gcc 路径直传 build metrics; keil 路径走 legacy keil_analyze 知识库 (有 error 则终止)
+    1. Build   → gcc_build.py (默认 builder=gcc; 显式配 "keil" 时唤起 archive 退役桥)
+    2. Analyze → gcc 路径直传 build metrics; keil 路径走 archive 唤起的 keil_analyze 知识库 (有 error 则终止)
     3. Flash   → OpenOCD program
     4. Capture → verify.py 内置双路: semihosting 内联会话 (默认) | rtt (capture.backend)
     4c. Physical → OpenOCD ODR 轮询 GPIO 翻转频率 (物理层门控, 默认 skipped)
     5. Output  → 结构化 JSON 结果, Claude 对比期望判断 ✅/❌
+
+Keil 退役区 (2026-09-05 F-067b): scripts/legacy/keil/ + data/keil-error-db.json
++ scripts/error_db_grow.py + config/keil.json 已从仓内拆出, 物理副本位于
+<D-claude-root>\\archive\\embedded-toolkit-keil-legacy-20260905\\ (用户主目录
++ archive 分类下, 见工作区顶层 README.md 维护约定). builder="keil" 路径
+启动时检测 EMBEDDED_TOOLKIT_KEIL_ARCHIVE 环境变量, 未设时回退到上述默认
+archive 路径, 唤起 keil_build / keil_analyze 需手动 cp 副本到仓内。
 """
 
 import argparse
@@ -59,10 +66,33 @@ from capture_semihosting import (run_semihosting_session,  # noqa: E402  (F-061:
                                  SemihostingTimeout)
 
 GCC_BUILD = os.path.join(TOOLKIT_ROOT, "scripts", "gcc_build.py")         # 默认后端 (builder=gcc)
-# Keil 桥 (2026-08-28 退役入 legacy): builder 显式配 "keil" 时按需唤起, 见 scripts/legacy/keil/README.md
-KEIL_BUILD = os.path.join(TOOLKIT_ROOT, "scripts", "legacy", "keil", "keil_build.py")
-KEIL_ANALYZE = os.path.join(TOOLKIT_ROOT, "scripts", "legacy", "keil", "keil_analyze.py")
+# Keil 退役桥 (2026-09-05 F-067b 拆 archive): 仓内不再保留 keil_*.py,
+# 启动时按 env / 默认 archive 路径定位; 不在则明确报错指向 archive README.
+# 唤起流程: 把 archive/scripts_legacy_keil/keil_*.py 拷回 <TOOLKIT>/scripts/legacy/keil/
+# + archive/keil-error-db.json 拷回 <TOOLKIT>/data/, 然后 builder="keil" 即可.
+DEFAULT_KEIL_ARCHIVE = r"<d-claude-root>\archive\embedded-toolkit-keil-legacy-20260905"
+KEIL_BRIDGE_DIR = os.environ.get(
+    "EMBEDDED_TOOLKIT_KEIL_ARCHIVE", DEFAULT_KEIL_ARCHIVE)
 FEEDBACK_DB = os.path.join(TOOLKIT_ROOT, "scripts", "feedback_db.py")
+
+
+def _keil_bridge_paths():
+    """解析 Keil 退役桥路径; 启动时检测, 不在则 FileNotFoundError 指向 archive。
+
+    返回 (keil_build, keil_analyze) 两个脚本绝对路径。
+    """
+    if not os.path.isdir(KEIL_BRIDGE_DIR):
+        raise FileNotFoundError(
+            f"Keil 退役桥不在 {KEIL_BRIDGE_DIR} (env=EMBEDDED_TOOLKIT_KEIL_ARCHIVE 或"
+            f" 默认 archive 路径)。按需唤起步骤见该目录 README.md, 或从 <d-claude-root>\\archive\\"
+            f"embedded-toolkit-keil-legacy-20260905\\ 物理副本拷回。")
+    build = os.path.join(KEIL_BRIDGE_DIR, "scripts_legacy_keil", "keil_build.py")
+    analyze = os.path.join(KEIL_BRIDGE_DIR, "scripts_legacy_keil", "keil_analyze.py")
+    if not (os.path.isfile(build) and os.path.isfile(analyze)):
+        raise FileNotFoundError(
+            f"Keil 退役桥目录存在但脚本缺失: {build} / {analyze}。"
+            f"请核对 archive 副本完整性。")
+    return build, analyze
 
 def now_iso() -> str:
     tz = timezone(timedelta(hours=8))
@@ -145,10 +175,12 @@ def step_build(config: dict, builder: str = "gcc",
     target = keil.get("target", "STM32F103C8_Blink")
     log_dir = keil.get("log_dir", ".workbench/build")
 
-    # uv4 由 keil_build 自行从 machine.json 解析 (机器路径只允许存在于 machine.json)
+    # uv4 由 keil_build 自行从 machine.json 解析 (机器路径只允许存在于 machine.json;
+    # 2026-09-05 F-067b: keil_build 来自 archive 退役桥, 不在仓内)
+    keil_build, _ = _keil_bridge_paths()
     args = ["build", "--project", project,
             "--target", target, "--log-dir", log_dir, "--json"]
-    return run_py(KEIL_BUILD, args, timeout=120)
+    return run_py(keil_build, args, timeout=120)
 
 
 def step_analyze(log_file: str, builder: str = "gcc",
@@ -160,7 +192,9 @@ def step_analyze(log_file: str, builder: str = "gcc",
                 "summary": {"errors": m.get("errors", 0),
                             "warnings": m.get("warnings", 0),
                             "matched": 0, "unmatched": 0}}
-    return run_py(KEIL_ANALYZE, [log_file, "--json"], timeout=30)
+    # 2026-09-05 F-067b: keil_analyze 来自 archive 退役桥, 不在仓内
+    _, keil_analyze = _keil_bridge_paths()
+    return run_py(keil_analyze, [log_file, "--json"], timeout=30)
 
 
 def step_flash(hex_file: str) -> dict:
@@ -514,7 +548,7 @@ def main():
         }
 
         # ---- Step 2: Analyze ----
-        # F-008: 复用 build 循环内已算出的 analyze (keil 后端曾双跑 keil_analyze);
+        # F-008: 复用 build 循环内已算出的 analyze (keil 后端曾双跑 keil_analyze, 历史);
         # 循环正常 break 时 analyze 必已赋值, None 仅在异常组合下出现
         if analyze is None:
             analyze = {"status": "error"}
