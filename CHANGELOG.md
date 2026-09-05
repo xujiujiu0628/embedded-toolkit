@@ -58,6 +58,18 @@
   知识）拆分前从未被真断言，现为真单测；另钉控制块未找到不重试、3 次竞态重试、
   存活会话 halt+shutdown 礼貌清理、_rtt_read_until_prompt 三态、2 参旧调用形态兼容。
   全量 **313 全绿**（skipped=1 仍 F-026 opt-in 活跳）。
+- **F-057 处置（physical_gate.py 拆分件——verify.py 拆解步骤 4，refactor+test，防腐方案 §3.3）**:
+  物理层门控整体摘出成 scripts/physical_gate.py（188 行）：step_physical_gate 同名搬迁
+  （TCL 运行时生成 + PHYS_GATE_RESULT 解析 + 判定数学 + 各 probe_error 分支）。
+  差异三点（逐字节搬迁前提下）：WORKSPACE 全局改 workspace 参数（TCL 落盘与子进程
+  cwd 均用之）；openocd 路径经 load_machine 惰性解析（F-054 惯例）；函数内
+  `import re as _re` 原样保留。wire 兼容 = verify 同名再导出，调度点加传 workspace；
+  无测试直接引用该符号，签名扩展零破绽。verify.py 1482 行（-164），datetime 等
+  其余 import 仍被 verify 其余部分使用故保留。**红利**：新增 test_physical_gate
+  八例——TCL 生成逐片段钉（预热节奏注释/初始化边沿告警/read_memory/mask 插值/
+  结果行格式）、判定数学（4.0/s ok、4.8/s timing_fail+时钟树回滚文案）、
+  insufficient_samples、三类 probe_error、禁用态零开销守卫。修前这些逻辑
+  需要真机才能走到，从未被断言过。全量 **321 全绿**（skipped=1 仍 F-026 opt-in 活跳）。
 
 ## 0.4 — 2026-09-04（质量守门 + 契约统一）
 
