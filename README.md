@@ -87,8 +87,8 @@ ALERT HIGH mv=3190
 2. **证据优先**——每条期望必须对应真机打印的字节（正则匹配 + 数值区间），
    `HAL_OK ≠ 字节正确` 是本仓库用一个月黑屏 OLED 换来的教训。
 3. **异构审查**——工作台的维护者（AI）也会被换无上下文、不同模型家族的
-   外部智能体审计，`handoff_guard` 机器强制其不碰硬件与禁区；两轮实战的完整
-   发现/对账记录在 [`docs/handoff/`](docs/handoff/)。
+   外部智能体审计，`handoff_guard` 机器强制其不碰硬件与禁区
+   （历史对账记录在维护者私有仓 `D:\claude\embedded-handoff\docs\handoff\`，不在本仓）。
 
 ## 环境要求
 
@@ -218,12 +218,7 @@ embedded-toolkit/
 ├── config/             # 串口/探针族的环境级配置
 ├── hooks/              # 固件工程侧三条 C 铁律（禁 malloc / 禁逻辑层 HAL_Delay / volatile 告警）
 ├── templates/          # FSD 功能规格书模板
-├── skills/fresh-checker/  # 无上下文对抗审核 skill（与全局安装处双同步）
-├── docs/
-│   ├── handoff/        # 外部智能体代管的发现报告与对账记录（治理实录）
-│   └── superpowers/    # 设计规格与实施计划档案
 ├── machine.json        # 本机工具链路径（不入库；模板 machine.example.json）
-├── HANDOFF-AGENT.md    # 外部智能体上岗手册（权限/考卷/禁线/换回协议）
 ├── CHANGELOG.md        # 全账本：条目可对到 commit
 └── VERSION             # 当前 0.3
 ```
@@ -233,20 +228,20 @@ embedded-toolkit/
 - 回归套件：`python -m unittest discover -s tests` 全绿为准（例数随修复增长，
   以实跑为准）；CI 在 ubuntu × Python 3.10/3.12 上每 push 必跑
 - 修复纪律：**修 bug 必带回归测试**；写回型工具的默认参数路径必须有测试
-  （两条都用真事故验证过必要性，见 `docs/handoff/`）
 - 治理机制：外部异构智能体代管两轮——机制本身（分支起点核查、guard 禁线、
-  换回五步、fresh-check 外审）也在持续演进并留有完整对账链
+  换回五步、fresh-check 外审）持续演进；完整对账链在维护者私有仓
+  `D:\claude\embedded-handoff\docs\handoff\`，不在本仓
 - 发布记录可信度：`release_audit` 对既有真实记录跑 CLEAN/预期 WARNED，
   篡改场景（换清单/搬记录）由测试固化
 
 ## 文档索引
 
-- [`HANDOFF-AGENT.md`](HANDOFF-AGENT.md) — 外部智能体代管协议（权限边界/巡检考卷/换回流程）
 - [`CHANGELOG.md`](CHANGELOG.md) — 版本账本（每条对到证据 commit）
-- [`docs/handoff/`](docs/handoff/) — 两轮异构审查的发现、建议与对账记录
-- [`docs/superpowers/specs/`](docs/superpowers/specs/) — 设计规格档案
 - [`templates/fsd-template-stm32.md`](templates/fsd-template-stm32.md) — 需求规格书模板
 - [`scripts/legacy/keil/README.md`](scripts/legacy/keil/README.md) — Keil 桥退役定案与按需唤起
+- [`docs/handoff/` `docs/superpowers/` `skills/fresh-checker/` `AGENTS.md`
+  `HANDOFF-AGENT.md`](#) — 已于 0.4 边界决策迁维护者私有仓
+  `D:\claude\embedded-handoff\`，公开工具库不含维护者 ↔ Agent 协作私约
 
 ## 路线图
 
@@ -266,7 +261,7 @@ embedded-toolkit/
 
 > **F-021~F-030 已在本轮收口**（原子写收口包 / R7 双布局认路 / RTT 平台守卫 /
 > 孤儿链删除 / 三 runtime 契约统一 / 头图刷新），逐条处置记录与证据 commit 见
-> [`CHANGELOG.md`](CHANGELOG.md)。新发现请开 Issue，或走 `docs/handoff/` 代管流程登记。
+> [`CHANGELOG.md`](CHANGELOG.md)。新发现请开 Issue。
 
 ## 贡献
 
