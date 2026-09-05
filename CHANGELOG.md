@@ -3,6 +3,33 @@
 格式约定: 每条含发现编号（代管期 findings 编目）与证据 commit。当前版本以
 `VERSION` 文件为准（`wb_common.toolkit_version()` 读取）。
 
+## Unreleased — 2026-09-05（F-069 补: fresh-checker 二审 2 新债整改）
+
+- **F-069 补 处置（fresh-checker 二审 2 新债，docs+process）**: 二审报 2 条新债:
+  - **H-1 (新债, 必修)**: PR 模板含 `C:\Users\34354\...` 绝对路径, 违反 F-2
+    敏感信息扫描纪律。处置=`.github/PULL_REQUEST_TEMPLATE.md` line 31/51
+    两处路径中性化: `~/.claude/skills/fresh-checker/SKILL.md` +
+    `~/.claude/projects/D--claude/memory/push-user-identity-rule.md`。
+    验真: `grep "C:\\Users\\34354" .github/` 0 命中。
+  - **H-2 (新债, 必修)**: CONTRIBUTING.md §"F-035 流程例外条款" 失守处置
+    段自相矛盾 (一面说"失守 = 立即 revert", 一面又用 PR #6 特例"不
+    revert")。处置=显式二分:
+    - A. 未来失守 (master 仍可回滚): 立即 revert → 重开 → CHANGELOG 账目
+      → 复盘 (4 步不变, 明示"revert 是默认, 不是评估后再决定")
+    - B. 历史失守 (PR 已合 master, hash 有效 + 测试绿 + 无安全/数据
+      丢失): 不 revert (强 revert 断引用链) → 走 fresh-checker 二审 →
+      整改作为新 PR → CHANGELOG 账目 (本仓 F-069 模式)
+    - 明示"历史失守特例不构成失守处置常态"防"等发现再补"借口
+  - **M-1 (顺手, 仓外)**: archive README `D:\claude\archive\embedded-toolkit-
+    keil-legacy-20260905\README.md` §"⚠ 唤起本 archive 前必读" 段示例
+    仍示范 `D:\claude` 替换值, 自打耳光。改示例为 `<你的工作区根>`
+    (例: `D:/projects/embedded-toolkit`), PowerShell + sed 两段同步。
+    archive 在仓外 (D:\claude\archive\), 不入 git 索引, 仓内账目仅记录
+    改动事实。
+
+  零行为变化, 纯 docs/process 整改。325/325 全绿, skipped=1 不变。证据
+  commit `1241be3`。
+
 ## Unreleased — 2026-09-05（F-069a~e 事后审计整改：fresh-checker 报 5 必修全清）
 
 - **F-069a 处置（C-1 archive README 复活路径坏，docs+fix）**: fresh-checker 报
