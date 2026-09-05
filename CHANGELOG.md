@@ -96,6 +96,18 @@
   +08:00）改为 runtime_common.now_iso 规范版（本地时区）——时刻不变，本机
   +08:00 输出逐字节一致。verify.py 1225 → **1129 行**。
   全量 **321 全绿**（skipped=1 仍 F-026 opt-in 活跳）。
+- **F-060 处置（failure_context.py 拆分件——verify.py 拆解步骤 5c，refactor，防腐方案 §3.3）**:
+  失败现场家族摘出成 scripts/failure_context.py（156 行）：_save_failure_context
+  （agent_hint 五分支派发）/ _filter_capture_lines（F-003 行过滤口径）+ 两常量 /
+  resolve_capture_timeout（F-016）。**_finish_capture_timeout 留守 verify**——内嵌
+  sys.exit(1) 与 _output 调用，是派发胶水而非逻辑；经再导出面调用本模块。
+  差异三点（记账）：WORKSPACE 全局改 workspace 参数（verify 7 处调用点同步传参）；
+  TOOLKIT_ROOT 自 wb_common 导入（agent_hint 随其推导，test_failure_hints 钉改指
+  failure_context 模块）；ts 走 runtime_common.now_iso（同 F-059 记账）。
+  静态守卫跟进：test_failure_hints 的维护者路径扫描增加 failure_context.py——
+  提示串搬去哪，守卫跟到哪。经验复用：抽取后立即 AST 未定义名扫描（F-058 教训
+  兑现，本次零缺失）。verify.py 1129 → **993 行**（跌破千行）。
+  全量 **322 全绿**（+1=守卫新增 failure_context.py 扫描例；skipped=1 仍 F-026）。
 
 ## 0.4 — 2026-09-04（质量守门 + 契约统一）
 
