@@ -55,6 +55,8 @@ from checkpoint_ledger import (CHECKPOINT_STATUSES, _git_head,  # noqa: E402  (F
                                record_checkpoint)
 from failure_context import (_filter_capture_lines,  # noqa: E402  (F-060: 拆分件再导出, 调用面不变)
                               resolve_capture_timeout, _save_failure_context)
+from capture_semihosting import (run_semihosting_session,  # noqa: E402  (F-061: 拆分件再导出)
+                                 SemihostingTimeout)
 
 GCC_BUILD = os.path.join(TOOLKIT_ROOT, "scripts", "gcc_build.py")         # 默认后端 (builder=gcc)
 # Keil 桥 (2026-08-28 退役入 legacy): builder 显式配 "keil" 时按需唤起, 见 scripts/legacy/keil/README.md
@@ -651,32 +653,14 @@ def main():
         # 这是手工验证过的可靠方式（曾有独立 openocd_semihosting.py，F-028 删除，git 史可回放）
         # reset halt: 确定性起点 — 目标可能停在上一会话的 BKPT 冻结处 (printf 中途)
         # 或 boot 中段 (I2C2 BUSY 等待), 仅 halt 续跑会得到不完整 boot 输出 (2026-08-16 教训)
-        openocd_cmd = [
-            _openocd_exe(),
-            "-f", "interface/stlink.cfg",
-            "-f", "target/stm32f1x.cfg",
-            "-c", "transport select swd",
-            "-c", "init",
-            "-c", "reset halt",
-            "-c", "arm semihosting enable",
-            "-c", "resume",
-            "-c", f"sleep {capture_timeout * 1000}",  # OpenOCD sleep 单位是 ms
-            "-c", "halt",
-            "-c", "shutdown",
-        ]
-
+        # cmd 构建与 Popen/communicate 已下沉 capture_semihosting (F-061);
+        # 超时收尸留守: _finish_capture_timeout 携带 proc 完成 F-003 归因链
         try:
-            proc = subprocess.Popen(
-                openocd_cmd,
-                stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                text=True, encoding='utf-8', errors='replace',
-                cwd=WORKSPACE
-            )
-            stdout, stderr = proc.communicate(timeout=capture_timeout + 30)
+            stdout, stderr = run_semihosting_session(capture_timeout, WORKSPACE)
             captured_lines = _filter_capture_lines(stdout + stderr)
 
-        except subprocess.TimeoutExpired:
-            _finish_capture_timeout(proc, result, capture_timeout,
+        except SemihostingTimeout as _to:
+            _finish_capture_timeout(_to.proc, result, capture_timeout,
                                     max_retries, args.json)
         except Exception as e:
             result["steps"]["capture"] = {
