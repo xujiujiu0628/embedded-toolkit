@@ -1,8 +1,13 @@
-"""工作台共享运行时工具（原 keil_runtime.py，2026-08-28 Keil 退役时中性化更名）。
+"""工作台共享运行时工具。
 
-供 gcc_build / legacy keil 桥等所有构建后端复用：状态引擎（state.json）、
-JSON 契约输出、工程/环境级配置读写。SKILL_NAME 仅作各函数的 skill 参数默认值，
-不代表本模块从属于 Keil。
+历史: 2026-08-28 keil_runtime.py 中性化更名为 wb_runtime.py（Keil 退役入
+scripts/legacy/keil/，本模块从构建后端特异层上提为 GCC/OCD/serial 三族共享层）；
+2026-09-05 Keil 退役区完整拆 archive（F-067b）后进一步去 keil 专属死代码（uv4
+路径常量与 auto-detect）——本模块不再含 keil 工具链特异逻辑。
+
+供 gcc_build 等 GCC 主链工具复用：状态引擎（state.json）、JSON 契约输出、工程/
+环境级配置读写。SKILL_NAME 仅作各函数的 skill 参数默认值，与"工作台"（wb）命名
+对齐。
 """
 
 from __future__ import annotations
@@ -10,7 +15,6 @@ from __future__ import annotations
 import os
 import sys
 from pathlib import Path
-from shutil import which
 from typing import Any
 
 from wb_common import TOOLKIT_ROOT
@@ -28,7 +32,10 @@ from runtime_common import update_state_entry as _common_update_state_entry  # F
 
 
 # Skill name for project config
-SKILL_NAME = "keil"
+# 2026-09-05: 改 "wb" (F-067a, 与中性化命名对齐; 旧 "keil" 为历史延续,
+# 当前所有调用方均显式传 skill="gcc"/"openocd"/"serial", 默认值仅在
+# 显式缺省时回退, 实际从未触发)
+SKILL_NAME = "wb"
 
 
 def default_config_path(script_file: str | None = None, skill: str = SKILL_NAME) -> Path:
@@ -111,34 +118,6 @@ def update_state_entry(category: str, record: dict, workspace: str | None = None
                                       serialize=_serialize_state_value)
 
 
-def _machine_uv4_exe() -> str:
-    """机器路径只允许存在于 machine.json (全局约束)。
-
-    从 wb_common.load_machine() 读取; wb_common 不可用时返回 "" 走 auto-detect。
-    """
-    try:
-        from wb_common import load_machine
-        return str(load_machine().get("uv4_exe") or "")
-    except Exception:
-        return ""
-
-
-def _auto_detect_uv4() -> str:
-    candidates = [
-        which("UV4.exe"),
-        which("UV4"),
-        r"C:\Keil_v5\UV4\UV4.exe",
-        r"C:\Keil_v5\ARM\UV4\UV4.exe",
-    ]
-    keil_root = os.environ.get("KEIL_ROOT", "")
-    if keil_root:
-        candidates.append(str(Path(keil_root) / "UV4" / "UV4.exe"))
-    for candidate in candidates:
-        if candidate and Path(candidate).is_file():
-            return str(Path(candidate).resolve())
-    return ""
-
-
 def resolve_param(
     name: str,
     cli_value: Any,
@@ -153,10 +132,15 @@ def resolve_param(
 ) -> tuple[Any, str]:
     """参数解析 — wb 构建后端专属契约 (F-029 T5 裁决: 三份独立, 留本地不并)。
 
-    优先级 cli>config>state>machine:uv4_exe>auto:uv4; normalize 按 workspace
-    锚定 (normalize_path_with_base); required=True 缺值即抛 ValueError。
+    优先级 cli>config>state; normalize 按 workspace 锚定
+    (normalize_path_with_base); required=True 缺值即抛 ValueError。
     ocd/serial 同名函数各是独立契约 (层级/源标签/锚定/异常策略均不同形),
     非漏改, 勿'统一' — 见 test_runtime_contract.ResolveParamContractTests。
+
+    2026-09-05 (F-067a): 删 keil 专属 uv4 特判 (machine:uv4_exe / auto:uv4 两层
+    fallback)。Keil 退役区拆 archive 后本模块不再服务 keil 桥, uv4 路径解析
+    失去意义; ocd/serial 的"name=='exe'/'file' 特判 + 兜底值"机制各自在
+    所属 runtime 内, 不在 wb 这层。
     """
     if not is_missing(cli_value):
         value = cli_value
@@ -172,14 +156,6 @@ def resolve_param(
             value, state_key = _first_resolved(state_record, state_keys)
             if not is_missing(value):
                 source = f"state:{state_key}"
-        if is_missing(value) and name == "uv4":
-            value = _machine_uv4_exe()
-            if not is_missing(value):
-                source = "machine:uv4_exe"
-        if is_missing(value) and name == "uv4":
-            value = _auto_detect_uv4()
-            if not is_missing(value):
-                source = "auto:uv4"
     if normalize_as_path and not is_missing(value):
         value = normalize_path_with_base(str(value), workspace_root(workspace))
     if required and is_missing(value):
