@@ -147,18 +147,42 @@ PR 模板的"fresh-checker 复审门禁"段是最低成本的可见卡口——*
 
 ### 失守处置
 
+**两类失守的处置路径不同**——本节明确二分, 避免后人面对失守时无明确指引
+(2026-09-05 fresh-checker 二审 H-2 反馈):
+
+#### A. 未来失守 (PR 未经 fresh-checker 即将合并或刚合并, master 仍可回滚)
+
 若发现 PR 未经 fresh-checker 即合并 (GitHub API `reviews=[]` + 模板
-「fresh-checker 复审门禁」段未勾选)：
+「fresh-checker 复审门禁」段未勾选):
 1. **立即 revert** merge commit
 2. 重开 PR + 走完整 fresh-checker 流程
 3. 在 CHANGELOG 加一条流程账目
 4. 复盘失守根因 (PR 模板漏勾 / 维护者遗忘 / 其他) + 落改进 commit
 
-> **历史失守**: PR #6 (F-066~068 token_stats + Keil 退役区拆 archive) 在
-> 2026-09-05 创建后 26 分钟被直接合并, 未走 fresh-checker。事后由
-> fresh-checker 派 agent 复审 (C-2 标记) + 本 F-069c 落流程条款成文。
-> PR 6 本身不再 revert (commit 6 枚已落 master, 6 commit hash 有效, 全部
-> 测试 321/321 绿; 走 fresh-checker-二审 (F-069f) 闭环)。
+> 本路径优先级最高, 不论失守 PR 多大、commit hash 多有效, 流程破例
+> 即破例——**revert 是默认**, 不是"评估后再决定"。
+
+#### B. 历史失守 (PR 已合 master, 但走 fresh-checker 后发现问题; 走补救路径)
+
+若某 PR 在**更早**未走 fresh-checker 即合并, 但**当下 (发现时)** 它的
+6/6 commit hash 仍有效 + 全量测试仍绿 + 无安全/数据丢失:
+1. **不 revert**——已落 master 的 commit 是历史, 强 revert 会断引用
+   链 (CHANGELOG 账目、外部 issue 引用、可能的下游 fork)
+2. **走 fresh-checker 二审** 派无上下文审计 agent, 出事后审计报告
+3. **整改作为新 PR** 提出 (本仓 F-069 模式: 新建 worktree + 改 + 新 PR
+   + 二审闭环), 不是"在原 PR 改"
+4. **CHANGELOG 加账目段** 记录失守 + 整改, 不可擦除历史 (F-035 流程
+   精神: 治理史是本项目卖点之一)
+
+> **历史失守特例不构成失守处置常态**——本节 B 路径是补救, 不为未来失守
+> 创造"等发现再补"借口。未来失守仍走 A 路径 (立即 revert)。
+
+> **历史失守案例 (2026-09-05)**: PR #6 (F-066~068 token_stats + Keil
+> 退役区拆 archive) 在 2026-09-05 创建后 26 分钟被直接合并, 未走
+> fresh-checker。事后由 fresh-checker 派 agent 复审 (C-2 标记) + 本
+> F-069c 落流程条款成文 + F-069a~e 整改 commit。PR 6 本身按 B 路径
+> 不 revert, 走 F-069f fresh-checker 二审闭环 (5 必修真修 + 二审
+> 通过有保留, 2 新债 H-1/H-2 在 F-069 补 commit 清)。
 
 ## 判据方法论（历史教训浓缩）
 
