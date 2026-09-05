@@ -1,10 +1,13 @@
-"""失败现场 agent_hint 路径来源回归 (开源门面 C5/C6b).
+r"""失败现场 agent_hint 路径来源回归 (开源门面 C5/C6b).
 
 背景: 提示串曾硬编码维护者机器的工作区绝对路径 (盘符:\...\embedded-toolkit\...),
 对陌生 clone 是坏指引——verify 的失败提示必须随 TOOLKIT_ROOT 推导 (用 patch
 证明"跟着变量走"), gen_periph 的生成物注释必须用仓相对命令; 静态守卫防源码回潮
 (2026-09-01 历史重写后改通用盘符判据: 任何 `盘符:/(Users|claude)` 形态都视为回潮,
 归一化转义后匹配)。
+
+F-053: 本 docstring 曾用非原始形态, 其中 `\.` 触发 SyntaxWarning (3.12+),
+coverage_lint 的 AST 全扫每轮被污染 —— 改 raw 并由 test_source_hygiene 防回潮。
 """
 import json
 import os
