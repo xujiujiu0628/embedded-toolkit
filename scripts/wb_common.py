@@ -70,8 +70,10 @@ def version_ok(actual, minimum):
 def atomic_write_json(path, data):
     """原子 JSON 写 (F-022): 进程级 tmp 名 + os.replace, 强制 LF 行尾。
 
-    error_db_grow / release 等独立脚本的读改写落盘统一走这里, 杜绝
-    truncate 写撕裂 (撕裂读会喂下游"损坏→清空"链, 同 F-019 教训)。
+    release 等独立脚本的读改写落盘统一走这里, 杜绝 truncate 写撕裂
+    (撕裂读会喂下游"损坏→清空"链, 同 F-019 教训)。
+    2026-09-05 F-067b: 原 error_db_grow 已随 Keil 退役区拆 archive,
+    从消费方名单移除。
     tmp 名带 pid = 双进程并发写同一目标不互顶 (F-023, 与 runtime 侧
     save_json_file 同口径; runtime 按脚本自含惯例保留各自拷贝)。
     """

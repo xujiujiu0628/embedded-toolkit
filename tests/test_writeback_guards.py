@@ -276,8 +276,9 @@ class TmpNameProcessScopedTests(unittest.TestCase):
 
 
 class SharedAtomicWriteJsonTests(unittest.TestCase):
-    """F-022: wb_common.atomic_write_json — error_db_grow/release 等独立脚本
-    共用的原子写工具 (与 runtime 侧同口径: pid tmp + 强制 LF)"""
+    """F-022: wb_common.atomic_write_json — release 等独立脚本
+    共用的原子写工具 (2026-09-05 F-067b: 原 error_db_grow 已随 Keil 退役区
+    拆 archive, 从消费方名单移除; 与 runtime 侧同口径: pid tmp + 强制 LF)"""
 
     def setUp(self):
         self.tmp = tempfile.mkdtemp()
