@@ -8,6 +8,10 @@ truncate-write, 并发读方会看到半截 JSON, 正是"损坏→清空"链的�
 
 F-029 后三 runtime (wb/openocd/serial) 走 runtime_common 共享层同一实现——单一
 事实源, 同款同修收敛一处 (本地仅再导出/钩子薄壳); 全部纯 mock, 不触硬件。
+
+2026-09-05 (F-067b/c): error_db_grow 随 Keil 退役区拆 archive, 本测试不再
+import 它。error_db_grow 自身的 5 例 _cache_entry / grow / 损坏拒写回归已
+留在 archive 副本上, 不在主仓验证范围 (主仓零 Keil 引用 = 验证目标)。
 """
 import json
 import os
@@ -28,7 +32,6 @@ import openocd_runtime  # noqa: E402
 import serial_runtime  # noqa: E402
 import runtime_common  # noqa: E402  (F-029 T2 起 save_json_file 的 os.replace 住在这里)
 import gcc_build  # noqa: E402
-import error_db_grow  # noqa: E402
 import wb_common  # noqa: E402
 
 RUNTIMES = [wb_runtime, openocd_runtime, serial_runtime]
@@ -236,61 +239,6 @@ class GccBuildWritebackTests(unittest.TestCase):
         self.assertIn("gcc", data)
 
 
-class ErrorDbGrowGuardTests(unittest.TestCase):
-    def setUp(self):
-        self.tmp = tempfile.mkdtemp()
-
-    def tearDown(self):
-        shutil.rmtree(self.tmp, ignore_errors=True)
-
-    def test_corrupt_session_cache_quarantined(self):
-        cache_path = os.path.join(self.tmp, "session_fix_cache.json")
-        with open(cache_path, "w", encoding="utf-8") as f:
-            f.write(CORRUPT)
-        with mock.patch.object(error_db_grow, "_feedback_dir",
-                               return_value=self.tmp):
-            out = error_db_grow._cache_entry(
-                "ev1", {"code": "E001", "meaning": "m"}, 0.5, ["hit"])
-        self.assertEqual(out["status"], "cached")
-        with open(cache_path, encoding="utf-8") as f:
-            cache = json.load(f)
-        self.assertEqual(len(cache["entries"]), 1)
-        with open(cache_path + ".corrupt", "rb") as f:
-            self.assertEqual(f.read().decode("utf-8"), CORRUPT)
-
-    def test_healthy_session_cache_appends_no_dup(self):
-        cache_path = os.path.join(self.tmp, "session_fix_cache.json")
-        with open(cache_path, "w", encoding="utf-8") as f:
-            json.dump({"_meta": {}, "entries": [{"code": "E000"}]}, f)
-        with mock.patch.object(error_db_grow, "_feedback_dir",
-                               return_value=self.tmp):
-            error_db_grow._cache_entry(
-                "ev1", {"code": "E001", "meaning": "m"}, 0.5, [])
-            dup = error_db_grow._cache_entry(
-                "ev2", {"code": "E001", "meaning": "m"}, 0.5, [])
-        self.assertEqual(dup["status"], "already_cached")
-        with open(cache_path, encoding="utf-8") as f:
-            self.assertEqual(len(json.load(f)["entries"]), 2)
-
-    def test_corrupt_error_db_refused_not_wiped(self):
-        db_path = os.path.join(self.tmp, "keil-error-db.json")
-        with open(db_path, "w", encoding="utf-8") as f:
-            f.write(CORRUPT)
-        with mock.patch.object(error_db_grow, "check_gates",
-                               return_value={"all_passed": True, "gates": []}), \
-             mock.patch.object(error_db_grow, "load_event", return_value={}), \
-             mock.patch.object(error_db_grow, "ERROR_DB_PATH", db_path):
-            out = error_db_grow.grow(
-                "ev1", {"code": "E001", "type": "error"},
-                {"meaning": "plain words only", "causes": [], "fixes": [],
-                 "severity": "warn", "category": "unknown"})
-        self.assertEqual(out["status"], "error")
-        self.assertIn("拒绝写入", out["message"])
-        with open(db_path, "rb") as f:
-            self.assertEqual(f.read().decode("utf-8"), CORRUPT,
-                             "知识库损坏必须原样保留")
-
-
 class TmpNameProcessScopedTests(unittest.TestCase):
     """F-023: save_json_file 的 tmp 名须带 pid — 固定 <name>.tmp 在双进程
     并发写同一目标时会互相顶掉 (两个写者共用一个 tmp, 混掺半成品)
@@ -349,11 +297,14 @@ class SharedAtomicWriteJsonTests(unittest.TestCase):
             [], "不得残留 tmp")
 
     def test_no_bare_json_writes_in_standalone_scripts(self):
-        # 静态判据: F-022 三处裸写 (error_db_grow:188,308 / release:201) 全部收口,
-        # 且防回潮 — open('w') 后 3 行内出现 json.dump 即违例
+        # 静态判据: F-022 裸写 (release:201) 全部收口, 且防回潮 —
+        # open('w') 后 3 行内出现 json.dump 即违例。
+        # 2026-09-05 F-067b: error_db_grow.py 随 Keil 退役区拆 archive,
+        # 从静态判据名单移除; release.py 是仓内唯一独立可执行脚本,
+        # 仍由本判据盯防。
         pat_open = re.compile(r"open\(.*['\"]w[bt]?['\"]")
         offenders = []
-        for fname in ("error_db_grow.py", "release.py"):
+        for fname in ("release.py",):
             with open(os.path.join(SCRIPTS_DIR, fname), encoding="utf-8") as f:
                 lines = f.readlines()
             for i, ln in enumerate(lines):
