@@ -33,6 +33,16 @@
   先红后绿：钉在修前 3/3 红（spy 命中），修后 3/3 绿。这是 verify.py 拆解
   （防腐方案 §3.3）的前置步骤——此后拆出的模块不再背负 import 期 IO。
   全量 **306 全绿**（skipped=1 仍 F-026 opt-in 活跳）。
+- **F-055 处置（expectations.py 拆分件——verify.py 拆解步骤 2，refactor，防腐方案 §3.3）**:
+  期望契约层自 verify.py 摘出成 `scripts/expectations.py`（166 行）：ExpectationError /
+  load_expectations / evaluate_expectations / _expect_matched / contract_hashes（含仅其
+  使用的 _sha256_file）五符号整体搬迁，全部本就带 workspace 参数、零全局依赖，纯函数
+  可单测。wire 兼容=verify 再导出五符号（`verify.X is expectations.X` 同一对象实测），
+  35 处 `verify.X` 测试引用零修改；`import math` 随唯一使用点迁出。新模块仅标准库、
+  不 import verify（分层禁令 #2）、无 machine 读取（test_import_hygiene 经 import 链
+  继续覆盖）。钉=既有 24 例判定 + fixture 三关 + 35 处调用面，钉全程保持全绿；
+  verify.py 1832 行（F-050 时长画像显示 capture 占 67%，下一步步骤 3 摘 capture_rtt）。
+  本条纯搬迁零新增用例，全量 **306 全绿**（skipped=1 仍 F-026 opt-in 活跳）。
 
 ## 0.4 — 2026-09-04（质量守门 + 契约统一）
 
