@@ -154,7 +154,16 @@ shutdown
     samples = int(fields.get("samples", 0))
     edges = int(fields.get("edges", 0))
     elapsed_ms = int(fields.get("elapsed_ms", 0))
-    fail_reads = int(fields.get("fail_reads", 0))
+    # F-063（H3 修复）: fail_reads 缺失/非法时静默默认 0 会绕开"读失败率超限"分支。
+    # 默认 -1 表示"上游未报告"，出现负值即视为协议违例，raise probe_error。
+    try:
+        fail_reads = int(fields.get("fail_reads", -1))
+    except ValueError:
+        fail_reads = -1
+    if fail_reads < 0:
+        return {"status": "probe_error",
+                "error": f"PHYS_GATE_RESULT missing/invalid fail_reads: "
+                         f"line='{result_line}'"}
 
     if samples == 0:
         return {"status": "probe_error",
