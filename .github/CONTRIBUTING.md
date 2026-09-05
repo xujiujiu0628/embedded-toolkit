@@ -48,8 +48,9 @@ Layer L    scripts/legacy/**     冻结区：不再新增，禁 import runtime_c
 三条可机检禁令（违者拒收）：
 
 1. Layer 0 / 0.5 / 1 import 任何 Layer 2 脚本——防依赖倒置；
-2. 生产脚本 `import verify`——verify.py 现有模块级副作用（import 期读
-   machine.json），`tests/` 4 例历史豁免待副作用清除后收编，本禁令防其扩散；
+2. 生产脚本 `import verify`——verify 是 Layer 2 编排主体，其他工具需要其逻辑时
+   应拆出共享模块而非反向 import 编排件（import 期副作用已于 F-054 清除，由
+   test_import_hygiene 钉死；`tests/` 6 例历史豁免注释已随之收编）；
 3. `scripts/legacy/**` 新增 `runtime_common` import——防退役区越活越大。
 
 **"脚本自含"惯例自 F-029 起退役**（根因实证：三 runtime 曾按此惯例各存一份

@@ -16,4 +16,4 @@
 - 没见过红的测试不算测试；钉类测试须过变异验证一次。
 - 契约（`.workbench/` schema / 工具 JSON 输出结构）变更：同 commit 契约钉 + CHANGELOG 契约变更段 + `toolkit_min_version` 评估。
 - 文档：状态类事实只进 CHANGELOG；"真实可回放"实录段不可变（重采整段替换）；例数以实跑为准不写死。
-- 生产脚本禁 `import verify`（模块级副作用待清除）。
+- 生产脚本禁 `import verify`（Layer 2 编排主体；import 期副作用已于 F-054 清除）。
