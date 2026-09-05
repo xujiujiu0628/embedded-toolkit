@@ -18,3 +18,17 @@
 - 文档：状态类事实只进 CHANGELOG；"真实可回放"实录段不可变（重采整段替换）；例数以实跑为准不写死。
 - 生产脚本禁 `import verify`（Layer 2 编排主体；import 期副作用已于 F-054 清除）。
 - 推送纪律（F-062）：Agent 不直接 push 远端；本地 commit → 维护者审核 → 维护者推送或明确授权。
+
+## Agent skills
+
+### Issue tracker
+
+GitHub Issues on `xujiujiu0628/embedded-toolkit`, via the `gh` CLI. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Five canonical labels (`needs-triage` / `needs-info` / `ready-for-agent` / `ready-for-human` / `wontfix`). See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context: one `CONTEXT.md` + `docs/adr/` at the repo root. See `docs/agents/domain.md`.
