@@ -108,6 +108,18 @@
   提示串搬去哪，守卫跟到哪。经验复用：抽取后立即 AST 未定义名扫描（F-058 教训
   兑现，本次零缺失）。verify.py 1129 → **993 行**（跌破千行）。
   全量 **322 全绿**（+1=守卫新增 failure_context.py 扫描例；skipped=1 仍 F-026）。
+- **F-061 处置（capture_semihosting.py 拆分件——verify.py 拆解步骤 5d 收官，refactor+test，防腐方案 §3.3）**:
+  main 内联 semihosting 会话摘出成 scripts/capture_semihosting.py（64 行）：
+  run_semihosting_session（cmd 构建/Popen/communicate）+ SemihostingTimeout 载体异常。
+  **控制流契约（关键设计）**：超时 → 抛 SemihostingTimeout(proc) 且**模块不 kill
+  不收尸**——F-003 的回收/归因/exit(1) 全在留守的 _finish_capture_timeout（携带
+  proc 完成），归因链逐字节不变；非超时异常原样抛出由调用方 capture_failed 分支
+  处理（与原行为一致）。调度点注释（reset halt 确定性起点/2026-08-16 教训/F-028
+  留门）原位保留。verify.py 993 → **977 行**。**红利**：test_capture_semihosting
+  三例——cmd 逐条钉（含 sleep ms 换算与 cwd）、超时载体不抢先 kill（防二次回收
+  拿不到部分输出的回归）、非超时异常透传。逻辑全部外置达成：verify.py 剩余 =
+  编排调度 + 报告输出（纯胶水，F-049 行数哲学：不再为凑 300 行而碎片化）。
+  全量 **325 全绿**（skipped=1 仍 F-026 opt-in 活跳）。
 
 ## 0.4 — 2026-09-04（质量守门 + 契约统一）
 
