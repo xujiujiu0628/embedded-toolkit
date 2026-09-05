@@ -371,7 +371,10 @@ class LocalConfigGuardTests(unittest.TestCase):
 
     def setUp(self):
         self.tmp = tempfile.mkdtemp()
-        self.cfg = os.path.join(self.tmp, "config", "keil.json")
+        # 2026-09-05 (F-067a): fixture 路径 keil.json → wb.json, 与
+        # wb_runtime.save_local_config 的"一 skill 一文件"机制测本质无关,
+        # 改中性化名以反映 Keil 退役区拆 archive 后的实际职责。
+        self.cfg = os.path.join(self.tmp, "config", "wb.json")
 
     def tearDown(self):
         shutil.rmtree(self.tmp, ignore_errors=True)
