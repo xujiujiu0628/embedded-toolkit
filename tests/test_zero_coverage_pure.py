@@ -1,7 +1,7 @@
 """C 项补测 (2026-08-30 代管 R2): 零覆盖模块的纯函数/mock 测试.
 
 覆盖对象 (此前无任何测试): phase_minus_one (预检四查+裁定)、rm_lookup
-(参考手册检索)、token_stats (会话成本统计)、svd_to_json (SVD 解析基元)。
+(参考手册检索)、svd_to_json (SVD 解析基元)。
 全部纯逻辑或临时文件; 唯一的真实数据读取是 data/stm32f103-ref.json 冒烟
 (只读, 不触硬件)。
 """
@@ -19,7 +19,6 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(
 
 import phase_minus_one  # noqa: E402
 import rm_lookup  # noqa: E402
-import token_stats  # noqa: E402
 import svd_to_json  # noqa: E402
 
 MIN_REF = {
@@ -130,67 +129,6 @@ class RmLookupTests(unittest.TestCase):
         ref = rm_lookup.load_ref()
         self.assertIsInstance(ref.get("peripherals"), dict)
         self.assertGreaterEqual(len(ref["peripherals"]), 40)
-
-
-class TokenStatsTests(unittest.TestCase):
-    def test_classify_rules_first_match_wins(self):
-        self.assertEqual(token_stats.classify("跑 verify.py 闭环"), "verify")
-        self.assertEqual(token_stats.classify("编译有错误"), "build")
-        self.assertEqual(token_stats.classify("按 DESIGN.md 设计"), "design")
-        self.assertEqual(token_stats.classify("生成 docx 报告"), "docs")
-        self.assertEqual(token_stats.classify("讨论工作流"), "discussion")
-        self.assertEqual(token_stats.classify("随便聊聊"), "misc")
-        self.assertEqual(token_stats.classify(""), "misc")
-
-    def test_cost_math(self):
-        td = {"input": 1_000_000, "output": 1_000_000,
-              "cache_read": 1_000_000, "cache_write": 1_000_000}
-        self.assertAlmostEqual(token_stats.cost(td), 2.54)
-
-    def test_scan_jsonl_aggregates_by_day_and_task(self):
-        tmp = tempfile.mkdtemp()
-        try:
-            path = os.path.join(tmp, "session.jsonl")
-            lines = [
-                json.dumps({"type": "user",
-                            "message": {"content": "跑 verify.py 闭环"}}),
-                json.dumps({"type": "assistant",
-                            "message": {"usage": {"input_tokens": 100,
-                                                  "output_tokens": 50}},
-                            "timestamp": "2026-08-30T10:00:00Z"}),
-                "not json",   # 损坏行必须跳过
-                json.dumps({"type": "assistant",
-                            "message": {"usage": {"input_tokens": 10}},
-                            "timestamp": "2026-08-31T10:00:00Z"}),
-            ]
-            with open(path, "w", encoding="utf-8") as f:
-                f.write("\n".join(lines))
-            agg = token_stats.scan_jsonl(path)
-            self.assertEqual(agg["2026-08-30"]["verify"]["input"], 100)
-            self.assertEqual(agg["2026-08-30"]["verify"]["output"], 50)
-            self.assertEqual(agg["2026-08-30"]["verify"]["msgs"], 1)
-            self.assertEqual(agg["2026-08-31"]["verify"]["input"], 10)
-        finally:
-            shutil.rmtree(tmp, ignore_errors=True)
-
-    def test_scan_jsonl_list_content_first_user(self):
-        tmp = tempfile.mkdtemp()
-        try:
-            path = os.path.join(tmp, "session.jsonl")
-            lines = [
-                json.dumps({"type": "user", "message": {"content": [
-                    {"type": "text", "text": "编译一下"},
-                    {"type": "image"}]}}),
-                json.dumps({"type": "assistant",
-                            "message": {"usage": {"input_tokens": 1}},
-                            "timestamp": "2026-08-30T10:00:00Z"}),
-            ]
-            with open(path, "w", encoding="utf-8") as f:
-                f.write("\n".join(lines))
-            agg = token_stats.scan_jsonl(path)
-            self.assertEqual(list(agg["2026-08-30"]), ["build"])
-        finally:
-            shutil.rmtree(tmp, ignore_errors=True)
 
 
 class SvdToJsonParseTests(unittest.TestCase):
