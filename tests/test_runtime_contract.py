@@ -280,7 +280,8 @@ class LocalConfigContractTests(WorkspaceTmpMixin, unittest.TestCase):
     def test_wb_save_local_merges_top_level(self):
         cfg_dir = Path(self.tmp) / "config"
         cfg_dir.mkdir()
-        cfg = cfg_dir / "keil.json"
+        # 2026-09-05 (F-067a): fixture keil.json → wb.json, 机制测本与 keil 无关
+        cfg = cfg_dir / "wb.json"
         cfg.write_text(json.dumps({"keep": 1, "port": "COM1"}), encoding="utf-8")
         with mock.patch.object(wb_runtime, "default_config_path",
                                lambda *a, **k: cfg):
