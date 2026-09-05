@@ -10,6 +10,7 @@ from unittest import mock
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "scripts"))
 
 import verify  # noqa: E402  (F-054 后 import 期零 IO)
+import doctor  # noqa: E402  (F-058: doctor 家族拆分件)
 import openocd_runtime  # noqa: E402
 import release  # noqa: E402
 
@@ -96,7 +97,7 @@ class DoctorReportTests(unittest.TestCase):
         def guard(*a, **kw):
             raise AssertionError("占位/未配置路径不得触发任何子进程")
 
-        with mock.patch.object(verify, "load_machine", return_value=placeholder), \
+        with mock.patch.object(doctor, "load_machine", return_value=placeholder), \
                 mock.patch.object(verify.subprocess, "run", side_effect=guard), \
                 mock.patch.object(openocd_runtime.subprocess, "run", side_effect=guard):
             # F-048: skip_drift_check=True 跳过 git main 对比, 不让 fixture 体检破守卫
@@ -107,7 +108,7 @@ class DoctorReportTests(unittest.TestCase):
         self.assertEqual(rep["swd"]["status"], "skipped")
 
     def test_empty_machine_values_reported(self):
-        with mock.patch.object(verify, "load_machine",
+        with mock.patch.object(doctor, "load_machine",
                                return_value={"openocd_exe": "", "make_exe": None}):
             rep = verify.doctor_report(probe=False)
         self.assertFalse(rep["machine"]["keys"]["uv4_exe"]["value_set"])
