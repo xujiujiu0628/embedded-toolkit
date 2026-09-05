@@ -211,11 +211,13 @@ python scripts/release.py --project <工程根> --tag v1.0.0 --dry-run
 
 ```text
 embedded-toolkit/
-├── scripts/            # 34 个 .py（入口 verify.py；共享层 wb_common + runtime_common
-│                       #   单一事实源 + wb/openocd/serial 三 runtime，F-029；legacy/keil/ 为退役留门区）
+├── scripts/            # ~38 个 .py（入口 verify.py；共享层 wb_common + runtime_common
+│                       #   单一事实源 + wb/openocd/serial 三 runtime，F-029；
+│                       #   legacy/ 空目录占位，Keil 退役区已拆 archive，F-067b）
 ├── tests/              # unittest 回归套件（纯 mock，Win/Linux 全绿）
-├── data/               # 知识库：55 外设参考 JSON + 错误库 + 已知限制
-├── config/             # 串口/探针族的环境级配置
+├── data/               # 知识库：55 外设参考 JSON + 已知限制
+│                       #   （ARMCC 错误码库 keil-error-db.json 已随 Keil 退役区拆 archive）
+├── config/             # 串口/探针族的环境级配置（keil.json 退役后已拆 archive）
 ├── hooks/              # 固件工程侧三条 C 铁律（禁 malloc / 禁逻辑层 HAL_Delay / volatile 告警）
 ├── templates/          # FSD 功能规格书模板
 ├── machine.json        # 本机工具链路径（不入库；模板 machine.example.json）
@@ -238,7 +240,12 @@ embedded-toolkit/
 
 - [`CHANGELOG.md`](CHANGELOG.md) — 版本账本（每条对到证据 commit）
 - [`templates/fsd-template-stm32.md`](templates/fsd-template-stm32.md) — 需求规格书模板
-- [`scripts/legacy/keil/README.md`](scripts/legacy/keil/README.md) — Keil 桥退役定案与按需唤起
+- Keil 退役区唤起（archive 物理副本）: `<d-claude-root>\archive\
+  embedded-toolkit-keil-legacy-20260905\README.md` — 2026-09-05 F-067b
+  起 Keil 退役桥（keil_build / keil_analyze / keil_project +
+  data/keil-error-db.json + scripts/error_db_grow.py + config/keil.json）
+  已从仓内拆出；按需唤起见该 README（也可走 `EMBEDDED_TOOLKIT_KEIL_ARCHIVE`
+  环境变量指 archive 路径）
 - [`docs/handoff/` `docs/superpowers/` `skills/fresh-checker/` `AGENTS.md`
   `HANDOFF-AGENT.md`](#) — 已于 0.4 边界决策迁维护者私有仓
   `D:\claude\embedded-handoff\`，公开工具库不含维护者 ↔ Agent 协作私约
