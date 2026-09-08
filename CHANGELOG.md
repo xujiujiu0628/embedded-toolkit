@@ -3,6 +3,37 @@
 格式约定: 每条含发现编号（代管期 findings 编目）与证据 commit。当前版本以
 `VERSION` 文件为准（`wb_common.toolkit_version()` 读取）。
 
+## Unreleased — 2026-09-08（F-072 coverage_lint 口径修正：与真实覆盖率对齐）
+
+- **F-072 处置（coverage_lint 双向脱节，fix）**: 2026-09-08 coverage 实测坐实
+  旧口径（F-049 只看"tests 是否直接 import 模块名"）与真实行覆盖率双向脱节:
+  - 假阳: `expectations.py` 24 例测试全部经 verify 再导出（tests 只
+    `import verify`），旧口径报"未覆盖"，真实覆盖 95%;
+  - 假阴: 模块仅被 import 但语句从未执行，旧口径算"已覆盖"。
+  处置 = `scripts/coverage_lint.py` 判定口径重写为双模式:
+  1. **static-reachability（默认，零依赖）**: seeds = tests 直接 import 的
+     模块名，沿 scripts 内部 import 图（AST）做可达闭包——复现本仓
+     "拆分件再导出"惯例（F-029/F-055~F-061）的间接覆盖;
+  2. **coverage-data（`--coverage-data <.coverage>`）**: 用 coverage 包逐文件
+     重算 executed/stmts，文件级"是否至少执行过一条语句"与真实行覆盖率
+     同源; coverage 包缺失/数据文件缺失 → exit 2 带可行动指引。
+  - JSON 契约新增 `mode`（static-reachability | coverage-data）、
+    `coverage_data`、`coverage_pct`（仅真实模式）—— 纯增量，无破坏，
+    `toolkit_min_version` 无需上调（契约变更三件套: 本段 + 同 commit
+    test_coverage_lint_reachability 契约钉 + 此处声明）。
+  - 回归钉 `tests/test_coverage_lint_reachability.py`（11 例）: 密封 fixture
+    复现再导出链（修复前断言失败）、仓库级断言 expectations.py 不再误报且
+    真零覆盖文件（cube_to_keil/serial_mux）仍被抓出、import 环终止性、
+    coverage-data 模式抓"被 import 但 0 语句执行"（封假阴）、缺数据文件
+    exit 2、strict 门禁双模式可用。coverage 包未装时相关 5 例自动 skip
+    （CI 默认不装，静态模式不受影响）。
+  - 实测（HEAD 8b8f2ba 基线）: 静态模式未覆盖清单 14 → 12，
+    expectations.py / gen_periph.py 误报消失，真零覆盖 12 文件全数保留;
+    coverage-data 模式与 coverage 实测逐文件一致。
+  - 如实声明残余局限: 静态模式"可达 ≠ 每行都执行过"（tests import 但低
+    执行率的文件仍会算已覆盖），该场景由 coverage-data 模式兜底——docstring
+    与测试注释均已写明。
+
 ## Unreleased — 2026-09-08（F-071 gen_periph 测试补齐：0% → 99%）
 
 - **F-071 处置（gen_periph.py 零覆盖补齐，test）**: 2026-09-08 全仓 coverage
