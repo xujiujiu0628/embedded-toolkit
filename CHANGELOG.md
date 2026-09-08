@@ -3,6 +3,34 @@
 格式约定: 每条含发现编号（代管期 findings 编目）与证据 commit。当前版本以
 `VERSION` 文件为准（`wb_common.toolkit_version()` 读取）。
 
+
+## Unreleased — 2026-09-08（F-086 gen_timer_int 双 C 类缺陷修复）
+
+- **F-086 处置（审计 WB-A2 / 简报 WB-20260908-04，fix）**: gen_timer_int
+  两项 C 类静默缺陷——
+  **缺陷 1（向量名）**: TIM1 产出 `TIM1_IRQHandler` / 注释 `TIM1_IRQn`，
+  CMSIS 事实为 `TIM1_UP_IRQHandler` / `TIM1_UP_IRQn`（bit25 = TIM1_UP）；
+  生成物编译链接都不报错（弱默认处理函数接管）→ ISR 永不执行，真机表象
+  "卡死/无反应"。修法 = 按定时器分派向量名（TIM1 → UP 变体，TIM2~4 常规
+  命名不动，TIM9/10/11 兜底语义不变）。
+  **缺陷 2（ARR 溢出）**: timer-int 固定 PSC=71（1MHz tick）无缩放自由度，
+  ARR = 1e6//target_hz - 1；period ≥ 63ms 即超 16 位（1000//period_ms 整除
+  使阈值早于名义 65.5ms——63ms→15Hz→ARR 66665，简报"约 66ms"的估算未计
+  该整除，以实测为准），硬件截断后注释仍写名义周期。
+  **ARR 路线选择论证（简报 §3③ 二选一）**: 选 **(a) 报错退出**——对照
+  gen_pwm 的"最接近值+旁注"依赖候选 ARR 表可缩放（PSC 联动调频），周期类
+  配置在固定 PSC 下无此自由度，钳制 65535 会产出实际周期偏离请求值 16 倍
+  的"看似正确"配置；仿 gen_systick/gen_i2c 先例返回 `/* ERROR */` 注释，
+  且 main() 的 timer-int 分支检出 ERROR 时 `sys.exit(1)`（机器消费方按
+  退出码判失败，stdout 仍留机器可读错误）。
+  - 先红: test_gen_interrupt_safety 新增 Timer1VectorNameTests 3 例 +
+    test_gen_numeric_sweep 新增 TimerIntArrBoundaryTests 4 例（ARR 精确值、
+    ERROR 分支、CLI 退出码 1）→ 7 例红；转绿；双重变异（向量名回退 +
+    守卫移除）→ 7 例红 → 还原绿。
+  - 简报 §3⑤ 复现复核: TIM1 输出 `TIM1_UP_IRQHandler` / `TIM1_UP_IRQn = 25`；
+    TIM2@1000ms 输出 ERROR 且 exit=1。gen_pwm 对照物零改动；data/ 禁区零改动。
+
+
 ## Unreleased — 2026-09-08（F-076 补：行内注释期望值订正，验收 L-1）
 
 - **F-076 补（docs，2026-09-08 验收发现）**: gen_periph.py 的 F-076 行内注释
