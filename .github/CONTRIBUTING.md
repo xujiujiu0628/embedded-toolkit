@@ -117,6 +117,73 @@ F-034 的教训：同一事实存在两个权威副本必然漂移。规则：
 - `machine.json` 不入库；`machine.example.json` 的四键结构是契约
   （消费方按下标取键）
 
+## F-035 流程例外条款（F-069c 成文）
+
+**PR 在合并前必须经 fresh-checker 复审**——派无上下文审计 agent
+（`~/.claude/skills/fresh-checker/SKILL.md` 模板）跑实测取证 + 分级发现。
+本仓 F-035 流程门禁**只靠人守、无代码卡**（branch protection 未开），
+PR 模板的"fresh-checker 复审门禁"段是最低成本的可见卡口——**不勾等于
+无声破例**。
+
+### 例外清单（需 PR 模板勾选「维护者直合豁免」+ 在「例外理由」段说明）
+
+| 例外情形 | 适用条件 | 责任 |
+|---|---|---|
+| **hotfix**：生产事故 / 文档紧急勘误 | 安全漏洞修复、GitHub 渲染崩坏、CI workflow 不可用 | PR 描述写明事故 + 修复时间窗 |
+| **纯 chore/deps bump**：依赖版本号无功能变化 | requirements.txt / 锁文件 / CI 镜像 tag bump | 附 changelog 链接 + diff stat |
+| **合并自上游**：外部 PR mirror 同步 | 外部 contributor PR 经完整复审 | 链接外部 PR 编号 |
+| **流程债重置**：fresh-checker 报 Critical/High 但修复需多日 | 必须先开 tracking issue, 写明根因 + 修复 plan | tracking issue 链接 + ETA |
+
+### 例外禁止清单（无论任何理由都不豁免）
+
+- **删文件 / git rm**（F-067b 类）：必须先 fresh-checker 审 archive 路径 +
+  字节级一致性
+- **改共享层**（`wb_common.py` / `runtime_common.py`）：F-029 留份裁决层
+  改动, 必须先特征钉后拆
+- **改公共契约**（`.workbench/config.json` schema / `expectations.json` /
+  `machine.example.json` 四键 / 任何工具 JSON 输出结构）：契约三件套必须
+  同 PR 齐, 不可拆分
+- **合并不属本仓的代码**（外部 fork sync 除外）
+
+### 失守处置
+
+**两类失守的处置路径不同**——本节明确二分, 避免后人面对失守时无明确指引
+(2026-09-05 fresh-checker 二审 H-2 反馈):
+
+#### A. 未来失守 (PR 未经 fresh-checker 即将合并或刚合并, master 仍可回滚)
+
+若发现 PR 未经 fresh-checker 即合并 (GitHub API `reviews=[]` + 模板
+「fresh-checker 复审门禁」段未勾选):
+1. **立即 revert** merge commit
+2. 重开 PR + 走完整 fresh-checker 流程
+3. 在 CHANGELOG 加一条流程账目
+4. 复盘失守根因 (PR 模板漏勾 / 维护者遗忘 / 其他) + 落改进 commit
+
+> 本路径优先级最高, 不论失守 PR 多大、commit hash 多有效, 流程破例
+> 即破例——**revert 是默认**, 不是"评估后再决定"。
+
+#### B. 历史失守 (PR 已合 master, 但走 fresh-checker 后发现问题; 走补救路径)
+
+若某 PR 在**更早**未走 fresh-checker 即合并, 但**当下 (发现时)** 它的
+6/6 commit hash 仍有效 + 全量测试仍绿 + 无安全/数据丢失:
+1. **不 revert**——已落 master 的 commit 是历史, 强 revert 会断引用
+   链 (CHANGELOG 账目、外部 issue 引用、可能的下游 fork)
+2. **走 fresh-checker 二审** 派无上下文审计 agent, 出事后审计报告
+3. **整改作为新 PR** 提出 (本仓 F-069 模式: 新建 worktree + 改 + 新 PR
+   + 二审闭环), 不是"在原 PR 改"
+4. **CHANGELOG 加账目段** 记录失守 + 整改, 不可擦除历史 (F-035 流程
+   精神: 治理史是本项目卖点之一)
+
+> **历史失守特例不构成失守处置常态**——本节 B 路径是补救, 不为未来失守
+> 创造"等发现再补"借口。未来失守仍走 A 路径 (立即 revert)。
+
+> **历史失守案例 (2026-09-05)**: PR #6 (F-066~068 token_stats + Keil
+> 退役区拆 archive) 在 2026-09-05 创建后 26 分钟被直接合并, 未走
+> fresh-checker。事后由 fresh-checker 派 agent 复审 (C-2 标记) + 本
+> F-069c 落流程条款成文 + F-069a~e 整改 commit。PR 6 本身按 B 路径
+> 不 revert, 走 F-069f fresh-checker 二审闭环 (5 必修真修 + 二审
+> 通过有保留, 2 新债 H-1/H-2 在 F-069 补 commit 清)。
+
 ## 判据方法论（历史教训浓缩）
 
 - 写回型工具的**默认参数路径**必须有测试（显式传参的主干无恙≠安全）
