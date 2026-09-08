@@ -3,6 +3,7 @@ __pycache__/
 machine.json
 .mcp.json
 .superpowers/
+.claude/
 
 # 虚拟环境 / 本地配置
 .env
