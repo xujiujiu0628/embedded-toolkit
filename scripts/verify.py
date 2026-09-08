@@ -283,6 +283,25 @@ def append_audit_entry(workspace: str, origin: str, step: str,
         print(f"[warn] audit 落盘失败: {audit_path}", file=sys.stderr)
 
 
+def _step_durations_from(result: dict) -> tuple[list, dict]:
+    """F-050 时长画像样本组装 (F-085 提取为共享 helper)。
+
+    step_keys = 状态非 skipped/None 的实际跑过步骤; step_durations = 各步
+    duration_sec (>0 才收)。原为早退路径内联逻辑 — 正常出口 F-085 补传
+    step_durations 时按简报要求"复用早退组装逻辑、勿出新分叉"提取共享;
+    两出口 filter 口径随之统一为严格形态 (status None 一律不收 — 真实
+    运行 steps 必有 status, 行为不变)。"""
+    step_keys = [k for k, v in (result.get("steps") or {}).items()
+                 if isinstance(v, dict) and v.get("status") not in ("skipped", None)]
+    step_durations = {}
+    for k in step_keys:
+        s = result["steps"].get(k, {})
+        d = s.get("duration_sec")
+        if isinstance(d, (int, float)) and d > 0:
+            step_durations[k] = float(d)
+    return step_keys, step_durations
+
+
 def _record_checkpoint_early_exit(result: dict, args) -> None:
     """F-047 自审 (2026-09-03) Finding 2: 早退路径落台账.
 
@@ -296,14 +315,7 @@ def _record_checkpoint_early_exit(result: dict, args) -> None:
     """
     if "WORKSPACE" not in globals() or WORKSPACE is None:
         return
-    step_keys = [k for k, v in (result.get("steps") or {}).items()
-                 if isinstance(v, dict) and v.get("status") not in ("skipped", None)]
-    step_durations = {}
-    for k in step_keys:
-        s = result["steps"].get(k, {})
-        d = s.get("duration_sec")
-        if isinstance(d, (int, float)) and d > 0:
-            step_durations[k] = float(d)
+    step_keys, step_durations = _step_durations_from(result)  # F-085: 共享组装
     record_checkpoint(
         workspace=WORKSPACE,
         status=result.get("status", "unknown"),
@@ -875,10 +887,12 @@ def main():
         result, getattr(args, "gate_run", False))
 
     # F-047: 进度台账 — 双写 checkpoints.jsonl + state.json last_checkpoint
-    #   step_keys 收集本次实际跑过的步骤 (状态非 skipped), 给后续审计 "那次跑过哪些步"
+    #   step_keys/step_durations 收集实际跑过的步骤, 给后续审计
+    #   "那次跑过哪些步/每步多久" (F-085: 正常出口补传 step_durations 与
+    #   gate_run — 与早退路径共用 _step_durations_from 组装, 修复前漏传
+    #   导致门禁重跑污染台账、时长画像只收失败样本)
     #   contract_hashes 复用已有契约哈希, 把"判绿锚点"和"进度台账"绑一起
-    step_keys = [k for k, v in (result.get("steps") or {}).items()
-                 if isinstance(v, dict) and v.get("status") != "skipped"]
+    step_keys, step_durations = _step_durations_from(result)
     record_checkpoint(
         workspace=WORKSPACE,
         status=result.get("status", "unknown"),
@@ -886,6 +900,8 @@ def main():
         origin=getattr(args, "task_origin", "manual"),
         step_keys=step_keys,
         contract_hashes=result.get("contract_hashes") or {},
+        step_durations=step_durations,
+        gate_run=getattr(args, "gate_run", False),
     )
 
     _output(result, args.json)
