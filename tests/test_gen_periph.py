@@ -9,7 +9,8 @@ r"""gen_periph 代码生成器回归套件 (F-071) — 0% 覆盖模块的首批�
   2. 每个 gen_* 走"平凡路径 + 至少一个分支/边界": 总线选择 (APB1/APB2)、
      寄存器选择 (CRL/CRH、SMPR1/2、CCMR1/2)、分频/波特率换算、错误分支;
   3. 已知缺陷按本仓 xfail 纪律登记为 expectedFailure (欠债白纸黑字),
-     修好后它们会 XPASS, 届时必须翻转重跑 —— 见 GenKnownGapTests 的注释。
+     修好后它们会 XPASS, 届时必须翻转重跑 —— 见 GenKnownGapTests 的注释
+     与各条修复的 CHANGELOG 段 (F-074 起)。
 
 不覆盖: gen_doc 的真实 doxygen 排版细节 (随时可调), main() 的 argparse
 帮助文本。所有断言取值为 2026-09-08 在 HEAD 8b8f2ba 上的实跑输出。
@@ -343,9 +344,8 @@ class GenDocTests(unittest.TestCase):
         self.assertIn("## Registers", md_text)
         self.assertIn("| CCR | 0x1C |", md_text)
         self.assertIn("## Dependencies", md_text)
-        # Clock 行 "ENR" 重复缺陷由 GenKnownGapTests 单点钉住; 此处只验依赖段存在
-        self.assertIn("- Clock: RCC_APB1ENR", md_text)
-        self.assertIn("bit 21 (I2C1EN)", md_text)
+        # F-074 修复后: 完整正确形态 (修复前产出 RCC_APB1ENRENR)
+        self.assertIn("- Clock: RCC_APB1ENR bit 21 (I2C1EN)", md_text)
         self.assertIn("- Pins: SCL=B6, SDA=B7", md_text)
         self.assertIn("- DMA: TX=DMA1_CH6, RX=DMA1_CH7", md_text)
         self.assertIn("- IRQ: I2C1_EV_IRQn = 31", md_text)
@@ -479,8 +479,9 @@ class MainCliDispatchTests(unittest.TestCase):
 class GenKnownGapTests(unittest.TestCase):
     """登记在册的生成缺陷 — 按本仓 xfail 纪律: 修复后此处会 XPASS, 须翻转重跑。
 
-    两条均已登记于 2026-09-08 全仓架构剖析报告的问题清单; 本次改动范围限定"补测试",
-    不修生产代码; 修复属独立 commit (需自备完形 red→green 证据)。
+    ENR 双写一例已于 F-074 修复并翻转为 GenDocTests 的正常断言; 余下两条
+    登记于 2026-09-08 全仓架构剖析报告的问题清单, 修复属独立 commit
+    (需自备完形 red→green 证据)。
     """
 
     @unittest.expectedFailure
@@ -498,20 +499,6 @@ class GenKnownGapTests(unittest.TestCase):
         """
         out = gen_periph.gen_usart("USART1", 1377, "PA9", "PA10")
         self.assertIn("USART1->BRR = 0xCB00;", out)
-
-    @unittest.expectedFailure
-    def test_gen_doc_clock_line_should_not_duplicate_enr_suffix(self):
-        """缺陷: gen_doc 依赖段拼接 `RCC_{rcc_register}ENR`, 而 rcc_register
-        本身已是 "APB1ENR" → 产出 "RCC_APB1ENRENR bit 21"。应为
-        "RCC_APB1ENR bit 21 (I2C1EN)"。"""
-        out_dir = tempfile.mkdtemp()
-        try:
-            gen_periph.gen_doc("I2C1", out_dir)
-            md_text = open(os.path.join(out_dir, "i2c1_ref.md"),
-                           encoding="utf-8").read()
-            self.assertIn("- Clock: RCC_APB1ENR bit 21 (I2C1EN)", md_text)
-        finally:
-            shutil.rmtree(out_dir, ignore_errors=True)
 
 
 if __name__ == "__main__":

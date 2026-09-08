@@ -3,6 +3,17 @@
 格式约定: 每条含发现编号（代管期 findings 编目）与证据 commit。当前版本以
 `VERSION` 文件为准（`wb_common.toolkit_version()` 读取）。
 
+## Unreleased — 2026-09-08（F-074 修复 gen_doc 依赖段 ENR 双写）
+
+- **F-074 处置（生成缺陷修复 #1/3，fix）**: F-071 登记的第 ③ 号缺陷——
+  gen_doc 依赖段拼接 `RCC_{rcc_register}ENR`，而 KB 的 rcc_register 本身已带
+  ENR 后缀（实测全表 55 外设仅 APB1ENR/APB2ENR/AHBENR 三值，无一例外），
+  产出 "RCC_APB1ENRENR" 这种头文件不存在的宏，AI 照抄进 C 代码即编译失败
+  （A 类：闭环 build 可拦，但每轮烧录迭代白跑一次）。
+  处置 = 防御式归一化：不以 "ENR" 结尾才补后缀，未来 KB 条目只写 "APB1"
+  也能拼出合法宏名。`tests/test_gen_periph.py` 的 GenKnownGapTests 对应
+  expectedFailure 已翻转，完整正确形态断言收敛进 GenDocTests（3 例 → 2 例）。
+
 ## Unreleased — 2026-09-08（F-073 README 版本标注漂移修正：单一事实源核对钉）
 
 - **F-073 处置（文档漂移，docs+test）**: README「项目结构」段把 VERSION
