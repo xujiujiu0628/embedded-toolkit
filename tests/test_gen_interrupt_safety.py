@@ -70,5 +70,32 @@ class TimerIrqSafetyTests(unittest.TestCase):
         self.assertIn("void TIM2_IRQHandler(void) {", self.out)
 
 
+class Timer1VectorNameTests(unittest.TestCase):
+    """F-086 缺陷 1 修复钉: TIM1 的 CMSIS 向量名是 TIM1_UP_IRQ*。
+
+    STM32F103 事实 (RM0008/CMSIS): bit25 = TIM1_UP_IRQn，向量表函数
+    TIM1_UP_IRQHandler；TIM1_IRQHandler / TIM1_IRQn 均不存在——生成物
+    编译链接都不报错（弱默认处理函数接管），ISR 永不执行（C 类静默）。
+    """
+
+    def setUp(self):
+        self.out = gen_periph.gen_timer_int("TIM1", 10, 72)
+
+    def test_handler_is_tim1_up_irqhandler(self):
+        self.assertIn("void TIM1_UP_IRQHandler(void) {", self.out)
+        self.assertNotIn("TIM1_IRQHandler", self.out)
+
+    def test_iser_comment_names_tim1_up_irqn(self):
+        self.assertIn("NVIC->ISER[0] = (1UL << 25);", self.out)
+        self.assertIn("// TIM1_UP_IRQn = 25", self.out)
+        self.assertNotIn("TIM1_IRQn =", self.out)
+
+    def test_tim2_3_4_vector_names_unchanged(self):
+        # 修复不得波及 TIM2~4 的常规命名
+        out3 = gen_periph.gen_timer_int("TIM3", 1, 72)
+        self.assertIn("void TIM3_IRQHandler(void) {", out3)
+        self.assertIn("// TIM3_IRQn = 29", out3)
+
+
 if __name__ == "__main__":
     unittest.main()
