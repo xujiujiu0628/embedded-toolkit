@@ -3,6 +3,23 @@
 格式约定: 每条含发现编号（代管期 findings 编目）与证据 commit。当前版本以
 `VERSION` 文件为准（`wb_common.toolkit_version()` 读取）。
 
+## Unreleased — 2026-09-08（F-073 README 版本标注漂移修正：单一事实源核对钉）
+
+- **F-073 处置（文档漂移，docs+test）**: README「项目结构」段把 VERSION
+  标成 0.3，而 VERSION 文件已是 0.4 —— 与 F-034"文档单一事实源"纪律冲突。
+  处置 = 最小修正 + 机器核对:
+  1. README:225 改为 `当前 0.4（版本唯一事实源 = VERSION 文件，经
+     wb_common.toolkit_version() 读取）`——标注值与事实源指向同框写明;
+  2. 新增 `tests/test_version_single_source.py`（2 例）: README 中任何
+     "VERSION ... 当前 X.Y"标注必须等于 `toolkit_version()`; 找不到标注
+     也会显式失败（防空转），测试 docstring 写明"改为完全不写版本号"
+     是合法解法，届时须同步改写测试并记账。
+  - 先红后绿: 临时把 README 改回 0.3 → 测试红（报 README:225 漂移），
+    还原 → 绿。
+  - 未采信方案（记账）: 由脚本从 VERSION 生成 README 该行——属引入
+    生成步骤的重构，超出"最小修正"范围；机器核对钉已达到同等的防漂移
+    效果且零构建成本。
+
 ## Unreleased — 2026-09-08（F-072 coverage_lint 口径修正：与真实覆盖率对齐）
 
 - **F-072 处置（coverage_lint 双向脱节，fix）**: 2026-09-08 coverage 实测坐实
