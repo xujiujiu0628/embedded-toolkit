@@ -1061,3 +1061,21 @@
   hardfault 三层全修 symbols 0→126 真机坐实（920e187 *(legacy, 9-01 历史重写后失效)*）；F-015 workspace 跟随
   --project / F-016 采集窗进契约 / F-017 load_project_config 段语义双重错误
   （1819e18 *(legacy, 9-01 历史重写后失效)*，106/106）；插板终判四项全绿（d052060 *(legacy, 9-01 历史重写后失效)*）；A-02 哈希举证对账（f4b5d4f *(legacy, 9-01 历史重写后失效)*）。
+
+## Unreleased — 2026-09-08（F-078 生成代码语法烟测：CMSIS 符号契约 + arm-gcc 前置闸）
+
+- **F-078 处置（A 类缺陷前移，test）**: 新增 `tests/test_gen_syntax_smoke.py`
+  —— 全部 gen_* 代码路径（18 片段 + 非整除注释分支）输出过
+  `arm-none-eabi-gcc -fsyntax-only`。机制：把"AI 抄进工程 → build 炸 →
+  烧录迭代白跑"的 A 类缺陷（幻影宏/语法错）前移到提交前就红。
+  - stub 头 = "生成器 ↔ CMSIS 接口契约"：枚举生成器可引用的全部结构体
+    成员与 RCC/外设宏；两头越界都算失败（生成器引契约外符号红，契约漏
+    定义也红），另有反向钉：生成输出中每个 RCC 宏必须能在 stub 找到
+    #define，防未来新增外设时漏扩契约。
+  - 片段语义处理（如实记账）：生成物是贴进模块 .c 的混合片段（裸语句 +
+    static 辅助函数），非完整翻译单元；烟测做机械变换（剥行首 static 后
+    包进函数，GNU C 嵌套函数合法）换取语法+符号全量检查——static 存储
+    类布局的合法性不在烟测范围，由 review 兜底。
+  - 环境：arm-none-eabi-gcc 不在场时整组 skip（CI ubuntu 不装工具链，
+    与 coverage-data 测试同款守卫）；变异验证：注入 gen_pwm 幻影时钟宏
+    → 烟测 2 例红，还原后全绿。
