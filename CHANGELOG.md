@@ -3,6 +3,18 @@
 格式约定: 每条含发现编号（代管期 findings 编目）与证据 commit。当前版本以
 `VERSION` 文件为准（`wb_common.toolkit_version()` 读取）。
 
+## Unreleased — 2026-09-08（F-077 修复 TIM1 时钟总线：APB1 → APB2）
+
+- **F-077 处置（生成缺陷修复 #4，fix，2026-09-08 剖析报告遗漏项）**:
+  gen_pwm / gen_timer_int 的时钟使能硬编码 `RCC->APB1ENR |= RCC_APB1ENR_{tim}`，
+  TIM1 是 APB2 外设（RM0008: APB2ENR bit 0 = TIM1EN）——旧版对 TIM1 产出
+  `RCC_APB1ENR_TIM1EN`，该宏在 CMSIS 头不存在（A 类，编译可拦）；更隐蔽的
+  变体是 AI 消费者顺手"修"成使能别的位 → 定时器时钟从未开启（B 类）。
+  处置 = 新增 `TIM_BUS = {"TIM1": "APB2"}` 映射，两个生成器按表取总线；
+  未知定时器保持 APB1 兜底（fallback 语义由既有测试钉住，真实 TIM9/10/11
+  挂 APB2 属"未知外设支持"范围，另立事项不入本修复）。新增 TIM1 APB2
+  断言 ×2（pwm / timer-int 各一）。
+
 ## Unreleased — 2026-09-08（F-076 修复 BRR fraction 进位丢失 + 订正 F-071 笔误）
 
 - **F-076 处置（生成缺陷修复 #3/3，fix）**: F-071 登记的第 ② 号缺陷——

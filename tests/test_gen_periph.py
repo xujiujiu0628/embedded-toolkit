@@ -208,6 +208,12 @@ class GenPwmTests(unittest.TestCase):
         self.assertIn("RCC->APB1ENR |= RCC_APB1ENR_TIM9EN;", out)
         self.assertIn("GPIOC->CRH |=  (0xBUL << 20);", out)
 
+    def test_tim1_clock_enable_is_on_apb2(self):
+        """F-077 修复钉: TIM1 挂 APB2, 旧版两个 TIM 生成器都硬编码 APB1ENR。"""
+        out = gen_periph.gen_pwm("TIM1", 1, "PA8", 1000, 50)
+        self.assertIn("RCC->APB2ENR |= RCC_APB2ENR_TIM1EN;", out)
+        self.assertNotIn("RCC->APB1ENR", out)
+
     def test_non_integer_psc_reports_actual_frequency_in_note(self):
         # 7000Hz 在候选 ARR 表内无整除 PSC → 走兜底并如实标注实际频率
         out = gen_periph.gen_pwm("TIM2", 1, "PA0", 7000, 50)
@@ -262,6 +268,13 @@ class GenTimerIntTests(unittest.TestCase):
         unknown = gen_periph.gen_timer_int("TIM9", 1, 72)
         self.assertIn("NVIC->ISER[0] = (1UL << 28);  // TIM9_IRQn = 28", unknown)
         self.assertIn("RCC->APB1ENR |= RCC_APB1ENR_TIM9EN;", unknown)
+
+    def test_tim1_clock_enable_is_on_apb2(self):
+        """F-077 修复钉: TIM1 是 APB2 外设 (RM0008), 旧版产出 APB1ENR_TIM1EN
+        — CMSIS 头无此宏, 编译失败; 或被 AI 顺手改成使能别的位。"""
+        out = gen_periph.gen_timer_int("TIM1", 1, 72)
+        self.assertIn("RCC->APB2ENR |= RCC_APB2ENR_TIM1EN;", out)
+        self.assertNotIn("APB1ENR", out)
 
     def test_custom_timer_clock_scales_arr(self):
         # 36MHz → 同样 1ms 目标下 ARR 减半量级

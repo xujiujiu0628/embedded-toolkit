@@ -43,6 +43,12 @@ TIM_CH_PINS = {
 # ---- TIM 基址和时钟映射 ----
 TIM_CLOCK_BIT = {"TIM2": "TIM2EN", "TIM3": "TIM3EN", "TIM4": "TIM4EN"}
 
+# ---- TIM 总线映射 (F-077, RM0008: TIM1 高级定时器挂 APB2, TIM2~7 挂 APB1) ----
+# 旧版两个 TIM 生成器硬编码 APB1ENR, TIM1 会产出 RCC_APB1ENR_TIM1EN —
+# 该宏在 CMSIS 头文件不存在 (TIM1EN 在 APB2ENR bit 0), 编译即失败;
+# 更隐蔽的变体是 AI 顺手"修"成使能别的位 → 定时器时钟从未开启。
+TIM_BUS = {"TIM1": "APB2"}
+
 # ---- I2C 时钟映射 ----
 I2C_CLOCK_BIT = {
     "I2C1": ("APB1ENR", "I2C1EN", 21),
@@ -262,7 +268,8 @@ def gen_pwm(timer: str, ch: int, pin: str, freq: int, duty: int,
     lines.append(f" * ======================================================================== */")
     lines.append(f"")
     lines.append(f"/* 1. 时钟使能 */")
-    lines.append(f"RCC->APB1ENR |= RCC_APB1ENR_{tim_clock};")
+    tim_bus = TIM_BUS.get(timer, "APB1")   # F-077: TIM1 → APB2, 其余 APB1
+    lines.append(f"RCC->{tim_bus}ENR |= RCC_{tim_bus}ENR_{tim_clock};")
     lines.append(f"RCC->APB2ENR |= RCC_APB2ENR_{port_clock};")
     lines.append(f"__DSB();")
     lines.append(f"")
@@ -350,7 +357,8 @@ def gen_timer_int(timer: str, period_ms: int, tim_clk_mhz: int = 72) -> str:
     lines.append(f" * ======================================================================== */")
     lines.append(f"")
     lines.append(f"/* 1. 时钟 + NVIC */")
-    lines.append(f"RCC->APB1ENR |= RCC_APB1ENR_{tim_clock};")
+    tim_bus = TIM_BUS.get(timer, "APB1")   # F-077: TIM1 → APB2, 其余 APB1
+    lines.append(f"RCC->{tim_bus}ENR |= RCC_{tim_bus}ENR_{tim_clock};")
     lines.append(f"__DSB();")
     lines.append(f"NVIC->ISER[{irq//32}] = (1UL << {irq%32});  // {timer}_IRQn = {irq}")
     lines.append(f"")
