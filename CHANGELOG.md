@@ -3,6 +3,31 @@
 格式约定: 每条含发现编号（代管期 findings 编目）与证据 commit。当前版本以
 `VERSION` 文件为准（`wb_common.toolkit_version()` 读取）。
 
+
+## Unreleased — 2026-09-08（F-085 verify.py 成功路径台账漏参修复）
+
+- **F-085 处置（审计 WB-A1 / 简报 WB-20260908-03，fix）**: verify.py 正常出口的
+  `record_checkpoint(...)` 只传 6 个关键字参数，漏 `gate_run` 与 `step_durations`
+  （早退路径两者都传）。契约后果（checkpoint_ledger.py:68-70 原文）：① 成功路径的
+  门禁重跑照常 append 台账，污染 release audit 的"上次 PASS"语义；② F-050 时长画像
+  只收到失败样本，成功运行被当"旧格式"跳过并误报警告。
+  处置 = 按简报 §3② "复用早退组装逻辑、勿出新分叉"：提取共享 helper
+  `_step_durations_from(result)`（step_keys + step_durations 组装），正常出口与
+  `_record_checkpoint_early_exit` 共用，正常出口补传两参数。**范围说明（超出简报
+  §1 字面的一处，单独论证）**：早退路径的内联组装改为调用同一 helper——行为逐字节
+  不变（既有 test_verify_failure_paths / test_checkpoint_ledger 全绿佐证），否则
+  组装规则必然两处分叉；filter 口径统一为 early-exit 严格形态（status None 不收，
+  真实运行 steps 必有 status，无实际影响）。**契约未变声明**：checkpoint_ledger.py
+  零改动，本任务只修调用方。
+  - 新增 `tests/test_verify_main_success_path.py`（3 例）——本仓**首个驱动 main()
+    走通 build 成功线**的集成测试：临时 workspace + mock build/analyze/flash/capture
+    （各 ~60ms 真实耗时保证 duration_sec>0），真实 checkpoint_ledger 落盘断言：
+    --gate-run 成功运行 jsonl 不追加且 state.json 标 gate_skip；正常成功
+    step_durations 非空且键为实际步骤；同 workspace 两次运行 append 两行。
+  - 先红：两例失败原因正是 gate_run 未生效 / step_durations 为空；变异验证：
+    删掉补传的两参数 → 2 例红 → 还原 → 绿。
+
+
 ## Unreleased — 2026-09-08（F-076 补：行内注释期望值订正，验收 L-1）
 
 - **F-076 补（docs，2026-09-08 验收发现）**: gen_periph.py 的 F-076 行内注释
