@@ -176,12 +176,16 @@ def gen_usart(usart: str, baud: int, tx: str, rx: str) -> str:
     lines.append(f"__DSB();")
     lines.append(f"")
     lines.append(f"/* 2. GPIO 配置 */")
+    # F-075: CRL/CRH 按引脚号选择 (pin<8 → CRL, >=8 → CRH) — 旧版硬编码 CRH,
+    # 低引脚会把位移落在 CRH 的错误字段上 (PA2 的位移 8 实际改写 PA10),
+    # 外设脚保持浮空 → 生成物编译通过但外设无输出 (B 类静默缺陷)。
+    # 位移沿用 pin_cr_shift 的 (n%8)*4, 与 CRL/CRH 两段寄存器布局一致。
     lines.append(f"// {tx} = {usart}_TX (复用推挽 50MHz)")
-    lines.append(f"GPIO{tx_port}->CRH &= ~(0xFUL << {tx_shift});")
-    lines.append(f"GPIO{tx_port}->CRH |=  (0xBUL << {tx_shift});")
+    lines.append(f"GPIO{tx_port}->{pin_cr_reg(tx)} &= ~(0xFUL << {tx_shift});")
+    lines.append(f"GPIO{tx_port}->{pin_cr_reg(tx)} |=  (0xBUL << {tx_shift});")
     lines.append(f"// {rx} = {usart}_RX (浮空输入)")
-    lines.append(f"GPIO{rx_port}->CRH &= ~(0xFUL << {rx_shift});")
-    lines.append(f"GPIO{rx_port}->CRH |=  (0x4UL << {rx_shift});")
+    lines.append(f"GPIO{rx_port}->{pin_cr_reg(rx)} &= ~(0xFUL << {rx_shift});")
+    lines.append(f"GPIO{rx_port}->{pin_cr_reg(rx)} |=  (0x4UL << {rx_shift});")
     lines.append(f"")
     lines.append(f"/* 3. USART 配置 */")
     lines.append(f"{usart}->BRR = 0x{brr:04X};")
