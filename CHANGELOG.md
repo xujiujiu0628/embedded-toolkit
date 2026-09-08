@@ -3,6 +3,21 @@
 格式约定: 每条含发现编号（代管期 findings 编目）与证据 commit。当前版本以
 `VERSION` 文件为准（`wb_common.toolkit_version()` 读取）。
 
+## Unreleased — 2026-09-08（F-076 修复 BRR fraction 进位丢失 + 订正 F-071 笔误）
+
+- **F-076 处置（生成缺陷修复 #3/3，fix）**: F-071 登记的第 ② 号缺陷——
+  gen_usart 的 BRR 装箱用 `(m<<4)|f`，fraction 舍入到 16（= mantissa 进位）
+  时奇数 m 的 bit4 已被占用，`|16` 静默丢进位。实测 baud=1377 @72MHz：
+  div=3267.974 → 旧版输出 0xCC30（=3267.0），修复后 0xCC40（=3268.0）。
+  实际波特率偏差约 0.03%（远小于 UART 2% 容限）——如实评估：逻辑缺陷成立、
+  实战危害低，修复价值在"生成器数值装箱必须可证明正确"。
+  处置 = fraction>=16 时 mantissa+1、fraction=0 再装箱。
+  **账本订正**：F-071 旧段与本例 docstring 曾写"应 0xCB00"为算术笔误
+  （3268<<4 = 0xCC40；0xCB00 = 3248.0），按账本 append-only 纪律不改旧段，
+  以本段为准。该笔误的 expectedFailure 若在修复后未订正会 XPASS（期望值
+  本身错误无法转绿）——恰好演示了"没见过红的测试不算测试"的另一半：
+  期望值也要能被证伪。GenKnownGapTests 三例清空，类随之移除。
+
 ## Unreleased — 2026-09-08（F-075 修复 gen_usart 低引脚 CRH 硬编码）
 
 - **F-075 处置（生成缺陷修复 #2/3，fix，B 类静默缺陷）**: F-071 登记的第 ① 号
