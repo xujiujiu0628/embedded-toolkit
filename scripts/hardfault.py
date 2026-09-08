@@ -315,7 +315,10 @@ def resolve_address(addr: int, symbols: list[dict]) -> dict | None:
     best_size = 0
     for sym in symbols:
         if sym["addr"] <= addr < sym["addr"] + sym["size"]:
-            if sym["size"] > best_size:  # 优先匹配小函数（更精确）
+            # F-082: 优先匹配最小包含符号（更精确）。旧实现 `size > best_size`
+            # 实际选最大包含符号，与注释意图矛盾（F-081 发现登记）——
+            # 嵌套场景 PC 落在大函数内的小 helper 时会误报外层函数。
+            if best is None or sym["size"] < best_size:
                 best = sym
                 best_size = sym["size"]
     if best:
