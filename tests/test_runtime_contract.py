@@ -262,8 +262,13 @@ class ResolveParamContractTests(WorkspaceTmpMixin, unittest.TestCase):
     def test_special_tiers_are_machine_name_coupled(self):
         # wb: name=="uv4" 触发 machine:uv4_exe/auto:uv4; ocd: name=="exe" 触发
         # machine:openocd_exe/path/default 兜底 —— 特判钩子各绑各的工具
+        # F-067a 后: uv4 特判已删 (F-069d 反向钉固化)
         _, s_wb = wb_runtime.resolve_param("uv4", None)
         self.assertIn(s_wb, ("", "machine:uv4_exe", "auto:uv4"))
+        # F-069d: 反向钉固化 F-067a 行为 — 删 uv4 特判后 resolve_param
+        # 不应再返 machine:uv4_exe / auto:uv4 (这两源仅当 F-067a 之前才合法)
+        self.assertNotIn(s_wb, ("machine:uv4_exe", "auto:uv4"),
+                         "F-067a 删 uv4 特判, resolve_param('uv4', None) 不再返 uv4 源")
         v_ocd, s_ocd = openocd_runtime.resolve_param("exe", None)
         self.assertIn(s_ocd, ("machine:openocd_exe", "path", "default"))
         self.assertTrue(v_ocd, "ocd exe 恒有兜底值 'openocd' 起步")

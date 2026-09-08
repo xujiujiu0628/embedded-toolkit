@@ -82,7 +82,9 @@ class SaveProjectConfigGuardTests(unittest.TestCase):
             json.dump({"verify": {"expect": ["OK"]}, skill: {"project": "old"}},
                       f)
         if mod is wb_runtime:
-            # wb_runtime 签名多一个 skill 段名参数 (默认 "keil")
+            # wb_runtime 签名多一个 skill 段名参数 (默认 "wb" 是历史延续,
+            # 原 "keil" 2026-08-28 中性化、2026-09-05 F-067a 退役区拆 archive
+            # 后改 "wb"; 默认值仅兼容, 实际调用方均显式传 skill="gcc"/"openocd"/"serial")
             mod.save_project_config(self.tmp, {"port": 1}, skill=skill)
         else:
             mod.save_project_config(self.tmp, {"port": 1})
