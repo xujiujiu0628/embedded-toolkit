@@ -1104,3 +1104,20 @@
   清标志在 if 体内且先于业务 TODO (清在体外=每次中断都清, 清在业务后=
   慢了丢标志)；⑤ Handler 名必须符合 CMSIS 向量表命名 (名字错=中断
   静默不触发, 链接器不报错)。与 F-071 的 IRQ 编号钉互补不重复。
+
+## Unreleased — 2026-09-08（F-081 hardfault 解析层补测 + 新缺陷发现登记）
+
+- **F-081 处置（失败归因主体补测，test）**: hardfault.py 300 语句 27%
+  (2026-09-08 实测)，它是闭环 Step 4b 失败归因的主体且核心全是纯函数。
+  新增 `tests/test_hardfault_parse.py` 20 例: parse_reg_value（含 sp/msp
+  整词匹配防误吸）、parse_mdw_value、parse_registers 全 dump、
+  classify_fault 六分支（no_fault 语义=2026-08-12 修复钉 / FORCED 下
+  BFSR>UFSR>MFSR 优先级 / 未知位原样落 raw 不装懂）、parse_map_symbols
+  （GCC ld 版式 + 伪行过滤 + ARMCC 版式 + 缺文件）、_map_degradation_note、
+  resolve_address（区间匹配 + F-005 无 size 最近前导兜底 + 低于一切返回
+  None）、classify_address_range（F103 地址空间 7 分区）。
+  **新缺陷发现登记**: resolve_address 注释"优先匹配小函数（更精确）"与
+  实现 `size > best_size`（选最大）矛盾——嵌套场景 PC 落在大函数内的
+  小 helper 时会误报外层函数，误导归因。按 xfail 纪律以 expectedFailure
+  登记（断言按注释意图写），修复另立 commit (F-082)。既有
+  test_hardfault_map.py 的单符号场景与新语义不冲突（零修改全绿）。
