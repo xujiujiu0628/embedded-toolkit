@@ -611,7 +611,14 @@ def gen_doc(periph_name: str, out_dir: str = "") -> str:
     if rel_data:
         clock_info = rel_data.get("clock", {})
         if clock_info:
-            deps.append(f"- Clock: RCC_{clock_info.get('rcc_register', '?')}ENR bit {clock_info.get('rcc_bit', '?')} ({clock_info.get('rcc_bit_name', '?')})")
+            # F-074: KB 的 rcc_register 本身已带 ENR 后缀 (APB1ENR/APB2ENR/AHBENR,
+            # 实测全表 55 外设无一例外), 旧拼接再补 ENR 会产出 RCC_APB1ENRENR
+            # 这种不存在的宏, AI 照抄进 C 代码即编译失败。防御式归一化:
+            # 未来 KB 条目若只写 "APB1" 也能拼出合法宏名。
+            reg = clock_info.get('rcc_register', '?')
+            if not str(reg).endswith("ENR"):
+                reg = f"{reg}ENR"
+            deps.append(f"- Clock: RCC_{reg} bit {clock_info.get('rcc_bit', '?')} ({clock_info.get('rcc_bit_name', '?')})")
         pins = rel_data.get("pins", {})
         if pins:
             pin_list = ", ".join(f"{pname}={pinfo.get('port','?')}{pinfo.get('pin','?')}" for pname, pinfo in pins.items())
