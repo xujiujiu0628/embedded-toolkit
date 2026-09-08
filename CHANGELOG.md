@@ -1132,3 +1132,18 @@
   包含符号，同尺寸保持先到优先）；无 size 的 GCC 符号区间匹配恒空，
   F-005 最近前导兜底路径不受影响（既有测试钉住）。F-081 的
   expectedFailure 翻转为常规断言。
+
+## Unreleased — 2026-09-08（F-083 知识库数据一致性校验）
+
+- **F-083 处置（上游数据防线，test）**: stm32f103-ref.json (55 外设) 是
+  rm_lookup/gen_periph/gen_doc/phase_minus_one 的共同上游，此前无一致性
+  防线——RCC 位错一位 = 生成代码使能错外设，IRQ 号错 = 中断静默不触发。
+  新增 `tests/test_kb_hygiene.py` 8 例结构不变量校验: _meta 计数与实际
+  一致（漂移即红）、base 地址空间合法性（外设区 + CM3 私有区 + FSMC
+  0xA0000000，GPIO 多基地址版式特判）、clock rcc_register ∈ 实测合法集
+  且 bit<32、引脚端口/编号物理合法（mode 可选——通道类引脚本无 mode）、
+  IRQ 编号 ≤67 且符合 CMSIS *_IRQn 命名、寄存器 offset 十六进制可解析、
+  known_issues 登记簿非空。
+  规则演进如实记账: 初版两条规则过严是规则错不是数据错——NVIC/SysTick
+  base 在 CM3 私有区、FSMC base 0xA0000000 是 RM0008 规定区域、通道类
+  引脚本就无 mode，均已按数据手册修正校验范围。
