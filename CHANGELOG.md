@@ -3,6 +3,28 @@
 格式约定: 每条含发现编号（代管期 findings 编目）与证据 commit。当前版本以
 `VERSION` 文件为准（`wb_common.toolkit_version()` 读取）。
 
+## Unreleased — 2026-09-08（F-071 gen_periph 测试补齐：0% → 99%）
+
+- **F-071 处置（gen_periph.py 零覆盖补齐，test）**: 2026-09-08 全仓 coverage
+  实测 scripts/ 6,664 语句仅 31%，`gen_periph.py` 528 语句 0% —— 而它是给
+  AI 产出寄存器级 C 代码的唯一入口，生成物会被直接粘进固件。
+  处置 = 新增 `tests/test_gen_periph.py`（50 例），只补测试不动生产代码:
+  - pin_* helpers 逐条钉（位移 %8 环回 / CRL-CRH 分界 / 多位数引脚）;
+  - 9 个 gen_* 各走"平凡路径 + 分支/边界": APB1/APB2 总线选择、SMPR1/2 与
+    CCMR1/2 与 CRL/CRH 寄存器选择、BRR/CCR/PSC-ARR 换算、未知外设与非法
+    参数的错误分支、gen_doc 的 relationships-only 兜底与输出目录默认值;
+  - main() argparse 分发与 4 个必填校验的退出码 1;
+  - 变异验证（先红后绿纪律）: 注入 3 处变异（pin_cr_shift ×8 / SysTick
+    LOAD-2 / I2C fast CCR ÷3→÷2）→ 19 例转红; 还原后全绿。
+  - 实测覆盖: `gen_periph.py` 0% → **99%**（528 语句缺 7，余量为
+    `__main__` 守卫）。
+  - 副产品（登记不修，范围限定"补测试"）: 发现 3 个生成缺陷，按 xfail
+    纪律以 `expectedFailure` 钉在 `GenKnownGapTests`（修复后 XPASS 须翻转）:
+    ① gen_usart 硬编码 CRH，低引脚 (<8) 应走 CRL; ② BRR fraction 舍入到
+    16 时 `|` 拼装在奇数 mantissa 下丢失进位（1377 baud → 应 0xCB00 实际
+    0xCC30）; ③ gen_doc 依赖段 `RCC_{rcc_register}ENR` 与寄存器名自带 ENR
+    重复 → "RCC_APB1ENRENR"。
+
 ## Unreleased — 2026-09-05（F-070 陈旧分支清理：仓库卫生）
 
 - **F-070 处置（5 个陈旧 worktree 分支 + PR #6 worktree 留尾清理，chore）**:
