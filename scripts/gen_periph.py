@@ -156,6 +156,11 @@ def gen_usart(usart: str, baud: int, tx: str, rx: str) -> str:
     div = pclk_mhz * 1000000 / (16 * baud)
     mantissa = int(div)
     fraction = round((div - mantissa) * 16)
+    # F-076: fraction 舍入到 16 = mantissa 进位。旧式 (m<<4)|f 在奇数 m 下
+    # bit4 已被占用, |16 会静默丢弃进位 (实测 baud=1377 → 0xCC30, 应 0xCB00)。
+    if fraction >= 16:
+        mantissa += 1
+        fraction = 0
     brr = (mantissa << 4) | fraction
 
     tx_port = pin_port(tx)

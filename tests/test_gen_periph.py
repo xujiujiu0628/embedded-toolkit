@@ -9,8 +9,9 @@ r"""gen_periph 代码生成器回归套件 (F-071) — 0% 覆盖模块的首批�
   2. 每个 gen_* 走"平凡路径 + 至少一个分支/边界": 总线选择 (APB1/APB2)、
      寄存器选择 (CRL/CRH、SMPR1/2、CCMR1/2)、分频/波特率换算、错误分支;
   3. 已知缺陷按本仓 xfail 纪律登记为 expectedFailure (欠债白纸黑字),
-     修好后它们会 XPASS, 届时必须翻转重跑 —— 见 GenKnownGapTests 的注释
-     与各条修复的 CHANGELOG 段 (F-074 起)。
+     修好后它们会 XPASS, 届时必须翻转重跑 —— F-071 登记的三例已由
+     F-074 (ENR 双写) / F-075 (usart CRH) / F-076 (BRR 进位) 全部修复
+     翻转为常规断言, GenKnownGapTests 类随之清空移除。
 
 不覆盖: gen_doc 的真实 doxygen 排版细节 (随时可调), main() 的 argparse
 帮助文本。所有断言取值为 2026-09-08 在 HEAD 8b8f2ba 上的实跑输出。
@@ -146,6 +147,19 @@ class GenUsartTests(unittest.TestCase):
         out = gen_periph.gen_usart("USART1", 115200, "PA9", "PA10")
         self.assertIn("GPIOA->CRH |=  (0xBUL << 4);", out)   # TX=PA9 AF-PP
         self.assertIn("GPIOA->CRH |=  (0x4UL << 8);", out)   # RX=PA10 浮空
+
+    def test_brr_fraction_carry_rounds_into_mantissa(self):
+        """F-076 修复钉: fraction 舍入到 16 必须进位到 mantissa。
+
+        baud=1377 @72MHz: div=3267.974 → m=3267, f=16 → 进位 3268/0 =
+        3268<<4 = 0xCC40; 旧式 (m<<4)|f 在奇数 m 下 bit4 已被占用,
+        进位被静默丢弃 (0xCC30 = 3267.0)。
+        订正: F-071 旧段与已知缺口 docstring 曾写 "应 0xCB00" 为算术笔误,
+        以本断言为准。"""
+        out = gen_periph.gen_usart("USART1", 1377, "PA9", "PA10")
+        self.assertIn("USART1->BRR = 0xCC40;", out)
+        # 进位后整数分频值不得再携带非零小数位
+        self.assertIn("BRR=0xCC40 (3268.0/16)", out)
 
     def test_low_pins_use_crl_high_pins_use_crh(self):
         """F-075 修复钉: CRH 硬编码曾把 PA2 的位移落在 PA10 的字段上。"""
@@ -483,26 +497,6 @@ class MainCliDispatchTests(unittest.TestCase):
             self.assertTrue(os.path.isfile(os.path.join(tmp, "i2c1_ref.md")))
         finally:
             shutil.rmtree(tmp, ignore_errors=True)
-
-
-class GenKnownGapTests(unittest.TestCase):
-    """登记在册的生成缺陷 — 按本仓 xfail 纪律: 修复后此处会 XPASS, 须翻转重跑。
-
-    ENR 双写已由 F-074 修复翻转; usart 低引脚 CRH 已由 F-075 修复翻转
-    (断言收进 GenUsartTests.test_low_pins_use_crl_high_pins_use_crh);
-    余下 BRR 进位一例登记于 2026-09-08 全仓架构剖析报告, 修复属独立 commit
-    (需自备完形 red→green 证据)。
-    """
-
-    @unittest.expectedFailure
-    def test_usart_brr_fraction_carry_should_not_be_lost(self):
-        """缺陷: fraction 舍入到 16 时用 `|` 拼装, 奇数 mantissa 下进位丢失。
-
-        1377 baud → div=3267.974 → mantissa=3267, fraction=16 → 应为 3268/0
-        (0xCB00), 实际输出 0xCC30 (=3267/0)。
-        """
-        out = gen_periph.gen_usart("USART1", 1377, "PA9", "PA10")
-        self.assertIn("USART1->BRR = 0xCB00;", out)
 
 
 if __name__ == "__main__":
