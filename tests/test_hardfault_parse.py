@@ -175,12 +175,11 @@ class MapSymbolTests(unittest.TestCase):
 
 class ResolveAddressTests(unittest.TestCase):
 
-    @unittest.expectedFailure
     def test_range_match_prefers_smallest_containing_symbol(self):
-        """F-081 发现登记: resolve_address 注释写"优先匹配小函数（更精确）"，
-        实现却是 `size > best_size` 选最大包含符号 — 注释与实现矛盾。
-        本断言按注释意图写（嵌套场景 PC 落在大函数内的小 helper 应报 helper），
-        修复为独立 commit (F-082)。"""
+        """F-082 修复钉: 嵌套场景 PC 落在大函数内的小 helper 必须报 helper。
+
+        旧实现 `size > best_size` 选最大包含符号, 与注释"优先匹配小函数"
+        矛盾 (F-081 发现登记, 本例由 expectedFailure 翻转为常规断言)。"""
         symbols = [
             {"name": "big", "addr": 0x08000000, "size": 0x1000},
             {"name": "small", "addr": 0x08000100, "size": 0x10},

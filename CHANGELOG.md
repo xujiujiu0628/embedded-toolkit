@@ -1121,3 +1121,14 @@
   小 helper 时会误报外层函数，误导归因。按 xfail 纪律以 expectedFailure
   登记（断言按注释意图写），修复另立 commit (F-082)。既有
   test_hardfault_map.py 的单符号场景与新语义不冲突（零修改全绿）。
+
+## Unreleased — 2026-09-08（F-082 修复 resolve_address 符号匹配优先级）
+
+- **F-082 处置（归因准确性修复，fix）**: F-081 登记的注释/实现矛盾——
+  resolve_address 的 `size > best_size` 实际选**最大**包含符号。危害场景:
+  生成代码把多个函数内联进同一 region 时（或符号表含大小函数嵌套），
+  PC 落在大函数内的小 helper 会误报成外层函数，HardFault 归因直接指错
+  修改位置。修复 = `best is None or sym["size"] < best_size`（真正选最小
+  包含符号，同尺寸保持先到优先）；无 size 的 GCC 符号区间匹配恒空，
+  F-005 最近前导兜底路径不受影响（既有测试钉住）。F-081 的
+  expectedFailure 翻转为常规断言。
