@@ -23,3 +23,22 @@ jobs:
       # 每跑一次都在验证 load_machine 回退链（machine.example.json）真的可用。
       - name: Run test suite
         run: python -m unittest discover -s tests
+
+  # F-084: 覆盖率棘轮门禁 — 防止 2026-09-08 之前 31% 的静默侵蚀重演。
+  # 与 unittest 金丝雀 job 分开: 金丝雀刻意不装 coverage/不建 machine.json,
+  # 本 job 装 coverage (coverage-data 模式的 5 例测试随之激活)。
+  coverage-gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Install coverage
+        run: pip install coverage
+      - name: Run suite under coverage
+        run: python -m coverage run --source=scripts --omit="*/legacy/*" -m unittest discover -s tests
+      # 棘轮下限: 2026-09-08 实测 TOTAL 40% (windows); 留平台差异余量取 38。
+      # 纪律: 只升不降——提升覆盖率后应同步上调此值并入 CHANGELOG 账目。
+      - name: Coverage floor (ratchet, only goes up)
+        run: python -m coverage report --include="scripts/*" --omit="*/legacy/*" --fail-under=38
