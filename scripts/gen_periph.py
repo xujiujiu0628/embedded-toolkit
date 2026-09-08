@@ -339,7 +339,16 @@ def gen_adc(adc: str, ch: int, pin: str) -> str:
 
 
 def gen_timer_int(timer: str, period_ms: int, tim_clk_mhz: int = 72) -> str:
-    """生成定时中断代码"""
+    """生成定时中断代码
+
+    F-086 修复两处 C 类静默缺陷:
+      1. TIM1 的 CMSIS 向量名是 TIM1_UP_* (bit25 = TIM1_UP_IRQn);
+         TIM1_IRQHandler/TIM1_IRQn 不存在 — 弱默认处理函数接管, 编译
+         链接都不报错, ISR 永不执行;
+      2. ARR 超 16 位 (period ≥ 63ms, 因 target_hz=1000//period_ms 整除)
+         被硬件截断而注释照写名义周期 — 现显式报错 (周期类配置在固定
+         PSC 下无合理近似, 不产出假装正确的配置)。
+    """
     tim_clock = TIM_CLOCK_BIT.get(timer, f"{timer}EN")
 
     # IRQ 号
@@ -350,6 +359,21 @@ def gen_timer_int(timer: str, period_ms: int, tim_clk_mhz: int = 72) -> str:
     target_hz = 1000 // period_ms
     best_psc = 71  # → 1MHz
     best_arr = (tim_clk_mhz * 1_000_000) // ((best_psc + 1) * target_hz) - 1
+    # F-086 缺陷 2: ARR 16 位上限。固定 PSC=71 无缩放自由度, 超限即不可
+    # 表示 (实测阈值 63ms: target_hz=1000//period_ms 整除, 63ms→15Hz→
+    # ARR 66665 > 65535)。对照 gen_pwm: 它有候选 ARR 表可缩放故走
+    # "最接近值+旁注"; 本函数无自由度, 仿 gen_systick/gen_i2c 显式报错。
+    if best_arr > 65535:
+        return (f"/* ERROR: {timer} ARR={best_arr} > 65535 (16-bit) — "
+                f"period {period_ms}ms (target {target_hz}Hz) 在固定 "
+                f"PSC={best_psc} (1MHz tick) 下不可表示; "
+                f"请缩短周期或自行降低 tick 频率。*/")
+
+    # F-086 缺陷 1: 向量表命名 — TIM1 走 TIM1_UP_* (更新中断), TIM2~4
+    # 走常规命名
+    vec_irq = f"{timer}_UP_IRQn" if timer == "TIM1" else f"{timer}_IRQn"
+    vec_handler = (f"{timer}_UP_IRQHandler" if timer == "TIM1"
+                   else f"{timer}_IRQHandler")
 
     lines = []
     lines.append(f"/* ========================================================================")
@@ -361,7 +385,7 @@ def gen_timer_int(timer: str, period_ms: int, tim_clk_mhz: int = 72) -> str:
     tim_bus = TIM_BUS.get(timer, "APB1")   # F-077: TIM1 → APB2, 其余 APB1
     lines.append(f"RCC->{tim_bus}ENR |= RCC_{tim_bus}ENR_{tim_clock};")
     lines.append(f"__DSB();")
-    lines.append(f"NVIC->ISER[{irq//32}] = (1UL << {irq%32});  // {timer}_IRQn = {irq}")
+    lines.append(f"NVIC->ISER[{irq//32}] = (1UL << {irq%32});  // {vec_irq} = {irq}")
     lines.append(f"")
     lines.append(f"/* 2. Timer 配置 */")
     lines.append(f"{timer}->PSC = {best_psc};            // {tim_clk_mhz}MHz/({best_psc}+1) = {tim_clk_mhz*1000000//(best_psc+1)}Hz")
@@ -370,7 +394,7 @@ def gen_timer_int(timer: str, period_ms: int, tim_clk_mhz: int = 72) -> str:
     lines.append(f"{timer}->CR1 = 1;                   // 使能")
     lines.append(f"")
     lines.append(f"/* 3. ISR */")
-    lines.append(f"void {timer}_IRQHandler(void) {{")
+    lines.append(f"void {vec_handler}(void) {{")
     lines.append(f"    if ({timer}->SR & 1) {{          // 更新标志")
     lines.append(f"        {timer}->SR &= ~1;           // 清除标志")
     lines.append(f"        // TODO: 每 {period_ms}ms 执行的代码")
@@ -790,7 +814,12 @@ GPIO 模式:
         print(gen_systick(args.freq))
 
     elif args.type == "timer-int":
-        print(gen_timer_int(args.timer, args.period_ms, args.tim_clk))
+        out = gen_timer_int(args.timer, args.period_ms, args.tim_clk)
+        print(out)
+        if out.startswith("/* ERROR"):
+            # F-086: 不可表示周期显式失败 — 机器消费方按退出码判定,
+            # 不产出被硬件截断却自称正确的配置
+            sys.exit(1)
 
     elif args.type == "i2c":
         print(gen_i2c(args.i2c, args.speed, args.scl, args.sda))

@@ -107,5 +107,49 @@ class PwmFrequencySweepTests(unittest.TestCase):
         self.assertGreaterEqual(len(self.FREQS), 2000)
 
 
+class TimerIntArrBoundaryTests(unittest.TestCase):
+    """F-086 缺陷 2 修复钉: timer-int 域纳入扫描 — ARR 16 位边界。
+
+    timer-int 固定 PSC=71 (1MHz tick) ⇒ ARR = 1000*period_ms - 1，
+    period_ms ≥ 66 即超 65535 被硬件截断，注释却按未截断值写 (C 类静默)。
+    处置路线 (a) 报错退出: 周期类配置无合理近似 (gen_pwm 的"最接近值+
+    旁注"依赖候选 ARR 表可缩放，此处 PSC 固定无自由度)，不产出假装
+    正确的固件配置。
+    """
+
+    def test_representable_periods_arr_exact(self):
+        # 真实阈值: target_hz = 1000//period_ms (整除), ARR = 1e6//target_hz - 1
+        # → period ≤ 62ms 时 target_hz ≥ 16, ARR ≤ 62499; 63ms 起即溢出
+        # (简报 §2 估算"约 66ms"未计入该整除, 以实测为准)
+        for period_ms in (1, 10, 50, 62):
+            with self.subTest(period_ms=period_ms):
+                out = gen_periph.gen_timer_int("TIM2", period_ms, 72)
+                arr = int(re.search(r"->ARR = (\d+);", out).group(1))
+                self.assertEqual(arr, 1_000_000 // (1000 // period_ms) - 1)
+                self.assertLessEqual(arr, 65535)
+
+    def test_unrepresentable_period_returns_error_not_truncation(self):
+        for period_ms in (63, 66, 100, 1000):
+            with self.subTest(period_ms=period_ms):
+                out = gen_periph.gen_timer_int("TIM2", period_ms, 72)
+                self.assertTrue(
+                    out.startswith("/* ERROR"),
+                    f"{period_ms}ms 应显式报错而非产出被截断的 ARR")
+                self.assertIn("65535", out)
+
+    def test_cli_exits_nonzero_on_unrepresentable_period(self):
+        """简报 §3⑤: CLI 报错路线须退出码非 0 (机器消费方可判失败)"""
+        import subprocess
+        r = subprocess.run(
+            [sys.executable, os.path.join(os.path.dirname(
+                os.path.dirname(os.path.abspath(__file__))),
+                "scripts", "gen_periph.py"),
+             "--type", "timer-int", "--timer", "TIM2", "--period-ms", "1000"],
+            capture_output=True, text=True, encoding="utf-8",
+            errors="replace", timeout=60)
+        self.assertEqual(r.returncode, 1, r.stdout[-300:])
+        self.assertIn("/* ERROR", r.stdout)
+
+
 if __name__ == "__main__":
     unittest.main()
