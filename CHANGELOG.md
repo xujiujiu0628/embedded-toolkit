@@ -1147,3 +1147,14 @@
   规则演进如实记账: 初版两条规则过严是规则错不是数据错——NVIC/SysTick
   base 在 CM3 私有区、FSMC base 0xA0000000 是 RM0008 规定区域、通道类
   引脚本就无 mode，均已按数据手册修正校验范围。
+
+## Unreleased — 2026-09-08（F-084 CI 覆盖率棘轮门禁）
+
+- **F-084 处置（防静默侵蚀，ci）**: ci.yml 新增 coverage-gate job——
+  coverage run 全量套件 + `coverage report --fail-under=38`（棘轮下限：
+  2026-09-08 实测 TOTAL 40%，留 2pt 平台差异余量；纪律只升不降，
+  提升后须同步上调并入账）。与 unittest 金丝雀 job 分离：金丝雀刻意
+  不装 coverage（陌生人 clone 语义），本 job 装 coverage 后
+  coverage-data 模式的 5 例测试在 CI 也激活。38 这个数字的动机：
+  F-071 前的真实覆盖率曾从无人知晓的低位静默漂移，度量修好（F-072）
+  之后的下一步就是让"掉下去"变成 CI 红。
