@@ -163,7 +163,8 @@ def gen_usart(usart: str, baud: int, tx: str, rx: str) -> str:
     mantissa = int(div)
     fraction = round((div - mantissa) * 16)
     # F-076: fraction 舍入到 16 = mantissa 进位。旧式 (m<<4)|f 在奇数 m 下
-    # bit4 已被占用, |16 会静默丢弃进位 (实测 baud=1377 → 0xCC30, 应 0xCB00)。
+    # bit4 已被占用, |16 会静默丢弃进位 (实测 baud=1377 → 0xCC30, 应 0xCC40;
+    # F-071 曾误记 0xCB00 = 3248.0, 见 CHANGELOG F-076 账本订正)。
     if fraction >= 16:
         mantissa += 1
         fraction = 0
