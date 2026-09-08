@@ -3,6 +3,19 @@
 格式约定: 每条含发现编号（代管期 findings 编目）与证据 commit。当前版本以
 `VERSION` 文件为准（`wb_common.toolkit_version()` 读取）。
 
+## Unreleased — 2026-09-08（F-075 修复 gen_usart 低引脚 CRH 硬编码）
+
+- **F-075 处置（生成缺陷修复 #2/3，fix，B 类静默缺陷）**: F-071 登记的第 ① 号
+  缺陷——gen_usart 的 GPIO 配置硬编码 CRH，低引脚 (<8) 的位移落在 CRH 的
+  错误字段上：实测 `USART2 @ PA2/PA3` 生成 `GPIOA->CRH` 位移 8（实为 PA10
+  的配置字段），PA2/PA3 保持浮空 → **生成物编译通过但 USART2 TX 无输出**
+  （B 类：构建关卡失明，只能靠 capture/verify 或真机调试兜底）。
+  处置 = 改用 `pin_cr_reg(tx/rx)` 按引脚号选择 CRL/CRH（位移沿用
+  `pin_cr_shift` 的 (n%8)*4，与两段寄存器布局一致）——寄存器选择逻辑收敛到
+  F-071 已测的 helper 上。翻转对应 expectedFailure，并新增
+  `test_low_pins_use_crl_high_pins_use_crh` 钉（断言 PA2/PA3 输出全部走 CRL、
+  高引脚 PA9/PA10 仍走 CRH 防止修过头）。
+
 ## Unreleased — 2026-09-08（F-074 修复 gen_doc 依赖段 ENR 双写）
 
 - **F-074 处置（生成缺陷修复 #1/3，fix）**: F-071 登记的第 ③ 号缺陷——

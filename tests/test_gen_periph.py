@@ -147,6 +147,15 @@ class GenUsartTests(unittest.TestCase):
         self.assertIn("GPIOA->CRH |=  (0xBUL << 4);", out)   # TX=PA9 AF-PP
         self.assertIn("GPIOA->CRH |=  (0x4UL << 8);", out)   # RX=PA10 浮空
 
+    def test_low_pins_use_crl_high_pins_use_crh(self):
+        """F-075 修复钉: CRH 硬编码曾把 PA2 的位移落在 PA10 的字段上。"""
+        low = gen_periph.gen_usart("USART2", 9600, "PA2", "PA3")
+        self.assertIn("GPIOA->CRL |=  (0xBUL << 8);", low)   # TX=PA2 AF-PP
+        self.assertIn("GPIOA->CRL |=  (0x4UL << 12);", low)  # RX=PA3 浮空
+        gpio_lines = [l for l in low.splitlines() if l.startswith("GPIO")]
+        self.assertTrue(all("CRL" in l for l in gpio_lines),
+                        f"低引脚 (PA2/PA3) 的 GPIO 行不得再出现 CRH: {gpio_lines}")
+
 
 class GenPwmTests(unittest.TestCase):
 
@@ -479,16 +488,11 @@ class MainCliDispatchTests(unittest.TestCase):
 class GenKnownGapTests(unittest.TestCase):
     """登记在册的生成缺陷 — 按本仓 xfail 纪律: 修复后此处会 XPASS, 须翻转重跑。
 
-    ENR 双写一例已于 F-074 修复并翻转为 GenDocTests 的正常断言; 余下两条
-    登记于 2026-09-08 全仓架构剖析报告的问题清单, 修复属独立 commit
+    ENR 双写已由 F-074 修复翻转; usart 低引脚 CRH 已由 F-075 修复翻转
+    (断言收进 GenUsartTests.test_low_pins_use_crl_high_pins_use_crh);
+    余下 BRR 进位一例登记于 2026-09-08 全仓架构剖析报告, 修复属独立 commit
     (需自备完形 red→green 证据)。
     """
-
-    @unittest.expectedFailure
-    def test_usart_low_pin_should_use_crl_not_crh(self):
-        """缺陷: gen_usart 硬编码 CRH; PA2/PA3 (<8) 应按 CRL 输出。"""
-        out = gen_periph.gen_usart("USART2", 9600, "PA2", "PA3")
-        self.assertIn("GPIOA->CRL |=  (0xBUL << 8);", out)
 
     @unittest.expectedFailure
     def test_usart_brr_fraction_carry_should_not_be_lost(self):
