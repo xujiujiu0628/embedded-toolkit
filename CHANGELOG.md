@@ -18,6 +18,31 @@
   全量 476 绿（478−2: S4 与 test_verify_main_success_path 的两例因语义
   分流整合为单例断言）。
 
+## Unreleased — 2026-09-09（F-100~F-102 批次 6 收官：禁令机检 / CI 烟测 / 零覆盖清零）
+
+- **F-100 处置（审计 P1-10 / WB-C6，test+ci）**: CONTRIBUTING 三条"可机检
+  禁令"落为 `tests/test_layering_gates.py`（3 例, AST 静态扫描）——① 低层
+  (Layer 0/0.5/1) 禁 import Layer 2；② 生产脚本禁 import verify；③ legacy/
+  禁新增 runtime_common。红探验证: 向 wb_common 注入违规 import → 机检红 →
+  还原绿。**登记**: openocd_gdb_common 实为"gdb 族共享件"（只被 openocd_gdb
+  消费, 自身 import openocd_runtime）——CONTRIBUTING 分层图"三 runtime"
+  未列它属图示遗漏, 机检按 Layer 1 归类并注释登记, Layer 1 族内互引放行。
+  `coverage_lint --strict` 接入 CI（coverage-lint job）。
+- **F-101 处置（审计 P2-11 / WB-C6，ci）**: ci.yml 新增 syntax-smoke job
+  （ubuntu 装 gcc-arm-none-eabi）——语法烟测此前只在 Windows 本地跑,
+  ubuntu 恒 skip, 生成器语法回归在 CI 上零防线; 现在 CI 三 job 变四 job。
+- **F-102 处置（审计 P1-8 / WB-C7，test）**: 零覆盖收官——serial_hex
+  （hex_dump/emit_chunk）、serial_monitor（include/exclude 过滤）、
+  serial_scan（芯片映射+体面失败）、serial_log（text/csv/json 三格式
+  落盘+引号转义+非法 UTF-8 hex 兜底+duration 停止）、serial_send
+  （payload hex/文本×行尾）、cube_to_keil（USER CODE 块提取+_dedent）
+  共 24 例纯 host 逻辑测试。**coverage_lint 未覆盖清单 6 → 0**,
+  `--strict` 门禁转绿; 反向钉（P2-12）按"覆盖提升即移钉"纪律全部移除。
+  施工实录: serial_hex.output_json 写 sys.stdout.buffer（text 层
+  redirect_stdout 拦不住）——测试须替换整个 stdout 对象; serial_log.main()
+  成功路径无显式 return（返回 None 非 0, mock 断言别假设退出码 0）。
+  全量 **502 绿**（479+24−1 合并 S4）。
+
 ## Unreleased — 2026-09-09（F-096 hooks 漏报修复：判据加 --cached 优先【拍板 A】+ 工程卫生收尾）
 
 - **F-096 处置（F-093 登记项 / 维护者拍板选项 A，fix，Orchestrator 亲执行）**:
