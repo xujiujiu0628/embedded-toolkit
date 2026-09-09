@@ -4,7 +4,7 @@ r"""handoff_guard — 外部智能体代管分支的沙盒禁线机器判据。
 用途：换回协议第一步。扫描 `git diff base...branch`，判定 handoff 分支是否越过
 "只码不碰硬件"的沙盒边界。输出 JSON，退出码 clean=0 / blocked=1。
 
-三级判据（设计：维护者私有仓 <d-claude-root>\embedded-handoff\docs\superpowers\specs\
+三级判据（设计：维护者私有仓 embedded-handoff 的 docs/superpowers/specs/ 目录（本机路径不公开, F-089）——\
 2026-08-30-agent-handoff-design.md 第 5 节）：
   L1 文件禁线（硬阻断）：machine.json、hooks/、本脚本自身
   L2 硬件模式（阻断）：openocd 调用、烧录命令、串口打开、RTT 端口 19021、gdb 连硬件
