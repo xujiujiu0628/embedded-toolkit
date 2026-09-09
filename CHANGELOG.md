@@ -3,6 +3,29 @@
 格式约定: 每条含发现编号（代管期 findings 编目）与证据 commit。当前版本以
 `VERSION` 文件为准（`wb_common.toolkit_version()` 读取）。
 
+## Unreleased — 2026-09-09（F-089 公开仓裸机器路径中性化 + 静态扫描钉）
+
+- **F-089 处置（审计 WB-B5 / 简报 WB-20260909-03，fix+test，Orchestrator 亲执行）**:
+  F-067b 自订"路径全部中性化、不允许新 commit 再回写机器路径"，但 legacy/README
+  与 handoff_guard docstring 等仍带 `<d-claude-root>` 形态（F-069 二审 H-1 只查了
+  `.github/`，漏了其余 tracked 文件——**检查面写成"上次查过的面"而非"全部面"是
+  本次根因**）。处置两件:
+  1. **中性化 15 处**（CHANGELOG 8 处历史账目段除外）: legacy/README ×8、
+     README ×3、CONTRIBUTING ×1、SENSITIVE_FINDINGS ×1、handoff_guard
+     docstring ×1。占位词按语境分两类: 工作区根 → `<d-claude-root>`
+     （F-067b 既有惯例）; 私有仓指称 → `<维护者私有仓>`（指称对象是"哪个仓"
+     而非路径本身）。handoff_guard 仅动 docstring 字符串，判据逻辑零改动。
+  2. **静态扫描钉** `tests/test_source_hygiene_paths.py`（2 例）: 扫 git
+     ls-files 的 .py/.md，断言零命中 `D:[\/]claude`（大小写不敏感、双分隔符）;
+     先红后绿（临时放回一处 → 红 → 还原 → 绿）。**豁免 = {CHANGELOG.md}**:
+     历史账目段属 append-only 保护区，路径是账目的一部分，事后擦写会断证据链
+     （F-069 记账纪律）——豁免是显式决策并有最小性钉防静默扩大。
+  - 施工实录: ① heredoc 传输层吞反斜杠把正则字符集变未闭合（PatternError）——
+    含反斜杠的内容一律 chr(92) 构造（F-067b 教训第 2 条再验证）; ② 正则字符集
+    内 `\]` 会转义闭括号，双反斜杠+斜杠才合法; ③ 红证注入后 `git checkout --
+    README.md` 把已完成的中性化一并还原——checkout 恢复的是 HEAD 全文件，
+    注入验证要在提交后做或用精确行还原。
+  - 全量绿。
 ## Unreleased — 2026-09-09（F-088 verify 主流程失败/重试分支集成测试 + 死分支登记）
 
 - **F-088 处置（审计 WB-B6 / 简报 WB-20260909-02，test，Orchestrator 亲执行）**:
