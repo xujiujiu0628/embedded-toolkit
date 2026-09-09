@@ -127,12 +127,13 @@ class RepoRegressionTests(unittest.TestCase):
                              "checkpoint_ledger.py", "failure_context.py",
                              "doctor.py", "capture_semihosting.py"):
             self.assertNotIn(split_module, uncovered)
-        # 真零覆盖的文件仍必须被报 (防止口径从"假阳"摆到"全绿")
-        self.assertIn("cube_to_keil.py", uncovered)
-        # F-097: serial_mux 有了行为测试 (test_serial_mux_lifecycle) →
-        # 不再零覆盖, 原钉移除; cube_to_keil 仍真零覆盖保留。
-        # (P2-12 反向锁按"覆盖提升即移钉"纪律处理, 见 CHANGELOG F-097)
+        # 真零覆盖的文件仍必须被报 (防止口径从"假阳"摆到"全绿")。
+        # F-102 收官: 原 12 个零覆盖文件全部补测 (openocd 家族经 F-090,
+        # serial 族 + cube_to_keil 经 F-097/F-102), 反向钉按 P2-12
+        # "覆盖提升即移钉"纪律全部移除, 未覆盖清单 12 → 0。
         self.assertNotIn("serial_mux.py", uncovered)
+        self.assertNotIn("cube_to_keil.py", uncovered)
+        self.assertNotIn("serial_send.py", uncovered)
 
 
 @unittest.skipUnless(_coverage_available(),
