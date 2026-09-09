@@ -515,8 +515,11 @@ def execute_action(telnet: TelnetConnection, args) -> dict:
     start_time = time.time()
 
     if action == "halt":
-        telnet.send("halt")
+        halt_raw = telnet.send("halt")
         time.sleep(0.1)
+        # F-090: halt 命令结果必须过失败语义检查 (与 write-mem/bp 同口径) —
+        # 旧版从不检查且 halted:True 硬编码, 目标没停也报"已暂停" (静默失败面)。
+        halted_err = has_command_error(halt_raw)
         # halt 的状态信息输出在 stderr 而非 Telnet 响应，需要额外查询
         pc_raw = telnet.send("reg pc")
         xpsr_raw = telnet.send("reg xpsr")
@@ -524,11 +527,22 @@ def execute_action(telnet: TelnetConnection, args) -> dict:
         pc_regs = parse_reg_single(pc_raw)
         xpsr_regs = parse_reg_single(xpsr_raw)
         msp_regs = parse_reg_single(msp_raw)
-        parsed = {"halted": True, **pc_regs, **xpsr_regs, **msp_regs}
+        # halted 由 reg 响应推导 (响应报错或 pc 读不到 = 未确认暂停), 非硬编码
+        reg_failed = has_command_error(pc_raw) or has_command_error(xpsr_raw) \
+            or has_command_error(msp_raw)
+        if halted_err or reg_failed:
+            return {
+                "status": "error", "action": "halt",
+                "error": {"code": "halt_failed",
+                          "message": f"halt/reg 链路报错: {halt_raw or pc_raw}"},
+            }
+        parsed = {"halted": bool(pc_regs), **pc_regs, **xpsr_regs, **msp_regs}
         pc = parsed.get("pc", "?")
+        summary = (f"已暂停，PC={pc}" if parsed["halted"]
+                   else "halt 已发送但未确认暂停 (reg 无返回)")
         return {
             "status": "ok", "action": "halt",
-            "summary": f"已暂停，PC={pc}",
+            "summary": summary,
             "details": parsed,
         }
 
@@ -580,21 +594,55 @@ def execute_action(telnet: TelnetConnection, args) -> dict:
             "xpsr", "msp", "psp", "primask", "basepri", "faultmask", "control",
         ]
         registers = {}
+        reg_errors = []
         for name in core_reg_names:
             raw = telnet.send(f"reg {name}")
+            # F-090: 逐寄存器检查失败语义, 汇总而非静默跳过。
+            # 空响应也算失败 (连接断/目标无响应时 OpenOCD 静默, 不能当读成功)
+            if not raw.strip() or has_command_error(raw):
+                reg_errors.append(f"{name}: {raw.strip()[:80] or '(空响应)'}")
+                continue
             parsed = parse_reg_single(raw)
-            registers.update(parsed)
+            if parsed:
+                registers.update(parsed)
+            else:
+                reg_errors.append(f"{name}: (响应无法解析) {raw.strip()[:80]}")
+        if reg_errors and not registers:
+            # 全部寄存器读不到 → 明确失败 (旧版返回 ok + 0 个寄存器)
+            return {
+                "status": "error", "action": "reg",
+                "error": {"code": "reg_read_failed",
+                          "message": f"全部核心寄存器读取失败: "
+                                     f"{'; '.join(reg_errors[:3])}"},
+            }
+        summary = f"读取到 {len(registers)} 个寄存器"
+        if reg_errors:
+            summary += f" ({len(reg_errors)} 个读取失败)"
         return {
             "status": "ok", "action": "reg",
-            "summary": f"读取到 {len(registers)} 个寄存器",
-            "details": {"registers": registers},
+            "summary": summary,
+            "details": {"registers": registers,
+                        "errors": reg_errors},
         }
 
     elif action == "read-mem":
         width_cmd = {"8": "mdb", "16": "mdh", "32": "mdw"}
         cmd = f"{width_cmd[args.width]} {args.address} {args.length}"
         raw = telnet.send(cmd)
+        # F-090: 与 write-mem 同口径 — 非法地址/无输出必须报错, 不产出
+        # "读取成功 + 空 memory" 的假结果
+        if has_command_error(raw):
+            return {
+                "status": "error", "action": "read-mem",
+                "error": {"code": "read_failed", "message": raw.strip()[:200]},
+            }
         memory = parse_mem_response(raw)
+        if not memory:
+            return {
+                "status": "error", "action": "read-mem",
+                "error": {"code": "read_empty",
+                          "message": f"命令无数据返回: {raw.strip()[:200]}"},
+            }
         return {
             "status": "ok", "action": "read-mem",
             "summary": f"读取 {args.length} x {args.width}bit @ {args.address}",
