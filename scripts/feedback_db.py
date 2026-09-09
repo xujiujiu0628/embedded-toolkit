@@ -296,6 +296,13 @@ def export_calibration() -> dict:
 
 
 def main():
+    # F-099: stdout/stderr 强制 UTF-8 (F-025 先例, expectations_lint 同款) —
+    # Windows GBK 控制台下 ensure_ascii=False 的中文会崩或乱码
+    for _stream in (sys.stdout, sys.stderr):
+        try:
+            _stream.reconfigure(encoding="utf-8")
+        except Exception:
+            pass
     parser = argparse.ArgumentParser(description="反馈数据库")
     parser.add_argument("--log", type=str, help="JSON 字符串格式的事件记录")
     parser.add_argument("--stats", type=str, help="查询 pipeline 统计 (build_fix|hardfault|code_gen)")
