@@ -121,6 +121,11 @@ def gen_gpio(pin: str, mode: str) -> str:
     lines.append(f"__DSB();")
     lines.append(f"{port_base}->{cr_reg} &= ~(0xFUL << {shift});")
     lines.append(f"{port_base}->{cr_reg} |=  ({mode_val}UL << {shift});")
+    # F-087: CNF=10/MODE=00 (输入模式 0x8) 的上下拉方向由 ODR 决定, 复位
+    # ODR=0 → 只写 CRL/CRH 实际是下拉, 与"上拉"标签相反 (B 类静默缺陷)。
+    # 上拉必须显式置 ODR 对应位; 其他模式不得触碰 ODR。
+    if mode == "in-pullup":
+        lines.append(f"{port_base}->ODR |= (1UL << {pin_num(pin)});")
     return "\n".join(lines)
 
 
@@ -138,13 +143,18 @@ def gen_systick(freq_hz: int) -> str:
     lines.append(f"SysTick->VAL  = 0;")
     lines.append(f"SysTick->CTRL = SysTick_CTRL_ENABLE | SysTick_CTRL_TICKINT | SysTick_CTRL_CLKSOURCE;")
     lines.append(f"")
+    # F-087: tick_ms 声明必须在 Handler 之前 (生成物是可独立编译的片段,
+    # 先用后声明编译即失败); Handler 必须递增 tick_ms, 否则 delay_ms 永久挂死
+    # (F-080 同族不变量)。
+    lines.append(f"/* 基于 SysTick 的延时计数 */")
+    lines.append(f"static volatile uint32_t tick_ms;")
+    lines.append(f"")
     lines.append(f"/* SysTick ISR */")
     lines.append(f"void SysTick_Handler(void) {{")
-    lines.append(f"    // called every {period_us}us")
+    lines.append(f"    tick_ms++;                  // F-087: 必须递增, 否则 delay_ms 永久挂死")
+    lines.append(f"    // called every {period_us}us — 用户代码加在这里")
     lines.append(f"}}")
     lines.append(f"")
-    lines.append(f"/* 基于 SysTick 的延时函数 */")
-    lines.append(f"static volatile uint32_t tick_ms;")
     lines.append(f"void delay_ms(uint32_t ms) {{")
     lines.append(f"    uint32_t start = tick_ms;")
     lines.append(f"    while ((tick_ms - start) < ms) {{ __WFI(); }}")
@@ -310,6 +320,13 @@ def gen_adc(adc: str, ch: int, pin: str) -> str:
     lines.append(f"/* 1. 时钟使能 */")
     lines.append(f"RCC->APB2ENR |= RCC_APB2ENR_{adc}EN | RCC_APB2ENR_IOP{port}EN;")
     lines.append(f"__DSB();")
+    lines.append(f"")
+    # F-087: 默认 ADCPRE=/2 → PCLK2/2 = 36MHz, 超出 ADC 14MHz 上限
+    # (data/f103_known_issues.json "ADC.max_clock")。先清后置 CFGR 位 15:14
+    # = 10b → ADCPRE=/6 = 12MHz; 用 |= 保留 CFGR 其他位。
+    lines.append(f"/* 1b. ADC 时钟分频 — ADCPRE=/6 (12MHz @ PCLK2=72MHz, ≤14MHz 上限) */")
+    lines.append(f"RCC->CFGR &= ~(3UL << 14);         // 清 ADCPRE[1:0]")
+    lines.append(f"RCC->CFGR |=  (2UL << 14);         // ADCPRE=10b → PCLK2/6")
     lines.append(f"")
     lines.append(f"/* 2. GPIO — {pin} 模拟输入 */")
     lines.append(f"GPIO{port}->{pin_cr_reg(pin)} &= ~(0xFUL << {shift});")
