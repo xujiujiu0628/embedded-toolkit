@@ -165,7 +165,8 @@ class CoverageDataModeTests(unittest.TestCase):
         shutil.rmtree(self.ws, ignore_errors=True)
 
     def _generate_coverage_data(self):
-        env = {**os.environ, "PYTHONPATH": self.scripts}
+        env = {**os.environ, "PYTHONPATH": self.scripts,
+                 "PYTHONIOENCODING": "utf-8"}  # F-099: GBK 控制台防乱码
         subprocess.run(
             [sys.executable, "-m", "coverage", "run",
              "--data-file", self.data_file,
@@ -191,7 +192,8 @@ class CoverageDataModeTests(unittest.TestCase):
              "--scripts-dir", self.scripts, "--tests-dir", self.tests,
              "--coverage-data", self.data_file, "--json"],
             capture_output=True, text=True, encoding="utf-8",
-            errors="replace", timeout=60)
+            errors="replace", timeout=60,
+            env={**os.environ, "PYTHONIOENCODING": "utf-8"})
         self.assertEqual(r.returncode, 0, r.stderr)
         doc = json.loads(r.stdout)
         self.assertEqual(doc["mode"], "coverage-data")
@@ -206,7 +208,8 @@ class CoverageDataModeTests(unittest.TestCase):
              "--scripts-dir", self.scripts, "--tests-dir", self.tests,
              "--json"],
             capture_output=True, text=True, encoding="utf-8",
-            errors="replace", timeout=60)
+            errors="replace", timeout=60,
+            env={**os.environ, "PYTHONIOENCODING": "utf-8"})
         self.assertEqual(r.returncode, 0, r.stderr)
         doc = json.loads(r.stdout)
         self.assertEqual(doc["mode"], "static-reachability")
@@ -222,7 +225,8 @@ class CoverageDataModeTests(unittest.TestCase):
              "--scripts-dir", self.scripts, "--tests-dir", self.tests,
              "--coverage-data", os.path.join(self.ws, "nope.coverage")],
             capture_output=True, text=True, encoding="utf-8",
-            errors="replace", timeout=60)
+            errors="replace", timeout=60,
+            env={**os.environ, "PYTHONIOENCODING": "utf-8"})
         self.assertEqual(r.returncode, 2, r.stderr)
         self.assertIn("数据文件不存在", r.stderr)
 
@@ -233,7 +237,8 @@ class CoverageDataModeTests(unittest.TestCase):
              "--scripts-dir", self.scripts, "--tests-dir", self.tests,
              "--coverage-data", self.data_file, "--strict"],
             capture_output=True, text=True, encoding="utf-8",
-            errors="replace", timeout=60)
+            errors="replace", timeout=60,
+            env={**os.environ, "PYTHONIOENCODING": "utf-8"})
         self.assertEqual(r.returncode, 1, r.stderr)
         self.assertIn("bar.py", r.stdout)
 

@@ -83,3 +83,32 @@ class GccSectionLoadTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class MakeTimingScaleTests(unittest.TestCase):
+    """F-099 修复钉: gcc_build 的 timing_ms 必须是毫秒量级 (P2-4: 曾把秒
+    直接当毫秒传入 make_timing, elapsed_ms 偏小 1000 倍)。性质断言: 真实
+    耗时 >=0.2s 的操作, elapsed_ms 必须落在 [200, 60000] 而非 [0, 60]。"""
+
+    def test_timing_ms_is_milliseconds_not_seconds(self):
+        import time as _time
+        from runtime_common import make_timing
+        started_at = "2026-09-09T12:00:00+08:00"
+        started_ts = _time.time()
+        _time.sleep(0.25)   # 250ms — 秒口径会得 0, 毫秒口径得 ~250
+        timing = make_timing(started_at, (_time.time() - started_ts) * 1000)
+        self.assertGreaterEqual(timing["elapsed_ms"], 200,
+                                "elapsed_ms 偏小 1000 倍 (秒当毫秒)")
+        self.assertLess(timing["elapsed_ms"], 60000)
+
+    def test_gcc_build_source_uses_ms_conversion(self):
+        """静态钉: gcc_build.py 的 make_timing 调用必须带 *1000 换算"""
+        import pathlib
+        src = pathlib.Path(__file__).resolve().parent.parent / \
+            "scripts" / "gcc_build.py"
+        found = [l for l in src.read_text(encoding="utf-8").splitlines()
+                 if "make_timing(" in l and "def " not in l]
+        self.assertTrue(found, "make_timing 调用消失?")
+        for line in found:
+            self.assertIn("* 1000", line,
+                          f"make_timing 调用缺毫秒换算: {line.strip()}")
