@@ -88,7 +88,7 @@ ALERT HIGH mv=3190
    `HAL_OK ≠ 字节正确` 是本仓库用一个月黑屏 OLED 换来的教训。
 3. **异构审查**——工作台的维护者（AI）也会被换无上下文、不同模型家族的
    外部智能体审计，`handoff_guard` 机器强制其不碰硬件与禁区
-   （历史对账记录在维护者私有仓 `<d-claude-root>\embedded-handoff\docs\handoff\`，不在本仓）。
+   （历史对账记录在维护者私有仓 `<维护者私有仓>/docs/handoff/`，不在本仓）。
 
 ## 环境要求
 
@@ -232,7 +232,7 @@ embedded-toolkit/
 - 修复纪律：**修 bug 必带回归测试**；写回型工具的默认参数路径必须有测试
 - 治理机制：外部异构智能体代管两轮——机制本身（分支起点核查、guard 禁线、
   换回五步、fresh-check 外审）持续演进；完整对账链在维护者私有仓
-  `<d-claude-root>\embedded-handoff\docs\handoff\`，不在本仓
+  `<维护者私有仓>/docs/handoff/`，不在本仓
 - 发布记录可信度：`release_audit` 对既有真实记录跑 CLEAN/预期 WARNED，
   篡改场景（换清单/搬记录）由测试固化
 
@@ -248,7 +248,7 @@ embedded-toolkit/
   环境变量指 archive 路径）
 - [`docs/handoff/` `docs/superpowers/` `skills/fresh-checker/` `AGENTS.md`
   `HANDOFF-AGENT.md`](#) — 已于 0.4 边界决策迁维护者私有仓
-  `<d-claude-root>\embedded-handoff\`，公开工具库不含维护者 ↔ Agent 协作私约
+  `<维护者私有仓 embedded-handoff>`，公开工具库不含维护者 ↔ Agent 协作私约
 
 ## 路线图
 
