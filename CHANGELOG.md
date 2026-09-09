@@ -3,6 +3,33 @@
 格式约定: 每条含发现编号（代管期 findings 编目）与证据 commit。当前版本以
 `VERSION` 文件为准（`wb_common.toolkit_version()` 读取）。
 
+## Unreleased — 2026-09-09（F-087 生成器三连修：gpio 上拉 / systick Handler / adc 分频）
+
+- **F-087 处置（审计 WB-B1 / 简报 WB-20260909-01，fix，Orchestrator 亲执行——WordBuddy 暂不可用）**:
+  三个生成器各一处缺陷（来源：2026-09-08 全项目审计 P1-4/P1-5/P1-6）——
+  **① gen_gpio 上拉实为下拉（B 类静默）**: `in-pullup` 只写 CRL/CRH（CNF=10/MODE=00），
+  而 RM0008 该模式下上下拉方向由 ODR 决定、复位 ODR=0 → 实际是下拉，与标签相反。
+  处置 = `in-pullup` 追加 `ODR |= (1UL << n)`；其他模式零波及（反向钉
+  `test_non_pull_modes_do_not_touch_odr_f087`）。`in-pulldown` 同族语义**本仓无此模式**，
+  已在简报声明"只报告不实施"——报告结论：mode_map 无 pulldown 条目，无需处置。
+  **② gen_systick 的 delay_ms 永久挂死（fail-loud）**: Handler 空体（仅注释）而
+  delay_ms 依赖 tick_ms 递增 → 首次调用即死循环。处置 = Handler 体补 `tick_ms++`
+  （F-080 同族不变量："ISR 必须推进被等待的标志"）；伴随约束 tick_ms 声明提前到
+  Handler 之前（生成物是可独立编译片段，先用后声明编译即失败，钉
+  `test_tick_ms_declared_before_handler_f087`）。
+  **③ gen_adc 无 ADCPRE 配置（与仓内 KB 自相矛盾）**: 默认 /2 → 36MHz 超出
+  `f103_known_issues.json` 明文的 14MHz 上限。处置 = 先清后置 CFGR 位 15:14 = 10b
+  （ADCPRE=/6 = 12MHz），`|=` 保留其他位（钉 `test_adclock_prescaler_set_within_14mhz_limit_f087`
+  断言无整体赋值）。
+  - 先红: 6 例新增断言全红（ODR×2 / tick_ms×2 / ADCPRE×2）；修复后绿。
+  - 变异验证 ×3: 撤 ODR → 2 红；撤 tick_ms++ → 1 红；撤 ADCPRE → 2 红；各自还原绿。
+  - **施工教训（烟测拦截）**: ② 首版把 `delay_ms` 定义搬进片段时**漏了它的收尾 `}`**——
+    F-078 语法烟测（arm-gcc -fsyntax-only）当场拦截 `expected declaration or statement
+    at end of input`。这正是 F-078 建闸的价值实证：语法烟测抓的是"人眼与单测都看不出
+    的结构错误"。初版单测 `assertIn("tick_ms", handler_body)` 也被注释字面量骗过
+    （"F-087: 必须递增"注释含 tick_ms），改为 `assertRegex(tick_ms\+\+)` 语义断言——
+    **断言要钉行为不要钉字面量**。
+  - 全量 446 绿（439+7 新例）；语法烟测全绿（arm-gcc 在场）。
 
 ## Unreleased — 2026-09-08（F-086 gen_timer_int 双 C 类缺陷修复）
 
