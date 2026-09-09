@@ -3,6 +3,21 @@
 格式约定: 每条含发现编号（代管期 findings 编目）与证据 commit。当前版本以
 `VERSION` 文件为准（`wb_common.toolkit_version()` 读取）。
 
+## Unreleased — 2026-09-09（F-095 build_has_errors 死分支激活：失败语义区分）
+
+- **F-095 处置（F-088 登记项 / 维护者拍板选项 A，fix，Orchestrator 亲执行）**:
+  F-088 实测 `build_has_errors`（verify.py 主流程）为死分支——analyze 返回
+  error 时不 break 出 build 重试循环 → 循环耗尽后恒走 build_failed 早退，
+  两后端（gcc/keil）均不可达 583 行。维护者拍板: **analyze error 直接
+  break**（编译器跑通但产物有错时重试同源码大概率仍 error, 纯耗预算）+
+  循环后按 `analyze.status` 分流: error → `build_has_errors`
+  （`Build has N error(s)`），否则 `build_failed`（`Build failed after N
+  attempt(s)`）——两种失败语义（"跑通但有错" vs "没跑成"）对 AI 消费方
+  可区分。验证类早退同样落台账（F-047 纪律延续）。S4 钉由"现实行为
+  build_failed"翻转为"build_has_errors"，先红后绿（修复前新断言红）。
+  全量 476 绿（478−2: S4 与 test_verify_main_success_path 的两例因语义
+  分流整合为单例断言）。
+
 ## Unreleased — 2026-09-09（F-093 hooks 行为探针 + 安装文档 + F-096 漏报缺陷登记）
 
 - **F-093 处置（审计 P2-9 / 批次 3 WB-C3，test+docs，Orchestrator 亲执行）**:

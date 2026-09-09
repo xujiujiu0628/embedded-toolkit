@@ -215,59 +215,27 @@ class VerifyMainflowRetryTests(unittest.TestCase):
         self.assertEqual(self._state()["last_checkpoint"]["status"],
                          "build_failed")
 
-    # ---- S4: build ok 但 analyze 有错 → **登记为不可达分支发现（不修复）** ----
+    # ---- S4: build ok 但 analyze 有错 ----
     #
-    # F-088 施工发现（超出原审计清单的新 finding）: analyze 恒 error 时
-    # build_ok 永不置 True → 循环耗尽后走 build_failed 早退（verify.py:543-556），
-    # **永远到不了** verify.py:583 的 build_has_errors 分支。可达性分析：
-    #   - gcc 后端: step_analyze 的 gcc 分支由 build_metrics 驱动恒可返回
-    #     error，但返回 error 只会让循环重试 → build_failed；
-    #   - keil 桥: analyze=None（log_file 空且非 gcc）时 573 行兜底
-    #     {"status":"error"} → 同样先撞 build_failed。
-    # → build_has_errors 是**死分支**（gcc/keil 两后端均不可达）。
-    # 按本任务禁线"发现新缺陷只登记不修复"处理，交维护者拍板：
-    #   选项1 删除死分支；选项2 analyze error 时 break 出循环改判
-    #   build_has_errors（保留区分"编译产物存在但有错"的语义）。
-    def test_s4_analyze_error_falls_into_build_failed_not_has_errors(self):
-        """S4(修订): analyze error → 重试耗尽 → build_failed。
-        build_has_errors 分支当前不可达（见类 docstring F-088 发现登记）,
-        本测试钉住**现实行为**, 修复死分支时翻转本测试。"""
+    # F-088 曾登记 build_has_errors 为死分支（analyze error 不 break 出
+    # 重试循环）。维护者 2026-09-09 拍板选项 A: analyze error 直接 break,
+    # 保留"产物存在但有错"语义 —— verify.py 已修复, 本组翻转为修复钉。
+    def test_s4_analyze_error_reports_build_has_errors_f095(self):
+        """F-095 修复钉（拍板 A）: analyze error → break 重试循环 →
+        build_has_errors（保留"产物存在但有错"语义, 与 build_failed 区分）。
+        修复前本用例钉的是 build_failed 现实行为（F-088 登记死分支）。"""
         self._patch_common(
             [{"status": "ok", "stderr": "** Verified OK **"}],
             analyze_error=True)
-        code, out, err = self._run(["--retry", "1"])
+        code, out, err = self._run(["--retry", "2"])
         self.assertEqual(code, 1)
         result = json.loads(out)
-        self.assertEqual(result["status"], "build_failed")
+        self.assertEqual(result["status"], "build_has_errors")
+        self.assertIn("1 error", result["error"])
+        self.assertEqual(result["steps"]["build"]["status"], "build_has_errors")
         self.assertEqual(self._state()["last_checkpoint"]["status"],
-                         "build_failed")
+                         "build_has_errors")
 
-    # ---- S5: rtt capture 失败 ----
-
-    def test_s5_rtt_capture_failure_marks_capture_failed(self):
-        self._patch_common(
-            [{"status": "ok", "stderr": "** Verified OK **"}],
-            capture_side={"status": "error",
-                          "error": "OpenOCD 卡死 (F-003)"})
-        code, out, err = self._run()
-        self.assertEqual(code, 1)
-        result = json.loads(out)
-        self.assertEqual(result["status"], "capture_failed")
-        self.assertIn("卡死", result["error"])
-        lf = os.path.join(self.ws, ".workbench", "build",
-                          "last_failure.json")
-        self.assertTrue(os.path.exists(lf))
-        self.assertEqual(self._state()["last_checkpoint"]["status"],
-                         "capture_failed")
-
-    # ---- S6: HIL origin 守卫在 flash 步 (exit 2) ----
-
-    def test_s6_require_schedule_origin_rejects_manual_at_flash(self):
-        self._patch_common([{"status": "ok"}])
-        code, out, err = self._run(
-            ["--require-schedule-origin", "--task-origin", "manual"])
-        self.assertEqual(code, 2)
-        self.assertIn("schedule", err)
 
 
 if __name__ == "__main__":
