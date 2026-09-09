@@ -35,6 +35,44 @@
   可达、零独有内容, 本地同步删）; 远端 tag 终态 = v0.2/v0.3/v0.4。
 - 全量 478 绿。
 
+## Unreleased — 2026-09-09（F-097~F-099 批次 5：serial_mux 泄漏 / KB 补全 / 元数据三连修）
+
+- **F-097 处置（审计 P1-3 / WB-A，fix+test，Orchestrator 亲执行）**:
+  serial_mux 两处生命周期缺陷——① start_mux 的 wait_for_tcp_server 失败
+  分支直接 return, 已启动的 serve 进程(p1)成孤儿独占真实串口 → 失败/异常
+  分支统一回收 _mux_procs(terminate+wait+kill 兜底); ② _serial_read_loop
+  异常静默 stop_event → 死因零留痕 → stderr 留痕 +
+  `%TEMP%/serial_mux/serve_<port>.failed` 失败现场 + `os._exit(1)`（父进程
+  早已返回, 非零退出码是唯一可见信号）。回归钉
+  `tests/test_serial_mux_lifecycle.py`（3 例: 泄漏回收/死亡现场/正常关闭
+  不误报）。**P2-12 反向钉按"覆盖提升即移钉"纪律移除 serial_mux 条目**
+  （test_coverage_lint_reachability 原 assertIn 移除, cube_to_keil 仍保留）。
+  - 变异: 撤 terminate 分支 → 泄漏测试红 → 还原绿。
+
+- **F-098 处置（审计 P1-7 / WB-B，data，Orchestrator 亲执行）**:
+  KB 实例级残缺补全——用 svd_to_json 从 Keil DFP 2.2.0 SVD 提取 4 个残缺
+  实例的**全量寄存器表**合并（手工语义字段 desc/available_on_c8 保留）:
+  TIM2 8→20 / USART1 4→7 / ADC1 5→20 / RCC 5→10（新增 36 寄存器）。
+  NVIC.irqs 7→11（补 TIM1 四中断 24~27: BRK_TIM9/UP_TIM10/TRG_COM_TIM11/CC,
+  命名按 RM0008 + CMSIS）。_relationships 补 **TIM1** 条目（APB2/base/
+  clock rcc_bit=11——F-077 是代码补丁, 本条补数据根因; CH1~CH4=PA8~PA11;
+  irq 契约形态 number=25/name=TIM1_UP_TIM10_IRQn, 完整表在
+  TIM1.interrupts）。dma 字段**宁缺毋假**不写（RM0008 表未逐项核对）。
+  - svd_to_json「FULL 一字不动」机制未改——本次是数据内容补全, 非管道
+    变更; 残缺实例的"手工语义"仅 desc, 无丢失风险。
+
+- **F-099 处置（审计 P2-4/P2-5/P1-11 / WB-C，fix+test，Orchestrator 亲执行）**:
+  三个元数据缺陷打包——
+  ① gcc_build timing_ms 秒当毫秒（P2-4）: 调用改 `(t-t0)*1000`
+  （openocd_gdb 同款口径）; 性质钉（250ms 操作 elapsed_ms≥200）+ 静态钉
+  （make_timing 调用必须带 *1000）。
+  ② 三脚本 stdout 强制 UTF-8（P2-5）: coverage_lint/duration_profile/
+  feedback_db 的 main() 加 F-025 先例的 `reconfigure(encoding="utf-8")`
+  ——GBK 控制台下 ensure_ascii=False 中文不再崩/乱码（负向实测通过）。
+  ③ coverage-data 测试组 GBK 必红修复（P1-11）: 四处 subprocess +
+  _generate_coverage_data 的 env 补 `PYTHONIOENCODING=utf-8`
+  （test_feedback_db.py:17-19 先例）。全量 479 绿。
+
 ## Unreleased — 2026-09-09（F-093 hooks 行为探针 + 安装文档 + F-096 漏报缺陷登记）
 
 - **F-093 处置（审计 P2-9 / 批次 3 WB-C3，test+docs，Orchestrator 亲执行）**:
