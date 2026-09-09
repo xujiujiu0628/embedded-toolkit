@@ -231,6 +231,13 @@ def _format_text_report(uncovered: list[str], scripts_dir: str, mode: str,
 
 
 def main() -> int:
+    # F-099: stdout/stderr 强制 UTF-8 (F-025 先例, expectations_lint 同款) —
+    # Windows GBK 控制台下 ensure_ascii=False 的中文会崩或乱码
+    for _stream in (sys.stdout, sys.stderr):
+        try:
+            _stream.reconfigure(encoding="utf-8")
+        except Exception:
+            pass
     parser = argparse.ArgumentParser(
         description="scripts/ 覆盖缺口 lint (F-072 口径: 可达闭包/真实覆盖)")
     parser.add_argument("--scripts-dir", default=os.path.dirname(
