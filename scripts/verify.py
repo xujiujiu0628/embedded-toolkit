@@ -151,7 +151,10 @@ def run_cmd(cmd: list[str], timeout: int = 60) -> dict:
             encoding='utf-8', errors='replace',
             timeout=timeout, cwd=WORKSPACE
         )
-        success = result.returncode == 0 or 'verified' in result.stdout.lower()
+        # F-090: 判据只信 returncode — 旧版 `or 'verified' in stdout` 是
+        # fail-open (OpenOCD 日志实际走 stderr, stdout 恒空; 非零退出 +
+        # "not verified" 类文本会被误判成功)
+        success = result.returncode == 0
         return {
             "status": "ok" if success else "error",
             "returncode": result.returncode,

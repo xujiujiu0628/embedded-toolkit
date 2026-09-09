@@ -2,9 +2,10 @@ r"""公开仓 tracked 文件裸机器路径静态扫描钉 (F-089)。
 
 背景: F-067b 自订"路径全部中性化为 <d-claude-root> 占位, 不允许新 commit
 再回写机器路径"——但 9-05 legacy/README 与 handoff_guard docstring 还是
-带了 <d-claude-root> 形态 (F-069 二审 H-1 只查了 .github/, 漏了其余 tracked 文件)。
-本钉把"零裸机器路径"变成机检: 维护者本机工作区根形态 (<d-claude-root> / <d-claude-root>,
-大小写不敏感) 在 tracked 文件内零命中。
+带了裸工作区根形态 (F-069 二审 H-1 只查了 .github/, 漏了其余 tracked 文件)。
+本钉把"零裸机器路径"变成机检: 维护者本机工作区根的两种分隔符形态
+(反斜杠与正斜杠, 大小写不敏感) 在 tracked 文件内零命中。
+注意: 本 docstring 刻意不出现该形态的字面量, 避免自扫描命中。
 
 豁免: CHANGELOG.md —— 历史账目段属 append-only 保护区 (F-069 记账纪律:
 "以本段为准/不改旧段"), 其中的路径是账目的一部分, 事后擦写会断证据链。
