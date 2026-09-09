@@ -3,7 +3,8 @@
 files=$(git diff --cached --name-only 2>/dev/null | grep -E '\.(c|h)$')
 [ -z "$files" ] && files=$(git diff --name-only 2>/dev/null | grep -E '\.(c|h)$')
 if [ -n "$files" ]; then
-  added=$(git diff -U0 -- $files 2>/dev/null | grep '^\+[^+]' | grep -v '^\+//' | grep -v '^\+/\*')
+  # F-096: --cached 优先 (同 block-malloc.sh 注释)
+  added=$({ git diff --cached -U0 -- $files 2>/dev/null; git diff -U0 -- $files 2>/dev/null; } | grep '^\+[^+]' | grep -v '^\+//' | grep -v '^\+/\*')
   if echo "$added" | grep -q 'HAL_Delay'; then
     echo ""
     echo "=============================================="
