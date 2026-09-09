@@ -99,6 +99,24 @@ class GenGpioTests(unittest.TestCase):
         self.assertIn("/* PD3 — weird-mode */", out)
         self.assertIn("GPIOD->CRL |=  (0x3UL << 12);", out)
 
+    def test_in_pullup_sets_odr_bit_f087(self):
+        """F-087 缺陷 A: CNF=10/MODE=00 时上下拉方向由 ODR 决定, 复位 ODR=0
+        → 只写 CRL 位不置 ODR 实际是下拉。上拉必须显式置 ODR 对应位。"""
+        out = gen_periph.gen_gpio("PA0", "in-pullup")
+        self.assertIn("GPIOA->ODR |= (1UL << 0);", out)
+        self.assertIn("GPIOA->CRL |=  (0x8UL << 0);", out)
+
+    def test_in_pullup_high_pin_uses_crh_and_odr(self):
+        out = gen_periph.gen_gpio("PB9", "in-pullup")
+        self.assertIn("GPIOB->CRH |=  (0x8UL << 4);", out)
+        self.assertIn("GPIOB->ODR |= (1UL << 9);", out)
+
+    def test_non_pull_modes_do_not_touch_odr_f087(self):
+        """反向钉: ODR 置位仅属于 in-pullup, 其他模式不得波及"""
+        for mode in ("out-pp-50mhz", "in-floating", "in-analog"):
+            with self.subTest(mode=mode):
+                self.assertNotIn("->ODR", gen_periph.gen_gpio("PA0", mode))
+
 
 class GenSystickTests(unittest.TestCase):
 
@@ -116,6 +134,22 @@ class GenSystickTests(unittest.TestCase):
         out = gen_periph.gen_systick(7)
         self.assertEqual(
             out, "/* ERROR: 72MHz / 7 is not an integer. Choose a divisor of 72MHz. */")
+
+    def test_handler_increments_tick_ms_f087(self):
+        """F-087 缺陷 B: Handler 空体 + delay_ms 依赖 tick_ms → 首次调用
+        delay_ms 永久死循环。ISR 必须递增 tick_ms (F-080 同族不变量)。"""
+        out = gen_periph.gen_systick(1000)
+        handler_body = out.split("void SysTick_Handler(void) {")[1].split("}")[0]
+        # 断言的是递增语句本身（tick_ms++ / tick_ms += 1），不是注释里的字面量
+        self.assertRegex(handler_body, r"tick_ms\+\+|tick_ms\s*\+=",
+                         "SysTick_Handler 体内必须有 tick_ms 递增语句")
+
+    def test_tick_ms_declared_before_handler_f087(self):
+        """F-087 伴随约束: tick_ms 声明必须在 SysTick_Handler 定义之前
+        (生成物是可独立编译的片段, 先用后声明编译即失败)。"""
+        out = gen_periph.gen_systick(1000)
+        self.assertLess(out.index("static volatile uint32_t tick_ms;"),
+                        out.index("void SysTick_Handler(void) {"))
 
 
 class GenUsartTests(unittest.TestCase):
@@ -248,6 +282,22 @@ class GenAdcTests(unittest.TestCase):
 
     def test_high_pin_adc_channel_uses_crh(self):
         self.assertIn("GPIOB->CRH &= ~(0xFUL << 0);", gen_periph.gen_adc("ADC1", 8, "PB8"))
+
+    def test_adclock_prescaler_set_within_14mhz_limit_f087(self):
+        """F-087 缺陷 C: 默认 ADCPRE=/2 → 36MHz 超出 KB 明文的 14MHz 上限。
+        生成物必须先清后置 CFGR 的 ADCPRE 字段 (位 14:15)。"""
+        out = gen_periph.gen_adc("ADC1", 1, "PA1")
+        self.assertIn("RCC->CFGR", out)
+        self.assertIn("ADCPRE", out)
+        # 先清后置语义: 必须有 &= ~ 掩码行, 不得整体赋值
+        self.assertIn("&= ~", out)
+        self.assertNotIn("RCC->CFGR =", out)
+
+    def test_adclock_div6_selects_binary_10_f087(self):
+        """ADCPRE=10 (bit15=1) → PCLK2/6 = 12MHz ≤ 14MHz"""
+        out = gen_periph.gen_adc("ADC1", 1, "PA1")
+        self.assertIn("(3UL << 14)", out)   # 清 14:15 两位掩码 0x3<<14
+        self.assertIn("(2UL << 14)", out)   # 置 10b = /6
 
 
 class GenTimerIntTests(unittest.TestCase):
