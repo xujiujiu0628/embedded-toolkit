@@ -241,7 +241,7 @@ def main() -> None:
         "action": args.action,
         "metrics": metrics,
         "details": details,
-        "timing_ms": make_timing(started_at, time.time() - started_ts),
+        "timing_ms": make_timing(started_at, (time.time() - started_ts) * 1000),  # F-099: 秒→毫秒 (openocd_gdb 同款口径)
         "started_at": started_at,
         "summary": f"{metrics['errors']} errors, {metrics['warnings']} warnings ({args.action})",
     }
