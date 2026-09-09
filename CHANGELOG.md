@@ -3,6 +3,34 @@
 格式约定: 每条含发现编号（代管期 findings 编目）与证据 commit。当前版本以
 `VERSION` 文件为准（`wb_common.toolkit_version()` 读取）。
 
+## Unreleased — 2026-09-09（F-090 静默失败面修复：telnet 三 action 失败检查 + 烧录判据收紧）
+
+- **F-090 处置（审计 WB-B2 / 简报 WB-20260909-04，fix+test，Orchestrator 亲执行）**:
+  两处"失败被当成功"路径（审计 P1-1/P1-2）——
+  **A. openocd_telnet 三 action 无失败语义检查**（write-mem/bp/rbp 查了，
+  halt/reg/read-mem 漏查——同族不一致即遗漏非设计）:
+  - halt: `halt` 响应 + reg 链路全部接入 `has_command_error`；**`halted:True`
+    硬编码消除**——由 reg 响应推导（报错/pc 读不到 = 未确认暂停，summary 如实
+    说"halt 已发送但未确认暂停"）；reg 链路本身失败 → status=error。
+  - reg: 逐寄存器检查，空响应/报错/无法解析均计入 reg_errors；**全空 → error**
+    （旧版"读取到 0 个寄存器"仍 ok）；部分失败 → ok 但 summary/details 如实
+    带 errors（不谎报全量）。
+  - read-mem: 接入 has_command_error + 空数据返回检查（非法地址 → error，
+    不产出"读取成功+空 memory"假结果）。
+  **B. 烧录成功判据 fail-open 移除**: verify.run_cmd 的
+  `or 'verified' in stdout` 与 openocd_run 的 `action=="flash" and parsed.verified`
+  （rc!=0 时）两处豁免删除——判据只信 returncode。理由: OpenOCD 日志实际走
+  stderr（stdout 恒空），该豁免几乎只在异常时被 "not verified" 类文本误中；
+  probe/targets 的 rc!=0 豁免保留（部分版本 probe 成功时 rc 仍非零，有
+  jtag_tap/core 实证支撑，非纯文本子串匹配）。
+  - 回归钉 `tests/test_openocd_telnet_failfast.py`（10 例: 三 action 负向 +
+    正向不回归 + run_cmd 判据），假 Telnet 连接/假 proc，不碰真机。
+  - 施工实录: 测试 fixture 的寄存器响应格式须与 parse_reg_single 真实格式
+    一致（"r0 (/32): 0x0"，冒号形态解析不出）——**mock fixture 从实现的真实
+    解析函数反向构造**，不凭想象；空响应在 has_command_error 之外（它只认
+    错误关键词），"连接断=静默"也须视为读取失败。
+  - 全量 464 绿（452+12: F-090 10 例 + F-089 扫描钉 2 例已在上一 commit 计入）。
+
 ## Unreleased — 2026-09-09（F-089 公开仓裸机器路径中性化 + 静态扫描钉）
 
 - **F-089 处置（审计 WB-B5 / 简报 WB-20260909-03，fix+test，Orchestrator 亲执行）**:
