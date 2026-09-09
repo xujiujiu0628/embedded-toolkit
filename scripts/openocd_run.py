@@ -313,9 +313,11 @@ def run_openocd(
 
     status = "ok"
     if proc.returncode != 0:
-        if action == "flash" and parsed.get("verified"):
-            status = "ok"
-        elif action in ("probe", "targets") and (parsed.get("jtag_tap") or parsed.get("core")):
+        # F-090: flash 的 "verified 豁免" 移除 — 判据只信 returncode。
+        # 旧版 rc!=0 且输出含 verified 即 ok, 是 fail-open: OpenOCD 打印
+        # "not verified" / 半截成功文本都可能误中。probe/targets 的豁免保留
+        # (部分版本 probe 成功时 rc 仍非零, 有 jtag_tap/core 实证支撑)。
+        if action in ("probe", "targets") and (parsed.get("jtag_tap") or parsed.get("core")):
             status = "ok"
         else:
             status = "error"
