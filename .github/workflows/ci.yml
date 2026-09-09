@@ -42,3 +42,31 @@ jobs:
       # 纪律: 只升不降——提升覆盖率后应同步上调此值并入 CHANGELOG 账目。
       - name: Coverage floor (ratchet, only goes up)
         run: python -m coverage report --include="scripts/*" --omit="*/legacy/*" --fail-under=38
+
+  # F-100: 覆盖缺口门禁接入 CI (CONTRIBUTING 声明的"可机检"终于有机检)。
+  # 覆盖率提升后须同步缩减 scripts/coverage_lint.py 视角的未覆盖清单。
+  coverage-lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Coverage gap lint (--strict gate)
+        run: python scripts/coverage_lint.py --strict
+
+  # F-101: 语法烟测接入 CI (此前只在 Windows 本地跑, ubuntu 恒 skip —
+  # 生成器语法回归在 CI 上零防线)。安装 GNU Arm Embedded 提供 arm-none-eabi-gcc。
+  syntax-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Install GNU Arm Embedded toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-arm-none-eabi
+      - name: Run generator syntax smoke tests
+        run: python -m unittest tests.test_gen_syntax_smoke -v
