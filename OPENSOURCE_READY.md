@@ -1,7 +1,9 @@
 # 开源就绪清单（OPENSOURCE_READY）
 
-> 生成日期：2026-09-01 ｜ 对象：`xujiujiu0628/embedded-toolkit`（当前 PRIVATE）
+> 生成日期：2026-09-01 ｜ 对象：`xujiujiu0628/embedded-toolkit`
 > 本报告为开源化准备 8 步的完成度盘点与人工待办。
+> ⚠️ **状态快照**：以下内容反映 2026-09-01 时点；当前状态以
+> [`CHANGELOG.md`](CHANGELOG.md) 为唯一权威（2026-09-09 F-095 加注）。
 
 ## 一、8 步执行状态
 
