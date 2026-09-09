@@ -15,6 +15,7 @@ import signal
 import socket
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 from pathlib import Path
@@ -139,9 +140,23 @@ class SerialMuxServer:
                 data = self.serial_port.read(size)
                 if data:
                     self._broadcast(data)
-            except Exception:
+            except Exception as exc:
+                # F-097: 读循环死亡 = mux 整体失去 RX 能力, 必须留痕而非
+                # 静默 set stop_event (旧行为: 父进程早已返回成功, 死因零
+                # 记录 → 排障时 mux "看起来在跑" 实际哑了)。stderr 留痕 +
+                # 失败现场文件, 退出码非 0。
+                try:
+                    print(f"serial_mux: serial read loop died: {exc}",
+                          file=sys.stderr)
+                    state_dir = Path(tempfile.gettempdir()) / "serial_mux"
+                    state_dir.mkdir(exist_ok=True)
+                    (state_dir / f"serve_{self.tcp_port}.failed").write_text(
+                        f"{time.strftime('%Y-%m-%dT%H:%M:%S')}\n{exc}\n",
+                        encoding="utf-8")
+                except Exception:
+                    pass
                 self.stop_event.set()
-                break
+                os._exit(1)
 
     def _client_read_loop(self, client: socket.socket):
         while not self.stop_event.is_set():
@@ -288,7 +303,15 @@ def start_mux(port: str, baudrate: int | None, workspace: str | None, vserial_li
 
     try:
         p1 = subprocess.Popen(cmd1, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        _mux_procs = [p1]
         if not wait_for_tcp_server(tcp_port, p1):
+            # F-097: p1 已启动但起服务失败/超时 → 必须回收, 否则孤儿进程
+            # 独占真实串口且无台账 (旧版直接 return)
+            p1.terminate()
+            try:
+                p1.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                p1.kill()
             return make_result(
                 success=False,
                 action="mux_start",
@@ -297,6 +320,7 @@ def start_mux(port: str, baudrate: int | None, workspace: str | None, vserial_li
             )
 
         p2 = subprocess.Popen(cmd2, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        _mux_procs.append(p2)
         time.sleep(0.3)
         if p2.poll() is not None:
             p1.terminate()
@@ -321,6 +345,13 @@ def start_mux(port: str, baudrate: int | None, workspace: str | None, vserial_li
             )
 
     except Exception as e:
+        # F-097: 异常路径同样回收已启动的子进程 (p2 可能尚未创建)
+        for proc in locals().get("_mux_procs", []):
+            try:
+                proc.terminate()
+                proc.wait(timeout=3)
+            except Exception:
+                pass
         return make_result(
             success=False,
             action="mux_start",
