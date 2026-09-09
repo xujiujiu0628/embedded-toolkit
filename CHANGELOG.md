@@ -18,6 +18,23 @@
   全量 476 绿（478−2: S4 与 test_verify_main_success_path 的两例因语义
   分流整合为单例断言）。
 
+## Unreleased — 2026-09-09（F-096 hooks 漏报修复：判据加 --cached 优先【拍板 A】+ 工程卫生收尾）
+
+- **F-096 处置（F-093 登记项 / 维护者拍板选项 A，fix，Orchestrator 亲执行）**:
+  三条 C 铁律 hook（block-malloc / block-hal-delay-in-logic /
+  warn-volatile-missing）的 `git diff -U0 -- <files>` 比对工作树 vs index,
+  真实 pre-commit 时刻（staged 且工作树一致）恒空 → **三条 hook 全部恒
+  exit 0 形同虚设**（F-093 金丝雀实测）。拍板 A = 判据改
+  `{ git diff --cached -U0 -- $files; git diff -U0 -- $files; }` 双路合并
+  （--cached 命中即拦, 未命中再查工作树——工作树路径的有效性此前已由
+  探针钉住, 保留）。金丝雀组按承诺翻转为修复钉
+  `StagedContentDetectionTests`（staged malloc/HAL_Delay → exit 2,
+  staged 缺 volatile → 提醒; 先红后绿）。
+- **工程卫生收尾（拍板 A）**: 远端 4 个 `handoff-*` 过程 tag 删除
+  （handoff-start/round1/r2-close/pre-handoff, 指向 commit 全部 master
+  可达、零独有内容, 本地同步删）; 远端 tag 终态 = v0.2/v0.3/v0.4。
+- 全量 478 绿。
+
 ## Unreleased — 2026-09-09（F-093 hooks 行为探针 + 安装文档 + F-096 漏报缺陷登记）
 
 - **F-093 处置（审计 P2-9 / 批次 3 WB-C3，test+docs，Orchestrator 亲执行）**:
