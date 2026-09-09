@@ -3,6 +3,29 @@
 格式约定: 每条含发现编号（代管期 findings 编目）与证据 commit。当前版本以
 `VERSION` 文件为准（`wb_common.toolkit_version()` 读取）。
 
+## Unreleased — 2026-09-09（F-091 openocd 家族同源符号收敛：先钉后拆）
+
+- **F-091 处置（审计 P2-1 / 批次 3 WB-C1，refactor，Orchestrator 亲执行）**:
+  审计实测的家族内同源重复——`resolve_openocd_params` 在 openocd_gdb /
+  openocd_run / openocd_telnet **三份逐字节相同**（sha1 9bd9af729c ×3）+
+  openocd_itm 一份 +27 行扩展变体；`start_openocd_server` 在 gdb/itm 两份
+  逐字节相同（bbe8f0aad8）+ telnet 差一行 docstring。**全部无 F-029 要求的
+  「独立契约：…」留份 docstring、无账目裁决、无测试钉**——F-029 整车收口
+  时只处理了 wb/serial 两族，openocd 家族是漏网（检查面再次只到"处理过的"）。
+  处置 = 按先钉后拆三步:
+  1. **先钉**: `tests/test_openocd_dedup.py`（7 例）——身份钉（三消费方
+     符号 `is` runtime 同一对象，再导出非拷贝）+ 行为钉（CLI > project_config
+     > state 三级优先 ×4 边界）；
+  2. **后拆**: canonical 实现落 `openocd_runtime`（Layer 1 正确落点），
+     gdb/run/telnet 三份副本删除，消费方 `from openocd_runtime import`
+     再导出保持 `openocd_gdb.resolve_openocd_params` 调用面不变；净删 ~223 行；
+  3. **留份裁决**: itm 的 tpiu/traceclk/pin_freq 扩展**不强行统一**——
+     扩展字段是 ITM 特有需求，强并会迫使 Layer 1 runtime 携带 ITM 专属
+     知识（分层违例）；变体特征钉 `test_itm_variant_not_unified` 固化
+     "扩展键存在 + 主五参同源"。telnet 版 start_openocd_server 多的
+     docstring 并入 canonical 版。
+  - 全量 471 绿（464+7）。
+
 ## Unreleased — 2026-09-09（F-090 静默失败面修复：telnet 三 action 失败检查 + 烧录判据收紧）
 
 - **F-090 处置（审计 WB-B2 / 简报 WB-20260909-04，fix+test，Orchestrator 亲执行）**:
