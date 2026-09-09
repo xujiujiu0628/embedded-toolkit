@@ -539,11 +539,34 @@ def main():
                     if analyze.get("status") == "ok":
                         build_ok = True
                         break
+                    # F-095: analyze 报 error = 编译器跑通但产物有错 → 重试
+                    # 同样的源码大概率还是 error, 纯耗重试预算; break 后由
+                    # 循环外的 build_has_errors 分支区分两种失败语义
+                    # （此前 analyze error 继续重试 → 恒 build_failed,
+                    # build_has_errors 是死分支, F-088 登记维护者拍板修复）。
+                    if analyze.get("status") == "error":
+                        break
             # else: retry
             if attempt < max_retries:
                 time.sleep(retry_delay)
 
         if not build_ok:
+            # F-095: analyze error = 编译器跑通但产物有错, 与"构建没跑成"
+            # 语义不同 → 分别落 build_has_errors / build_failed（此前
+            # analyze error 不 break, build_has_errors 恒不可达, F-088 登记）
+            if analyze is not None and analyze.get("status") == "error":
+                result["steps"]["build"] = {
+                    "status": "build_has_errors",
+                    "attempts": build_attempts,
+                    "retry_count": len(build_attempts) - 1,
+                }
+                result["status"] = "build_has_errors"
+                result["error"] = (f"Build has "
+                                   f"{analyze.get('summary', {}).get('errors', 0)} error(s)")
+                _save_failure_context(result, max_retries, workspace=WORKSPACE)
+                _output(result, args.json)
+                _record_checkpoint_early_exit(result, args)
+                sys.exit(1)
             result["steps"]["build"] = {
                 "status": "build_failed",
                 "attempts": build_attempts,
