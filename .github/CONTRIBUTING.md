@@ -107,7 +107,7 @@ F-034 的教训：同一事实存在两个权威副本必然漂移。规则：
 - 新事实落笔前先认归属：状态→CHANGELOG / 结构→README / 纪律→本文件
   （**本仓不再含 `docs/handoff/` `docs/agents/` `docs/superpowers/`
   `AGENTS.md` `HANDOFF-AGENT.md` `skills/fresh-checker/`
-  ——AI 协作私约自 0.4 后迁维护者私有仓 `<d-claude-root>\embedded-handoff`，
+  ——AI 协作私约自 0.4 后迁维护者私有仓 `<维护者私有仓 embedded-handoff>`（本机路径不公开, F-089），
   本仓仅留工具库本职 + 社区门面**）
 
 ## 禁区
