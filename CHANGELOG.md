@@ -3,6 +3,30 @@
 格式约定: 每条含发现编号（代管期 findings 编目）与证据 commit。当前版本以
 `VERSION` 文件为准（`wb_common.toolkit_version()` 读取）。
 
+## Unreleased — 2026-09-09（F-093 hooks 行为探针 + 安装文档 + F-096 漏报缺陷登记）
+
+- **F-093 处置（审计 P2-9 / 批次 3 WB-C3，test+docs，Orchestrator 亲执行）**:
+  hooks/ 三条 C 铁律此前仅过 `bash -n`，判据行为无任何测试。处置:
+  1. **行为探针** `tests/test_hooks_behavior.py`（7 例，真实 git 仓 fixture +
+     直接执行脚本）: 工作树路径（dirty worktree）下 malloc/HAL_Delay 阻断、
+     volatile 提醒、非 .c/.h 放行均验证有效；**金丝雀组**（Canary）钉住
+     staged 场景的现实行为（见下）。
+  2. **⚠️ 新缺陷登记 F-096（hooks/ 是禁区，只登记不修复）**: 三条 hook 共用
+     的 `git diff -U0 -- <files>` 比对的是**工作树 vs index**——真实 pre-commit
+     时刻（staged 且工作树一致）该 diff 为空 → **三条 hook 全部恒 exit 0，
+     形同虚设**（金丝雀实测）。修复选项: A. 判据加 `--cached`（最小）；
+     B. pre-commit framework（重）。交维护者拍板。
+  3. **安装文档** `docs/hooks-install.md`: 方式 A（单文件）+ 方式 B
+     （core.hooksPath + 分发器，三条共存）+ F-096 限制声明。
+  - **施工实录（三条 Windows 坑，测试基建类）**: ① subprocess 的裸 `"bash"`
+    被 CreateProcess 命中 `System32\bash.exe`（WSL stub）→ 输出 UTF-16 错误
+    且 exit 1——`shutil.which` 沿 PATH 找到的是 Git bash，但 CreateProcess 的
+    安全搜索顺序不同，**外部脚本调用一律用绝对路径**；② 测试仓未关
+    `core.autocrlf` 时全局 true 的行尾漂移会让 hook 内 grep 失灵——fixture
+    仓必须显式 `autocrlf=false`；③ env 覆盖 `HOME` 会让 Git bash 初始化
+    异常——隔离 git 配置用 `GIT_CONFIG_GLOBAL` 而非 HOME。
+  - 全量 478 绿（471+7）。
+
 ## Unreleased — 2026-09-09（F-092 CHANGELOG 账本结构整理：单堆 + 去重指针）
 
 - **F-092 处置（审计 P2-7 / 批次 3 WB-C2，docs，Orchestrator 亲执行）**:
