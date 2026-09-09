@@ -114,12 +114,10 @@ class HookWorktreePathTests(HookProbeBase):
         self.assertIn("volatile", out)
 
 
-class CanaryDetectionGapTests(HookProbeBase):
-    """⚠️ 缺陷登记 (F-096): staged 一致场景下 hook 恒放行（漏报）。
-
-    这组测试**钉住现实行为**（全部断言 exit 0 = 放行）, 修复缺陷后翻转。
-    修复属 hooks/ 禁区变更, 须 issue 论证后另立 commit。
-    """
+class StagedContentDetectionTests(HookProbeBase):
+    """F-096 修复钉: staged 且工作树一致 (真实 pre-commit 时刻) 的内容
+    必须被检查。维护者 2026-09-09 拍板选项 A (判据加 --cached 优先);
+    修复前的金丝雀组已按承诺翻转并改名。"""
 
     def _staged_only(self, name, content):
         """staged 且工作树一致 (真实 pre-commit 时刻的状态)"""
@@ -129,26 +127,27 @@ class CanaryDetectionGapTests(HookProbeBase):
         self._git("add", name)
         # 工作树与 index 一致, 未 commit
 
-    def test_canary_malloc_staged_escapes_block_hook(self):
-        """金丝雀: staged malloc 在真实 pre-commit 状态下**未被阻断**（缺陷）"""
-        self._staged_only("app.c", "int main(void) {\n"
-                                   "    char *p = malloc(16);\n}\n")
-        code, _ = self._run_hook("block-malloc.sh")
-        self.assertEqual(code, 0, "若本断言失败说明 hook 已修复, 请翻转本组"
-                                 "测试并登记 F-096 处置账目")
+    def test_malloc_staged_is_blocked_f096(self):
+        """staged malloc 必须阻断 (F-096 修复后翻转)"""
+        self._staged_only("app.c", "int main(void) {" + chr(10)
+                                   + "    char *p = malloc(16);" + chr(10) + "}" + chr(10))
+        code, out = self._run_hook("block-malloc.sh")
+        self.assertEqual(code, 2, f"staged malloc 必须拦截: {out}")
+        self.assertIn("动态内存分配", out)
 
-    def test_canary_hal_delay_staged_escapes_block_hook(self):
-        self._staged_only("logic.c", "void poll(void) {\n    HAL_Delay(1);\n}\n")
-        code, _ = self._run_hook("block-hal-delay-in-logic.sh")
-        self.assertEqual(code, 0, "同上: 修复后翻转")
+    def test_hal_delay_staged_is_blocked_f096(self):
+        self._staged_only("logic.c", "void poll(void) {" + chr(10)
+                                   + "    HAL_Delay(1);" + chr(10) + "}" + chr(10))
+        code, out = self._run_hook("block-hal-delay-in-logic.sh")
+        self.assertEqual(code, 2, f"staged HAL_Delay 必须拦截: {out}")
 
-    def test_canary_volatile_staged_no_warning(self):
-        self._staged_only("isr.c", "#include <stdint.h>\n"
-                                   "void USART1_IRQHandler(void);\n"
-                                   "static uint32_t tick = 0;\n")
+    def test_volatile_staged_warns_f096(self):
+        self._staged_only("isr.c", "#include <stdint.h>" + chr(10)
+                                   + "void USART1_IRQHandler(void);" + chr(10)
+                                   + "static uint32_t tick = 0;" + chr(10))
         code, out = self._run_hook("warn-volatile-missing.sh")
-        self.assertEqual(code, 0)
-        self.assertNotIn("volatile", out, "同上: 修复后翻转")
+        self.assertEqual(code, 0, "警告级仍不阻断")
+        self.assertIn("volatile", out, "staged 缺 volatile 必须提醒")
 
     def test_non_c_changes_pass_all_hooks(self):
         """非 .c/.h 变更不触发（该判据两个路径均成立）"""
