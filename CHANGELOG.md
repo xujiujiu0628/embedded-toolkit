@@ -3,6 +3,25 @@
 格式约定: 每条含发现编号（代管期 findings 编目）与证据 commit。当前版本以
 `VERSION` 文件为准（`wb_common.toolkit_version()` 读取）。
 
+## Unreleased — 2026-09-09（F-092 CHANGELOG 账本结构整理：单堆 + 去重指针）
+
+- **F-092 处置（审计 P2-7 / 批次 3 WB-C2，docs，Orchestrator 亲执行）**:
+  审计实测的三类账本结构债处置:
+  1. **双堆收敛**: 尾部孤段（0.1.x 历史段之后的 F-078~084 共 7 段 / 110 行）
+     整体搬入顶部 Unreleased 堆末尾（F-070 段之前）——**此后全文件无任何
+     Unreleased 段位于已发布段（0.1.x/0.2/0.3/0.4）之后**（结构验证进本段）。
+  2. **重复记账去重 ×2（留指针不删账）**: F-054 在「0.4 复核收口」段与
+     「防腐方案 §3.3」段双记（内容同源、前者更完整: 306 全绿/收口链/AGENTS
+     同步），后者改指针**以彼段为准**；F-062「登记+处置」与「处置」双记
+     同法。指针行均标 F-092 可追溯。**未采信方案（记账）**: 直接删除重复段
+     ——违反 append-only 账本纪律，断链风险大于整洁收益。
+  3. **段标题失实**: 审计指「0.4 复核收口」段标题写 F-051~053 正文记到
+     F-062——核实该段正文实际含 F-051/052/053/054/055~062 处置链，标题
+     **不改**（append-only；本行登记事实，读者以正文为准）。
+  - 结构终态: Unreleased 36 段全部位于 4 个已发布段（0.1.x/0.2/0.3/0.4）
+    之前，顶部按时间新段在上；全文件 47 段。
+  - 全量 471 绿（账本搬运不触碰代码/测试）。
+
 ## Unreleased — 2026-09-09（F-091 openocd 家族同源符号收敛：先钉后拆）
 
 - **F-091 处置（审计 P2-1 / 批次 3 WB-C1，refactor，Orchestrator 亲执行）**:
@@ -305,6 +324,116 @@
     0xCC30）; ③ gen_doc 依赖段 `RCC_{rcc_register}ENR` 与寄存器名自带 ENR
     重复 → "RCC_APB1ENRENR"。
 
+
+- **F-001**（Critical）feedback_db 首次落账死锁——button-toggle 建成以来
+  反馈零落账（4866fb5 *(legacy, 9-01 历史重写后失效)*）。
+- **F-002** config 容错 / **F-003** 采集超时诚实化（部分输出回收+失败
+  现场落盘，待真机终判）/ **F-004** 落账三态留痕 / **F-005** hardfault
+  默认 map 自动发现（1baeed2 *(legacy, 9-01 历史重写后失效)*、11eb319 *(legacy, 9-01 历史重写后失效)*）。
+- **F-014** 校准库损坏容错（.corrupt 隔离 + 空库重建）（afc7265 *(legacy, 9-01 历史重写后失效)*）。
+- **F-006/007/008/012** Low 清理组；F-009/010/011/013 记录不修（fa5efb4 *(legacy, 9-01 历史重写后失效)*）。
+- 新工具 **release_audit.py**（M-3）: 发布记录事后审计 R1~R6（eb1e4c9 *(legacy, 9-01 历史重写后失效)*）。
+- **主干补充**（主控，master，首轮换回后当日——R2 分支未及见的 8 commit）:
+  hardfault 三层全修 symbols 0→126 真机坐实（920e187 *(legacy, 9-01 历史重写后失效)*）；F-015 workspace 跟随
+  --project / F-016 采集窗进契约 / F-017 load_project_config 段语义双重错误
+  （1819e18 *(legacy, 9-01 历史重写后失效)*，106/106）；插板终判四项全绿（d052060 *(legacy, 9-01 历史重写后失效)*）；A-02 哈希举证对账（f4b5d4f *(legacy, 9-01 历史重写后失效)*）。
+
+## Unreleased — 2026-09-08（F-078 生成代码语法烟测：CMSIS 符号契约 + arm-gcc 前置闸）
+
+- **F-078 处置（A 类缺陷前移，test）**: 新增 `tests/test_gen_syntax_smoke.py`
+  —— 全部 gen_* 代码路径（18 片段 + 非整除注释分支）输出过
+  `arm-none-eabi-gcc -fsyntax-only`。机制：把"AI 抄进工程 → build 炸 →
+  烧录迭代白跑"的 A 类缺陷（幻影宏/语法错）前移到提交前就红。
+  - stub 头 = "生成器 ↔ CMSIS 接口契约"：枚举生成器可引用的全部结构体
+    成员与 RCC/外设宏；两头越界都算失败（生成器引契约外符号红，契约漏
+    定义也红），另有反向钉：生成输出中每个 RCC 宏必须能在 stub 找到
+    #define，防未来新增外设时漏扩契约。
+  - 片段语义处理（如实记账）：生成物是贴进模块 .c 的混合片段（裸语句 +
+    static 辅助函数），非完整翻译单元；烟测做机械变换（剥行首 static 后
+    包进函数，GNU C 嵌套函数合法）换取语法+符号全量检查——static 存储
+    类布局的合法性不在烟测范围，由 review 兜底。
+  - 环境：arm-none-eabi-gcc 不在场时整组 skip（CI ubuntu 不装工具链，
+    与 coverage-data 测试同款守卫）；变异验证：注入 gen_pwm 幻影时钟宏
+    → 烟测 2 例红，还原后全绿。
+
+## Unreleased — 2026-09-08（F-079 生成器数值扫描：点断言升级性质断言）
+
+- **F-079 处置（连续域回归防线，test）**: F-071 的点断言可被"改舍入策略/
+  改候选 ARR 表"绕过——孤点之外的整个值域不受保护。新增
+  `tests/test_gen_numeric_sweep.py` 扫性质而非扫点:
+  - USART BRR: 14 档标准波特率 × 双总线，性质 a) 装箱分频偏差 ≤ 半 LSB
+    (1/32，正确舍入的紧上界，与速率无关——F-076 进位缺陷在这条性质下
+    无处遁形)；b) 实际波特率误差 ≤ 2% (UART 实用容限)；
+  - PWM: 1..2000Hz 全扫 + 高频样本，性质 a) 无旁注即必须精确整除
+    (freq×(PSC+1)×(ARR+1) == 72e6 纯整数断言)；b) 旁注 actual 必须与按
+    PSC/ARR 重算值一致 (生成器不许声称产不出的频率)；c) PSC/ARR ∈ 16 位。
+  - 黑盒契约: 全部解析自生成输出，不 import 生成器内部变量。
+  - 变异验证: 舍入 round→int (截断) → 半 LSB 性质红；还原后与
+    test_gen_periph/smoke/卫生测试全绿 (59 例)。
+
+## Unreleased — 2026-09-08（F-080 生成代码中断安全模式钉）
+
+- **F-080 处置（C 类最低配置前移到测试，test）**: 钉生成物里中断相关
+  的最低安全模式——丢了不报编译错但属 C 类缺陷: ① ISR 共享变量 volatile
+  (丢了在 -O2 下 delay_ms 死循环)；② delay 必须 __WFI 睡眠；③ SysTick
+  CTRL 必须含 TICKINT (否则 tick 永不走)；④ 定时器 ISR 先查更新标志、
+  清标志在 if 体内且先于业务 TODO (清在体外=每次中断都清, 清在业务后=
+  慢了丢标志)；⑤ Handler 名必须符合 CMSIS 向量表命名 (名字错=中断
+  静默不触发, 链接器不报错)。与 F-071 的 IRQ 编号钉互补不重复。
+
+## Unreleased — 2026-09-08（F-081 hardfault 解析层补测 + 新缺陷发现登记）
+
+- **F-081 处置（失败归因主体补测，test）**: hardfault.py 300 语句 27%
+  (2026-09-08 实测)，它是闭环 Step 4b 失败归因的主体且核心全是纯函数。
+  新增 `tests/test_hardfault_parse.py` 20 例: parse_reg_value（含 sp/msp
+  整词匹配防误吸）、parse_mdw_value、parse_registers 全 dump、
+  classify_fault 六分支（no_fault 语义=2026-08-12 修复钉 / FORCED 下
+  BFSR>UFSR>MFSR 优先级 / 未知位原样落 raw 不装懂）、parse_map_symbols
+  （GCC ld 版式 + 伪行过滤 + ARMCC 版式 + 缺文件）、_map_degradation_note、
+  resolve_address（区间匹配 + F-005 无 size 最近前导兜底 + 低于一切返回
+  None）、classify_address_range（F103 地址空间 7 分区）。
+  **新缺陷发现登记**: resolve_address 注释"优先匹配小函数（更精确）"与
+  实现 `size > best_size`（选最大）矛盾——嵌套场景 PC 落在大函数内的
+  小 helper 时会误报外层函数，误导归因。按 xfail 纪律以 expectedFailure
+  登记（断言按注释意图写），修复另立 commit (F-082)。既有
+  test_hardfault_map.py 的单符号场景与新语义不冲突（零修改全绿）。
+
+## Unreleased — 2026-09-08（F-082 修复 resolve_address 符号匹配优先级）
+
+- **F-082 处置（归因准确性修复，fix）**: F-081 登记的注释/实现矛盾——
+  resolve_address 的 `size > best_size` 实际选**最大**包含符号。危害场景:
+  生成代码把多个函数内联进同一 region 时（或符号表含大小函数嵌套），
+  PC 落在大函数内的小 helper 会误报成外层函数，HardFault 归因直接指错
+  修改位置。修复 = `best is None or sym["size"] < best_size`（真正选最小
+  包含符号，同尺寸保持先到优先）；无 size 的 GCC 符号区间匹配恒空，
+  F-005 最近前导兜底路径不受影响（既有测试钉住）。F-081 的
+  expectedFailure 翻转为常规断言。
+
+## Unreleased — 2026-09-08（F-083 知识库数据一致性校验）
+
+- **F-083 处置（上游数据防线，test）**: stm32f103-ref.json (55 外设) 是
+  rm_lookup/gen_periph/gen_doc/phase_minus_one 的共同上游，此前无一致性
+  防线——RCC 位错一位 = 生成代码使能错外设，IRQ 号错 = 中断静默不触发。
+  新增 `tests/test_kb_hygiene.py` 8 例结构不变量校验: _meta 计数与实际
+  一致（漂移即红）、base 地址空间合法性（外设区 + CM3 私有区 + FSMC
+  0xA0000000，GPIO 多基地址版式特判）、clock rcc_register ∈ 实测合法集
+  且 bit<32、引脚端口/编号物理合法（mode 可选——通道类引脚本无 mode）、
+  IRQ 编号 ≤67 且符合 CMSIS *_IRQn 命名、寄存器 offset 十六进制可解析、
+  known_issues 登记簿非空。
+  规则演进如实记账: 初版两条规则过严是规则错不是数据错——NVIC/SysTick
+  base 在 CM3 私有区、FSMC base 0xA0000000 是 RM0008 规定区域、通道类
+  引脚本就无 mode，均已按数据手册修正校验范围。
+
+## Unreleased — 2026-09-08（F-084 CI 覆盖率棘轮门禁）
+
+- **F-084 处置（防静默侵蚀，ci）**: ci.yml 新增 coverage-gate job——
+  coverage run 全量套件 + `coverage report --fail-under=38`（棘轮下限：
+  2026-09-08 实测 TOTAL 40%，留 2pt 平台差异余量；纪律只升不降，
+  提升后须同步上调并入账）。与 unittest 金丝雀 job 分离：金丝雀刻意
+  不装 coverage（陌生人 clone 语义），本 job 装 coverage 后
+  coverage-data 模式的 5 例测试在 CI 也激活。38 这个数字的动机：
+  F-071 前的真实覆盖率曾从无人知晓的低位静默漂移，度量修好（F-072）
+  之后的下一步就是让"掉下去"变成 CI 红。
 ## Unreleased — 2026-09-05（F-070 陈旧分支清理：仓库卫生）
 
 - **F-070 处置（5 个陈旧 worktree 分支 + PR #6 worktree 留尾清理，chore）**:
@@ -702,14 +831,9 @@
 15 commit 累计，含 14 commit 已推 GitHub master（`96796ed..60d9bc0`）+ 1 commit
 本地领先（`dc94b12` 仓边界清理，待推）：
 
-- **F-054 处置（拆解前置：OPENOCD_EXE 模块级惰性化，refactor）**:
-  `scripts/verify.py` `scripts/hardfault.py` 曾有模块级 `OPENOCD_EXE =
-  load_machine()[...]`——import 期即文件 IO + stderr 回退警告，6 个测试文件被迫
-  注释豁免。常量改 `_openocd_exe()` 惰性函数，4 个使用点同步替换；新增
-  `test_import_hygiene` 钉（fresh-import spy + stderr 零输出 + 常量不再绑定，
-  先红后绿）；6 例测试豁免注释收编；CONTRIBUTING 禁令 #2 理由升级为"分层"
-  （verify 是 Layer 2 编排主体，防回潮机制不变）。verify.py 1832 行起点。
-  全量 306 全绿。
+  - **F-054 处置**（拆解前置：OPENOCD_EXE 模块级惰性化）——本条与上方
+    「0.4 复核收口」段重复记账（双堆时期产物），**以彼段为准**（内容更全:
+    306 全绿/收口链/AGENTS 速查同步），本行留指针防断链（F-092）。
 - **F-055 处置（拆解步骤 2：expectations.py 拆分件，refactor）**: 期望契约层
   5 符号摘出（166 行，零全局依赖、纯函数可单测）；verify 再导出 5 符号，35
   处测试零修改（F-029 同款手法）；分层禁令 #2 兑现（新模块不 import verify /
@@ -751,12 +875,9 @@
   抛出。verify.py -16 行（终点 977 行）。新增 3 例真单测（cmd 逐条钉、超时
   载体不抢先 kill、非超时异常透传）。全量 325 全绿。**防腐方案 §3.3 拆解
   收官**——verify.py 剩余 = 编排调度 + 报告输出（纯胶水）。
-- **F-062 处置（推送权限纪律成文，docs）**: CONTRIBUTING 增「推送纪律」节 +
-  AGENTS.md 速查补行（同节首见"治理史→本文件"归属说明）；推进动机：维护者
-  无 push 能力且无成文约束（当前 15+ 提交未推送即为待审状态）。处置=本地
-  commit → 维护者审核 → 维护者推送或明确授权；推送前检查清单（全量测试绿 /
-  工作区干净 / CHANGELOG 引用 hash 可解析——历史重写后尤甚，见 F-051）；
-  force-push 仅限维护者执行。**纯文档零代码**。
+  - **F-062 处置**（推送权限纪律成文）——与上方「F-062 登记+处置」
+    同一事件重复记账（双堆时期产物），**以彼段为准**，本行留指针
+    防断链（F-092）。
 - **F-051~053 修复收口（fresh-checker 复核 High 处置 9-05 上午）**:
   - **F-063（H3 修复，code）**: `physical_gate.py` `fail_reads` 解析改
     默认 -1 + ValueError 异常 + 负值 raise `probe_error`——
@@ -1229,113 +1350,3 @@
   .mcp.json（用户确认非本人添加）移出至 archive/mcp-from-toolkit-20260831/。
 
 ## 0.1.x — 2026-08-30（代管 R1，分支 handoff/zcode-20260830）
-
-- **F-001**（Critical）feedback_db 首次落账死锁——button-toggle 建成以来
-  反馈零落账（4866fb5 *(legacy, 9-01 历史重写后失效)*）。
-- **F-002** config 容错 / **F-003** 采集超时诚实化（部分输出回收+失败
-  现场落盘，待真机终判）/ **F-004** 落账三态留痕 / **F-005** hardfault
-  默认 map 自动发现（1baeed2 *(legacy, 9-01 历史重写后失效)*、11eb319 *(legacy, 9-01 历史重写后失效)*）。
-- **F-014** 校准库损坏容错（.corrupt 隔离 + 空库重建）（afc7265 *(legacy, 9-01 历史重写后失效)*）。
-- **F-006/007/008/012** Low 清理组；F-009/010/011/013 记录不修（fa5efb4 *(legacy, 9-01 历史重写后失效)*）。
-- 新工具 **release_audit.py**（M-3）: 发布记录事后审计 R1~R6（eb1e4c9 *(legacy, 9-01 历史重写后失效)*）。
-- **主干补充**（主控，master，首轮换回后当日——R2 分支未及见的 8 commit）:
-  hardfault 三层全修 symbols 0→126 真机坐实（920e187 *(legacy, 9-01 历史重写后失效)*）；F-015 workspace 跟随
-  --project / F-016 采集窗进契约 / F-017 load_project_config 段语义双重错误
-  （1819e18 *(legacy, 9-01 历史重写后失效)*，106/106）；插板终判四项全绿（d052060 *(legacy, 9-01 历史重写后失效)*）；A-02 哈希举证对账（f4b5d4f *(legacy, 9-01 历史重写后失效)*）。
-
-## Unreleased — 2026-09-08（F-078 生成代码语法烟测：CMSIS 符号契约 + arm-gcc 前置闸）
-
-- **F-078 处置（A 类缺陷前移，test）**: 新增 `tests/test_gen_syntax_smoke.py`
-  —— 全部 gen_* 代码路径（18 片段 + 非整除注释分支）输出过
-  `arm-none-eabi-gcc -fsyntax-only`。机制：把"AI 抄进工程 → build 炸 →
-  烧录迭代白跑"的 A 类缺陷（幻影宏/语法错）前移到提交前就红。
-  - stub 头 = "生成器 ↔ CMSIS 接口契约"：枚举生成器可引用的全部结构体
-    成员与 RCC/外设宏；两头越界都算失败（生成器引契约外符号红，契约漏
-    定义也红），另有反向钉：生成输出中每个 RCC 宏必须能在 stub 找到
-    #define，防未来新增外设时漏扩契约。
-  - 片段语义处理（如实记账）：生成物是贴进模块 .c 的混合片段（裸语句 +
-    static 辅助函数），非完整翻译单元；烟测做机械变换（剥行首 static 后
-    包进函数，GNU C 嵌套函数合法）换取语法+符号全量检查——static 存储
-    类布局的合法性不在烟测范围，由 review 兜底。
-  - 环境：arm-none-eabi-gcc 不在场时整组 skip（CI ubuntu 不装工具链，
-    与 coverage-data 测试同款守卫）；变异验证：注入 gen_pwm 幻影时钟宏
-    → 烟测 2 例红，还原后全绿。
-
-## Unreleased — 2026-09-08（F-079 生成器数值扫描：点断言升级性质断言）
-
-- **F-079 处置（连续域回归防线，test）**: F-071 的点断言可被"改舍入策略/
-  改候选 ARR 表"绕过——孤点之外的整个值域不受保护。新增
-  `tests/test_gen_numeric_sweep.py` 扫性质而非扫点:
-  - USART BRR: 14 档标准波特率 × 双总线，性质 a) 装箱分频偏差 ≤ 半 LSB
-    (1/32，正确舍入的紧上界，与速率无关——F-076 进位缺陷在这条性质下
-    无处遁形)；b) 实际波特率误差 ≤ 2% (UART 实用容限)；
-  - PWM: 1..2000Hz 全扫 + 高频样本，性质 a) 无旁注即必须精确整除
-    (freq×(PSC+1)×(ARR+1) == 72e6 纯整数断言)；b) 旁注 actual 必须与按
-    PSC/ARR 重算值一致 (生成器不许声称产不出的频率)；c) PSC/ARR ∈ 16 位。
-  - 黑盒契约: 全部解析自生成输出，不 import 生成器内部变量。
-  - 变异验证: 舍入 round→int (截断) → 半 LSB 性质红；还原后与
-    test_gen_periph/smoke/卫生测试全绿 (59 例)。
-
-## Unreleased — 2026-09-08（F-080 生成代码中断安全模式钉）
-
-- **F-080 处置（C 类最低配置前移到测试，test）**: 钉生成物里中断相关
-  的最低安全模式——丢了不报编译错但属 C 类缺陷: ① ISR 共享变量 volatile
-  (丢了在 -O2 下 delay_ms 死循环)；② delay 必须 __WFI 睡眠；③ SysTick
-  CTRL 必须含 TICKINT (否则 tick 永不走)；④ 定时器 ISR 先查更新标志、
-  清标志在 if 体内且先于业务 TODO (清在体外=每次中断都清, 清在业务后=
-  慢了丢标志)；⑤ Handler 名必须符合 CMSIS 向量表命名 (名字错=中断
-  静默不触发, 链接器不报错)。与 F-071 的 IRQ 编号钉互补不重复。
-
-## Unreleased — 2026-09-08（F-081 hardfault 解析层补测 + 新缺陷发现登记）
-
-- **F-081 处置（失败归因主体补测，test）**: hardfault.py 300 语句 27%
-  (2026-09-08 实测)，它是闭环 Step 4b 失败归因的主体且核心全是纯函数。
-  新增 `tests/test_hardfault_parse.py` 20 例: parse_reg_value（含 sp/msp
-  整词匹配防误吸）、parse_mdw_value、parse_registers 全 dump、
-  classify_fault 六分支（no_fault 语义=2026-08-12 修复钉 / FORCED 下
-  BFSR>UFSR>MFSR 优先级 / 未知位原样落 raw 不装懂）、parse_map_symbols
-  （GCC ld 版式 + 伪行过滤 + ARMCC 版式 + 缺文件）、_map_degradation_note、
-  resolve_address（区间匹配 + F-005 无 size 最近前导兜底 + 低于一切返回
-  None）、classify_address_range（F103 地址空间 7 分区）。
-  **新缺陷发现登记**: resolve_address 注释"优先匹配小函数（更精确）"与
-  实现 `size > best_size`（选最大）矛盾——嵌套场景 PC 落在大函数内的
-  小 helper 时会误报外层函数，误导归因。按 xfail 纪律以 expectedFailure
-  登记（断言按注释意图写），修复另立 commit (F-082)。既有
-  test_hardfault_map.py 的单符号场景与新语义不冲突（零修改全绿）。
-
-## Unreleased — 2026-09-08（F-082 修复 resolve_address 符号匹配优先级）
-
-- **F-082 处置（归因准确性修复，fix）**: F-081 登记的注释/实现矛盾——
-  resolve_address 的 `size > best_size` 实际选**最大**包含符号。危害场景:
-  生成代码把多个函数内联进同一 region 时（或符号表含大小函数嵌套），
-  PC 落在大函数内的小 helper 会误报成外层函数，HardFault 归因直接指错
-  修改位置。修复 = `best is None or sym["size"] < best_size`（真正选最小
-  包含符号，同尺寸保持先到优先）；无 size 的 GCC 符号区间匹配恒空，
-  F-005 最近前导兜底路径不受影响（既有测试钉住）。F-081 的
-  expectedFailure 翻转为常规断言。
-
-## Unreleased — 2026-09-08（F-083 知识库数据一致性校验）
-
-- **F-083 处置（上游数据防线，test）**: stm32f103-ref.json (55 外设) 是
-  rm_lookup/gen_periph/gen_doc/phase_minus_one 的共同上游，此前无一致性
-  防线——RCC 位错一位 = 生成代码使能错外设，IRQ 号错 = 中断静默不触发。
-  新增 `tests/test_kb_hygiene.py` 8 例结构不变量校验: _meta 计数与实际
-  一致（漂移即红）、base 地址空间合法性（外设区 + CM3 私有区 + FSMC
-  0xA0000000，GPIO 多基地址版式特判）、clock rcc_register ∈ 实测合法集
-  且 bit<32、引脚端口/编号物理合法（mode 可选——通道类引脚本无 mode）、
-  IRQ 编号 ≤67 且符合 CMSIS *_IRQn 命名、寄存器 offset 十六进制可解析、
-  known_issues 登记簿非空。
-  规则演进如实记账: 初版两条规则过严是规则错不是数据错——NVIC/SysTick
-  base 在 CM3 私有区、FSMC base 0xA0000000 是 RM0008 规定区域、通道类
-  引脚本就无 mode，均已按数据手册修正校验范围。
-
-## Unreleased — 2026-09-08（F-084 CI 覆盖率棘轮门禁）
-
-- **F-084 处置（防静默侵蚀，ci）**: ci.yml 新增 coverage-gate job——
-  coverage run 全量套件 + `coverage report --fail-under=38`（棘轮下限：
-  2026-09-08 实测 TOTAL 40%，留 2pt 平台差异余量；纪律只升不降，
-  提升后须同步上调并入账）。与 unittest 金丝雀 job 分离：金丝雀刻意
-  不装 coverage（陌生人 clone 语义），本 job 装 coverage 后
-  coverage-data 模式的 5 例测试在 CI 也激活。38 这个数字的动机：
-  F-071 前的真实覆盖率曾从无人知晓的低位静默漂移，度量修好（F-072）
-  之后的下一步就是让"掉下去"变成 CI 红。
