@@ -3,6 +3,28 @@
 格式约定: 每条含发现编号（代管期 findings 编目）与证据 commit。当前版本以
 `VERSION` 文件为准（`wb_common.toolkit_version()` 读取）。
 
+## Unreleased — 2026-09-09（F-088 verify 主流程失败/重试分支集成测试 + 死分支登记）
+
+- **F-088 处置（审计 WB-B6 / 简报 WB-20260909-02，test，Orchestrator 亲执行）**:
+  P0-1（F-085）漏网的根因是主流程「build 成功线」零覆盖。F-085 已补 happy path，
+  本批扩面到**失败与重试分支**：新增 `tests/test_verify_mainflow_retry.py`（6 例，
+  S1~S6），全部真实驱动 main()（临时 workspace + 步骤 mock + 真实台账/失败现场落盘断言）：
+  S1 flash 重试耗尽 → flash_failed + last_failure.json（`.workbench/build/`，
+  failure_context.py:70 实证路径）+ 早退落台账；S2 flash 第 3 次重试成功 → ok 且
+  step_durations 含 flash；S3 build 重试耗尽 → build_failed；S4 analyze error 现实行为；
+  S5 rtt capture 失败 → capture_failed + 失败现场；S6 HIL 守卫 exit 2。
+  **⚠️ 新发现登记（超出原审计清单，按"只登记不修复"禁线处理）**：
+  `build_has_errors` 分支（verify.py:583）**gcc/keil 两后端均不可达**——analyze
+  error 不会 break 出 build 重试循环 → 循环耗尽后必走 build_failed 早退（543-556）。
+  S4 用例钉住现实行为，修复死分支时翻转。处置选项：① 删死分支；② analyze error
+  时 break 改判 build_has_errors（保留"产物存在但有错"语义）。交维护者拍板。
+  **施工实录（三条 mock 教训）**：① `_slow(_flash)` 把函数对象当静态 result →
+  flash.get AttributeError——带副作用的 mock 不能再被"静态返回值"包装器包一层；
+  ② `mock.patch("verify.time.sleep")` 换的是**全局 time 模块**的 sleep（verify.time
+  IS time），测试自用的 `_slow` 睡眠一并被吞 → duration_sec 全 0——改用
+  perf_counter 自旋等待；③ last_failure.json 实际落 `.workbench/build/`（不是
+  feedback/）。全量 452 绿（446+6）。
+
 ## Unreleased — 2026-09-09（F-087 生成器三连修：gpio 上拉 / systick Handler / adc 分频）
 
 - **F-087 处置（审计 WB-B1 / 简报 WB-20260909-01，fix，Orchestrator 亲执行——WordBuddy 暂不可用）**:
