@@ -222,7 +222,7 @@ embedded-toolkit/
 ├── templates/          # FSD 功能规格书模板
 ├── machine.json        # 本机工具链路径（不入库；模板 machine.example.json）
 ├── CHANGELOG.md        # 全账本：条目可对到 commit
-└── VERSION             # 当前 0.4（版本唯一事实源 = VERSION 文件，经 wb_common.toolkit_version() 读取）
+└── VERSION             # 当前 0.5（版本唯一事实源 = VERSION 文件，经 wb_common.toolkit_version() 读取）
 ```
 
 ## 质量与验证
