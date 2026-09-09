@@ -188,3 +188,95 @@ def swd_probe(openocd_exe: str, attempts: int = 3) -> tuple[bool, str]:
         if attempt < attempts - 1:
             time.sleep(1)
     return False, f"{last[-200:]}" if isinstance(last, str) else str(last)
+
+
+# ── F-091: openocd 家族同源符号收敛（先钉后拆, 特征钉见 test_openocd_dedup） ──
+
+def resolve_openocd_params(args, project_config: dict, state_lookup: dict) -> dict:
+    """解析 OpenOCD 工程级参数，优先级: CLI > 工程配置 > state.json
+
+    F-091: 原为 openocd_gdb/openocd_run/openocd_telnet 三份逐字节相同副本
+    （openocd_itm 另有 +27 行的 tpiu/traceclk/pin_freq 扩展变体），按 F-029
+    纪律收敛到本模块; 三个消费方 re-export 保持 `openocd_gdb.resolve_openocd_params`
+    调用面不变（特征钉钉位）。
+    """
+    # board: CLI > 工程配置 > state
+    board = args.board
+    board_source = "cli"
+    if is_missing(board):
+        board = project_config.get("board")
+        board_source = "project_config"
+    if is_missing(board):
+        board = state_lookup.get("board")
+        board_source = "state"
+
+    # interface: CLI > 工程配置 > state
+    interface = args.interface
+    interface_source = "cli"
+    if is_missing(interface):
+        interface = project_config.get("interface")
+        interface_source = "project_config"
+    if is_missing(interface):
+        interface = state_lookup.get("interface")
+        interface_source = "state"
+
+    # target: CLI > 工程配置 > state
+    target = args.target
+    target_source = "cli"
+    if is_missing(target):
+        target = project_config.get("target")
+        target_source = "project_config"
+    if is_missing(target):
+        target = state_lookup.get("target")
+        target_source = "state"
+
+    # adapter_speed: CLI > 工程配置 > state
+    adapter_speed = args.adapter_speed
+    adapter_speed_source = "cli"
+    if is_missing(adapter_speed):
+        adapter_speed = project_config.get("adapter_speed")
+        adapter_speed_source = "project_config"
+    if is_missing(adapter_speed):
+        adapter_speed = state_lookup.get("adapter_speed")
+        adapter_speed_source = "state"
+
+    # transport: CLI > 工程配置 > state
+    transport = args.transport
+    transport_source = "cli"
+    if is_missing(transport):
+        transport = project_config.get("transport")
+        transport_source = "project_config"
+    if is_missing(transport):
+        transport = state_lookup.get("transport")
+        transport_source = "state"
+
+    return {
+        "board": board,
+        "board_source": board_source,
+        "interface": interface,
+        "interface_source": interface_source,
+        "target": target,
+        "target_source": target_source,
+        "adapter_speed": adapter_speed,
+        "adapter_speed_source": adapter_speed_source,
+        "transport": transport,
+        "transport_source": transport_source,
+    }
+
+
+def start_openocd_server(cmd: list) -> subprocess.Popen:
+    """启动 OpenOCD 进程（F-091 自 openocd_gdb/openocd_telnet 双副本收敛）"""
+    popen_kwargs = hidden_subprocess_kwargs()
+    creationflags = subprocess.CREATE_NEW_PROCESS_GROUP if sys.platform == "win32" else 0
+    if popen_kwargs.get("creationflags"):
+        creationflags |= popen_kwargs["creationflags"]
+    return subprocess.Popen(
+        cmd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        creationflags=creationflags,
+        startupinfo=popen_kwargs.get("startupinfo"),
+    )
