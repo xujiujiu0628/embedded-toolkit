@@ -16,6 +16,7 @@ if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
 from openocd_runtime import (  # noqa: E402
+    resolve_openocd_params,  # noqa: F401  (F-091 再导出, 调用面不变)
     build_artifacts,
     default_config_path,
     get_state_entry,
@@ -345,72 +346,6 @@ def _state_lookup(state: dict) -> dict:
         "adapter_speed": last_debug.get("adapter_speed") or last_flash.get("adapter_speed"),
         "transport": last_debug.get("transport") or last_flash.get("transport"),
         "flash_file": last_build.get("flash_file") or artifacts.get("flash_file"),
-    }
-
-
-def resolve_openocd_params(args, project_config: dict, state_lookup: dict) -> dict:
-    """解析 OpenOCD 工程级参数，优先级: CLI > 工程配置 > state.json"""
-    # board: CLI > 工程配置 > state
-    board = args.board
-    board_source = "cli"
-    if is_missing(board):
-        board = project_config.get("board")
-        board_source = "project_config"
-    if is_missing(board):
-        board = state_lookup.get("board")
-        board_source = "state"
-
-    # interface: CLI > 工程配置 > state
-    interface = args.interface
-    interface_source = "cli"
-    if is_missing(interface):
-        interface = project_config.get("interface")
-        interface_source = "project_config"
-    if is_missing(interface):
-        interface = state_lookup.get("interface")
-        interface_source = "state"
-
-    # target: CLI > 工程配置 > state
-    target = args.target
-    target_source = "cli"
-    if is_missing(target):
-        target = project_config.get("target")
-        target_source = "project_config"
-    if is_missing(target):
-        target = state_lookup.get("target")
-        target_source = "state"
-
-    # adapter_speed: CLI > 工程配置 > state
-    adapter_speed = args.adapter_speed
-    adapter_speed_source = "cli"
-    if is_missing(adapter_speed):
-        adapter_speed = project_config.get("adapter_speed")
-        adapter_speed_source = "project_config"
-    if is_missing(adapter_speed):
-        adapter_speed = state_lookup.get("adapter_speed")
-        adapter_speed_source = "state"
-
-    # transport: CLI > 工程配置 > state
-    transport = args.transport
-    transport_source = "cli"
-    if is_missing(transport):
-        transport = project_config.get("transport")
-        transport_source = "project_config"
-    if is_missing(transport):
-        transport = state_lookup.get("transport")
-        transport_source = "state"
-
-    return {
-        "board": board,
-        "board_source": board_source,
-        "interface": interface,
-        "interface_source": interface_source,
-        "target": target,
-        "target_source": target_source,
-        "adapter_speed": adapter_speed,
-        "adapter_speed_source": adapter_speed_source,
-        "transport": transport,
-        "transport_source": transport_source,
     }
 
 

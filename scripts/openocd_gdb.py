@@ -18,6 +18,8 @@ if str(ROOT_DIR) not in sys.path:
 
 from openocd_gdb_common import build_gdb_commands, parse_gdb_output, run_gdb_commands  # noqa: E402
 from openocd_runtime import (  # noqa: E402
+    resolve_openocd_params,  # noqa: F401  (F-091 再导出, 调用面不变)
+    start_openocd_server,  # noqa: F401  (F-091 再导出, 调用面不变)
     build_artifacts,
     default_config_path,
     get_state_entry,
@@ -88,23 +90,6 @@ def build_openocd_cmd(
     cmd.extend(["-c", f"gdb_port {gdb_port}"])
     cmd.extend(["-c", f"telnet_port {telnet_port}"])
     return cmd
-
-
-def start_openocd_server(cmd: list[str]) -> subprocess.Popen:
-    popen_kwargs = hidden_subprocess_kwargs()
-    creationflags = subprocess.CREATE_NEW_PROCESS_GROUP if sys.platform == "win32" else 0
-    if popen_kwargs.get("creationflags"):
-        creationflags |= popen_kwargs["creationflags"]
-    return subprocess.Popen(
-        cmd,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        creationflags=creationflags,
-        startupinfo=popen_kwargs.get("startupinfo"),
-    )
 
 
 def wait_server_ready(proc: subprocess.Popen, gdb_port: int, timeout: int = 15) -> tuple[bool, list[str]]:
@@ -221,72 +206,6 @@ def _state_lookup(state: dict) -> dict:
         "telnet_port": last_debug.get("telnet_port"),
         "elf_file": last_build.get("debug_file") or last_build.get("elf_file") or artifacts.get("debug_file"),
         "debug_file": last_build.get("debug_file") or artifacts.get("debug_file"),
-    }
-
-
-def resolve_openocd_params(args, project_config: dict, state_lookup: dict) -> dict:
-    """解析 OpenOCD 工程级参数，优先级: CLI > 工程配置 > state.json"""
-    # board: CLI > 工程配置 > state
-    board = args.board
-    board_source = "cli"
-    if is_missing(board):
-        board = project_config.get("board")
-        board_source = "project_config"
-    if is_missing(board):
-        board = state_lookup.get("board")
-        board_source = "state"
-
-    # interface: CLI > 工程配置 > state
-    interface = args.interface
-    interface_source = "cli"
-    if is_missing(interface):
-        interface = project_config.get("interface")
-        interface_source = "project_config"
-    if is_missing(interface):
-        interface = state_lookup.get("interface")
-        interface_source = "state"
-
-    # target: CLI > 工程配置 > state
-    target = args.target
-    target_source = "cli"
-    if is_missing(target):
-        target = project_config.get("target")
-        target_source = "project_config"
-    if is_missing(target):
-        target = state_lookup.get("target")
-        target_source = "state"
-
-    # adapter_speed: CLI > 工程配置 > state
-    adapter_speed = args.adapter_speed
-    adapter_speed_source = "cli"
-    if is_missing(adapter_speed):
-        adapter_speed = project_config.get("adapter_speed")
-        adapter_speed_source = "project_config"
-    if is_missing(adapter_speed):
-        adapter_speed = state_lookup.get("adapter_speed")
-        adapter_speed_source = "state"
-
-    # transport: CLI > 工程配置 > state
-    transport = args.transport
-    transport_source = "cli"
-    if is_missing(transport):
-        transport = project_config.get("transport")
-        transport_source = "project_config"
-    if is_missing(transport):
-        transport = state_lookup.get("transport")
-        transport_source = "state"
-
-    return {
-        "board": board,
-        "board_source": board_source,
-        "interface": interface,
-        "interface_source": interface_source,
-        "target": target,
-        "target_source": target_source,
-        "adapter_speed": adapter_speed,
-        "adapter_speed_source": adapter_speed_source,
-        "transport": transport,
-        "transport_source": transport_source,
     }
 
 
