@@ -129,7 +129,10 @@ class RepoRegressionTests(unittest.TestCase):
             self.assertNotIn(split_module, uncovered)
         # 真零覆盖的文件仍必须被报 (防止口径从"假阳"摆到"全绿")
         self.assertIn("cube_to_keil.py", uncovered)
-        self.assertIn("serial_mux.py", uncovered)
+        # F-097: serial_mux 有了行为测试 (test_serial_mux_lifecycle) →
+        # 不再零覆盖, 原钉移除; cube_to_keil 仍真零覆盖保留。
+        # (P2-12 反向锁按"覆盖提升即移钉"纪律处理, 见 CHANGELOG F-097)
+        self.assertNotIn("serial_mux.py", uncovered)
 
 
 @unittest.skipUnless(_coverage_available(),
