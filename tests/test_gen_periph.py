@@ -94,10 +94,17 @@ class GenGpioTests(unittest.TestCase):
         self.assertIn("GPIOD->CRL", out)
         self.assertIn("RCC_APB2ENR_IOPDEN", out)
 
-    def test_unknown_mode_defaults_to_0x3_and_echoes_raw_mode(self):
+    def test_unknown_mode_returns_error_not_silent_pushpull_f103(self):
+        """F-103: 旧契约"未知 mode 静默降级 0x3 推挽 + 回显 raw 标签"废止——
+        拼错的 mode 产出与注释意图相反的配置。改为显式 ERROR 且不落任何
+        寄存器写行。"""
         out = gen_periph.gen_gpio("PD3", "weird-mode")
-        self.assertIn("/* PD3 — weird-mode */", out)
-        self.assertIn("GPIOD->CRL |=  (0x3UL << 12);", out)
+        self.assertTrue(out.startswith("/* ERROR"))
+        self.assertIn("weird-mode", out)
+        self.assertNotIn("CRL", out)
+        # 有效集与 GPIO_MODE_MAP 单一事实源一致
+        for mode in gen_periph.GPIO_MODE_MAP:
+            self.assertNotIn("/* ERROR", gen_periph.gen_gpio("PD3", mode))
 
     def test_in_pullup_sets_odr_bit_f087(self):
         """F-087 缺陷 A: CNF=10/MODE=00 时上下拉方向由 ODR 决定, 复位 ODR=0

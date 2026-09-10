@@ -107,6 +107,104 @@ class PwmFrequencySweepTests(unittest.TestCase):
         self.assertGreaterEqual(len(self.FREQS), 2000)
 
 
+class NumericBoundaryTests(unittest.TestCase):
+    """F-103 数值边界缺口三连修: 越界输入必须显式 ERROR, 不得静默截断。
+
+    共同性质: 生成的每个寄存器值都装得进对应寄存器的物理位宽
+    (SysTick LOAD 24 位 / BRR 16 位 / CCR 16 位), 且配置域合法
+    (PWM ch 1-4 / duty 0-100)。"""
+
+    def test_systick_load_within_24bit(self):
+        # 72MHz 全整数分频表扫: 有效输出 LOAD ≤ 0xFFFFFF; 越界频率报错
+        for freq in (2, 3, 4, 10, 100, 1000, 8000, 72000, 720000, 7200000):
+            with self.subTest(freq=freq):
+                out = gen_periph.gen_systick(freq)
+                if out.startswith("/* ERROR"):
+                    # 报错也合法——但必须真越界 (LOAD > 24 位)
+                    self.assertGreater(72_000_000 // freq - 1, 0xFFFFFF)
+                    continue
+                load = int(re.search(r"SysTick->LOAD = (\d+);", out).group(1))
+                self.assertLessEqual(load, 0xFFFFFF)
+        # 实测锚点: --freq 2 → 35999999 > 0xFFFFFF (16777215), 必报错
+        out = gen_periph.gen_systick(2)
+        self.assertTrue(out.startswith("/* ERROR"))
+        self.assertIn("24-bit", out)
+        # 边界: freq 4 → 17999999 仍越界报错; freq 5 → 14399999 ≤ 0xFFFFFF 有效
+        self.assertTrue(gen_periph.gen_systick(4).startswith("/* ERROR"))
+        out5 = gen_periph.gen_systick(5)
+        self.assertIn("SysTick->LOAD = 14399999;", out5)
+
+    def test_usart_low_baud_brr_overflow_errors(self):
+        # mantissa 12 位上限 0xFFF: USART2 最低可表 550 baud; 300 必溢出
+        out = gen_periph.gen_usart("USART2", 300, "PA2", "PA3")
+        self.assertTrue(out.startswith("/* ERROR"))
+        self.assertIn("12-bit", out)
+        self.assertNotIn("->BRR =", out)
+        # 边界内侧: 600 baud @36MHz → mantissa 3750/16=234 ≤ 0xFFF 有效
+        out600 = gen_periph.gen_usart("USART2", 600, "PA2", "PA3")
+        self.assertIn("USART2->BRR = 0x", out600)
+        # 常用最低档 1200 必须仍然工作 (反向钉: 收紧不误伤)
+        self.assertIn("USART2->BRR = 0x",
+                      gen_periph.gen_usart("USART2", 1200, "PA2", "PA3"))
+
+    def test_pwm_channel_beyond_4_errors(self):
+        # TIM2~4 仅 4 通道; ch=5 旧行为写 CCR5 保留位静默无效
+        for ch in (0, 5, 9, -1):
+            with self.subTest(ch=ch):
+                out = gen_periph.gen_pwm("TIM2", ch, "PA0", 1000, 50)
+                self.assertTrue(out.startswith("/* ERROR"))
+                self.assertNotIn("->CCR", out)
+        self.assertIn("CCR4", gen_periph.gen_pwm("TIM2", 4, "PA3", 1000, 50))
+
+    def test_pwm_duty_and_freq_domain(self):
+        for duty in (-1, 101, 250):
+            with self.subTest(duty=duty):
+                out = gen_periph.gen_pwm("TIM2", 1, "PA0", 1000, duty)
+                self.assertTrue(out.startswith("/* ERROR"))
+        for duty in (0, 100):  # 边界合法值不误伤
+            self.assertIn("->CCR1", gen_periph.gen_pwm("TIM2", 1, "PA0", 1000, duty))
+        for freq in (0, -1000):
+            with self.subTest(freq=freq):
+                self.assertTrue(
+                    gen_periph.gen_pwm("TIM2", 1, "PA0", freq, 50).startswith("/* ERROR"))
+
+    def test_cli_exits_nonzero_on_all_new_boundaries(self):
+        """F-086 的退出码纪律经 _emit 泛化到全部 ERROR 出口"""
+        import subprocess
+        cases = [
+            ["--type", "systick", "--freq", "2"],
+            ["--type", "usart", "--usart", "USART2", "--baud", "300"],
+            ["--type", "pwm", "--timer", "TIM2", "--ch", "5", "--pin", "PA0"],
+            ["--type", "pwm", "--timer", "TIM2", "--ch", "1", "--pin", "PA0",
+             "--duty", "150"],
+            ["--type", "gpio", "--pin", "PA0", "--mode", "out-pp-99mhz"],  # argparse rc=2
+        ]
+        for argv in cases:
+            with self.subTest(argv=argv):
+                r = subprocess.run(
+                    [sys.executable, os.path.join(os.path.dirname(
+                        os.path.dirname(os.path.abspath(__file__))),
+                        "scripts", "gen_periph.py")] + argv,
+                    capture_output=True, text=True, encoding="utf-8",
+                    errors="replace", timeout=60)
+                self.assertNotEqual(r.returncode, 0,
+                                    f"{argv} 应失败退出, 实际 rc=0:\n{r.stdout[-300:]}")
+                blob = r.stdout + r.stderr
+                self.assertTrue("ERROR" in blob or "invalid choice" in blob,
+                                f"{argv}: 失败必须带可诊断信息:\n{blob[-300:]}")
+        # timer-int 既有 F-086 通道经 _emit 收敛后行为不变 (反向钉)
+        r = subprocess.run(
+            [sys.executable, os.path.join(os.path.dirname(
+                os.path.dirname(os.path.abspath(__file__))),
+                "scripts", "gen_periph.py"),
+             "--type", "timer-int", "--timer", "TIM2", "--period-ms", "1000"],
+            capture_output=True, text=True, encoding="utf-8",
+            errors="replace", timeout=60)
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("/* ERROR", r.stdout)
+
+
+
 class TimerIntArrBoundaryTests(unittest.TestCase):
     """F-086 缺陷 2 修复钉: timer-int 域纳入扫描 — ARR 16 位边界。
 

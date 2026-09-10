@@ -18,18 +18,37 @@ from wb_common import TOOLKIT_ROOT
 
 
 _LOG_PREFIX_RE = re.compile(r'^(Info|Warn|Error|Debug)\s*:', re.IGNORECASE)
-_CAPTURE_STATUS_KW = ["Listening on port", "halted due to", "shutdown command",
-                      "GDB", "accepting", "dropped", "semihosting is enabled",
-                      "target state:", "DEPRECATED",
-                      "Licensed under GNU", "For bug reports",
-                      "xPSR:", "http://", "Info :", "Warn :", "xPack"]
+
+# F-106: 黑名单曾按"子串包含"整行删——固件正文含 "GDB"/"http://"/"dropped"
+# 等词即被误滤 (semihosting 输出是裸文本, 与 OpenOCD log 同流)。收窄为
+# **行首锚定的 OpenOCD 已知噪声形态** (实测串照抄自本仓测试与实机日志):
+# OpenOCD 自身状态行几乎总在行首, 正文里的同名词不再误伤。
+# 注: "Info :"/"Warn :" 裸串兜底已由 _LOG_PREFIX_RE (容忍空格) 覆盖, 删除。
+_CAPTURE_NOISE_RES = tuple(re.compile(p, re.IGNORECASE) for p in (
+    r'^Listening on port\b',
+    r'^target halted due to\b',
+    r'^shutdown command invoked\b',
+    r'^target state:\s',
+    r'^semihosting is enabled\b',
+    r'^\s*(?:\w+\s+)?GDB\b.*(?:server|socket|connection)\b',  # "X GDB server" 类启动行
+    r'^\s*accepting .*connection\b',
+    r'^\s*dropped .*connection\b',
+    r'^DEPRECATED\b',
+    r'^Licensed under GNU\b',
+    r'^For bug reports\b',
+    r'^\s*xPSR:',
+    r'^https?://openocd\b',
+    r'^\s*(?:OpenOCD|xPack)\b',
+))
 
 
 def _filter_capture_lines(raw: str) -> list:
     """从 OpenOCD stdout+stderr 提取 semihosting 正文行。
 
     OpenOCD 的 log 行以 "Info:/Warn:/Error:/Debug:" 开头, semihosting 输出是
-    裸文本行; 正常结束与超时收尸两条路径必须共用同一套过滤口径 (F-003)。"""
+    裸文本行; 正常结束与超时收尸两条路径必须共用同一套过滤口径 (F-003)。
+    F-106: 第二层过滤从子串黑名单收窄为行首锚定正则——正文含噪声词不再
+    被整行误删。"""
     lines = []
     for line in raw.splitlines():
         stripped = line.strip()
@@ -37,7 +56,7 @@ def _filter_capture_lines(raw: str) -> list:
             continue
         if _LOG_PREFIX_RE.match(stripped):
             continue
-        if any(kw in stripped for kw in _CAPTURE_STATUS_KW):
+        if any(rx.match(stripped) for rx in _CAPTURE_NOISE_RES):
             continue
         lines.append(stripped)
     return lines
