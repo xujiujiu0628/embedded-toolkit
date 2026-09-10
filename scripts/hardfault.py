@@ -91,10 +91,18 @@ def run_openocd_diag() -> str:
         "-c", "reg r1",
         "-c", "reg r2",
         "-c", "reg r3",
-        "-c", "mdw 0xE000ED28 1",   # CFSR
+        "-c", "mdw 0xE000ED28 1",   # CFSR (首读: 诊断依据)
         "-c", "mdw 0xE000ED2C 1",   # HFSR
         "-c", "mdw 0xE000ED38 1",   # BFAR
         "-c", "mdw 0xE000ED34 1",   # MMFAR
+        # F-109 (真机取证结案): CFSR/HFSR 是 W1C 粘滞位, 只读不清会把
+        # 本次故障位留给下一次诊断 (陈旧位误诊)。读到即报告, 随即写全 1
+        # 清除 + 复读取证 residual。BFAR/MMFAR 普通 R/W 不清——CFSR 的
+        # BFSR.BFARVALID/MFSR.MMARVALID 位清后其值即声明失效。
+        "-c", "mww 0xE000ED28 0xFFFFFFFF",
+        "-c", "mww 0xE000ED2C 0xFFFFFFFF",
+        "-c", "mdw 0xE000ED28 1",   # 复核: 粘滞位卫生状态
+        "-c", "mdw 0xE000ED2C 1",
         "-c", "shutdown",
     ]
 
@@ -144,6 +152,32 @@ def parse_mdw_value(text: str, target_addr: int) -> int | None:
     return None
 
 
+def parse_mdw_all_values(text: str, target_addr: int) -> list:
+    """提取某地址所有 mdw 读取值 (按出现顺序)。
+
+    F-109: CFSR/HFSR 清位前后各读一次 → [清除前, 复核残值]。调用方取
+    [0] 作诊断依据, [-1] 作粘滞位卫生复核; 只有一次读时不虚构残值。"""
+    pattern = rf'{target_addr:#010x}:\s*([0-9a-fA-F]+)'
+    return [int(m, 16) for m in re.findall(pattern, text, re.IGNORECASE)]
+
+
+def sticky_hygiene(regs: dict) -> dict:
+    """粘滞位卫生结论: 读后 W1C 清除是否生效。
+
+    cleared: True=复核读到 0 / False=仍有残值 (写路径异常或复位竞态,
+    如实报告不隐藏) / None=二次读缺失, 不可知。"""
+    out = {}
+    for name in ("cfsr", "hfsr"):
+        before = regs.get(name)
+        after = regs.get(f"{name}_residual")
+        out[name] = {
+            "before": f"0x{before:08X}" if before is not None else "N/A",
+            "after": f"0x{after:08X}" if after is not None else None,
+            "cleared": (after == 0) if after is not None else None,
+        }
+    return out
+
+
 def parse_registers(raw_output: str) -> dict:
     """解析 OpenOCD 输出中的所有寄存器和故障寄存器"""
     regs = {}
@@ -160,9 +194,13 @@ def parse_registers(raw_output: str) -> dict:
         "mmfar": 0xE000ED34,
     }
     for name, addr in mdw_map.items():
-        val = parse_mdw_value(raw_output, addr)
-        if val is not None:
-            regs[name] = val
+        vals = parse_mdw_all_values(raw_output, addr)
+        if vals:
+            regs[name] = vals[0]  # 诊断依据 = 清除前首读
+        # F-109: 粘滞位有清后复核读 → 末值作 residual; 普通 R/W 或
+        # 单次读不虚构 (无第二值即无键)。
+        if name in ("cfsr", "hfsr") and len(vals) >= 2:
+            regs[f"{name}_residual"] = vals[-1]
 
     return regs
 
@@ -502,13 +540,16 @@ def main():
         "status": "hardfault_detected",
         "fault_type": fault["primary"],
         "registers": {k: f"0x{v:08X}" if isinstance(v, int) else v
-                       for k, v in regs.items() if not k.startswith("_")},
+                       for k, v in regs.items()
+                       if not k.startswith("_") and not k.endswith("_residual")},
         "fault_registers": {
             "cfsr": {"raw": f"0x{regs.get('cfsr',0):08X}", "bits": fault["cfsr_bits"]},
             "hfsr": {"raw": f"0x{regs.get('hfsr',0):08X}", "bits": fault["hfsr_bits"]},
             "bfar": f"0x{regs.get('bfar',0):08X}" if regs.get("bfar") else "N/A",
             "mmfar": f"0x{regs.get('mmfar',0):08X}" if regs.get("mmfar") else "N/A",
         },
+        # F-109: 粘滞位卫生复核 (读→清→复读); 消费方据此判断残值污染
+        "sticky_hygiene": sticky_hygiene(regs),
         "resolved": resolved,
         "diagnosis": diagnosis_text,
         "symbols_total": len(symbols),
@@ -543,6 +584,16 @@ def _print_readable(r: dict):
     print(f"  HFSR:  {fr['hfsr']['raw']}  ({len(fr['hfsr']['bits'])} bits active)")
     print(f"  BFAR:  {fr['bfar']}")
     print(f"  MMFAR: {fr['mmfar']}")
+    sh = r.get("sticky_hygiene") or {}
+    for reg, info in sh.items():
+        if info["cleared"] is True:
+            mark = "已清除"
+        elif info["cleared"] is False:
+            mark = "仍残值!"
+        else:
+            mark = "未复核"
+        print(f"  {reg.upper()} 粘滞位: {info['before']} → 清后复核 "
+              f"{info['after'] or '?'} ({mark})")
     if r["resolved"]:
         print(f"\nResolved:")
         for k, v in r["resolved"].items():

@@ -51,6 +51,38 @@
   保持 0。仍挂账（本轮未动）: 时钟树参数化 `--pclk`（架构增强非缺陷）、
   SCB CFSR/HFSR 粘滞位（需真机取证）、0.5 真机门禁（等板子）。
 
+## Unreleased — 2026-09-10（F-109 SCB 粘滞位真机取证结案 + hardfault 读后清除）
+
+- **取证（0.5 门禁收官后趁板子在连, 真机 xPack OpenOCD 0.12 + F103C8T6）**:
+  审计 P3 推测项"SCB CFSR/HFSR 粘滞位未清（推测项，需真机验证）"结案——
+  T-A 复位后全 1 写清除读回 0（目标本就干净, 不构成置位证据）;
+  T-B mww 直接注入 UFSR 位被硬件拒绝（故障位只能真故障置位——探针设计
+  教训: 伪造残值不可行, 须制造真故障）;
+  T-C1 制造真故障（reg pc 0x0800ff00 跳已擦除 flash → 升级 HardFault,
+  handler while(1) halt 现场）读得 CFSR=0x00010000 / HFSR=0x40000000,
+  多次 halt 重复读到同值 → **粘滞坐实**;
+  T-C2 按位写 1 清除读回 0 → **W1C 有效**。
+  **误诊路径实证**: 现场 halt 下连续两次跑旧版 hardfault.py, 第二次把
+  上一轮已报告的同一故障位再次归因（UsageFault UNDEFINSTR）——跨运行
+  陈旧位误诊从推测升级为实录。
+- **处置（fix+test, hardfault.py）**: 诊断序列改"读→报告→W1C 清→复核":
+  `run_openocd_diag` 首读后追加 `mww <addr> 0xFFFFFFFF` + 二次 `mdw`
+  （清除全 1 安全——粘滞位写 1 才清、写 0 无副作用, 且 T-C2 后按位/全 1
+  等效实测）; BFAR/MMFAR 不清（普通 R/W, CFSR VALID 位清后其值即声明
+  失效）。解析层新增 `parse_mdw_all_values`（同址多读按序取, 首值诊断、
+  末值 residual, 单次读不虚构）+ `sticky_hygiene`（cleared True/False/
+  None 三态如实报告）; JSON 增 `sticky_hygiene` 字段, 可读输出增粘滞位
+  复核行。**设计修正（相对任务单原文）**: 不在固件 handler 侧写清位——
+  handler 保位即保留崩溃现场证据, 清位职责归诊断工具。
+- **闭环验证（真机）**: halt 现场跑新工具 → 诊断 UNDEFINSTR +
+  `sticky_hygiene.cleared=true (0x00010000→0x0)`; 同场再跑 → **no_fault**
+  （旧版此处会误报）; 完毕 reset run 交还板子正常运行。
+- 测试 +8 例 `tests/test_hardfault_sticky_clear.py`（命令序列顺序钉:
+  读<清<复读 ×2 + BFAR/MMFAR 反向钉不列入清除; residual 解析三态;
+  hygiene 报告三态）, 先红（7 failed）后绿。全量 **519 passed, 6 skipped**;
+  coverage_lint --strict 未覆盖清单保持 0。
+- **P3 挂账剩余**: `--pclk` 参数化（架构增强）、复审 L-2/3/4 登记项。
+
 ## Unreleased — 2026-09-10（F-108 fresh-checker 复审处置：M×3 + L-1 修复，L-2/3/4 挂账）
 
 - **复审结论**: F-103~107 分支 `p3-clearance-20260910`（`902d563`）经
