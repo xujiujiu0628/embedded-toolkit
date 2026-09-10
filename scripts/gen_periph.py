@@ -94,26 +94,35 @@ def pin_cr_reg(pin: str) -> str:
 # 代码生成函数
 # ============================================================
 
+# F-103: mode_map 提为模块级并单一事实源 (argparse choices 与 gen_gpio 共用,
+# 两处判据永不漂移)。
+GPIO_MODE_MAP = {
+    "out-pp-50mhz":  ("0x3", "通用推挽输出 50MHz"),
+    "out-pp-2mhz":   ("0x2", "通用推挽输出 2MHz"),
+    "out-od-50mhz":  ("0x7", "通用开漏输出 50MHz"),
+    "af-pp-50mhz":   ("0xB", "复用推挽输出 50MHz (UART TX / PWM)"),
+    "af-od-50mhz":   ("0xF", "复用开漏输出 50MHz (I2C)"),
+    "in-floating":   ("0x4", "浮空输入"),
+    "in-pullup":     ("0x8", "上拉输入"),
+    "in-analog":     ("0x0", "模拟输入 (ADC)"),
+}
+
+
 def gen_gpio(pin: str, mode: str) -> str:
     """生成 GPIO 引脚配置代码"""
+    # F-103: 未知 mode 显式报错。旧行为 mode_map.get(mode, ("0x3", mode))
+    # 静默降级推挽——拼错的 mode 标签配 0x3 输出, 生成物"看起来合法"但
+    # 与注释意图相反 (B 类静默缺陷, 与 F-086/F-103 边界报错同族纪律)。
+    if mode not in GPIO_MODE_MAP:
+        return (f"/* ERROR: 未知 GPIO 模式 '{mode}' — 有效模式: "
+                f"{', '.join(sorted(GPIO_MODE_MAP))}。*/")
     port = pin_port(pin)
     port_base = GPIO_BASE.get(port, f"GPIO{port}")
     clock_bit = GPIO_CLOCK_BIT.get(port, f"IOP{port}EN")
     cr_reg = pin_cr_reg(pin)
     shift = pin_cr_shift(pin)
 
-    # 模式映射
-    mode_map = {
-        "out-pp-50mhz":  ("0x3", "通用推挽输出 50MHz"),
-        "out-pp-2mhz":   ("0x2", "通用推挽输出 2MHz"),
-        "out-od-50mhz":  ("0x7", "通用开漏输出 50MHz"),
-        "af-pp-50mhz":   ("0xB", "复用推挽输出 50MHz (UART TX / PWM)"),
-        "af-od-50mhz":   ("0xF", "复用开漏输出 50MHz (I2C)"),
-        "in-floating":   ("0x4", "浮空输入"),
-        "in-pullup":     ("0x8", "上拉输入"),
-        "in-analog":     ("0x0", "模拟输入 (ADC)"),
-    }
-    mode_val, mode_desc = mode_map.get(mode, ("0x3", mode))
+    mode_val, mode_desc = GPIO_MODE_MAP[mode]
 
     lines = []
     lines.append(f"/* {pin} — {mode_desc} */")
@@ -131,10 +140,21 @@ def gen_gpio(pin: str, mode: str) -> str:
 
 def gen_systick(freq_hz: int) -> str:
     """生成 SysTick 配置代码 (假设 72MHz 内核时钟)"""
+    # F-108 (L-1): 零/负值统一为结构化 ERROR (与 gen_pwm freq 守卫对齐),
+    # 不再让 72000000 % 0 抛 ZeroDivisionError traceback。
+    if freq_hz <= 0:
+        return f"/* ERROR: freq={freq_hz}Hz 非法 — 必须为正整数。*/"
     if 72000000 % freq_hz != 0:
         return f"/* ERROR: 72MHz / {freq_hz} is not an integer. Choose a divisor of 72MHz. */"
 
     load = 72000000 // freq_hz - 1
+    # F-103: SysTick->LOAD 是 24 位寄存器 (RM0008 §9.1.2), 超限被硬件静默
+    # 截断低位 → 周期错误却自称正确 (实测 --freq 2 → 35999999 > 0xFFFFFF)。
+    if load > 0xFFFFFF:
+        # 最低可表频率 = ⌈72MHz / 2^24⌉ = 5Hz (整除下取整会虚报 4Hz)
+        return (f"/* ERROR: SysTick LOAD={load} > 0xFFFFFF (24-bit) — "
+                f"{freq_hz}Hz 在 72MHz 下不可表示; 请提高频率 "
+                f"(最低 {-(-72000000 // (0xFFFFFF + 1))}Hz) 或改用定时器。*/")
     period_us = 1000000 // freq_hz
 
     lines = []
@@ -168,6 +188,10 @@ def gen_usart(usart: str, baud: int, tx: str, rx: str) -> str:
     bus = "APB2" if usart_n == "1" else "APB1"
     pclk_mhz = 72 if bus == "APB2" else 36
 
+    # F-108 (L-1): baud<=0 结构化 ERROR, 不再除零 traceback。
+    if baud <= 0:
+        return f"/* ERROR: baud={baud} 非法 — 必须为正整数。*/"
+
     # 波特率计算
     div = pclk_mhz * 1000000 / (16 * baud)
     mantissa = int(div)
@@ -178,6 +202,13 @@ def gen_usart(usart: str, baud: int, tx: str, rx: str) -> str:
     if fraction >= 16:
         mantissa += 1
         fraction = 0
+    # F-103: F1 USART BRR 的 DIV_Mantissa 只有 bit[15:4] 共 12 位 (RM0008
+    # §27.5.5), mantissa > 0xFFF 装不进 → 低波特率显式报错。
+    # 72MHz 阈值 ≈ 1100 baud, 36MHz ≈ 550 baud, 常用波特率不受影响。
+    if mantissa > 0xFFF:
+        return (f"/* ERROR: {usart} BRR mantissa {mantissa} > 0xFFF (12-bit) "
+                f"at {baud} baud / PCLK{bus[-1]}={pclk_mhz}MHz — 波特率过低 "
+                f"(最低约 {pclk_mhz * 1000000 // (16 * 0xFFF)} baud)。*/")
     brr = (mantissa << 4) | fraction
 
     tx_port = pin_port(tx)
@@ -236,6 +267,18 @@ def gen_usart(usart: str, baud: int, tx: str, rx: str) -> str:
 def gen_pwm(timer: str, ch: int, pin: str, freq: int, duty: int,
             tim_clk_mhz: int = 72) -> str:
     """生成 PWM 初始化代码"""
+    # F-103 边界三连 (仿 F-086 gen_timer_int 显式报错惯例):
+    # ① TIM2~4 只有 4 通道, ch≥5 时 CCR5/CCMR 写的是保留位——硬件静默无效,
+    #    生成物编译通过但永远无输出 (B 类静默缺陷);
+    # ② duty 越界 [0,100] 时 CCR 算术失去意义 (负值/恒满占空);
+    # ③ freq≤0 直接除零 traceback。
+    if ch < 1 or ch > 4:
+        return (f"/* ERROR: {timer} 通道 {ch} 越界 — TIM2~4 仅 CH1~4, "
+                f"CH≥5 写保留位硬件静默无效。*/")
+    if duty < 0 or duty > 100:
+        return f"/* ERROR: duty={duty} 越界 — 有效范围 0~100 (%)。*/"
+    if freq <= 0:
+        return f"/* ERROR: freq={freq}Hz 非法 — 必须为正整数。*/"
     # 确定默认引脚
     default_pin = TIM_CH_PINS.get((timer, ch), pin)
     pin = pin or default_pin
@@ -367,6 +410,10 @@ def gen_timer_int(timer: str, period_ms: int, tim_clk_mhz: int = 72) -> str:
          PSC 下无合理近似, 不产出假装正确的配置)。
     """
     tim_clock = TIM_CLOCK_BIT.get(timer, f"{timer}EN")
+
+    # F-108 (L-1): period_ms<=0 结构化 ERROR, 不再 1000//0 traceback。
+    if period_ms <= 0:
+        return f"/* ERROR: period {period_ms}ms 非法 — 必须为正整数。*/"
 
     # IRQ 号
     irq_map = {"TIM1": 25, "TIM2": 28, "TIM3": 29, "TIM4": 30}
@@ -741,6 +788,17 @@ def gen_doc(periph_name: str, out_dir: str = "") -> str:
 # 主入口
 # ============================================================
 
+def _emit(out: str) -> None:
+    """打印生成物; ERROR 注释 → 退出码 1。
+
+    F-086 先例 (gen_timer_int) 泛化: 所有带"不可表示"错误分支的生成器共用
+    这一出口——机器消费方按退出码判失败, 不产出被硬件截断/静默无效却自称
+    正确的配置。"""
+    print(out)
+    if out.startswith("/* ERROR"):
+        sys.exit(1)
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="STM32F103 外设代码生成器",
@@ -757,9 +815,8 @@ def main():
   python gen_periph.py --type spi --spi SPI1 --sck PA5 --miso PA6 --mosi PA7 --nss PA4
   python gen_periph.py --type doc --periph I2C1
 
-GPIO 模式:
-  out-pp-50mhz, out-od-50mhz, af-pp-50mhz, af-od-50mhz,
-  in-floating, in-pullup, in-analog
+GPIO 模式 (F-103: 由 --mode choices 强制, 未知模式报错):
+  """ + ", ".join(sorted(GPIO_MODE_MAP)) + """
         """
     )
     parser.add_argument("--type", required=True,
@@ -768,7 +825,12 @@ GPIO 模式:
                         help="外设类型")
     # gpio
     parser.add_argument("--pin", default="", help="引脚: PA0, PC13")
-    parser.add_argument("--mode", default="out-pp-50mhz", help="GPIO 模式")
+    # F-103: --mode 加 choices。旧行为是 mode_map.get(mode, ("0x3", mode))
+    # 未知 mode 静默降级为推挽输出——拼写错误 (out-pp-50mhz2) 会产出"看起来
+    # 合法"的输出配置, 与 mode 标签相反。argparse 层直接拒, 生成函数层
+    # (gen_gpio 的 ERROR 分支) 兜库调用方。
+    parser.add_argument("--mode", default="out-pp-50mhz",
+                        choices=sorted(GPIO_MODE_MAP), help="GPIO 模式")
     # usart
     parser.add_argument("--usart", default="USART1", help="USART 外设: USART1/2/3")
     parser.add_argument("--baud", type=int, default=115200, help="波特率")
@@ -808,10 +870,10 @@ GPIO 模式:
         if not args.pin:
             print("Error: --pin required for GPIO", file=sys.stderr)
             sys.exit(1)
-        print(gen_gpio(args.pin, args.mode))
+        _emit(gen_gpio(args.pin, args.mode))
 
     elif args.type == "usart":
-        print(gen_usart(args.usart, args.baud, args.tx, args.rx))
+        _emit(gen_usart(args.usart, args.baud, args.tx, args.rx))
 
     elif args.type == "pwm":
         if not args.pin and args.ch and args.timer:
@@ -819,7 +881,7 @@ GPIO 模式:
         if not args.pin:
             print("Error: --pin required for PWM (or use --timer + --ch for auto-detect)", file=sys.stderr)
             sys.exit(1)
-        print(gen_pwm(args.timer, args.ch, args.pin, args.freq, args.duty, args.tim_clk))
+        _emit(gen_pwm(args.timer, args.ch, args.pin, args.freq, args.duty, args.tim_clk))
 
     elif args.type == "adc":
         if not args.pin:
@@ -828,21 +890,16 @@ GPIO 模式:
         print(gen_adc(args.adc, args.ch, args.pin))
 
     elif args.type == "systick":
-        print(gen_systick(args.freq))
+        _emit(gen_systick(args.freq))
 
     elif args.type == "timer-int":
-        out = gen_timer_int(args.timer, args.period_ms, args.tim_clk)
-        print(out)
-        if out.startswith("/* ERROR"):
-            # F-086: 不可表示周期显式失败 — 机器消费方按退出码判定,
-            # 不产出被硬件截断却自称正确的配置
-            sys.exit(1)
+        _emit(gen_timer_int(args.timer, args.period_ms, args.tim_clk))
 
     elif args.type == "i2c":
-        print(gen_i2c(args.i2c, args.speed, args.scl, args.sda))
+        _emit(gen_i2c(args.i2c, args.speed, args.scl, args.sda))
 
     elif args.type == "spi":
-        print(gen_spi(args.spi, args.spi_mode, args.nss, args.sck,
+        _emit(gen_spi(args.spi, args.spi_mode, args.nss, args.sck,
                       args.miso, args.mosi, args.baud_div))
 
     elif args.type == "doc":

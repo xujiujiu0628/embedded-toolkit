@@ -35,13 +35,17 @@
    `--message-callback`/`--tag-callback` 补**），终验零残留。
    重写前 commit 图已 bundle 归档：`../archive/embedded-toolkit-prehistory-20260901.bundle`。
 2. ✅ **HEAD 机器路径**：随重写一次洗清（行内替换不增减行数，报告行号引用仍有效）。
-3. ⏳ **F-3 测试硬编码**：字面量已被洗为占位符 → 真档冒烟对本机也恒跳过，
+3. ✅ **F-3 测试硬编码**：字面量已被洗为占位符 → 真档冒烟对本机也恒跳过，
    tempfile 化已无历史包袱，建议列入下轮（见 SENSITIVE_FINDINGS F-3）。
    **F-4**：`test_cli_exit_codes_and_json` 在 Windows 非 UTF-8 终端下失败
    （存量缺陷，对照 bundle 基线与重写无关）——✅ 同日已修（脚本强制 UTF-8 +
    GBK 环境回归钉，182 全绿），详见 SENSITIVE_FINDINGS F-4。
+   *（F-107 回填：F-3 后经 F-026 落地 tempfile 合成清单，双项均已处置。）*
 4. **本地 3 个 `handoff/*` 分支**：已随全 ref 重写脱敏（commit hash 全变）；
    是否推送/合并/留本地仍待拍板——内容已无 PII，仅过程性治理记录。
+   *（F-107 回填：已处置——分支随 09-05 F-070 陈旧分支清理收口；公开远端
+   残留的 4 个 `handoff-*` 过程性 tag 于 09-09 维护者拍板删除，
+   远端 tag 终态 v0.2/v0.3/v0.4，见 CHANGELOG F-096 段。）*
 5. **F-5 时间线事实（已登记，2026-09-01 补）**：Events API 显示仓库 8/26 曾
    公开一次、9/1 复转与脱敏推送最坏重叠约 20 分钟——低危残留，不再处理，
    详见 `SENSITIVE_FINDINGS.md` F-5。
@@ -65,3 +69,8 @@
 - CI 徽章已解锁（ubuntu × Python 3.10/3.12 双绿）
 - 工作树 86 个受跟踪文件，无 .env / 无私钥 / 无凭证
 - 本次准备未触碰任何脚本逻辑（任务约定），测试基线以 CI 与本地实跑为准
+
+> **F-107 回填（2026-09-10）**：上列为 09-01 快照原貌，保留不删。其后实况——
+> 仓库已 Public 且 force-push 完成；受跟踪文件增至 118（`git ls-files | wc -l`）；
+> 版本推进至 0.5 待发布材料（VERSION=0.5）；测试基线 502（见 CHANGELOG）。
+> 权威账目一律以 [`CHANGELOG.md`](CHANGELOG.md) 为准。

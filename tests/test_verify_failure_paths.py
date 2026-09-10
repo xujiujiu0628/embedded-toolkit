@@ -72,6 +72,36 @@ class CaptureLineFilterTests(unittest.TestCase):
         self.assertEqual(verify._filter_capture_lines("=== HARDFAULT ==="),
                          ["=== HARDFAULT ==="])
 
+    def test_firmware_text_with_noise_words_survives_f106(self):
+        """F-106: 旧黑名单按子串整行删——固件正文含 GDB/http///dropped
+        即被误滤成"程序无输出"。收窄为行首锚定后正文必须全保。"""
+        firmware = [
+            "ADC raw=3961 (see http://example.com/spec)",
+            "GDB stub initialized",
+            "packet dropped count=0",
+            "accepting: never a problem in firmware text",
+            "built with xPack GNU toolchain",
+        ]
+        raw = "\n".join(firmware) + "\n"
+        self.assertEqual(verify._filter_capture_lines(raw), firmware)
+
+    def test_openocd_banner_still_filtered_f106(self):
+        # 反向钉: 真实 OpenOCD 噪声 (行首形态) 仍须滤净
+        noise = [
+            "OpenOCD oneshot terminated with return code 0",
+            "xPack OpenOCD, x86_64 Open On-Chip Debugger ",
+            "Listening on port 4444 for telnet connections",
+            "Listening on port 3333 for GDB connections",
+            "target halted due to debug-request, current mode: Thread",
+            "target state: halted",
+            "shutdown command invoked",
+            "semihosting is enabled",
+            "http://openocd.org/doc/html/About.html",
+        ]
+        body = "LED ON"
+        raw = "\n".join(noise + [body]) + "\n"
+        self.assertEqual(verify._filter_capture_lines(raw), [body])
+
 
 class CaptureTimeoutTests(unittest.TestCase):
     """F-003: 超时必须回收部分输出并 capture_failed, 不再谎报 ok/lines=0"""
