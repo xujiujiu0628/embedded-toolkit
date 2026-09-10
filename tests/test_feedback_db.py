@@ -154,5 +154,56 @@ class CorruptDbRebuildTests(unittest.TestCase):
         self.assertEqual(len(os.listdir(os.path.join(self.fb, "events"))), 1)
 
 
+class SameSecondEventIdTests(unittest.TestCase):
+    """F-105: 事件 ID 秒级粒度——同秒两次落账曾互相覆盖。
+
+    修复前: make_event_id 只含到秒的时间戳, 第二次 log_event 以同名写
+    events/<eid>.json 直接覆盖第一次的事件详情, 而主索引按 append 记两条
+    → 一条索引指向已被覆盖的内容 (或修复前描述: 两条索引同 ID, 消费方
+    无法区分)。修复后: 自动 ID 冲突时追加 -2/-3 序号, 事件文件互不覆盖。"""
+
+    def setUp(self):
+        self.ws = tempfile.mkdtemp()
+        os.makedirs(os.path.join(self.ws, ".workbench"))
+        with open(os.path.join(self.ws, ".workbench", "config.json"), "w",
+                  encoding="utf-8") as f:
+            json.dump({"builder": "gcc"}, f)
+        self.fb = os.path.join(self.ws, ".workbench", "feedback")
+        os.makedirs(self.fb)
+        self.old_cwd = os.getcwd()
+        os.chdir(self.ws)
+        self.addCleanup(os.chdir, self.old_cwd)
+        self.addCleanup(shutil.rmtree, self.ws, ignore_errors=True)
+
+    def test_same_timestamp_gets_unique_ids(self):
+        fixed_ts = "2026-09-10T12:00:00+08:00"
+        e1 = feedback_db.log_event({"pipeline": "build_fix",
+                                    "outcome": "fixed",
+                                    "timestamp": fixed_ts})
+        e2 = feedback_db.log_event({"pipeline": "build_fix",
+                                    "outcome": "still_broken",
+                                    "timestamp": fixed_ts})
+        e3 = feedback_db.log_event({"pipeline": "build_fix",
+                                    "outcome": "pass",
+                                    "timestamp": fixed_ts})
+        self.assertEqual(len({e1, e2, e3}), 3,
+                         f"同秒三笔必须拿到互异 ID, 实际: {e1}/{e2}/{e3}")
+        self.assertNotIn("-", e1)          # 首笔保持原格式 (向后兼容)
+        self.assertTrue(e2.endswith("-2") or e2.endswith("-3"))
+        events_dir = os.path.join(self.fb, "events")
+        files = {f: json.load(open(os.path.join(events_dir, f),
+                                   encoding="utf-8"))
+                 for f in os.listdir(events_dir)}
+        outcomes = sorted(v["outcome"] for v in files.values())
+        self.assertEqual(outcomes, ["fixed", "pass", "still_broken"],
+                         "三笔事件详情必须互不覆盖地全部在盘")
+
+    def test_explicit_id_respected(self):
+        # 显式 ID 属调用方契约, 不参与自动改名 (既有行为反向钉)
+        eid = feedback_db.log_event({"pipeline": "verify", "id": "vf_manual_1",
+                                     "outcome": "pass"})
+        self.assertEqual(eid, "vf_manual_1")
+
+
 if __name__ == "__main__":
     unittest.main()

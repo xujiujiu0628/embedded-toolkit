@@ -21,7 +21,7 @@ import sys
 import tempfile
 import time
 import unittest
-from contextlib import redirect_stdout
+from contextlib import redirect_stdout, redirect_stderr
 from unittest import mock
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(
@@ -97,11 +97,12 @@ class VerifyMainSuccessPathTests(unittest.TestCase):
     def _run_main(self, extra_args):
         argv = ["verify.py", "--project", self.ws, "--json"] + extra_args
         buf = io.StringIO()
+        err = io.StringIO()
         with mock.patch.object(sys, "argv", argv):
-            with redirect_stdout(buf):
+            with redirect_stdout(buf), redirect_stderr(err):
                 with self.assertRaises(SystemExit) as ctx:
                     verify.main()
-        return ctx.exception.code, buf.getvalue()
+        return ctx.exception.code, buf.getvalue(), err.getvalue()
 
     def _state(self):
         with open(self.state_path, encoding="utf-8") as f:
@@ -109,7 +110,7 @@ class VerifyMainSuccessPathTests(unittest.TestCase):
 
     def test_gate_run_success_skips_jsonl_and_marks_gate_skip(self):
         """验收 ②: --gate-run 成功运行 → jsonl 不追加、state 标 gate_skip"""
-        code, stdout = self._run_main(
+        code, stdout, _stderr = self._run_main(
             ["--gate-run", "--task-origin", "schedule",
              "--require-schedule-origin"])
         self.assertEqual(code, 0, f"成功线未走通: {stdout[:600]}")
@@ -127,7 +128,7 @@ class VerifyMainSuccessPathTests(unittest.TestCase):
 
     def test_normal_success_writes_step_durations(self):
         """验收 ③: 成功路径 step_durations 落台账 (非空, 键为实际 step)"""
-        code, stdout = self._run_main([])
+        code, stdout, _stderr = self._run_main([])
         self.assertEqual(code, 0, f"成功线未走通: {stdout[:600]}")
         # 修复前: step_durations 漏传 → 台账留空 dict, 本断言红
         with open(self.jsonl, encoding="utf-8") as f:
@@ -156,6 +157,84 @@ class VerifyMainSuccessPathTests(unittest.TestCase):
         with open(self.jsonl, encoding="utf-8") as f:
             entries = [l for l in f if l.strip()]
         self.assertEqual(len(entries), 2)
+
+
+class ExpectationsMigrationWarningTests(unittest.TestCase):
+    """F-104: manifest 存在时 legacy expect 静默失效 → 必须有迁移告警。
+
+    审计 P3 登记项: .workbench/expectations.json 存在则 config.verify.expect
+    整体不参与判定, 但双配工程里改 expect 的人得不到任何反馈。只告警、
+    不改判定行为。"""
+
+    def setUp(self):
+        self.ws = tempfile.mkdtemp()
+        wb = os.path.join(self.ws, ".workbench")
+        os.makedirs(wb)
+
+    def tearDown(self):
+        shutil.rmtree(self.ws, ignore_errors=True)
+
+    def _write(self, cfg_verify, with_manifest):
+        with open(os.path.join(self.ws, ".workbench", "config.json"),
+                  "w", encoding="utf-8") as f:
+            json.dump({"toolkit_min_version": "0.1", "builder": "gcc",
+                       "verify": cfg_verify}, f)
+        if with_manifest:
+            with open(os.path.join(self.ws, ".workbench",
+                                   "expectations.json"), "w",
+                      encoding="utf-8") as f:
+                json.dump({"version": "1.0", "expectations": [
+                    {"id": "FR-SYS-01", "desc": "d", "texts": ["x"]}]}, f)
+
+    def _run_to_mode(self, extra_args=()):
+        # 只需跑到 expect_mode 判定段; 步骤函数全 mock 防真机触碰
+        argv = ["verify.py", "--project", self.ws, "--json"] + list(extra_args)
+        out, err = io.StringIO(), io.StringIO()
+        with mock.patch.object(sys, "argv", argv), \
+                mock.patch.object(verify, "step_build",
+                                  _slow_mock({"status": "ok",
+                                              "summary": "s",
+                                              "metrics": {"errors": 0,
+                                                          "warnings": 0},
+                                              "details": {}})), \
+                mock.patch.object(verify, "step_analyze",
+                                  _slow_mock({"status": "ok", "summary": {}})), \
+                mock.patch.object(verify, "step_flash",
+                                  _slow_mock({"status": "ok",
+                                              "stderr": "Verified",
+                                              "stdout": ""})), \
+                mock.patch.object(verify, "run_semihosting_session",
+                                  _slow_mock(("x\n", ""))), \
+                mock.patch.object(verify, "record_checkpoint"):
+            with redirect_stdout(out), redirect_stderr(err):
+                try:
+                    verify.main()
+                except SystemExit:
+                    pass
+        return out.getvalue(), err.getvalue()
+
+    def test_manifest_with_legacy_expect_warns(self):
+        self._write({"expect": ["LED"]}, with_manifest=True)
+        _out, err = self._run_to_mode()
+        self.assertIn("expectations.json", err)
+        self.assertIn("不再生效", err)
+
+    def test_manifest_without_legacy_expect_silent(self):
+        # 反向钉: 单配 manifest 的工程（新契约常态）不得被噪音骚扰
+        self._write({}, with_manifest=True)
+        _out, err = self._run_to_mode()
+        self.assertNotIn("不再生效", err)
+
+    def test_legacy_only_no_warning(self):
+        # 反向钉: 无 manifest 时 expect 正常生效, 不应告警
+        self._write({"expect": ["LED"]}, with_manifest=False)
+        _out, err = self._run_to_mode()
+        self.assertNotIn("不再生效", err)
+
+    def test_expect_patterns_also_triggers_warning(self):
+        self._write({"expect_patterns": ["TGL \\d+"]}, with_manifest=True)
+        _out, err = self._run_to_mode()
+        self.assertIn("不再生效", err)
 
 
 if __name__ == "__main__":

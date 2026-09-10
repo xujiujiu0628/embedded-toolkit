@@ -500,6 +500,17 @@ def main():
         print(f"错误: 期望清单非法: {e}", file=sys.stderr)
         sys.exit(1)
     expect_mode = "manifest" if expectations is not None else "legacy"
+    # F-104 迁移告警: manifest 存在时 legacy expect/expect_patterns 整体失效
+    # 曾是静默行为——工程同时持有两套期望配置时, 编辑 config.verify.expect
+    # 的人得不到任何反馈, 误以为改动生效 (审计 P3 登记项)。只告警不改行为。
+    if expect_mode == "manifest":
+        _legacy_shadowed = (expect
+                            or verify_cfg.get("expect_patterns"))
+        if _legacy_shadowed:
+            print("提示: .workbench/expectations.json 存在, "
+                  "config.verify.expect/expect_patterns 不再生效 "
+                  "(F-104 迁移告警) — 请迁移到期望清单或移除旧配置。",
+                  file=sys.stderr)
 
     result = {
         "pipeline": "build → analyze → flash → capture → verify",
