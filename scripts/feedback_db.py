@@ -168,7 +168,15 @@ def log_event(event_data: dict | FeedbackEvent) -> str:
         ts = event_dict["timestamp"]
 
     if not event_dict.get("id"):
-        event_dict["id"] = make_event_id(pipeline, ts)
+        # F-105: 秒级粒度 ID 同秒两次落账互相覆盖 (后写覆盖前写文件,
+        # 主索引却记两条 → 索引悬空引用)。自动生成的 ID 检测冲突,
+        # 依次追加 -2/-3 序号; 显式传入的 ID 尊重调用方 (不自动改名)。
+        eid = make_event_id(pipeline, ts)
+        seq = 2
+        while os.path.exists(os.path.join(events_dir, f"{eid}.json")):
+            eid = f"{make_event_id(pipeline, ts)}-{seq}"
+            seq += 1
+        event_dict["id"] = eid
 
     eid = event_dict["id"]
 

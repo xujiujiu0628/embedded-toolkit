@@ -96,6 +96,11 @@ commit `chore(security): 历史文档个人用户目录中性化` 只清洗了**
 **联动现状**：历史重写已将字面量洗为占位符——本机真档冒烟现亦恒跳过
 （skipped+1），tempfile 化之前该冒烟保护对所有人（含维护者）失效。
 
+**处置结果（F-107 状态回填；实际落地为 F-026）**：采纳 tempfile 方案——
+`tests/test_expectations_lint.py` 冒烟已从"维护者本机真档"改为 tempfile
+合成全字段清单（覆盖 texts/patterns/capture_group 等），任何机器上真实
+执行而非静默跳过。本小节"尚未拍板"为 2026-09-01 快照遗留措辞。
+
 ### F-4（存量环境缺陷，对照实验证明与重写无关）
 
 `tests/test_expectations_lint.py::test_cli_exit_codes_and_json` 在 Windows

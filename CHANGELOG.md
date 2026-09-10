@@ -3,6 +3,52 @@
 格式约定: 每条含发现编号（代管期 findings 编目）与证据 commit。当前版本以
 `VERSION` 文件为准（`wb_common.toolkit_version()` 读取）。
 
+## Unreleased — 2026-09-10（F-103~F-107 P3 清账第一轮：边界报错泛化 / 迁移告警 / ID 唯一性 / 过滤收窄 / 文档回填）
+
+- **F-103 处置（审计 P3 数值边界组，fix+test，gen_periph.py）**: 四项
+  "静默产出错误配置"统一改为显式 ERROR（F-086 报错路线泛化）——
+  ① `gen_systick` LOAD 无 24 位上限（`--freq 2` → 35999999 > 0xFFFFFF
+  被硬件截断; 实测边界: 最低可表 5Hz, freq≤4 报错）;
+  ② `gen_usart` 低波特率 mantissa 越 12 位域（RM0008 §27.5.5 BRR
+  DIV_Mantissa=bit[15:4]; USART2@300 报错, @600 起有效, 1200 反向钉不误伤）;
+  ③ `gen_pwm` `ch≥5` 写 CCR5 保留位硬件静默无效 + `duty∉[0,100]` +
+  `freq≤0` 除零 → 三连前置校验;
+  ④ `gen_gpio` 未知 mode 静默降级 0x3 推挽（旧测试 `weird-mode` 契约
+  翻转为 ERROR 钉; 既有契约测试先红后绿）+ `--mode` 加 argparse
+  choices（mode_map 提为模块级 `GPIO_MODE_MAP` 单一事实源, 两处判据
+  永不漂移）。新增 CLI 退出码钉: 全部 ERROR 出口经新 `_emit()` 收敛
+  （exit 1, F-086 timer-int 通道行为不变——subprocess 反向钉全程保持）。
+  测试 `NumericBoundaryTests` 5 例 + 契约翻转 1 例。
+- **F-104 处置（审计 P3 expectations 静默失效，change+test，verify.py）**:
+  `.workbench/expectations.json` 存在时 `config.verify.expect`/
+  `expect_patterns` 整体不参与判定曾是**静默**行为——双配工程改 expect
+  的人得不到反馈。manifest 模式检测到被遮蔽的 legacy 配置即向 stderr 打
+  迁移告警（只告警不改判定）。测试 4 例（触发 + 双反向钉: 单配 manifest
+  与纯 legacy 工程不得被噪音骚扰）落 `ExpectationsMigrationWarningTests`。
+- **F-105 处置（审计 P3 feedback_db 同秒覆盖，fix+test，feedback_db.py）**:
+  事件 ID 秒级粒度, 同秒两笔落账 → 后者覆盖前者 events/<eid>.json,
+  主索引却记两条。`log_event` 自动 ID 冲突时追加 `-2`/`-3` 序号（显式
+  传入 ID 尊重调用方不改名; 首笔 ID 格式不变向后兼容）。测试
+  `SameSecondEventIdTests` 2 例（固定时间戳三连落账 ID 互异 + 三笔详情
+  互不覆盖在盘; 显式 ID 反向钉）。
+- **F-106 处置（审计 P3 capture 黑名单误杀，fix+test，failure_context.py）**:
+  `_filter_capture_lines` 第二层从**子串包含**黑名单收窄为**行首锚定
+  正则**白名单化噪声形态——固件正文含 "GDB"/"http://"/"dropped" 不再被
+  整行误删（旧 `xPSR:`/`Info :`/`Warn :` 裸串项与 `_LOG_PREFIX_RE`
+  重叠, 随收口删除; 正则 IGNORECASE 兼容大小写变体）。测试 2 例
+  （5 行含噪声词正文全保 + 9 种真实 OpenOCD banner 行首形态全滤）。
+- **F-107 处置（审计 P3 文档卫生，docs×3）**: ① README「多 MCU 评估——
+  见 docs 档案」悬空指针（docs/ 已迁出仅剩 hooks-install.md）→ 改为直接
+  陈述（暂缓+esptool/probe-rs 路线保留前置项清单）; ② OPENSOURCE_READY
+  快照回填——F-3 行 ⏳→✅（经 F-026 落地 tempfile 化）、handoff 分支行
+  补处置去向（F-070 + 09-09 tag 删除）、第五节加 F-107 实况注（118 受
+  跟踪文件/0.5 材料/502 基线, 快照原貌保留不删）; ③ SENSITIVE_FINDINGS
+  F-3 "尚未拍板"补处置结果段（与文件头 F-026 指向收口一致）。
+- 测试 **502 → 509**（+7 文件级用例, subtests 另计 207）; 全量
+  **509 passed, 6 skipped** 实跑绿; `coverage_lint --strict` 未覆盖清单
+  保持 0。仍挂账（本轮未动）: 时钟树参数化 `--pclk`（架构增强非缺陷）、
+  SCB CFSR/HFSR 粘滞位（需真机取证）、0.5 真机门禁（等板子）。
+
 ## Unreleased — 2026-09-09（F-095 build_has_errors 死分支激活：失败语义区分）
 
 - **F-095 处置（F-088 登记项 / 维护者拍板选项 A，fix，Orchestrator 亲执行）**:

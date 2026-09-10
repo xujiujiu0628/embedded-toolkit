@@ -262,7 +262,9 @@ embedded-toolkit/
   Linux/macOS-only，Windows 不支持；`which("socat")` 在 `start_mux()` 最前无条件执行，
   无 socat 则整个 mux 起不来。`--no-pty` 解耦列为后续增强，未实现前不按部分功能规划
 - 有意搁置：UART 串口补丁的发布门禁脆弱性（成本/收益不立项）
-- 方向：多 MCU（ESP32）工具栈评估——见 docs 档案。前置项：把 `interface/*.cfg` /
+- 方向：多 MCU（ESP32）工具栈评估（暂缓：无目标硬件；技术路线 esptool + probe-rs）。
+  F-107 勘误：旧文本"见 docs 档案"是悬空指针（docs/ 已迁出，现仅存
+  `hooks-install.md`）。前置项：把 `interface/*.cfg` /
   `target/*.cfg` 从硬编码（当前 `verify.py` 7 处 / `release.py` 2 处 /
   `hardfault.py` 2 处）收进 `config.json`
 
