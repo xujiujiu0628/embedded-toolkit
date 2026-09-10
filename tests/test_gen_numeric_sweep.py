@@ -203,6 +203,40 @@ class NumericBoundaryTests(unittest.TestCase):
         self.assertEqual(r.returncode, 1)
         self.assertIn("/* ERROR", r.stdout)
 
+    def test_i2c_spi_error_exits_converged_to_emit_f108(self):
+        """F-108 (复审 M-2): i2c/spi 三个既有 ERROR 出口曾 print 直出 rc=0
+        ——机器消费方按退出码判定会漏。接入 _emit 后与其余生成器同语义。"""
+        import subprocess
+        for argv in (["--type", "i2c", "--i2c", "I2C9"],
+                     ["--type", "i2c", "--i2c", "I2C1", "--speed", "1000000"],
+                     ["--type", "spi", "--spi", "SPI9"]):
+            with self.subTest(argv=argv):
+                r = subprocess.run(
+                    [sys.executable, os.path.join(os.path.dirname(
+                        os.path.dirname(os.path.abspath(__file__))),
+                        "scripts", "gen_periph.py")] + argv,
+                    capture_output=True, text=True, encoding="utf-8",
+                    errors="replace", timeout=60)
+                self.assertEqual(r.returncode, 1,
+                                 f"{argv} ERROR 出口应 rc=1:\n{r.stdout[-200:]}")
+                self.assertIn("/* ERROR", r.stdout)
+
+    def test_zero_input_structured_error_f108(self):
+        """F-108 (L-1): systick/usart/timer-int 零值曾裸 ZeroDivisionError
+        traceback (rc=1 但非可诊断 ERROR) → 与 gen_pwm freq 守卫对齐。"""
+        cases = [
+            (lambda: gen_periph.gen_systick(0), "freq=0"),
+            (lambda: gen_periph.gen_systick(-3), "freq=-3"),
+            (lambda: gen_periph.gen_usart("USART1", 0, "PA9", "PA10"), "baud=0"),
+            (lambda: gen_periph.gen_timer_int("TIM2", 0, 72), "period 0ms"),
+        ]
+        for fn, needle in cases:
+            with self.subTest(needle=needle):
+                out = fn()
+                self.assertTrue(out.startswith("/* ERROR"),
+                                f"应结构化报错, 实际: {out[:80]}")
+                self.assertIn(needle, out)
+
 
 
 class TimerIntArrBoundaryTests(unittest.TestCase):

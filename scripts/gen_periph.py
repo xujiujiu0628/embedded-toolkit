@@ -140,6 +140,10 @@ def gen_gpio(pin: str, mode: str) -> str:
 
 def gen_systick(freq_hz: int) -> str:
     """生成 SysTick 配置代码 (假设 72MHz 内核时钟)"""
+    # F-108 (L-1): 零/负值统一为结构化 ERROR (与 gen_pwm freq 守卫对齐),
+    # 不再让 72000000 % 0 抛 ZeroDivisionError traceback。
+    if freq_hz <= 0:
+        return f"/* ERROR: freq={freq_hz}Hz 非法 — 必须为正整数。*/"
     if 72000000 % freq_hz != 0:
         return f"/* ERROR: 72MHz / {freq_hz} is not an integer. Choose a divisor of 72MHz. */"
 
@@ -183,6 +187,10 @@ def gen_usart(usart: str, baud: int, tx: str, rx: str) -> str:
     usart_n = usart[-1]  # "1", "2", "3"
     bus = "APB2" if usart_n == "1" else "APB1"
     pclk_mhz = 72 if bus == "APB2" else 36
+
+    # F-108 (L-1): baud<=0 结构化 ERROR, 不再除零 traceback。
+    if baud <= 0:
+        return f"/* ERROR: baud={baud} 非法 — 必须为正整数。*/"
 
     # 波特率计算
     div = pclk_mhz * 1000000 / (16 * baud)
@@ -402,6 +410,10 @@ def gen_timer_int(timer: str, period_ms: int, tim_clk_mhz: int = 72) -> str:
          PSC 下无合理近似, 不产出假装正确的配置)。
     """
     tim_clock = TIM_CLOCK_BIT.get(timer, f"{timer}EN")
+
+    # F-108 (L-1): period_ms<=0 结构化 ERROR, 不再 1000//0 traceback。
+    if period_ms <= 0:
+        return f"/* ERROR: period {period_ms}ms 非法 — 必须为正整数。*/"
 
     # IRQ 号
     irq_map = {"TIM1": 25, "TIM2": 28, "TIM3": 29, "TIM4": 30}
@@ -884,10 +896,10 @@ GPIO 模式 (F-103: 由 --mode choices 强制, 未知模式报错):
         _emit(gen_timer_int(args.timer, args.period_ms, args.tim_clk))
 
     elif args.type == "i2c":
-        print(gen_i2c(args.i2c, args.speed, args.scl, args.sda))
+        _emit(gen_i2c(args.i2c, args.speed, args.scl, args.sda))
 
     elif args.type == "spi":
-        print(gen_spi(args.spi, args.spi_mode, args.nss, args.sck,
+        _emit(gen_spi(args.spi, args.spi_mode, args.nss, args.sck,
                       args.miso, args.mosi, args.baud_div))
 
     elif args.type == "doc":

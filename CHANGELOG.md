@@ -44,10 +44,45 @@
   补处置去向（F-070 + 09-09 tag 删除）、第五节加 F-107 实况注（118 受
   跟踪文件/0.5 材料/502 基线, 快照原貌保留不删）; ③ SENSITIVE_FINDINGS
   F-3 "尚未拍板"补处置结果段（与文件头 F-026 指向收口一致）。
-- 测试 **502 → 509**（+7 文件级用例, subtests 另计 207）; 全量
+- 测试 **502 → 515 collected**（净 +13 用例，F-108 按复审 M-1 订正口径——
+  首记 "+7" 系 collected 502 与 passed 509 混减的机械错误; `git grep -c
+  "def test_"` 两 revision 实测 504→517）, subtests 另计 207; 全量
   **509 passed, 6 skipped** 实跑绿; `coverage_lint --strict` 未覆盖清单
   保持 0。仍挂账（本轮未动）: 时钟树参数化 `--pclk`（架构增强非缺陷）、
   SCB CFSR/HFSR 粘滞位（需真机取证）、0.5 真机门禁（等板子）。
+
+## Unreleased — 2026-09-10（F-108 fresh-checker 复审处置：M×3 + L-1 修复，L-2/3/4 挂账）
+
+- **复审结论**: F-103~107 分支 `p3-clearance-20260910`（`902d563`）经
+  无上下文对抗复审 **通过但有保留**——Critical 0 / High 0 / Medium 3 /
+  Low 4; 五条声称的实现与边界全部实测成立, 变异探针 5/5 对应用例变红。
+- **M-1 处置（计数失实, docs）**: 见上一段订正（502→515 collected /
+  净 +13; 首记 +7 为口径混减机械错误）。
+- **M-2 处置（"全部 ERROR 出口收敛"言过其实, fix+test）**: gen_i2c 2 个 +
+  gen_spi 1 个**既有** ERROR 出口（F-103 前已存在）仍 `print` 直出 rc=0。
+  i2c/spi 分发点接入 `_emit`, 现字面成立——gen_periph 全部 11 个 ERROR
+  分支收敛 exit 1。新钉 `test_i2c_spi_error_exits_converged_to_emit_f108`
+  3 subtests（I2C9 外设名 / speed=1MHz 非法 / SPI9）。
+- **M-3 处置（README cfg 计数陈旧, docs）**: "verify 7 / release 2 /
+  hardfault 2" 是 F-034 时代快照, release 已随 F-041 下沉
+  `openocd_runtime`; 按实测更新为 6 脚本各一对
+  `interface/stlink.cfg`+`target/stm32f1x.cfg`（grep 全量取证）。
+- **L-1 处置（零值报错不对称, fix+test）**: systick `--freq 0`、usart
+  `--baud 0`、timer-int `--period-ms 0` 曾裸 ZeroDivisionError traceback
+  （rc 同为 1 但非可诊断输出, 与 F-103 泛化精神不符）→ 补 `<=0` 前置
+  校验与 gen_pwm 对齐。钉 `test_zero_input_structured_error_f108` 4 例。
+- **F-108 全量**: **511 passed, 6 skipped, 214 subtests**（Git Bash 实跑绿;
+  注: 同套 hooks 行为测试在 PowerShell 下 9 红——`git diff` 输出行尾随
+  core.autocrlf 漂移命中既有"Windows 测试基建"教训面, 以 Git Bash/CI 为
+  权威口径, 登记不另修）。`coverage_lint --strict` 未覆盖清单保持 0。
+- **挂账登记（复审确认非本轮缺陷）**:
+  L-2 = 行首恰为噪声词的固件正文仍被 F-106 正则整行删（行首锚定的内在
+  取舍, 半主机正文以 OpenOCD banner 词开头概率低; 时间戳前缀噪声行为
+  推测项, 无实机日志佐证）;
+  L-3 = 显式 ID 冲突仍覆盖（测试钉死的调用方契约）+ 自动 ID
+  check-then-write TOCTOU 窗口（单机单会话场景风险低）;
+  L-4 = manifest 模式 result JSON 仍回显 legacy `expect` 数组（基线
+  同然, 非本轮引入, 消费方误读风险留待 0.5 契约整理时一并处置）。
 
 ## Unreleased — 2026-09-09（F-095 build_has_errors 死分支激活：失败语义区分）
 
