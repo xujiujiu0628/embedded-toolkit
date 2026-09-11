@@ -224,7 +224,7 @@ embedded-toolkit/
 │                       #   （ARMCC 错误码库 keil-error-db.json 已随 Keil 退役区拆 archive）
 ├── config/             # 串口/探针族的环境级配置（keil.json 退役后已拆 archive）
 ├── hooks/              # 固件工程侧三条 C 铁律（禁 malloc / 禁逻辑层 HAL_Delay / volatile 告警）
-├── templates/          # FSD 功能规格书模板
+├── templates/          # FSD 需求规格书模板 + RTT 版 HardFault 现场 handler
 ├── machine.json        # 本机工具链路径（不入库；模板 machine.example.json）
 ├── CHANGELOG.md        # 全账本：条目可对到 commit
 └── VERSION             # 当前 0.5（版本唯一事实源 = VERSION 文件，经 wb_common.toolkit_version() 读取）
@@ -245,6 +245,9 @@ embedded-toolkit/
 
 - [`CHANGELOG.md`](CHANGELOG.md) — 版本账本（每条对到证据 commit）
 - [`templates/fsd-template-stm32.md`](templates/fsd-template-stm32.md) — 需求规格书模板
+- [`templates/hardfault_rtt.c`](templates/hardfault_rtt.c) — RTT 工程 C 级
+  HardFault 现场 handler（F-115）：新工程接入 = 复制到 User/ + Makefile
+  C_SOURCES 加一行 + 删除工程自有 `HardFault_Handler` 死循环桩让位强符号
 - Keil 退役区唤起（archive 物理副本）: `<d-claude-root>\archive\
   embedded-toolkit-keil-legacy-20260905\README.md` — 2026-09-05 F-067b
   起 Keil 退役桥（keil_build / keil_analyze / keil_project +
