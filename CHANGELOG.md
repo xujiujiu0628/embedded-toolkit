@@ -245,12 +245,17 @@
   Git Bash 下须正斜杠 `D:/...`（`/d/...` 与带反斜杠 `D:\...` 均被 tcl 吞
   分隔符 → couldn't open，首两次烧录白跑——与仓内既有"bash 命中 WSL stub"
   同族: 子进程参数经几层 shell 解析要逐层核）。
-- **真机面遗留（非 B1 判据, 如实）**: FR-KEY-01/02 + FR-OLED-02 三条需真人
-  按键的期望，本轮多次采集窗未捕获 [KEY]/[STATE=3]（回合制指令与用户实际
-  按键窗口对不齐 + 一轮 cwd 错位跑错工程）→ 交用户自持窗口补验（板子已恢复
-  正式固件、正在持续输出）。三条均为**在场断言**（F-113 的 waived 是
-  DISP-02/OLED-03/KEY-03/PWR-01/02 五条, 不含它们——本段初稿误记
-  "FR-OLED-02 已 waived", 提交前自查更正, H-3 教训的当日复发当日截获）。
+- **真机面三条按键期望补验闭合（用户自持采集窗，`verify --no-build
+  --no-flash --timeout 90`）**: **8/8 pass、零 xfail、零 hardfault step**
+  （capture rtt 715 行/90s，FR-KEY-01/02 与 FR-OLED-02 于真实
+  短按/长按/关屏/唤醒序列下全绿；F-112 负断言 FR-MPU-02 同轮 PASS）——
+  B1+F-112+F-113 三单真机收口证据齐。此前多轮 FAIL 根因=回合制指令与
+  用户按键窗口对不齐（非固件/工具缺陷，三轮对照数据已证：无按键时
+  [DIAG] PA0=0 恒定），用户自跑一次即过——**流程教训：真人输入期望的
+  验收窗必须交给用户自持，AI 不得代发"现在开始按"的回合制协调**。
+  （F-115 段初稿"FR-OLED-02 已 waived"为误记，自查更正：waived 五条为
+  DISP-02/OLED-03/KEY-03/PWR-01/02，KEY-01/02/OLED-02 均为在场断言——
+  H-3 计数/记账教训的当日复发当日截获。）
 - 全量套件 **595 passed, 6 skipped, 248 subtests**（含 F-115 +7; collected
   口径 CI 复跑同步核; F-112 三犯教训: merge 前后分栏不混记）; coverage_lint
   --strict 静态可达 0 未覆盖保持。F-035: B1 待 fresh-checker 复审后合 master。
