@@ -814,11 +814,18 @@ def main():
         hf_path = os.path.join(TOOLKIT_ROOT, "scripts", "hardfault.py")
         if os.path.exists(hf_path):
             try:
+                hf_cmd = [sys.executable, hf_path, "--json"]
+                hf_kw = {}
+                # F-116/H-1: marker 路径把捕获文本递给层 2, 解析 [HF] PC=/LR=
+                # 行 → fault_site (真实故障点)。live PC 在自旋场景恒指 handler。
+                if hf_trigger == "marker" and "[HF] PC=" in captured_text:
+                    hf_cmd += ["--fault-text", "-"]
+                    hf_kw["input"] = captured_text
                 hf_result = subprocess.run(
-                    [sys.executable, hf_path, "--json"],
+                    hf_cmd,
                     capture_output=True, text=True,
                     encoding='utf-8', errors='replace',
-                    timeout=60, cwd=WORKSPACE
+                    timeout=60, cwd=WORKSPACE, **hf_kw
                 )
                 if hf_result.returncode == 0 and hf_result.stdout.strip():
                     hf_data = json.loads(hf_result.stdout)
@@ -836,6 +843,9 @@ def main():
                         "fault_registers": hf_data.get("fault_registers", {}),
                         "resolved": hf_data.get("resolved", {}),
                     }
+                    if hf_data.get("fault_site"):
+                        result["steps"]["hardfault"]["fault_site"] = \
+                            hf_data["fault_site"]
                     # 注入点 ②: HardFault 检测到 → 标记需要对立审查
                     if hf_fault_type != "no_fault":
                         result["steps"]["hardfault"]["review_needed"] = True
