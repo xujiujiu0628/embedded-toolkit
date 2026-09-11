@@ -23,8 +23,10 @@ class ExpectationError(ValueError):
 def check_forbidden_fields(item):
     """F-112: 负断言字段 (forbidden_texts / forbidden_patterns) 的结构与自杀配置校验。
 
-    纯函数无 IO, 返回违规消息列表 (空 = 干净)。loader 违规即抛
-    ExpectationError、lint 落 E10/E11 码——判据单一事实源 (F-029)。
+    纯函数无 IO, 返回违规 (code, msg) 二元组列表 (空 = 干净)。code ∈
+    {"E10": 结构/非法正则, "E11": 自杀配置}——码随判据走, 不靠调用方嗅探
+    文案 (F-114/L-1: 子串路由在文案一改即静默错码)。loader 违规即抛
+    ExpectationError、lint 直取 code——判据单一事实源 (F-029)。
     语义: forbidden_* 作用于整段捕获输出, 任一命中则该条目 FAIL 优先于
     正向匹配与 XPASS (spec 2026-09-11-negative-assertion-schema §2)。
     """
@@ -36,20 +38,26 @@ def check_forbidden_fields(item):
             continue
         if not isinstance(v, list) or not v or \
                 not all(isinstance(s, str) and s for s in v):
-            errors.append(f"{eid}: {key} 须为非空字符串数组")
+            errors.append(("E10", f"{eid}: {key} 须为非空字符串数组"))
     if not errors and isinstance(item.get("forbidden_patterns"), list):
         for p in item["forbidden_patterns"]:
             if isinstance(p, str) and p:
                 try:
                     re.compile(p)
                 except re.error as e:
-                    errors.append(f"{eid}: forbidden_patterns 非法正则 {p!r}: {e}")
+                    errors.append(("E10",
+                                   f"{eid}: forbidden_patterns 非法正则 {p!r}: {e}"))
     # E11 自杀配置: 同一字面串既要求出现又要求出现即死 → 条目永远 FAIL,
     # 典型为复制粘贴错位 (与 E9 min>max 同类: verify 运行期不报错, 只有提前查得出)
-    pos = set(item.get("texts", []) or [])
-    for t in item.get("forbidden_texts", []) or []:
-        if isinstance(t, str) and t in pos:
-            errors.append(f"{eid}: {t!r} 同现于 texts 与 forbidden_texts — 永远 FAIL")
+    # F-114/M-3: texts×forbidden_texts 与 patterns×forbidden_patterns 双侧都查
+    # (spec F-112 §3.3 原文含 patterns, 初版只落了一半)
+    for pos_key, neg_key in (("texts", "forbidden_texts"),
+                             ("patterns", "forbidden_patterns")):
+        pos = set(item.get(pos_key, []) or [])
+        for t in item.get(neg_key, []) or []:
+            if isinstance(t, str) and t in pos:
+                errors.append(("E11", f"{eid}: {t!r} 同现于 {pos_key} 与 "
+                               f"{neg_key} — 永远 FAIL"))
     return errors
 
 
@@ -144,7 +152,7 @@ def load_expectations(workspace):
                 raise ExpectationError(f"{eid}: {bound} 须为有限数值")
         fb_errs = check_forbidden_fields(item)     # F-112: 结构+自杀配置, 与 lint E10/E11 同源
         if fb_errs:
-            raise ExpectationError(fb_errs[0])
+            raise ExpectationError(fb_errs[0][1])  # (code,msg) 元组, 取 msg
     return data["expectations"]
 
 
