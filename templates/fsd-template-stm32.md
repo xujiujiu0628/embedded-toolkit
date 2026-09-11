@@ -289,6 +289,8 @@ verification:
 
 **`prohibited_outcomes` 不是装饰**：只检查"30 秒内恢复了"的重连测试，在设备**靠重启**恢复时也会通过——而那通常正是被测的缺陷。
 
+**机器落地（F-112）**：`prohibited_outcomes` 中的**可机检项**应翻译为同 ID 条目在 `.workbench/expectations.json` 里的 `forbidden_texts` / `forbidden_patterns` 字段——捕获窗内任一命中，该条目**直接判 FAIL，即使正向断言通过**（亦优先于 XPASS/XFAIL）。不可机检项（如"恢复过程不许人工干预"——采集文本里无从判别）**保留人审面**，并在 FSD 该条注明理由。明写"哪些 Must NOT 进了机器、哪些留给人"，与豁免登记同一诚实哲学：不存在第三条路（沉默）。
+
 ### 4.2 紧凑表格形式（其余需求）
 
 一条一行，放在所属章节内。**"Must NOT happen" 列两种形式都不可省略**——去掉它契约就只是描述。

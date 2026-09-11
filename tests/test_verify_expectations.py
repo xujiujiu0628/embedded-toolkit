@@ -205,3 +205,101 @@ class EvaluateExpectationsTests(unittest.TestCase):
                {"id": "B", "texts": ["b"]}]
         ev = verify.evaluate_expectations("a c", exp)   # A=XFAIL, B=FAIL
         self.assertEqual(ev["verdict"], "fail")
+
+
+class ForbiddenAssertionTests(unittest.TestCase):
+    """F-112 负断言 (spec 2026-09-11-negative-assertion-schema §2/§6)"""
+
+    # --- 核心语义钉 ---
+
+    def test_forbidden_hit_overrides_pass(self):
+        # 正向匹配 + forbidden 命中 → FAIL (假阳性拦截点)
+        item = {"id": "A", "patterns": [r"recovered in \d+s"],
+                "forbidden_texts": ["watchdog reset"]}
+        ev = verify.evaluate_expectations(
+            "recovered in 3s", [item])
+        self.assertEqual(ev["verdict"], "ok")          # 基线: 无禁止行 = PASS
+        ev2 = verify.evaluate_expectations(
+            "watchdog reset\nrecovered in 3s", [item])
+        self.assertEqual((ev2["verdict"], ev2["results"][0]["status"]),
+                         ("fail", "fail"))
+        self.assertIn("forbidden hit", ev2["results"][0]["detail"])
+
+    def test_forbidden_pattern_semantics(self):
+        item = {"id": "A", "texts": ["boot ok"],
+                "forbidden_patterns": [r"retry#[4-9]"]}
+        self.assertEqual(
+            verify.evaluate_expectations("boot ok retry#2", [item])["verdict"], "ok")
+        self.assertEqual(
+            verify.evaluate_expectations("boot ok retry#5", [item])["verdict"], "fail")
+
+    def test_forbidden_beats_xpass(self):
+        # §2 订则: 负断言命中 FAIL 优先于 XPASS (欠条条目撞上禁止后果也不给红转绿的豁免通道)
+        item = {"id": "A", "texts": ["ok"], "xfail": True, "xfail_reason": "wip",
+                "forbidden_texts": ["boom"]}
+        ev = verify.evaluate_expectations("ok boom", [item])
+        self.assertEqual(ev["results"][0]["status"], "fail")
+        self.assertEqual(ev["xpass_ids"], [])          # 不得记作落地信号
+
+    def test_forbidden_beats_xfail(self):
+        # xfail 未匹配本应绿 (XFAIL), 但禁止后果出现 → FAIL
+        item = {"id": "A", "texts": ["feat"], "xfail": True, "xfail_reason": "wip",
+                "forbidden_texts": ["corrupt"]}
+        ev = verify.evaluate_expectations("corrupt heap", [item])
+        self.assertEqual(ev["results"][0]["status"], "fail")
+
+    def test_forbidden_without_positive_still_fail(self):
+        # 正向未匹配 + forbidden 命中: 两罪并罚仍 FAIL, detail 归负断言 (先求值序)
+        item = {"id": "A", "texts": ["feat"], "forbidden_texts": ["err"]}
+        ev = verify.evaluate_expectations("err happened", [item])
+        self.assertEqual(ev["results"][0]["status"], "fail")
+        self.assertIn("forbidden hit", ev["results"][0]["detail"])
+
+    # --- 向后兼容钉 (spec §6.3) ---
+
+    def test_old_manifest_unchanged_results(self):
+        # 无 forbidden 键的旧清单: 全部行为与 master 一致 (逐字段比对固化基线)
+        exp = [{"id": "A", "texts": ["ok"]},
+               {"id": "B", "patterns": [r"TGL (\d+)"], "capture_group": 1,
+                "min": 1, "max": 10},
+               {"id": "C", "texts": ["todo"], "xfail": True,
+                "xfail_reason": "r"}]
+        out = "ok TGL 3 not-yet"
+        ev = verify.evaluate_expectations(out, exp)
+        self.assertEqual(ev, {"results": [
+            {"id": "A", "status": "pass"},
+            {"id": "B", "status": "pass"},
+            {"id": "C", "status": "xfail"}],
+            "verdict": "ok", "xpass_ids": []})
+
+    # --- loader 校验钉 ---
+
+    def _manifest(self, items):
+        tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, tmp, True)
+        _write_manifest(tmp, items)
+        return tmp
+
+    def test_loader_empty_forbidden_raises(self):
+        with self.assertRaises(verify.ExpectationError):
+            verify.load_expectations(
+                self._manifest([{"id": "A", "desc": "d", "texts": ["x"],
+                                 "forbidden_texts": []}]))
+
+    def test_loader_bad_forbidden_regex_raises(self):
+        with self.assertRaises(verify.ExpectationError):
+            verify.load_expectations(
+                self._manifest([{"id": "A", "desc": "d", "texts": ["x"],
+                                 "forbidden_patterns": ["["]}]))
+
+    def test_loader_suicide_config_raises(self):
+        # E11 同源: 同串既要求出现又禁止出现 → loader 直拦
+        with self.assertRaises(verify.ExpectationError):
+            verify.load_expectations(
+                self._manifest([{"id": "A", "desc": "d", "texts": ["x"],
+                                 "forbidden_texts": ["x"]}]))
+
+    def test_loader_valid_forbidden_passes(self):
+        tmp = self._manifest([{"id": "A", "desc": "d", "texts": ["x"],
+                               "forbidden_texts": ["y"]}])
+        self.assertEqual(verify.load_expectations(tmp)[0]["forbidden_texts"], ["y"])
