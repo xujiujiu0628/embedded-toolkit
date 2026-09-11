@@ -210,6 +210,51 @@
 - **真机面**: 零（纯离线判定层）; FR-MPU-02 负断言示范随下次板前窗口
   verify 回归收口（F-112 段同约）。
 
+## Unreleased — 2026-09-11（F-115 RTT 工程 HardFault 闭环补齐：C 级 RTT 现场 + verify 触发归因）
+
+- **F-115 处置（互锁链真机断点 B1，feature+test+docs+真机，Orchestrator 亲执行;
+  spec: embedded-handoff `docs/superpowers/specs/2026-09-11-rtt-hardfault-coverage-design.md`
+  2026-09-11 批准）**: 层 1 C 级 handler 建于 semihosting（无 host 即 BKPT
+  halt），RTT 成默认后端后两现役工程退化为"烧过但空捕获→层 2 兜底猜"——
+  招牌诊断在默认路径下缺一半。补:
+  - `templates/hardfault_rtt.c`（新）: naked 入口 EXC_RETURN bit2 甄别
+    MSP/PSP（blink 成熟手法移植非重写）→ `SEGGER_RTT_WriteString` 输出
+    `=== HARDFAULT ===` + `[HF] CFSR/BFAR/PC/LR + 位域解码` 纯整数格式
+    （nano 浮点教训）；只读不清粘滞位（F-109 分工：保位留证据，清位归工具）;
+    `for(;;) nop` 自旋保现场（不复位，OpenOCD 层 2 halt 取同一现场）。
+    `_hardfault_body` 加 `__attribute__((used))`（仅被 naked asm 引用，
+    -O2 会优化丢符号——自查修正）；位域一律 CFSR 绝对位号（MFSR0-7/
+    BFSR8-15/UFSR16-31，自查修正: 早期按字节拆传把 UNALIGNED 位号错位）。
+  - `scripts/verify.py`: 新纯函数 `_hardfault_trigger(text, capture_empty,
+    flash_ran)` → "marker"|"empty_fallback"|None，三处 steps.hardfault
+    dict 落 `trigger` 字段（诊断触发链后端无关，判据零改动；主/兜底路径
+    从此可事后审计，教训 #9 落点）。map 发现 F-005 已 build/优先，零改。
+  - 测试 `tests/test_verify_hardfault_trigger.py` 7 例（标记优先律/兜底/
+    不触发/大小写敏感防误触/病态同帧归因 + 装配点行为钉）。
+- **真机验收（板子在场，mpu6050-oled，全 GCC）**——B1 核心判据达成:
+  ① 故障注入（main 循环 `*(volatile int*)0=1` → 真 BusFault, F-109"伪造
+  被硬件拒须造真故障"照办）: RTT 现场捕获
+  `=== HARDFAULT ===` + `[HF] CFSR=00010400 HFSR=40000000` + PC/LR 行;
+  verify `trigger=marker` → fault_type `BusFault (IMPRECISERR)`、层 2
+  `PC resolved=main+670`、整体 status=hardfault、退出码 1（主路径坐实，
+  不再空捕获兜底）。② 反向: 恢复正式固件后 460~693 行正常 RTT 输出
+  **零 HARDFAULT 字样 + hardfault step 不出现**（handler 不误挂）。
+  ③ F-112 联动: FR-MPU-02 forbidden_patterns 真机每轮 PASS 无误杀。
+  ④ clean rebuild→flash(Verified OK)→capture→verify 全链绿（text 29644B
+  与 0.5 基线一致，接线只增 handler）。**教训**: openocd program 路径在
+  Git Bash 下须正斜杠 `D:/...`（`/d/...` 与带反斜杠 `D:\...` 均被 tcl 吞
+  分隔符 → couldn't open，首两次烧录白跑——与仓内既有"bash 命中 WSL stub"
+  同族: 子进程参数经几层 shell 解析要逐层核）。
+- **真机面遗留（非 B1 判据, 如实）**: FR-KEY-01/02 + FR-OLED-02 三条需真人
+  按键的期望，本轮多次采集窗未捕获 [KEY]/[STATE=3]（回合制指令与用户实际
+  按键窗口对不齐 + 一轮 cwd 错位跑错工程）→ 交用户自持窗口补验（板子已恢复
+  正式固件、正在持续输出）。三条均为**在场断言**（F-113 的 waived 是
+  DISP-02/OLED-03/KEY-03/PWR-01/02 五条, 不含它们——本段初稿误记
+  "FR-OLED-02 已 waived", 提交前自查更正, H-3 教训的当日复发当日截获）。
+- 全量套件 **595 passed, 6 skipped, 248 subtests**（含 F-115 +7; collected
+  口径 CI 复跑同步核; F-112 三犯教训: merge 前后分栏不混记）; coverage_lint
+  --strict 静态可达 0 未覆盖保持。F-035: B1 待 fresh-checker 复审后合 master。
+
 ## Unreleased — 2026-09-11（F-114 fresh-checker 复审 F-112/F-113：H×3 全修 + M×2 修 + 挂账登记）
 
 - **复审结论**（对象 fsd-coverage-20260911 分支 `7ef99b0..d3e6720`, 无上下文
