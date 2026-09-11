@@ -14,6 +14,9 @@
   E7  capture_group 为正整数且仅与 patterns 搭配
   E8  min/max 为有限数值 (NaN 绕过边界比较恒 pass, 审计 M1)
   E9  min > max — 该条目永远 FAIL (verify 不查, 只有 lint 能提前抓)
+  E10 forbidden_texts/patterns 结构 (非空字符串数组) + 非法正则 (F-112)
+  E11 自杀配置: 同串并存于 texts 与 forbidden_texts (永远 FAIL) /
+      xfail 条目配负断言 (WARNING, 语义错位疑点) (F-112)
 
 退出码: 0 = 干净/仅警告, 1 = 存在 error, 2 = 用法/文件不可得
 
@@ -29,11 +32,12 @@ import os
 import re
 import sys
 
+from expectations import check_forbidden_fields  # F-112: 负断言判据单一事实源 (F-029)
 from wb_common import find_project_root
 
 
 def lint_expectations(expectations):
-    """对已解析的 expectations 数组做 E2~E9 检查, 返回 (errors, warnings)。"""
+    """对已解析的 expectations 数组做 E2~E11 检查, 返回 (errors, warnings)。"""
     errors = []
     warnings = []
     seen = set()
@@ -90,6 +94,14 @@ def lint_expectations(expectations):
             errors.append(
                 f"E9: {eid} min({bounds['min']}) > max({bounds['max']}) — "
                 "边界矛盾, 该条目永远 FAIL")
+        # F-112: 负断言规则 E10 (结构/非法正则) + E11 (自杀配置/与 xfail 并存)
+        for msg in check_forbidden_fields(item):
+            errors.append(("E11: " if "永远 FAIL" in msg else "E10: ") + msg)
+        if item.get("xfail") and (item.get("forbidden_texts")
+                                  or item.get("forbidden_patterns")):
+            warnings.append(
+                f"E11: {eid} xfail 条目配了负断言 — 未实现的功能谈不上"
+                "\"禁止的恢复方式\", 疑为配置错位 (实现落地翻转后再配)")
     if any(item.get("xfail") for item in expectations if isinstance(item, dict)):
         n = sum(1 for item in expectations
                 if isinstance(item, dict) and item.get("xfail"))

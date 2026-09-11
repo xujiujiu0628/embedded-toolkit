@@ -53,7 +53,7 @@ from runtime_common import output_json  # noqa: E402  (F-041: doctor --json 复�
 from openocd_runtime import swd_probe  # noqa: E402  (F-041: SWD 探测与 release G0.5 同源)
 from expectations import (ExpectationError, contract_hashes,  # noqa: E402  (F-055: 拆分件再导出, verify.X 调用面不变)
                           evaluate_expectations, load_expectations,
-                          _expect_matched)
+                          _expect_matched, check_forbidden_fields, _forbidden_hit)
 from capture_rtt import step_capture_rtt as _step_capture_rtt  # noqa: E402  (F-056: 拆分件再导出, 旧私有名保持——3 处测试钉兼容)
 from physical_gate import step_physical_gate  # noqa: E402  (F-057: 拆分件再导出, 同名同签名)
 from doctor import (doctor_report, fixture_health,  # noqa: E402  (F-058: 拆分件再导出, 调用面不变)

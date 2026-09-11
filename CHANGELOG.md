@@ -124,6 +124,44 @@
 - **P3 挂账剩余**: 仅 fresh-checker 复审 L-2（行首噪声词正文）/ L-3
   （显式 ID 覆盖）/ L-4（manifest 回显 legacy expect）三登记项。
 
+## Unreleased — 2026-09-11（F-112 expectations 负断言：prohibited_outcomes 进机器）
+
+- **F-112 处置（互锁链加固 A2，feature+test+docs，Orchestrator 亲执行;
+  spec: embedded-handoff `docs/superpowers/specs/2026-09-11-negative-assertion-schema-design.md`
+  2026-09-11 批准）**: FSD 模板的灵魂字段 `prohibited_outcomes` 此前只活在
+  文本层、靠人审兜底（"去掉 Must NOT happen 契约就只是描述"——模板 294 行
+  的论断一直缺一环兑现）。本单补上：expectations 条目级新增
+  `forbidden_texts` / `forbidden_patterns`（与 texts/patterns 正交），
+  **求值优先律**：捕获全文任一命中 → 该条目无条件 FAIL，先于正向匹配、
+  亦先于 XPASS/XFAIL（spec §2 五行走查全钉）——"靠重启恢复的重连"这类
+  假阳性从此有机器出口。
+  - `expectations.py`: 新纯函数 `check_forbidden_fields`（结构+自杀配置判据
+    单一事实源，loader 与 lint 共用——F-029 惯例）+ `_forbidden_hit`
+    （子串/正则双形态；**不**自动注入 MULTILINE/锚定——尊重调用方正则完全
+    控制权，强制会重演 L-2 误杀面，F-106 教训）+ `evaluate_expectations`
+    头部负断言短路；loader 违规抛 ExpectationError（与 E 系列同源不漂移）。
+  - `expectations_lint.py`: 新规则 **E10**（forbidden 结构/非法正则）+
+    **E11**（同串并存 texts 与 forbidden_texts 永远 FAIL 的复制错→ERROR；
+    xfail 条目配负断言语义错位疑点→WARNING）。docstring/计数文案随动
+    （E1~E9→E1~E11）。
+  - `verify.py`: import 面再导出两新符号（wire 兼容手法）；判定/JSON 契约
+    形状不变 → **release G1/G2 自动继承负断言拦截，零改动**；
+    `contract_hashes` 哈希算文件字节，负断言版本锚定天然成立。
+  - `templates/fsd-template-stm32.md` §4.1 补机器落地映射段：可机检项→
+    forbidden 字段；不可机检项保留人审面并注明理由——与豁免登记同一诚实
+    哲学，不存在第三条路（沉默）。
+  - 测试 `ForbiddenAssertionTests` 11 例（优先律 4 + 兼容基线 1 + loader
+    4 + lint 侧 `E10/E11` 6 例另计）+ `FULL_FEATURED` 冒烟 fixture 扩
+    forbidden 字段面；`test_verify_expectations` 24→34 例、
+    `test_expectations_lint` 21→27 例（`grep -c "def test"` 口径）。
+  - 向后兼容契约：无新键旧清单零行为变化（逐字段基线钉）；三现役工程
+    不强制回填。mpu6050-oled 示范（FR-MPU-02 配
+    `forbidden_patterns: ["\\[DIAG\\] MPU6050_UpdateEuler FAIL"]`）随真机
+    回归窗口收口（板子在场时执行，本地不假验）。
+- 全量套件 **558 passed, 6 skipped, 248 subtests**（F-110/111 基线 542/6 +
+  净增 16 例 + 口径注：本条为 pytest collected 计, unittest discover 口径
+  在 CI 实跑同步复核; F-108 教训——计数先统一口径再落账）。
+
 ## Unreleased — 2026-09-10（F-109 SCB 粘滞位真机取证结案 + hardfault 读后清除）
 
 - **取证（0.5 门禁收官后趁板子在连, 真机 xPack OpenOCD 0.12 + F103C8T6）**:
