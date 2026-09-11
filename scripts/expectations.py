@@ -4,7 +4,7 @@
 （evaluate_expectations）、判绿契约哈希（contract_hashes）。全部仅依赖标准库，
 不做 machine 读取、不 import verify（分层禁令 #2）——import 卫生由
 test_import_hygiene 经由 verify 的 import 链覆盖；行为由 test_verify_expectations
-（24 例）与 test_contract_fixtures 经由 verify 再导出面钉死。
+（34 例）与 test_contract_fixtures 经由 verify 再导出面钉死。
 
 wire 兼容: verify.py `from expectations import ...` 再导出，`verify.load_expectations`
 等调用面不变（与 F-029 runtime_common 同款手法）。
@@ -18,6 +18,47 @@ import re
 
 class ExpectationError(ValueError):
     """期望清单非法 (id 重复 / 缺 xfail_reason / texts+patterns 并存等)"""
+
+
+def check_forbidden_fields(item):
+    """F-112: 负断言字段 (forbidden_texts / forbidden_patterns) 的结构与自杀配置校验。
+
+    纯函数无 IO, 返回违规 (code, msg) 二元组列表 (空 = 干净)。code ∈
+    {"E10": 结构/非法正则, "E11": 自杀配置}——码随判据走, 不靠调用方嗅探
+    文案 (F-114/L-1: 子串路由在文案一改即静默错码)。loader 违规即抛
+    ExpectationError、lint 直取 code——判据单一事实源 (F-029)。
+    语义: forbidden_* 作用于整段捕获输出, 任一命中则该条目 FAIL 优先于
+    正向匹配与 XPASS (spec 2026-09-11-negative-assertion-schema §2)。
+    """
+    errors = []
+    eid = item.get("id") or "<no-id>"
+    for key in ("forbidden_texts", "forbidden_patterns"):
+        v = item.get(key)
+        if v is None:
+            continue
+        if not isinstance(v, list) or not v or \
+                not all(isinstance(s, str) and s for s in v):
+            errors.append(("E10", f"{eid}: {key} 须为非空字符串数组"))
+    if not errors and isinstance(item.get("forbidden_patterns"), list):
+        for p in item["forbidden_patterns"]:
+            if isinstance(p, str) and p:
+                try:
+                    re.compile(p)
+                except re.error as e:
+                    errors.append(("E10",
+                                   f"{eid}: forbidden_patterns 非法正则 {p!r}: {e}"))
+    # E11 自杀配置: 同一字面串既要求出现又要求出现即死 → 条目永远 FAIL,
+    # 典型为复制粘贴错位 (与 E9 min>max 同类: verify 运行期不报错, 只有提前查得出)
+    # F-114/M-3: texts×forbidden_texts 与 patterns×forbidden_patterns 双侧都查
+    # (spec F-112 §3.3 原文含 patterns, 初版只落了一半)
+    for pos_key, neg_key in (("texts", "forbidden_texts"),
+                             ("patterns", "forbidden_patterns")):
+        pos = set(item.get(pos_key, []) or [])
+        for t in item.get(neg_key, []) or []:
+            if isinstance(t, str) and t in pos:
+                errors.append(("E11", f"{eid}: {t!r} 同现于 {pos_key} 与 "
+                               f"{neg_key} — 永远 FAIL"))
+    return errors
 
 
 def _sha256_file(path: str) -> str:
@@ -109,7 +150,26 @@ def load_expectations(workspace):
                                   or not math.isfinite(v)):
                 # NaN 会绕过全部边界比较恒 pass (审计 M1)
                 raise ExpectationError(f"{eid}: {bound} 须为有限数值")
+        fb_errs = check_forbidden_fields(item)     # F-112: 结构+自杀配置, 与 lint E10/E11 同源
+        if fb_errs:
+            raise ExpectationError(fb_errs[0][1])  # (code,msg) 元组, 取 msg
     return data["expectations"]
+
+
+def _forbidden_hit(item, output):
+    """F-112: 负断言求值 — 返回首个命中描述, 无命中返回 None。
+
+    作用域 = 整段捕获输出 (spec §2): texts 子串 / patterns re.search。
+    注意尊重调用方正则的完全控制权: 不自动注入 MULTILINE/锚定——
+    "行首锚定" 是文档示范的写法纪律, 工具强制会重演 L-2 式误杀 (F-106 教训)。
+    """
+    for t in item.get("forbidden_texts", []) or []:
+        if t in output:
+            return f"forbidden hit: {t!r}"
+    for p in item.get("forbidden_patterns", []) or []:
+        if re.search(p, output):
+            return f"forbidden hit: pattern {p!r}"
+    return None
 
 
 def _expect_matched(item, output):
@@ -144,9 +204,18 @@ def _expect_matched(item, output):
 def evaluate_expectations(output, expectations):
     """四态判定纯函数 (spec §4): PASS=匹配&非xfail; XFAIL=未匹配&xfail;
     XPASS=匹配&xfail(严格红); FAIL=未匹配&非xfail。
-    verdict="ok" 当且仅当所有 status ∈ {pass, xfail}。无 IO, 可单测。"""
+    verdict="ok" 当且仅当所有 status ∈ {pass, xfail}。无 IO, 可单测。
+
+    F-112 负断言优先律: forbidden 命中 → 无条件 FAIL (先于正向求值,
+    亦先于 XPASS/XFAIL——禁止后果出现时, 无论该条目是否实现/是否欠条,
+    都不存在"符合预期"的解释空间)。
+    """
     results = []
     for item in expectations:
+        hit = _forbidden_hit(item, output)
+        if hit is not None:
+            results.append({"id": item["id"], "status": "fail", "detail": hit})
+            continue
         ok, detail = _expect_matched(item, output)
         xfail = bool(item.get("xfail"))
         if ok and not xfail:

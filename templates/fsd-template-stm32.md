@@ -289,6 +289,8 @@ verification:
 
 **`prohibited_outcomes` 不是装饰**：只检查"30 秒内恢复了"的重连测试，在设备**靠重启**恢复时也会通过——而那通常正是被测的缺陷。
 
+**机器落地（F-112）**：`prohibited_outcomes` 中的**可机检项**应翻译为同 ID 条目在 `.workbench/expectations.json` 里的 `forbidden_texts` / `forbidden_patterns` 字段——捕获窗内任一命中，该条目**直接判 FAIL，即使正向断言通过**（亦优先于 XPASS/XFAIL）。不可机检项（如"恢复过程不许人工干预"——采集文本里无从判别）**保留人审面**，并在 FSD 该条注明理由。明写"哪些 Must NOT 进了机器、哪些留给人"，与豁免登记同一诚实哲学：不存在第三条路（沉默）。
+
 ### 4.2 紧凑表格形式（其余需求）
 
 一条一行，放在所属章节内。**"Must NOT happen" 列两种形式都不可省略**——去掉它契约就只是描述。
@@ -304,6 +306,22 @@ verification:
 有期限才加时间列；每行都挂空时间列会训练读者无视它。
 
 **汇报时说明分界**："8 条完整契约，85 条紧凑"——让审查者知道风险判断在哪里，并允许他们不同意。
+
+### 4.3 豁免登记（与 `fsd_coverage.py` 对账配套，F-113）
+
+本 FSD 的每个需求 ID 默认**必须**在 `.workbench/expectations.json` 有同 ID 断言（含 xfail 欠条）。确实不走 verify 闭环的需求（需万用表/示波器的纯物理测量、需真人长期观察的行为），**登记豁免而非沉默漏抄**：
+
+```json
+"waived": [
+  { "id": "FR-PWR-01", "reason": "关屏电流测量需万用表，bench-manual",
+    "evidence": "docs/FSD.md#FR-PWR-01", "owner": "maintainer", "date": "2026-09-12" }
+]
+```
+
+- **xfail ≠ 豁免**：xfail = 断言已建、功能未实现（欠条，将来要销账）；waived = 本需求不走机器判（登记，经维护者拍板）。两级互不混用；
+- 对账三判：C1 孤儿断言（断言无 FSD 出处）/ C2 需求欠账（有需求无断言无豁免）/ C3 豁免不完备（缺 reason 或缺 evidence / 非法条目 / 引用不存在的需求）——跑 `python scripts/fsd_coverage.py --project .`，退出码非零即有账；
+- 豁免随契约哈希入发布档案（改 waived 数组 → `expectations_sha256` 变 → 档案留痕）；
+- 语义漂移审读面：`fsd_coverage` 并排输出双侧 ID/标题/描述对照表——同 ID 两样考题，机器不判语义，但**必须过目**。
 
 ---
 
