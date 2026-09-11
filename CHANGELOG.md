@@ -162,6 +162,47 @@
   净增 16 例 + 口径注：本条为 pytest collected 计, unittest discover 口径
   在 CI 实跑同步复核; F-108 教训——计数先统一口径再落账）。
 
+## Unreleased — 2026-09-11（F-113 fsd_coverage 对账器：FSD↔expectations 最后一道手工缝焊上机器）
+
+- **F-113 处置（互锁链加固 A1，feature+test+docs，Orchestrator 亲执行;
+  spec: embedded-handoff `docs/superpowers/specs/2026-09-11-fsd-coverage-reconciler-design.md`
+  2026-09-11 批准）**: 考题从 FSD 抄进考卷（expectations.json）此前纯人肉,
+  漏抄/多抄/同 ID 异义全部沉默。新工具 `scripts/fsd_coverage.py`（纯函数
+  三件套 parse_fsd/load_waived/diff + 薄 IO, lint 同款退出码 0/1/2）三判:
+  **C1** 孤儿断言（无 FSD 出处）ERROR / **C2** FR 需求欠账（无断言无豁免）
+  ERROR / **C3** 豁免不完备（缺 reason/孤儿豁免）ERROR + 双侧 ID/标题对照表
+  （语义漂移"必须过目"面——v1 如实声明不判语义等价）。expectations 顶层
+  新增 `waived` 数组（豁免登记, loader 对未知顶层键宽容 → 旧清单零影响）;
+  **xfail（欠条）与 waived（豁免）两级语义分界写进模板 §4.3 与 README 契约段**。
+- **首跑红→整改→绿（对 mpu6050-oled 实扫, 三类问题全部现形）**:
+  C1 `FR-BOOT-01` 孤儿断言 → FSD 补录需求（source: existing-implementation
+  回填, 附模板 §2 规则 1 裁决注记）; C2 FR-OLED-03/FR-KEY-03/FR-PWR-01/02
+  四条欠账 → 5 条 waived 登记（bench-manual/物理观察, 证据指向 releases
+  v0.5）; **同 ID 异义 `FR-OLED-02`**（FSD=10Hz 刷新 vs expectations=关屏
+  节流, v0.5 判绿实际按后者）→ FSD 侧 FR-DISP-02 新编号迁出原义 +
+  FR-OLED-02 对齐现义并留 superseded 注记（新增编号不回收, ID 稳定纪律）。
+  整改后: mpu6050-oled WARN（exit 0, NFR×4 提醒）; button-toggle/adc-oled
+  SKIPPED（无 FSD, 存量如实）。
+- **首跑实证的两处设计修正（登记于 spec 外, 以本段为准）**: ① NFR 无断言
+  从 ERROR 降 WARNING——NFR 多为性能/构建约束天然不走 capture 断言, 一刀切
+  判死即制造假红（mpu6050 NFR×4 即现场）; ② 输入不可得（无 FSD/无 manifest）
+  从 ERROR 改 **SKIPPED**——legacy 工程"无对账面"是现状非事故, 谎红会让
+  HANDOFF 换回秒检对存量工程不可用; 但如实进 warnings, 不假装通过（教训 #9
+  的反向应用: 沉默兜底与谎红同罪, 诚实标注边界即可）。
+- 豁免随发布档案锚定: 采用 contracts 文件哈希方案（waived 改动 →
+  `expectations_sha256` 变 → release_audit R7 与 git_head  blob 比对现形,
+  2026-09-11 核实 release_audit.py:148-190 语义成立）——**不**在 G3 记录
+  加 waived 字段（门禁面不扩, spec §4"待定不做"落定）。
+- 挂接: HANDOFF-AGENT.md §6 换回第 3 步扩为 lint+fsd_coverage 连招
+  （私仓 paired commit）; README 速查表 + 工程契约段 + FSD 模板 §4.3。
+- 测试 `tests/test_fsd_coverage.py` **19 例**（--co 实测, F-111 教训: 计数
+  跑实测禁手加: 解析 5 + 三判 8 + 宽容 2 + 端到端 3 + SKIPPED 钉 1）;
+  全量套件 **561 passed, 6 skipped, 248 subtests**（collected 567; 含 F-112
+  合入; F-112 段"558 passed"为该分支当时值, 本段为堆叠合并后终值）;
+  coverage_lint --strict 静态可达 0 未覆盖保持。
+- **真机面**: 零（纯离线判定层）; FR-MPU-02 负断言示范随下次板前窗口
+  verify 回归收口（F-112 段同约）。
+
 ## Unreleased — 2026-09-10（F-109 SCB 粘滞位真机取证结案 + hardfault 读后清除）
 
 - **取证（0.5 门禁收官后趁板子在连, 真机 xPack OpenOCD 0.12 + F103C8T6）**:
