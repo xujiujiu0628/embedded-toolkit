@@ -51,6 +51,79 @@
   保持 0。仍挂账（本轮未动）: 时钟树参数化 `--pclk`（架构增强非缺陷）、
   SCB CFSR/HFSR 粘滞位（需真机取证）、0.5 真机门禁（等板子）。
 
+## Unreleased — 2026-09-11（F-110 gen_periph --hclk 时钟树参数化：P3 架构增强项落地）
+
+- **F-110 处置（审计 P3「时钟树前提硬编码」，feature，Orchestrator 亲执行;
+  spec: embedded-handoff `docs/superpowers/specs/2026-09-11-f110-hclk-param-design.md`）**:
+  新增单一入口 `--hclk <MHz>`（默认 72, 合法域 [2,72], 越界经 `_emit`
+  ERROR→exit 1——F-103 边界纪律）, 按 F103 **标准 APB 分频假设**
+  （HPRE=1/PPRE2=1/PPRE1=2, CubeMX 复位默认）推导：APB2=hclk、
+  APB1=hclk//2（floor）、TIM2~4 内核=APB1×2=hclk（RM0008 §7.3.7 双倍
+  特性抵消）、SysTick=hclk。八常数点收敛到单一事实源 `apb_clock_mhz`：
+  usart 三目 72/36、systick 72000000×3 处、pwm/timer-int 默认参
+  （`tim_clk_mhz: 72→None`, 优先级契约: 显式 tim_clk > hclk 推导）、
+  i2c `pclk1=36`、spi `SPI_CLOCK_BIT` 表内频率字面量退化为总线归属、
+  adc ADCPRE 从固定 /6 改**自动选最小合规分频**（/2~/8 中首个 ≤14MHz,
+  KB 明文上限; hclk=72 还原 /6 逐字节不变）。
+  **兼容性核心性质（测试证明非口头）**: 缺省 72 时七个生成器输出与
+  master `ef6ffa0` 逐字节一致（DefaultCompatTests 显式传 72 == 缺省 ×7
+  + 既有四测试文件零修改全绿——首记"81 例"系手加漏数 syntax_smoke 3 例,
+  实测 84, 由 F-111/M-2 订正; 教训升级见 F-111 段）; 非默认实样钉 hclk=8 手算值
+  （USART1@115200→BRR 0x0045 / USART2→0x0023 / SysTick LOAD=7999 /
+  I2C CR2=4 / ADC /2=4MHz / timer-int ARR=110）+ 奇数 hclk floor 注释
+  如实（PCLK1=4MHz 不伪装 4.5）+ gpio 类型不受 hclk 校验波及。
+  **登记不做**: RCC/SystemInit 生成器（审计原文伴生项, 独立议题）;
+  链条检查点（读工程核对实际 hclk）——参数化消除"无法表达", 不消除
+  "不声明就默认", 前提已在 CLI help 与本段双重声明。
+  测试 +14 例（`test_gen_hclk_param.py`, 含 subtests 15）, 全量
+  **533 passed, 6 skipped**; coverage_lint --strict 未覆盖清单保持 0。
+
+## Unreleased — 2026-09-11（F-111 fresh-checker 复审 F-110：H-1 floor 粉饰修复 + M×4 + L 钉补齐）
+
+- **复审结论**（对象 `cbb3c9f`, 分支 pclk-param-20260910）: **通过但有保留**
+  ——Critical 0 / High 1 / Medium 4 / Low 4。**核心兼容声称获最强证实**:
+  基线双模块 846 例同入参逐字节对比 0 差异（含全部数字插值文案与
+  ERROR 路径）; 变异探针 4 组敏感度确认。
+- **H-1 处置（ADCPRE floor 粉饰越限，fix+test）**: `pclk2 // div <= 14`
+  改精确比较 `pclk2 <= 14 * div`——旧式把 hclk∈{29,57,58,59} 的 14.25~
+  14.75MHz 越限选档并显示 "14MHz 合规"（B 类静默, 恰犯本仓自定义缺陷
+  类型——**且是 Orchestrator 自审时点名的疑点, 复审坐实**）。显示层同步
+  诚实化: 非整除档输出真值两位小数（29→"/4 7.25MHz"、57→"/6 9.50MHz"）。
+  72/8/56/28 整除场景选档与显示逐字节不变（兼容契约延伸, `28→/2 恰 14`
+  边界同钉）。新钉 `AdcExactBoundTests`。
+- **M-1 处置（spec-实现域分歧，docs）**: spec「合法域 1≤hclk≤72」与实现
+  [2,72] 分歧——实现取 2 有防御理由（hclk=1→pclk1=0 产出 0MHz 总线）,
+  按"实现优于 spec"回改 spec（含理由注记）, 状态行同步"已实施"。
+- **M-2 处置（记账数字不实，docs）**: 上一段"既有四测试文件零修改 81 例
+  全绿"——实测四文件为 **84** 例（58+14+9+3, 首记漏数 syntax_smoke 3 例;
+  F-108 刚自首过同类口径错误又复发, **教训升级: 计数必须跑 --co 实测,
+  禁止手加**）。本段即订正。
+- **M-3 处置（域校验只在 CLI 层，fix+test）**: F-103 惯例是生成器函数内
+  返回 ERROR, hclk 校验却写在 main()——库直调 `gen_systick(1000, 0)`
+  绕过守卫产出 `LOAD = -1` 伪合法代码。`_hclk_error()` 下沉全部 7 个
+  涉时钟生成器（CLI 层保留, 两层互补）; `tim_clk<=0` 同族入域
+  （旧病 tim_clk=0 → ARR=-1 一并收口）。钉 `LibraryDomainTests`。
+- **M-4 处置（spec §6 三处声明只兑现 1/3，docs+test）**: 生成物侧——
+  `_hclk_precondition_note()` 在非默认 hclk 时注入横幅前提注（HPRE/
+  PPRE 假设 + 异常分频指引）, **hclk=72 不注入**保兼容契约; README
+  gen_periph 行补 --hclk/--tim-clk 说明。钉 `PreconditionNoteTests`
+  （7 生成器 ×有/无注记两态）。
+- **L-1 处置（tick 文案失真，fix）**: timer-int 溢出 ERROR 恒写 "1MHz
+  tick", tim_clk=8 下实际 111111Hz → 文案随 tim_clk 计算, 72 下逐字节
+  不变。L-2/L-3 处置（CLI 缺省钉 + spec 承诺缺失钉补齐）:
+  `CliDefaultAndMissingPinsTests`——CLI 不传 --hclk == 显式 72（堵
+  "CLI default 单独改错全绿"盲区, 9 处默认 72 的漂移面钉住行为）、
+  usart --hclk 8 subprocess 钉、pwm PSC=7@8MHz 钉。
+- **登记不做（L-1 附带发现, 基线既有）**: timer-int 非整除 target_hz
+  的名义频率注（如 8MHz 下 ARR=110 实际 1001Hz 注释仍写 1kHz）——
+  72MHz 下同样存在（target 非 tim_clk 因子时）, 属 gen_timer_int 固定
+  PSC 设计的固有近似, 与 hclk 参数化正交, 挂账。
+- 测试 +9 例（F-111 组）, 全量 **542 passed, 6 skipped**;
+  coverage_lint --strict 未覆盖清单保持 0; 既有四生成器测试文件
+  继续零修改。
+- **P3 挂账剩余**: 仅 fresh-checker 复审 L-2（行首噪声词正文）/ L-3
+  （显式 ID 覆盖）/ L-4（manifest 回显 legacy expect）三登记项。
+
 ## Unreleased — 2026-09-10（F-109 SCB 粘滞位真机取证结案 + hardfault 读后清除）
 
 - **取证（0.5 门禁收官后趁板子在连, 真机 xPack OpenOCD 0.12 + F103C8T6）**:

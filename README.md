@@ -192,7 +192,7 @@ python scripts/release.py --project <工程根> --tag v1.0.0 --dry-run
 | `scripts/handoff_guard.py` | 外部智能体代管分支的三级禁线机检 | ❌ |
 | `scripts/feedback_db.py` | 修复事件落账 + 每流水线准确率校准 | ❌ |
 | `scripts/rm_lookup.py` | STM32F103 55 外设寄存器/位域速查（JSON 知识库） | ❌ |
-| `scripts/gen_periph.py` | 参数 → 寄存器级 C 初始化代码 / 外设文档 | ❌ |
+| `scripts/gen_periph.py` | 参数 → 寄存器级 C 初始化代码 / 外设文档（时钟经 `--hclk` 参数化，默认 72MHz 按标准 APB 分频推导，非默认值生成物头注回显前提；`--tim-clk` 显式值优先） | ❌ |
 | `scripts/hardfault.py` | HardFault 现场：寄存器 + 符号表定位出错函数 | ✅ |
 | `scripts/serial_*` / `openocd_*` | 串口与探针底层族（RTT/GDB/telnet） | ✅ |
 
