@@ -6,12 +6,18 @@ HardFault 自动诊断器 — 通过 OpenOCD 读取故障寄存器并解析为�
     python hardfault.py                          # 自动诊断当前连接的设备
     python hardfault.py --json                   # JSON 输出
     python hardfault.py --map path/to/firmware.map  # 指定 map 文件路径
+    python hardfault.py --json --fault-text capture.txt
+        # F-116/H-1: 传入含层 1 [HF] PC=/LR= 行的捕获文本 (verify 落盘的
+        # captured_output), 把真实故障点单独解析为 fault_site 字段。
+        # live PC/LR 在 handler 自旋场景指向 HardFault 处理链内 (halt 时
+        # IPSR≠0, CPU 正停在 handler), 不是故障现场——两回事必须分开呈现。
 
 工作原理:
     1. OpenOCD init → halt → 读取所有寄存器 + SCB 故障寄存器
     2. 解码 CFSR/HFSR 位域, 识别 Fault 类型
     3. 解析 .map 符号表, 将 PC/LR/BFAR 解析为函数名
-    4. 生成结构化诊断报告, 由 Claude AI 做最终判断
+    4. (可选) 从层 1 [HF] 行提取压栈帧 PC/LR, 解析为 fault_site (真实现场)
+    5. 生成结构化诊断报告, 由 Claude AI 做最终判断
 """
 
 import argparse
@@ -347,6 +353,23 @@ def parse_map_symbols(map_path: str) -> list[dict]:
     return symbols
 
 
+_HF_SITE_RE = re.compile(r"\[HF\] PC=([0-9A-Fa-f]{8}) LR=([0-9A-Fa-f]{8})")
+
+
+def parse_hf_site(text: str) -> dict | None:
+    """F-116/H-1: 从层 1 捕获文本提取压栈帧 PC/LR (真实故障点)。
+
+    handler 自旋场景下 live PC 恒在 HardFault 处理链内 (halt 时 IPSR≠0),
+    唯一携带故障现场的文本就是模板的 `[HF] PC=xxxxxxxx LR=xxxxxxxx` 行。
+    只认大写十六进制 8 位 (模板契约); 无该行返回 None (semihosting-era
+    blink 版无此行, 行为向后兼容)。取首个命中——多命中意味着重复 fault
+    现场混窗, 层 1 自旋使二次 fault 不可能进同一缓冲, 保守取先者如实。"""
+    m = _HF_SITE_RE.search(text or "")
+    if not m:
+        return None
+    return {"pc": int(m.group(1), 16), "lr": int(m.group(2), 16)}
+
+
 def resolve_address(addr: int, symbols: list[dict]) -> dict | None:
     """将地址解析为最近的符号名（地址在符号范围内）"""
     best = None
@@ -471,6 +494,9 @@ def main():
                         help=".map 文件路径 (默认: cwd 向上发现工程 lst/*.map, F-005)")
     parser.add_argument("--json", action="store_true", help="JSON 格式输出")
     parser.add_argument("--raw", action="store_true", help="输出 OpenOCD 原始输出")
+    parser.add_argument("--fault-text", default=None,
+                        help="含层 1 [HF] PC=/LR= 行的捕获文本路径, '-'=stdin "
+                             "(F-116/H-1: handler 自旋场景下 live PC 非故障现场)")
     args = parser.parse_args()
 
     started_at = now_iso()
@@ -536,6 +562,38 @@ def main():
     if mmfar and mmfar < 0xFFFFFFFF:
         resolved["mmfar"] = classify_address_range(mmfar)
 
+    # F-116/H-1: 层 1 现场行 → fault_site (真实故障点, 与 live PC 分开呈现)
+    fault_site = None
+    if args.fault_text:
+        try:
+            if args.fault_text == "-":
+                cap_text = sys.stdin.read()
+            else:
+                with open(args.fault_text, encoding="utf-8",
+                          errors="replace") as f:
+                    cap_text = f.read()
+        except OSError as e:
+            cap_text = ""
+            print(f"WARNING: --fault-text 不可读: {e}", file=sys.stderr)
+        site = parse_hf_site(cap_text)
+        if site:
+            fault_site = {
+                "pc": f"0x{site['pc']:08X}",
+                "lr": f"0x{site['lr']:08X}",
+                "source": "layer1_stacked_frame",
+            }
+            for key in ("pc", "lr"):
+                if site[key] > 0x08000000:
+                    sym = resolve_address(site[key], symbols)
+                    if sym:
+                        fault_site[key + "_sym"] = \
+                            f"{sym['name']}+{sym['offset']}"
+            xpsr = regs.get("xpsr", 0)
+            if isinstance(xpsr, int) and (xpsr & 0x1FF):
+                fault_site["live_pc_note"] = (
+                    "halt 现场 IPSR≠0 (异常上下文内 halt): live PC 属 handler "
+                    "处理链, 故障现场以 fault_site 为准")
+
     result = {
         "status": "hardfault_detected",
         "fault_type": fault["primary"],
@@ -551,6 +609,8 @@ def main():
         # F-109: 粘滞位卫生复核 (读→清→复读); 消费方据此判断残值污染
         "sticky_hygiene": sticky_hygiene(regs),
         "resolved": resolved,
+        # F-116/H-1: 仅当 --fault-text 提供且含层 1 现场行时在场
+        **({"fault_site": fault_site} if fault_site else {}),
         "diagnosis": diagnosis_text,
         "symbols_total": len(symbols),
         "needs_ai_judgement": True,
@@ -598,6 +658,15 @@ def _print_readable(r: dict):
         print(f"\nResolved:")
         for k, v in r["resolved"].items():
             print(f"  {k}: {v}")
+    fs = r.get("fault_site")
+    if fs:
+        print(f"\nFault Site (层 1 压栈帧, F-116/H-1):")
+        print(f"  PC: {fs['pc']}"
+              + (f" → {fs['pc_sym']}" if fs.get("pc_sym") else ""))
+        print(f"  LR: {fs['lr']}"
+              + (f" → {fs['lr_sym']}" if fs.get("lr_sym") else ""))
+        if fs.get("live_pc_note"):
+            print(f"  ⚠ {fs['live_pc_note']}")
     print(f"\nDiagnosis:\n  {r['diagnosis']}")
     print(f"\nSymbols loaded: {r['symbols_total']}")
     if r.get("_note"):

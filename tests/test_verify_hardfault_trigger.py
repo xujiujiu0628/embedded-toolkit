@@ -50,14 +50,23 @@ class HardfaultStepContractTests(unittest.TestCase):
     """verify 主流程内 steps.hardfault 携带 trigger 的契约钉 (mock 诊断子进程)。"""
 
     def test_steps_hardfault_carries_trigger(self):
-        # 纯函数与装配点的接缝: 装配代码把 _hardfault_trigger 结果写进
-        # steps.hardfault["trigger"]——用源码钉防装配漂移 (断言钉行为面:
-        # 调用点存在且值来自纯函数, 非硬编码)
+        # 装配点接缝钉 (F-116/L-1 升级: 钉"三处全装配"而非"至少一处存在",
+        # 漏装配 error 分支不再假绿; 手段仍是源码级, 行为面由
+        # test_verify_failure_paths 系列 + 真机背书补)
         src = open(os.path.join(os.path.dirname(os.path.dirname(
             os.path.abspath(__file__))), "scripts", "verify.py"),
             encoding="utf-8").read()
-        self.assertIn("hf_trigger = _hardfault_trigger(", src)
-        self.assertIn('"trigger": hf_trigger', src)
+        self.assertEqual(src.count("hf_trigger = _hardfault_trigger("), 1)
+        self.assertEqual(src.count('"trigger": hf_trigger'), 3)
+
+    def test_marker_path_forwards_capture_text(self):
+        # F-116/H-1 装配钉: marker 触发且有 [HF] PC= 行 → 必须把捕获文本
+        # 递给层 2 (--fault-text - + input=), 否则 fault_site 永远缺席
+        src = open(os.path.join(os.path.dirname(os.path.dirname(
+            os.path.abspath(__file__))), "scripts", "verify.py"),
+            encoding="utf-8").read()
+        self.assertIn('hf_cmd += ["--fault-text", "-"]', src)
+        self.assertIn('hf_kw["input"] = captured_text', src)
 
 
 if __name__ == "__main__":
