@@ -124,6 +124,151 @@
 - **P3 挂账剩余**: 仅 fresh-checker 复审 L-2（行首噪声词正文）/ L-3
   （显式 ID 覆盖）/ L-4（manifest 回显 legacy expect）三登记项。
 
+## Unreleased — 2026-09-11（F-112 expectations 负断言：prohibited_outcomes 进机器）
+
+- **F-112 处置（互锁链加固 A2，feature+test+docs，Orchestrator 亲执行;
+  spec: embedded-handoff `docs/superpowers/specs/2026-09-11-negative-assertion-schema-design.md`
+  2026-09-11 批准）**: FSD 模板的灵魂字段 `prohibited_outcomes` 此前只活在
+  文本层、靠人审兜底（"去掉 Must NOT happen 契约就只是描述"——模板 294 行
+  的论断一直缺一环兑现）。本单补上：expectations 条目级新增
+  `forbidden_texts` / `forbidden_patterns`（与 texts/patterns 正交），
+  **求值优先律**：捕获全文任一命中 → 该条目无条件 FAIL，先于正向匹配、
+  亦先于 XPASS/XFAIL（spec §2 五行走查全钉）——"靠重启恢复的重连"这类
+  假阳性从此有机器出口。
+  - `expectations.py`: 新纯函数 `check_forbidden_fields`（结构+自杀配置判据
+    单一事实源，loader 与 lint 共用——F-029 惯例）+ `_forbidden_hit`
+    （子串/正则双形态；**不**自动注入 MULTILINE/锚定——尊重调用方正则完全
+    控制权，强制会重演 L-2 误杀面，F-106 教训）+ `evaluate_expectations`
+    头部负断言短路；loader 违规抛 ExpectationError（与 E 系列同源不漂移）。
+  - `expectations_lint.py`: 新规则 **E10**（forbidden 结构/非法正则）+
+    **E11**（同串并存 texts 与 forbidden_texts 永远 FAIL 的复制错→ERROR；
+    xfail 条目配负断言语义错位疑点→WARNING）。docstring/计数文案随动
+    （E1~E9→E1~E11）。
+  - `verify.py`: import 面再导出两新符号（wire 兼容手法）；判定/JSON 契约
+    形状不变 → **release G1/G2 自动继承负断言拦截，零改动**；
+    `contract_hashes` 哈希算文件字节，负断言版本锚定天然成立。
+  - `templates/fsd-template-stm32.md` §4.1 补机器落地映射段：可机检项→
+    forbidden 字段；不可机检项保留人审面并注明理由——与豁免登记同一诚实
+    哲学，不存在第三条路（沉默）。
+  - 测试 +16 例（F-112 组；`ForbiddenAssertionTests` 10 例 = 优先律 5 +
+  兼容基线 1 + loader 4 + lint 侧 E10/E11 新 6 例中归本组另计——原记
+  "11 例（4+1+4）"系手加错误, F-114/H-3 按 --co 实测订正:
+  `test_verify_expectations` 24→34、`test_expectations_lint` 21→27,
+  `grep -c "def test"` 与 `--co` 双口径吻合）, 全量
+  **558 passed, 6 skipped** 为该分支时点值（终值见 F-114 段）;
+  coverage_lint --strict 未覆盖清单保持 0。
+  - 向后兼容契约：无新键旧清单零行为变化（逐字段基线钉）；三现役工程
+    不强制回填。mpu6050-oled 示范（FR-MPU-02 配
+    `forbidden_patterns: ["\\[DIAG\\] MPU6050_UpdateEuler FAIL"]`）随真机
+    回归窗口收口（板子在场时执行，本地不假验）。
+- 全量套件 **558 passed, 6 skipped, 248 subtests**（F-110/111 基线 542/6 +
+  净增 16 例 + 口径注：本条为 pytest collected 计, unittest discover 口径
+  在 CI 实跑同步复核; F-108 教训——计数先统一口径再落账）。
+
+## Unreleased — 2026-09-11（F-113 fsd_coverage 对账器：FSD↔expectations 最后一道手工缝焊上机器）
+
+- **F-113 处置（互锁链加固 A1，feature+test+docs，Orchestrator 亲执行;
+  spec: embedded-handoff `docs/superpowers/specs/2026-09-11-fsd-coverage-reconciler-design.md`
+  2026-09-11 批准）**: 考题从 FSD 抄进考卷（expectations.json）此前纯人肉,
+  漏抄/多抄/同 ID 异义全部沉默。新工具 `scripts/fsd_coverage.py`（纯函数
+  三件套 parse_fsd/load_waived/diff + 薄 IO, lint 同款退出码 0/1/2）三判:
+  **C1** 孤儿断言（无 FSD 出处）ERROR / **C2** FR 需求欠账（无断言无豁免）
+  ERROR / **C3** 豁免不完备（缺 reason/孤儿豁免）ERROR + 双侧 ID/标题对照表
+  （语义漂移"必须过目"面——v1 如实声明不判语义等价）。expectations 顶层
+  新增 `waived` 数组（豁免登记, loader 对未知顶层键宽容 → 旧清单零影响）;
+  **xfail（欠条）与 waived（豁免）两级语义分界写进模板 §4.3 与 README 契约段**。
+- **首跑红→整改→绿（对 mpu6050-oled 实扫, 三类问题全部现形）**:
+  C1 `FR-BOOT-01` 孤儿断言 → FSD 补录需求（source: existing-implementation
+  回填, 附模板 §2 规则 1 裁决注记）; C2 FR-OLED-03/FR-KEY-03/FR-PWR-01/02
+  四条欠账 → 5 条 waived 登记（bench-manual/物理观察, 证据指向 releases
+  v0.5）; **同 ID 异义 `FR-OLED-02`**（FSD=10Hz 刷新 vs expectations=关屏
+  节流, v0.5 判绿实际按后者）→ FSD 侧 FR-DISP-02 新编号迁出原义 +
+  FR-OLED-02 对齐现义并留 superseded 注记（新增编号不回收, ID 稳定纪律）。
+  整改后: mpu6050-oled WARN（exit 0, NFR×4 提醒）; button-toggle/adc-oled
+  SKIPPED（无 FSD, 存量如实）。
+- **首跑实证的两处设计修正（登记于 spec 外, 以本段为准）**: ① NFR 无断言
+  从 ERROR 降 WARNING——NFR 多为性能/构建约束天然不走 capture 断言, 一刀切
+  判死即制造假红（mpu6050 NFR×4 即现场）; ② 输入不可得（无 FSD/无 manifest）
+  从 ERROR 改 **SKIPPED**——legacy 工程"无对账面"是现状非事故, 谎红会让
+  HANDOFF 换回秒检对存量工程不可用; 但如实进 warnings, 不假装通过（教训 #9
+  的反向应用: 沉默兜底与谎红同罪, 诚实标注边界即可）。
+- 豁免随发布档案锚定: 采用 contracts 文件哈希方案——waived 数组并入
+  expectations.json, 其改动使 `expectations_sha256` 变化, 在**下一次
+  release** 的 G1 契约哈希与新记录绑定现形（F-114/M-5 订正本段原叙:
+  原写"release_audit R7 与 git_head blob 比对现形"错位——R7 锚定的是
+  发布时点的记录 vs 当时 git_head, 既有 v0.5 记录对事后 waived 改动
+  **永远不可见**; 机制无漏洞但现形点在下次发版, 措辞以本句为准）;
+  **不**在 G3 记录加 waived 字段（门禁面不扩, spec §4"待定不做"落定）。
+- 挂接: HANDOFF-AGENT.md §6 换回第 3 步扩为 lint+fsd_coverage 连招
+  （私仓 paired commit）; README 速查表 + 工程契约段 + FSD 模板 §4.3。
+- 测试 `tests/test_fsd_coverage.py` **19 例**（--co 实测, F-111 教训: 计数
+  跑实测禁手加: 解析 5 + 三判 8 + 宽容 2 + 端到端 3 + SKIPPED 钉 1）;
+  全量套件本段首记 **561 passed（collected 567）为 F-113 分支时点值**——
+  F-112 系 merge 才入树, 该数字**不含** F-112 的 +16 例, 原文"含 F-112
+  合入/堆叠合并后终值"失实, F-114/H-3 订正: merge 后实测 **577 passed,
+  6 skipped（collected 583）**; coverage_lint --strict 静态可达 0 未覆盖保持。
+- **真机面**: 零（纯离线判定层）; FR-MPU-02 负断言示范随下次板前窗口
+  verify 回归收口（F-112 段同约）。
+
+## Unreleased — 2026-09-11（F-114 fresh-checker 复审 F-112/F-113：H×3 全修 + M×2 修 + 挂账登记）
+
+- **复审结论**（对象 fsd-coverage-20260911 分支 `7ef99b0..d3e6720`, 无上下文
+  审计员 impl 模式）: **通过但有保留**——C0 / H3 / M7 / L6, "需收口后方可
+  视为完成"。落账 fc_20260911_155323+0800（adc-oled, target 写明真实审核对象）。
+- **H-1 处置（fsd_coverage 损坏输入裸 traceback，fix+test）**: 三探针实证
+  （非法 JSON / 条目缺 id / 顶层数组 → JSONDecodeError/KeyError/AttributeError
+  裸崩, 违背自宣"退出码对齐 lint 0/1/2"契约）。修复: `reconcile` 顶层非 dict
+  报 C0; `normalize_expectations` 损坏条目报 C0 不 KeyError; `_read_project`
+  捕获 JSONDecodeError → fatal → verdict=error。**语义分界**: 输入**缺失**
+  =SKIPPED（存量现状）, 输入**损坏**=ERROR（坏文件必须响）——沉默兜底与
+  谎红同罪的第三面: 裸崩同罪。钉 4 例。
+- **H-2 处置（对照表双侧 desc 未实现，fix+test）**: spec §2"v1 对漂移的全部
+  承诺"初版只落 FSD 侧标题、孤儿断言不进表。修复: rows 并入 `exp_desc`
+  （缺侧 `—`）+ `forbidden` 列（顺带兑现 F-112 spec §9.5）+ 孤儿断言独立成行
+  （`orphan=True, fsd_title=—`）——最需过目的对象此前恰好缺席; 人读输出双列
+  并排 `FSD: 标题 ⇐ 断言: desc ⛔负`。docstring/模板改真。钉 3 例
+  （双侧并排/孤儿成行/负断言列）。
+- **H-3 处置（CHANGELOG 计数失实，docs）**: ① F-113 段"561（collected 567,
+  含 F-112 合入, 终值）"——561 为 F-112 merge 前分支时点值, merge 后未复跑
+  全量却标终值（**验证纪律反例入账: 证据先于声称, merge 后必重跑**）;
+  实测订正 577/583。② F-112 段"ForbiddenAssertionTests 11 例（4+1+4）"
+  明细与总数互斥——实测 `-k Forbidden` 10 例, 订正并改明细。F-108 同类
+  三犯, 教训升级落记忆: **分支时点数与 merge 后终值必须分栏记, 手加即错**。
+- **M-2 处置（waived 校验三薄弱，fix+test）**: C3 补 `evidence` 必填
+  （spec 原文条款兑现, mpu 五 waiver 本就齐填——掩盖了规则缺失）;
+  新 `validate_waived`: 非法项/重复 id 报 C3 不静默吞（"豁免登记写坏"本身
+  必须响）; `load_waived` 保留为宽容映射函数并注明分工。
+- **M-3 处置（E11 自杀配置盲区，fix+test）**: spec F-112 §3.3 原文
+  "texts/**patterns** 完全相同"初版只做 texts 侧——patterns×forbidden_patterns
+  同串零成本字面比对却放行。补齐双侧, 钉 1 例。
+- **M-1 顺手落地（spec §2 条款非登记项）**: `.workbench/config.json`
+  `fsd_path` 字段覆盖默认 `docs/FSD.md`（现役三工程无该字段全走默认,
+  零行为变化）。M-4/M-6 登记为**实现立场**入 fsd_coverage docstring
+  （Must/Should 分级 → FR/NFR 前缀替代; C1 孤儿豁免不可 waive——孤儿豁免
+  本身即 C3, spec 字面勘误, 以 docstring+本段为准）。
+- **L 组**: L-1 check_forbidden_fields 返回 (code,msg) 元组, lint 不再文案
+  子串嗅探路由（文案一改即静默错码的雷拆了）+ 码路由钉 1 例; L-3 HANDOFF
+  §6"两工程 CLEAN"改"不得为 ERROR（SKIPPED 属预期）"（私仓 paired）;
+  L-4 parse_fsd docstring"如实报重复"与实现不符 → 措辞订正（判权归规格
+  审读, 对账以去重集为准）。**挂账**: L-2 余项（tests/fixtures 补 forbidden
+  样例 / MULTILINE 锚定示范钉 / 内联基线与 spec"逐字节"措辞差）、L-6
+  （lint 无清单 exit 1 vs coverage SKIPPED exit 0 的不对称——连招双腿语义
+  本就不同, 倾向不改, 复审议）。
+- **新取证（审计附带, 非本单造成）**: `release_audit --project
+  stm32f103-mpu6050-oled --tag v0.5` 实测 **R7 FAILED**——config.json 记录
+  哈希=发布时工作树 CRLF, git_head blob=LF（422e45f"autocrlf=false+eol=lf"
+  提交使发布字节与入库字节永久错位的**历史遗留**）。挂账处置: 重算 v0.5
+  记录哈希（重锚注记 provenance）或接受 R7 该记录永久 WARN 并登记;
+  处置前 HANDOFF §6-2.5 对该工程预期 FAILED 勿当新伤。
+- 测试 +16 例（fsd_coverage 19→28 口径注: 本段实测 `--co` 数为准, 分类明细
+  见文件内注释; lint +2; 其中 test_fsd_coverage 终值 28 例）, 全量
+  **588 passed, 6 skipped, 248 subtests（collected 594, --co 实测）**;
+  coverage_lint --strict 0 未覆盖保持; mpu6050-oled 对账 WARN（exit 0）
+  复跑不变。
+- **M-7 收口（paired, 工程仓）**: stm32f103-mpu6050-oled FSD/expectations
+  整改 + toolkit F-112~114 内容以工程仓 commit 入档（HEAD 21afb15 之上,
+  本地不 push——该仓无远端）; v0.5 发布记录不重开（其 R7 历史错位另账）。
+
 ## Unreleased — 2026-09-10（F-109 SCB 粘滞位真机取证结案 + hardfault 读后清除）
 
 - **取证（0.5 门禁收官后趁板子在连, 真机 xPack OpenOCD 0.12 + F103C8T6）**:

@@ -188,7 +188,8 @@ python scripts/release.py --project <工程根> --tag v1.0.0 --dry-run
 | `scripts/gcc_build.py` | GCC/make 构建后端，JSON 契约输出 + 产物登记 | ❌ |
 | `scripts/release.py` | G0→G3 门禁发布：全绿才打 tag，记录含双重哈希锚 | ✅ |
 | `scripts/release_audit.py` | 发布记录事后审计 R1~R7（tag 指向/hex 重算/契约锚） | ❌ |
-| `scripts/expectations_lint.py` | expectations.json 提交前校验 E1~E9 | ❌ |
+| `scripts/expectations_lint.py` | expectations.json 提交前校验 E1~E11（含 F-112 负断言） | ❌ |
+| `scripts/fsd_coverage.py` | FSD 需求 ↔ expectations 断言对账 C1/C2/C3 + 漂移对照表（F-113） | ❌ |
 | `scripts/handoff_guard.py` | 外部智能体代管分支的三级禁线机检 | ❌ |
 | `scripts/feedback_db.py` | 修复事件落账 + 每流水线准确率校准 | ❌ |
 | `scripts/rm_lookup.py` | STM32F103 55 外设寄存器/位域速查（JSON 知识库） | ❌ |
@@ -204,6 +205,10 @@ python scripts/release.py --project <工程根> --tag v1.0.0 --dry-run
 - `id` 唯一必填；`texts`（全 substring 命中）与 `patterns`（全正则 search 命中）二选一
 - `"xfail": true` 必须携带 `xfail_reason`——待办欠债全部白纸黑字
 - 数值断言：`pattern` + `capture_group` + `min`/`max` 区间
+- **负断言（F-112）**：`forbidden_texts` / `forbidden_patterns`——捕获全文任一命中
+  即该条 FAIL（优先于正向匹配与 XPASS），对应 FSD `prohibited_outcomes` 的可机检项
+- **豁免登记（F-113）**：顶层 `"waived"` 数组登记不走 verify 闭环的需求（理由必填）；
+  `fsd_coverage.py` 对账 FSD↔断言，xfail（欠条）与 waived（豁免）两级不混用
 - 版本控制建议：`config.json` / `expectations.json` / `releases/` 入库；
   `build/` 与 `state.json`（可再生缓存）忽略
 
