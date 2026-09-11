@@ -144,6 +144,22 @@ class LintFileTests(unittest.TestCase):
         self.assertTrue(any(e.startswith("E11") and "永远 FAIL" in e
                             for e in out["errors"]))
 
+    def test_e11_suicide_patterns_side(self):
+        # F-114/M-3: patterns × forbidden_patterns 同串也是自杀配置 (spec
+        # F-112 §3.3 原文含 patterns, 初版只查了 texts 侧)
+        out = self._write({"expectations": [
+            {"id": "A", "desc": "d", "patterns": [r"TGL \d+"],
+             "forbidden_patterns": [r"TGL \d+"]}]})
+        self.assertTrue(any(e.startswith("E11") for e in out["errors"]))
+
+    def test_e11_code_routing_independent_of_message(self):
+        # F-114/L-1: 规则码由 (code,msg) 元组携带, 非文案子串嗅探——
+        # 结构错→E10、自杀→E11, 两条各验其码不串
+        out = self._write({"expectations": [
+            {"id": "A", "desc": "d", "texts": ["x"], "forbidden_texts": []}]})
+        self.assertTrue(all(e.startswith("E10") for e in out["errors"]))
+        self.assertEqual([e for e in out["errors"] if e.startswith("E11")], [])
+
     def test_e11_xfail_with_forbidden_warned(self):
         out = self._write({"expectations": [
             {"id": "A", "desc": "d", "texts": ["x"], "xfail": True,

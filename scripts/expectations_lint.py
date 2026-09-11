@@ -95,8 +95,9 @@ def lint_expectations(expectations):
                 f"E9: {eid} min({bounds['min']}) > max({bounds['max']}) — "
                 "边界矛盾, 该条目永远 FAIL")
         # F-112: 负断言规则 E10 (结构/非法正则) + E11 (自杀配置/与 xfail 并存)
-        for msg in check_forbidden_fields(item):
-            errors.append(("E11: " if "永远 FAIL" in msg else "E10: ") + msg)
+        # F-114/L-1: 码随判据走 (check_forbidden_fields 返回 (code,msg)), 不嗅探文案
+        for code, msg in check_forbidden_fields(item):
+            errors.append(f"{code}: {msg}")
         if item.get("xfail") and (item.get("forbidden_texts")
                                   or item.get("forbidden_patterns")):
             warnings.append(

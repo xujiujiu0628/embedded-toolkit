@@ -319,7 +319,7 @@ verification:
 ```
 
 - **xfail ≠ 豁免**：xfail = 断言已建、功能未实现（欠条，将来要销账）；waived = 本需求不走机器判（登记，经维护者拍板）。两级互不混用；
-- 对账三判：C1 孤儿断言（断言无 FSD 出处）/ C2 需求欠账（有需求无断言无豁免）/ C3 豁免不完备（缺 reason 或引用不存在的需求）——跑 `python scripts/fsd_coverage.py --project .`，退出码非零即有账；
+- 对账三判：C1 孤儿断言（断言无 FSD 出处）/ C2 需求欠账（有需求无断言无豁免）/ C3 豁免不完备（缺 reason 或缺 evidence / 非法条目 / 引用不存在的需求）——跑 `python scripts/fsd_coverage.py --project .`，退出码非零即有账；
 - 豁免随契约哈希入发布档案（改 waived 数组 → `expectations_sha256` 变 → 档案留痕）；
 - 语义漂移审读面：`fsd_coverage` 并排输出双侧 ID/标题/描述对照表——同 ID 两样考题，机器不判语义，但**必须过目**。
 
