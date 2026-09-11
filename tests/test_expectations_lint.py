@@ -1,6 +1,6 @@
 """expectations_lint 回归 (R2 D 项, 2026-08-30).
 
-E1~E9 规则逐条 + 合成全字段冒烟。
+E1~E11 规则逐条 + 合成全字段冒烟。
 
 F-026 订正: 原"真档冒烟"硬编码维护者本机 adc-oled 路径, 历史重写后变占位符
 恒跳过 (本机亦失效)——已改 tempfile 合成清单 (覆盖 texts/patterns/capture_group/
@@ -118,6 +118,47 @@ class LintFileTests(unittest.TestCase):
              "capture_group": 1, "min": 10, "max": 1}]})
         self.assertTrue(any(e.startswith("E9") for e in out["errors"]))
 
+    # --- F-112 负断言规则 ---
+
+    def test_e10_forbidden_empty_list(self):
+        out = self._write({"expectations": [
+            {"id": "A", "desc": "d", "texts": ["x"], "forbidden_texts": []}]})
+        self.assertTrue(any(e.startswith("E10") for e in out["errors"]))
+
+    def test_e10_forbidden_bad_regex(self):
+        out = self._write({"expectations": [
+            {"id": "A", "desc": "d", "texts": ["x"],
+             "forbidden_patterns": ["TGL (\\d+"]}]})
+        self.assertTrue(any(e.startswith("E10") and "非法正则" in e
+                            for e in out["errors"]))
+
+    def test_e10_forbidden_non_string_elem(self):
+        out = self._write({"expectations": [
+            {"id": "A", "desc": "d", "texts": ["x"],
+             "forbidden_texts": ["ok", 42]}]})
+        self.assertTrue(any(e.startswith("E10") for e in out["errors"]))
+
+    def test_e11_suicide_same_string_both_sides(self):
+        out = self._write({"expectations": [
+            {"id": "A", "desc": "d", "texts": ["x"], "forbidden_texts": ["x"]}]})
+        self.assertTrue(any(e.startswith("E11") and "永远 FAIL" in e
+                            for e in out["errors"]))
+
+    def test_e11_xfail_with_forbidden_warned(self):
+        out = self._write({"expectations": [
+            {"id": "A", "desc": "d", "texts": ["x"], "xfail": True,
+             "xfail_reason": "wip", "forbidden_texts": ["y"]}]})
+        self.assertEqual(out["errors"], [])
+        self.assertTrue(any(w.startswith("E11") for w in out["warnings"]))
+
+    def test_forbidden_valid_clean(self):
+        out = self._write({"expectations": [
+            {"id": "A", "desc": "d", "patterns": [r"ok \d+"],
+             "forbidden_texts": ["boom"],
+             "forbidden_patterns": ["^\\[E\\] "]}]})
+        self.assertEqual(out["errors"], [], out["errors"])
+        self.assertEqual(out["warnings"], [])
+
     def test_xfail_items_produce_warning(self):
         out = self._write({"expectations": [
             {"id": "A", "desc": "d", "texts": ["x"], "xfail": True,
@@ -167,7 +208,8 @@ class SyntheticSmokeTests(unittest.TestCase):
     机器任何检出都应跑通; 真档冒烟保留能力, 经 ETK_SMOKE_EXPECTATIONS opt-in。"""
 
     FULL_FEATURED = {"expectations": [
-        {"id": "FR-SYS-01", "desc": "启动横幅", "texts": ["=== boot ==="]},
+        {"id": "FR-SYS-01", "desc": "启动横幅", "texts": ["=== boot ==="],
+         "forbidden_texts": ["watchdog reset"]},          # F-112 全字段面扩充
         {"id": "FR-ADC-02", "desc": "毫伏读数", "patterns": [r"mv=(\d{4})"],
          "capture_group": 1, "min": 0, "max": 3300},
         {"id": "FR-TGL-03", "desc": "已知缺陷留痕", "patterns": [r"TGL \d+"],
