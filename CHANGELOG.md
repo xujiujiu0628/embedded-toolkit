@@ -99,6 +99,25 @@
   既有 841 例全量回归零语义漂移钉死 (lint E1~E13 消息、loader 报错文案、
   发布记录字节全部原样)，先红后绿。
   （zc/hardware @ 本条 commit，待审）
+- **F-158 (T11/P2-4) gen_periph 数据外置 + phase_minus_one 占用表外置，refactor+test，data/stm32f103-gen-maps.json (新) / gen_periph.py / phase_minus_one.py**:
+  ① **gen_periph 数据外置**: GPIO_BASE/GPIO_CLOCK_BIT/GPIO_CR_OFFSET/
+  GPIO_MODE_MAP (CNF:MODE)/TIM_CH_PINS/TIM_CLOCK_BIT/TIM_BUS/
+  TIM_IRQ(函数内 irq_map)/I2C_CLOCK_BIT/SPI_CLOCK_BIT/SPI_BAUD_DIV/
+  I2C_SPEED_MODES 十二张表外置 `data/stm32f103-gen-maps.json` — 生成器
+  纯逻辑, 数据单一事实源; 载入后还原与旧字面量完全相同的内存形态
+  (tuple 键/整型键/元组值: JSON "TIM2:1"→("TIM2",1), "100000"→100000,
+  list→tuple), 全部调用点与 argparse choices 零改动。**硬验收: 黄金母版
+  生成物逐字节不变** — test_gen_periph 黄金钉与语法烟测 67 例原样全绿
+  即证。② **phase_minus_one 占用表外置**: 仓内硬编码 FIXED_PINS (维护者
+  adc-oled 专属引脚占用, 数据走私) 删除, 改读工程
+  `.workbench/fixed_pins.json`; **缺省 (文件不在场) 跳过冲突检查不报错**
+  (check_pin_conflicts 第三参 None → OK+skipped 说明); check_pin_conflicts
+  未用 ref 参清除; run_check 死参 features (解析即弃) 删除, --features
+  CLI 旗标同删 (从未参与判定); run_check 增 workspace 形参 (main 经
+  find_project_root 注入)。测试: test_zero_coverage_pure 的 pin_conflict
+  用例改传占用字典 + 新增 skip 分支钉, run_check 冒烟调用随签名更新
+  (共享测试文件改动记账)。
+  （zc/hardware @ 本条 commit，待审）
 
 - **F-145 (T1/B-1 v2 修订) 机器级设备锁 — OS 级文件锁 + 用户目录 device-locks，feat+test+docs，hw_lease.py (新) / verify.py / openocd_run.py**:
   同一探针/板子同时只被一个 agent 占用——这是 P1-3 (F-127 state 写锁) 的
