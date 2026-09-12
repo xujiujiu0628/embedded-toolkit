@@ -481,6 +481,41 @@ def build_openocd_cmd(
     return cmd
 
 
+# ── F-129 (工单二 A-2): 判定后硬件自恢复 ─────────────────────────────────
+# 借鉴 agentic-hil 的失败自恢复: 运行结束后板子状态不留给下一次运行——
+# 超时/卡死场景留下的挂着断点或半初始化外设会污染下一次 verify。
+
+_RESET_CFG_DEFAULT = ["interface/stlink.cfg", "target/stm32f1x.cfg"]  # verify.step_flash 同款
+
+
+def reset_target(exe: str, cfg: list[str] | None = None, *,
+                 timeout: int = 20) -> dict:
+    """复位目标: openocd -f <cfg...> -c "init" -c "reset run" -c "shutdown"。
+
+    verify.py 在 flash 实际发生过的判定结束后调用; cfg 缺省与 step_flash
+    同一套 (stlink + stm32f1x)。exe 由调用方经既有 resolve 链取好传入,
+    本函数不读 machine.json——保持纯函数, 测试无需环境桩。
+    判据沿 swd_probe 内容口径 (克隆适配器偶发非零退出, 关键行才是真相):
+    "shutdown command invoked" 在场且无 init 失败词。失败只返回 status
+    留痕, 调用方绝不因复位失败改判 verdict。"""
+    cmd = [exe]
+    for c in (cfg or _RESET_CFG_DEFAULT):
+        cmd.extend(["-f", c])
+    cmd.extend(["-c", "init", "-c", "reset run", "-c", "shutdown"])
+    try:
+        r = subprocess.run(cmd, capture_output=True, text=True,
+                           encoding="utf-8", errors="replace", timeout=timeout)
+        last = (r.stdout or "") + (r.stderr or "")
+    except subprocess.TimeoutExpired:
+        return {"status": "error", "message": f"reset 超时 ({timeout}s)"}
+    except OSError as e:
+        return {"status": "error", "message": str(e)}
+    if "shutdown command invoked" in last and "init mode failed" not in last:
+        return {"status": "ok", "message": last[-200:]}
+    return {"status": "error",
+            "message": last[-200:] or f"openocd exit {r.returncode}"}
+
+
 def cleanup(proc: subprocess.Popen | None) -> None:
     """终止 OpenOCD 进程 (F-123 自 gdb/itm cleanup + telnet cleanup_proc
     三份拷贝收编——旧三副本函数体逐字相同)。"""

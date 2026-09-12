@@ -158,6 +158,7 @@ class MainFlowCheckpointTests(unittest.TestCase):
         from contextlib import redirect_stdout, redirect_stderr
         old_cwd = os.getcwd()
         os.chdir(self.ws)
+        # F-129: 判定后复位是真实 openocd 子进程, 测试一律 mock 防触硬件
         try:
             with mock.patch.object(sys, "argv",
                                    ["verify.py"] + list(argv_extra)), \
@@ -172,6 +173,8 @@ class MainFlowCheckpointTests(unittest.TestCase):
                                                  "raw_length": 0}), \
                  mock.patch.object(checkpoint_ledger, "_git_head",
                                    return_value=("test_commit", "test_branch")), \
+                 mock.patch.object(verify, "reset_target",
+                                   return_value={"status": "ok"}), \
                  redirect_stdout(io.StringIO()), \
                  redirect_stderr(io.StringIO()):
                 with self.assertRaises(SystemExit):

@@ -169,6 +169,8 @@ class MainEndToEndEvidenceTests(unittest.TestCase):
                                       "stdout": ""})), \
                 mock.patch.object(verify, "run_semihosting_session",
                                   mock.Mock(return_value=("[init] OK\n", ""))), \
+                mock.patch.object(verify, "reset_target",
+                                  mock.Mock(return_value={"status": "ok"})), \
                 mock.patch.object(verify, "record_checkpoint"):
             with redirect_stdout(out), redirect_stderr(err):
                 try:

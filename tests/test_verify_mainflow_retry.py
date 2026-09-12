@@ -120,6 +120,9 @@ class VerifyMainflowRetryTests(unittest.TestCase):
             mock.patch.object(verify, "step_analyze", _analyze_result),
             mock.patch.object(verify, "step_flash", _flash),
             mock.patch("verify.time.sleep", lambda s: None),
+            # F-129: 判定后复位是真实 openocd 子进程, 测试一律 mock 防触硬件
+            mock.patch.object(verify, "reset_target",
+                              return_value={"status": "ok"}),
         ]
         if capture_side is None:
             patchers.append(mock.patch.object(
