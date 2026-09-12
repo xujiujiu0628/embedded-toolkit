@@ -59,7 +59,7 @@ class ReleaseAuditTests(unittest.TestCase):
         shutil.rmtree(self.ws, ignore_errors=True)
 
     def _record(self, tag="v1.1.0", results=None, waived=None, git_head=None,
-                contracts=None, evidence="real-hardware"):
+                contracts=None, evidence="hardware_validated"):
         return {
             "tag": tag, "git_head": git_head if git_head is not None else self.head,
             "branch": "master", "timestamp": "2026-08-30T12:00:00+08:00",
@@ -223,17 +223,17 @@ class ReleaseAuditTests(unittest.TestCase):
 
     def test_r8_sim_evidence_without_waiver_fails(self):
         # 工单验收: sim 证据混进发布记录 → 审计拒绝 (防门禁被绕过/记录被篡改)
-        rec = self._record(evidence="simulator")
+        rec = self._record(evidence="simulation_validated")
         rel = self._write(rec)
         out = release_audit.audit_record(self.ws, "v1.1.0", rel)
         self.assertEqual(out["verdict"], "failed", out["checks"])
         r8 = [c for c in out["checks"] if c["id"] == "R8"][0]
         self.assertEqual(r8["status"], "fail")
-        self.assertIn("simulator", r8["detail"])
+        self.assertIn("simulation_validated", r8["detail"])
 
     def test_r8_sim_evidence_with_waiver_warns(self):
         # 显式豁免 (--allow-non-hardware-evidence) → 放行但降级警告留痕可见
-        rec = self._record(evidence="simulator", )
+        rec = self._record(evidence="simulation_validated", )
         rec["evidence_waiver"] = True
         rel = self._write(rec)
         out = release_audit.audit_record(self.ws, "v1.1.0", rel)
@@ -243,8 +243,8 @@ class ReleaseAuditTests(unittest.TestCase):
         self.assertIn("豁免", r8["detail"])
 
     def test_r8_waiver_with_real_hardware_contradiction_warns(self):
-        # evidence=real-hardware 却带豁免留痕 → 字段矛盾, 疑似手工编辑
-        rec = self._record(evidence="real-hardware")
+        # evidence=hardware_validated 却带豁免留痕 → 字段矛盾, 疑似手工编辑
+        rec = self._record(evidence="hardware_validated")
         rec["evidence_waiver"] = True
         rel = self._write(rec)
         out = release_audit.audit_record(self.ws, "v1.1.0", rel)
@@ -254,11 +254,79 @@ class ReleaseAuditTests(unittest.TestCase):
         self.assertIn("矛盾", r8["detail"])
 
     def test_r8_static_evidence_without_waiver_fails(self):
-        # static (仅构建) 同样不得支撑发布 — 三档里只有 real-hardware 放行
+        # static (仅构建) 同样不得支撑发布 — 四档里只有 hardware_validated
+        # 与带留痕的 production_approved 放行
         rel = self._write(self._record(evidence="static"))
         out = release_audit.audit_record(self.ws, "v1.1.0", rel)
         r8 = [c for c in out["checks"] if c["id"] == "R8"][0]
         self.assertEqual(r8["status"], "fail")
+
+    def test_r8_production_approved_without_stamp_fails(self):
+        # F-146 防伪钉: production_approved 缺批准留痕 = 手工改值, fail
+        rel = self._write(self._record(evidence="production_approved"))
+        out = release_audit.audit_record(self.ws, "v1.1.0", rel)
+        r8 = [c for c in out["checks"] if c["id"] == "R8"][0]
+        self.assertEqual(r8["status"], "fail")
+        self.assertIn("production_approved_at", r8["detail"])
+
+    def test_r8_production_approved_with_stamp_passes(self):
+        rec = self._record(evidence="production_approved")
+        rec["production_approved_at"] = "2026-09-12T12:00:00+08:00"
+        rel = self._write(rec)
+        out = release_audit.audit_record(self.ws, "v1.1.0", rel)
+        self.assertEqual(out["verdict"], "clean", out["checks"])
+        r8 = [c for c in out["checks"] if c["id"] == "R8"][0]
+        self.assertEqual(r8["status"], "pass")
+
+    def test_approve_backfills_evidence_and_stamp(self):
+        # F-146 回填主路径: hardware_validated + 审计过 → approve 成功;
+        # evidence 翻转 + 批准留痕 + fidelity 边界追加; 复审 R8 pass
+        rec0 = self._record(evidence="hardware_validated")
+        rec0["fidelity_boundaries"] = ["真机 capture 输出匹配判定"]
+        rec0["signature"] = ""
+        rel = self._write(rec0)
+        rs = release_audit.approve_record(self.ws, "v1.1.0")
+        self.assertTrue(rs["ok"], rs)
+        with open(os.path.join(self.ws, rel), encoding="utf-8") as f:
+            rec = json.load(f)
+        self.assertEqual(rec["evidence"], "production_approved")
+        self.assertIn("production_approved_at", rec)
+        self.assertTrue(any("批准" in b for b in rec["fidelity_boundaries"]))
+        self.assertEqual(rec["signature"], "", "签名占位不得被回填假装已签")
+        out = release_audit.audit_record(self.ws, "v1.1.0", rel)
+        r8 = [c for c in out["checks"] if c["id"] == "R8"][0]
+        self.assertEqual(r8["status"], "pass", r8["detail"])
+
+    def test_approve_rejects_non_hardware_evidence(self):
+        # 投产批准只能叠加在真机证据上 — 已豁免入档的仿真/静态记录同样拒绝
+        # (带豁免才能过 R8 审计, 从而到达 approve 的证据级校验)
+        for i, ev in enumerate(("simulation_validated", "static")):
+            tag = f"v1.1.{i}"
+            # 每轮记录都要绑定当前 HEAD (上一轮的记录 commit 已推进 HEAD)
+            _, head, _ = release_audit._git(["rev-parse", "HEAD"], self.ws)
+            rec = self._record(tag=tag, evidence=ev, git_head=head)
+            rec["evidence_waiver"] = True
+            self._write(rec, tag=tag)
+            rs = release_audit.approve_record(self.ws, tag)
+            self.assertFalse(rs["ok"], ev)
+            self.assertIn("hardware_validated", rs["error"])
+
+    def test_approve_rejects_failed_audit(self):
+        # 记录被篡改 (hex 不匹配) → 审计 fail → 拒绝批准
+        self._write(self._record())
+        with open(os.path.join(self.ws, self.hex_rel), "wb") as f:
+            f.write(b"TAMPERED")
+        rs = release_audit.approve_record(self.ws, "v1.1.0")
+        self.assertFalse(rs["ok"])
+        self.assertIn("审计未过", rs["error"])
+
+    def test_approve_is_idempotent(self):
+        rec = self._record(evidence="production_approved")
+        rec["production_approved_at"] = "2026-09-12T12:00:00+08:00"
+        self._write(rec)
+        rs = release_audit.approve_record(self.ws, "v1.1.0")
+        self.assertTrue(rs["ok"])
+        self.assertIn("幂等", rs["note"])
 
     def test_audit_project_aggregates(self):
         self._write(self._record(), tag="v1.1.0")
