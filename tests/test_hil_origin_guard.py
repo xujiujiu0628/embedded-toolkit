@@ -26,6 +26,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(
     os.path.abspath(__file__))), "scripts"))
 
 import verify  # noqa: E402  (F-054 后 import 期零 IO)
+import hw_lease  # noqa: E402  (F-131: LEASE_FILE 重定向目标)
 
 
 class EnforceHilOriginTests(unittest.TestCase):
@@ -161,6 +162,8 @@ class MainFlowGuardTests(unittest.TestCase):
                                                  "raw_length": 0}), \
                  mock.patch.object(verify, "reset_target",
                                    return_value={"status": "ok"}), \
+                 mock.patch.object(hw_lease, "DEVICE_LOCK_DIR",
+                                   os.path.join(self.ws, "device-locks")), \
                  redirect_stdout(io.StringIO()) as out, \
                  redirect_stderr(io.StringIO()) as err:
                 with self.assertRaises(SystemExit) as ctx:

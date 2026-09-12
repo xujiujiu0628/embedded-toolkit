@@ -33,6 +33,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(
     os.path.abspath(__file__))), "scripts"))
 
 import verify  # noqa: E402
+import hw_lease  # noqa: E402  (F-131: LEASE_FILE 重定向目标)
 import checkpoint_ledger  # noqa: E402  (F-059: 台账拆分件, _git_head patch 目标随迁)
 
 
@@ -175,6 +176,8 @@ class MainFlowCheckpointTests(unittest.TestCase):
                                    return_value=("test_commit", "test_branch")), \
                  mock.patch.object(verify, "reset_target",
                                    return_value={"status": "ok"}), \
+                 mock.patch.object(hw_lease, "DEVICE_LOCK_DIR",
+                                   os.path.join(self.ws, "device-locks")), \
                  redirect_stdout(io.StringIO()), \
                  redirect_stderr(io.StringIO()):
                 with self.assertRaises(SystemExit):

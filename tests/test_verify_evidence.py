@@ -22,6 +22,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(
     os.path.abspath(__file__))), "scripts"))
 
 import verify  # noqa: E402
+import hw_lease  # noqa: E402  (F-131: LEASE_FILE 重定向目标)
 
 
 def _result(verify_status="pass", capture=None, status=None):
@@ -171,6 +172,8 @@ class MainEndToEndEvidenceTests(unittest.TestCase):
                                   mock.Mock(return_value=("[init] OK\n", ""))), \
                 mock.patch.object(verify, "reset_target",
                                   mock.Mock(return_value={"status": "ok"})), \
+                mock.patch.object(hw_lease, "DEVICE_LOCK_DIR",
+                                  os.path.join(self.ws, "device-locks")), \
                 mock.patch.object(verify, "record_checkpoint"):
             with redirect_stdout(out), redirect_stderr(err):
                 try:

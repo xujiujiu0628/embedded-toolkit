@@ -261,6 +261,14 @@ Claude Code 注册：把仓根 `.mcp.json.example` 拷为工程根（或 `~/.cla
 - 版本控制建议：`config.json` / `expectations.json` / `releases/` 入库；
   `build/` 与 `state.json`（可再生缓存）忽略
 
+**设备锁（F-145）**：`verify` 的 flash+capture 段与 `openocd_run flash/erase`
+全程持有**机器级设备锁**（`%USERPROFILE%\.embedded-toolkit\device-locks\stlink.lock`，
+Windows `msvcrt.locking` / POSIX `flock` 的 OS 级文件锁）——同一探针/板子
+同时只被一个 agent（或同一台机的另一份 clone）占用；进程崩溃 = OS 自动
+放锁，无 PID 探活、无超期回收。冲突方收到 `resource_busy` + 持有者
+purpose/获取时间，`--lease-wait N` 可有界等待。它与 `.workbench/state.json`
+的写锁（F-127，防数据竞争）是两层，互不替代。
+
 ## 项目结构
 
 ```text

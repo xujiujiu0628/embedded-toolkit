@@ -50,6 +50,7 @@ def _openocd_exe() -> str:
 
 from runtime_common import output_json  # noqa: E402  (F-041: doctor --json 复用共享层)
 from openocd_runtime import reset_target, swd_probe  # noqa: E402,F401  (F-041: SWD 探测与 release G0.5 同源; F-129: 判定后复位)
+import hw_lease  # noqa: E402  (F-145: flash+capture 段机器级设备锁)
 from expectations import (ExpectationError, contract_hashes,  # noqa: E402,F401  (F-055: 拆分件再导出, verify.X 调用面不变)
                           evaluate_expectations, load_expectations,
                           _expect_matched, check_forbidden_fields, _forbidden_hit)
@@ -285,6 +286,17 @@ def append_audit_entry(workspace: str, origin: str, step: str,
         print(f"[warn] audit 落盘失败: {audit_path}", file=sys.stderr)
 
 
+def _release_hw_lease(lease) -> None:
+    """F-145: 释放设备锁 (best-effort——释放失败只告警, 不影响本次结果;
+    进程退出时 OS 自动放锁兜底)。"""
+    if not lease or not lease.get("ok"):
+        return
+    rs = hw_lease.release(lease)
+    if not rs.get("ok"):
+        print(f"[warn] 设备锁释放失败: {rs.get('error', '')} "
+              f"(进程退出时 OS 自动放锁, 不影响本次结果)", file=sys.stderr)
+
+
 def _hardfault_trigger(captured_text, capture_empty, flash_ran):
     """F-115 (B1): HardFault 诊断触发路径归因 (spec rtt-hardfault §3.2)。
 
@@ -395,7 +407,7 @@ def verify(output: str, expect: list[str], description: str = "", expect_pattern
 
 
 def _finish_capture_timeout(proc, result: dict, capture_timeout: int,
-                            max_retries: int, as_json: bool):
+                            max_retries: int, as_json: bool, lease=None):
     """F-003: OpenOCD 卡死超时 — 回收部分输出并诚实判 capture_failed。
 
     旧行为丢弃已收输出并按 capture ok(lines=0) 入账, 把"采集工具超时"
@@ -418,6 +430,7 @@ def _finish_capture_timeout(proc, result: dict, capture_timeout: int,
     }
     result["status"] = "capture_failed"
     result["error"] = "capture 超时: OpenOCD 卡死, 部分输出已存失败现场"
+    _release_hw_lease(lease)   # F-131: 超时出口也必须放掉硬件租约
     _save_failure_context(result, max_retries, capture_text="\n".join(partial), workspace=WORKSPACE)
     _output(result, as_json)
     sys.exit(1)
@@ -464,6 +477,10 @@ def main():
                         dest="require_schedule_origin", action="store_true",
                         help="F-046 硬卡旗标: 开启后拒绝 task_origin=manual, "
                              "CI / release 门禁脚本默认加这个旗标")
+    parser.add_argument("--lease-wait", dest="lease_wait", type=float,
+                        default=0.0,
+                        help="F-145: 设备锁冲突时有界等待秒数 (默认 0 = "
+                             "fail-fast; 等 span 含 flash+capture 全程)")
     args = parser.parse_args()
 
     if args.doctor:
@@ -663,12 +680,23 @@ def main():
 
     # ---- Step 3: Flash (with retry) ----
     # F-046: HIL 入口守卫 — 拒 manual 时给友好提示, exit 2 (区别于 0=成功/1=失败)
+    # F-145: 机器级设备锁 — flash+capture 段全程持有, 同一探针/板子同时只被
+    # 一个 verify (或 openocd_run flash/erase) 占用; 冲突方拿 resource_busy +
+    # 持有者信息 fail-fast (exit 2), --lease-wait 可有界等待。
+    lease = hw_lease.acquire(
+        purpose=f"verify flash+capture ({os.path.basename(WORKSPACE)})",
+        workspace=WORKSPACE,
+        wait=getattr(args, "lease_wait", 0.0))
+    if not lease.get("ok"):
+        print(f"错误: {lease.get('error', '设备锁获取失败')}", file=sys.stderr)
+        sys.exit(2)
     if not args.no_flash:
         flash_t0 = time.time()  # F-050: step-level timing
         # F-046 守卫 (F-050 自审发现: 此前曾误写两行同参数调用, 已删冗余)
         allowed, deny_reason = enforce_hil_origin(
             args.task_origin, args.require_schedule_origin)
         if not allowed:
+            _release_hw_lease(lease)
             print(f"错误: {deny_reason}", file=sys.stderr)
             sys.exit(2)
         flash_attempts = []
@@ -695,6 +723,7 @@ def main():
             }
             result["status"] = "flash_failed"
             result["error"] = f"Flash failed after {len(flash_attempts)} attempt(s)"
+            _release_hw_lease(lease)
             _save_failure_context(result, max_retries, workspace=WORKSPACE)
             _output(result, args.json)
             # F-047 自审 Finding 2: 早退路径也必须落 checkpoint
@@ -722,6 +751,7 @@ def main():
     allowed_capture, deny_reason_capture = enforce_hil_origin(
         args.task_origin, args.require_schedule_origin)
     if not allowed_capture:
+        _release_hw_lease(lease)
         print(f"错误: {deny_reason_capture}", file=sys.stderr)
         sys.exit(2)
     capture_started = time.time()
@@ -741,6 +771,7 @@ def main():
             }
             result["status"] = "capture_failed"
             result["error"] = cap.get("error", "rtt capture failed")
+            _release_hw_lease(lease)
             _save_failure_context(result, max_retries, workspace=WORKSPACE)
             _output(result, args.json)
             # F-047 自审 Finding 2: 早退路径也必须落 checkpoint
@@ -767,13 +798,14 @@ def main():
 
         except SemihostingTimeout as _to:
             _finish_capture_timeout(_to.proc, result, capture_timeout,
-                                    max_retries, args.json)
+                                    max_retries, args.json, lease=lease)
         except Exception as e:
             result["steps"]["capture"] = {
                 "status": "error", "method": "semihosting", "error": str(e)
             }
             result["status"] = "capture_failed"
             result["error"] = str(e)
+            _release_hw_lease(lease)
             _save_failure_context(result, max_retries, workspace=WORKSPACE)
             _output(result, args.json)
             # F-047 自审 Finding 2: 早退路径也必须落 checkpoint
@@ -958,6 +990,9 @@ def main():
                   file=sys.stderr)
     else:
         result["post_reset"] = "skipped"
+
+    # F-131: flash+capture 段结束 (含 post_reset 的 OpenOCD 复用) — 释放租约
+    _release_hw_lease(lease)
 
     # 验证失败 (fail/timing_fail) 时保存失败现场供 Agent 分析
     if result["status"] in ("fail", "timing_fail"):

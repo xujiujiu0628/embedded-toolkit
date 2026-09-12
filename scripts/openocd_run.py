@@ -36,6 +36,7 @@ from openocd_runtime import (  # noqa: E402
     update_state_entry,
     workspace_root,
 )
+import hw_lease  # noqa: E402  (F-145: flash/erase 动作粒度设备锁)
 
 
 ERROR_PATTERNS = [
@@ -212,6 +213,7 @@ def run_openocd(
     bank: str = "",
     erase_mode: str = "auto",
     raw_commands: list[str] | None = None,
+    lease_wait: float = 0.0,
 ) -> dict:
     if not board and not interface and not target:
         return {"status": "error", "action": action, "error": {"code": "missing_config", "message": "必须提供 --board 或 --interface + --target"}}
@@ -237,6 +239,22 @@ def run_openocd(
         return {"status": "error", "action": action, "error": {"code": error_code, "message": f"未知动作: {action}"}}
     if action == "erase" and not any("flash erase_sector" in item or "mass_erase" in item for item in action_commands):
         return {"status": "error", "action": action, "error": {"code": "mass_erase_unsupported", "message": "当前 target/board 未配置 mass erase 命令，请改用 --mode sector 或补充映射"}}
+
+    # F-145 (总工单 v2 B-1): flash/erase 动作粒度设备锁 — 与 verify 的
+    # flash+capture 段互斥, 防两路 agent/两份 clone 同时抢探针。冲突 fail-fast
+    # 返回 resource_busy (error 文本点名持有者); 其余动作 (probe/reset/targets)
+    # 只读, 不抢锁。
+    lease = None
+    if action in ("flash", "erase"):
+        lease = hw_lease.acquire(purpose=f"openocd_run {action}",
+                                 wait=lease_wait)
+        if not lease.get("ok"):
+            return {
+                "status": "error",
+                "action": action,
+                "error": {"code": "resource_busy",
+                          "message": lease.get("error", "设备锁被占用")},
+            }
 
     started = time.time()
     try:
@@ -267,6 +285,10 @@ def run_openocd(
         return {"status": "error", "action": action, "error": {"code": "timeout", "message": "OpenOCD 执行超时(120s)"}}
     except Exception as exc:  # pragma: no cover
         return {"status": "error", "action": action, "error": {"code": "exec_error", "message": str(exc)}}
+    finally:
+        # F-145: 动作粒度设备锁 — OpenOCD 进程一结束就放, 不拖延解析/落账阶段
+        if lease and lease.get("ok"):
+            hw_lease.release(lease)
 
     elapsed_ms = int((time.time() - started) * 1000)
     combined = proc.stderr + "\n" + proc.stdout
@@ -343,6 +365,8 @@ def main() -> None:
     parser.add_argument("--command", nargs="+", default=None, help="raw 模式下执行的 OpenOCD 命令列表")
     parser.add_argument("--config", default=None, help="skill config.json 路径")
     parser.add_argument("--workspace", default=None, help="workspace 根目录，默认当前目录")
+    parser.add_argument("--lease-wait", dest="lease_wait", type=float, default=0.0,
+                        help="F-145: flash/erase 设备锁冲突时有界等待秒数 (默认 0 = fail-fast)")
     parser.add_argument("--json", action="store_true", dest="as_json")
     args = parser.parse_args()
 
@@ -441,6 +465,7 @@ def main() -> None:
         bank=args.bank or "",
         erase_mode=args.mode if args.action == "erase" else "auto",
         raw_commands=args.command,
+        lease_wait=args.lease_wait,
     )
     elapsed_ms = (time.time() - started_ts) * 1000
 
