@@ -32,6 +32,20 @@
   **k** `get_serial_config` 注解修正 `tuple[dict | None, dict]`。
   验收 = 22 钉全绿 + 全量回归 (合流时 Claude 复审重点抽查项)。
   （zc/hardware @ 本条 commit，待审）
+- **F-155 (T8v2/N-3) openocd 构造性标记法 — flash/erase 完整性证据，feat+test，openocd_run.py / tests/test_openocd_n3_marker.py (新)**:
+  OpenOCD 克隆适配器偶发打印吓人文案 (Error:/Warn: 行) 但脚本实际完整跑完
+  ——旧"退出码 + 措辞嗅探"两头吃亏。flash/erase 命令串尾追加
+  `echo MARK_ACTION_DONE`, 只有脚本真跑到底标记才在场; **成功 = exit 0
+  且标记在场**, exit 0 但标记缺席 → `action_incomplete` 拒绝按成功入账
+  (构造性证据优先于退出码); 失败措辞行收集进 `details.backend_warnings`
+  (截尾 10 行) **不改判**; probe/targets 只读动作不上标记 — rc!=0 +
+  jtag_tap/core 实证的既有豁免原样保留 (F-090 契约不动)。在 F-154 的
+  f/g/h 改动之上叠加 (同文件, 顺序按任务清单 T8 在 T10 之后)。
+  测试 `tests/test_openocd_n3_marker.py` 5 例 (三条验收 mock 钉: 标记在
+  串尾且成功 / 措辞行留痕不改判 / exit 0 无标记 → action_incomplete;
+  rc!=0 → command_failed 不变; probe 反向钉), test_hw_lease 假 openocd
+  输出补标记 (夹具随契约同步)，先红后绿。
+  （zc/hardware @ 本条 commit，待审）
 
 - **F-145 (T1/B-1 v2 修订) 机器级设备锁 — OS 级文件锁 + 用户目录 device-locks，feat+test+docs，hw_lease.py (新) / verify.py / openocd_run.py**:
   同一探针/板子同时只被一个 agent 占用——这是 P1-3 (F-127 state 写锁) 的

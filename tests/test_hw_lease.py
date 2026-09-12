@@ -328,7 +328,9 @@ class OpenocdRunLeaseTests(unittest.TestCase):
         def _fake_run(cmd, **kwargs):
             lock_file, _meta = hw_lease.lock_paths("stlink")
             lock_during.append(os.path.isfile(lock_file))
-            return _completed(stdout="", stderr="fake openocd output")
+            # F-155 N-3: flash/erase 串尾有构造性标记才算完整跑完
+            return _completed(stdout="", stderr="fake openocd output\n"
+                              f"{openocd_run.ACTION_DONE_MARKER}\n")
 
         with mock.patch.object(openocd_run.subprocess, "run", _fake_run):
             rs = openocd_run.run_openocd(
