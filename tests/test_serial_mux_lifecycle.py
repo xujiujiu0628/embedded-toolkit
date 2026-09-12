@@ -62,12 +62,26 @@ class MuxStartNoLeakTests(unittest.TestCase):
 
 
 class ReadLoopDeathTraceTests(unittest.TestCase):
-    """修复钉 2: 读循环死亡必须留痕 + 非零退出"""
+    """修复钉 2: 读循环死亡必须留痕 + 非零退出。
+    F-159: 端口 29876/29877 硬编码 → 动态空闲口; 全局 tempdir 死亡标记
+    setUp 先清 (跨运行残留会假绿/假红)。"""
+
+    def setUp(self):
+        self.tcp_port = serial_mux.find_free_port()
+        self.marker = os.path.join(tempfile.gettempdir(), "serial_mux",
+                                   f"serve_{self.tcp_port}.failed")
+        if os.path.exists(self.marker):
+            os.remove(self.marker)
+        self.addCleanup(lambda: os.path.exists(self.marker)
+                        and os.remove(self.marker))
+
+    def _server(self):
+        return serial_mux.SerialMuxServer(
+            {"port": "X", "baudrate": 115200, "bytesize": 8,
+             "parity": "none", "stopbits": 1}, tcp_port=self.tcp_port)
 
     def test_read_loop_death_writes_failure_marker(self):
-        server = serial_mux.SerialMuxServer(
-            {"port": "X", "baudrate": 115200, "bytesize": 8,
-             "parity": "none", "stopbits": 1}, tcp_port=29876)
+        server = self._server()
         # 伪造 serial_port: read 抛异常 → 读循环死亡
         class _Boom:
             in_waiting = 0
@@ -84,19 +98,14 @@ class ReadLoopDeathTraceTests(unittest.TestCase):
                 server._serial_read_loop()
         self.assertEqual(m_exit.call_args[0][0], 1,
                          "读循环死亡必须非零退出 (旧版静默 break)")
-        marker = os.path.join(tempfile.gettempdir(), "serial_mux",
-                              "serve_29876.failed")
-        self.assertTrue(os.path.exists(marker),
-                        f"死亡现场未落盘: {marker}")
-        content = open(marker, encoding="utf-8").read()
+        self.assertTrue(os.path.exists(self.marker),
+                        f"死亡现场未落盘: {self.marker}")
+        content = open(self.marker, encoding="utf-8").read()
         self.assertIn("device disconnected", content)
-        os.remove(marker)
 
     def test_normal_stop_does_not_exit_1(self):
         """stop_event 置位 (正常关闭) 不触发死亡路径"""
-        server = serial_mux.SerialMuxServer(
-            {"port": "X", "baudrate": 115200, "bytesize": 8,
-             "parity": "none", "stopbits": 1}, tcp_port=29877)
+        server = self._server()
         class _Quiet:
             in_waiting = 0
             def read(self, n):
@@ -106,9 +115,7 @@ class ReadLoopDeathTraceTests(unittest.TestCase):
         server.server_sock = mock.Mock()
         server.stop_event.set()   # 先置位 → 循环应直接退出, 不走死亡分支
         server._serial_read_loop()   # 不应 os._exit
-        marker = os.path.join(tempfile.gettempdir(), "serial_mux",
-                              "serve_29877.failed")
-        self.assertFalse(os.path.exists(marker))
+        self.assertFalse(os.path.exists(self.marker))
 
 
 import shutil  # noqa: E402
