@@ -115,25 +115,30 @@ def render_release_summary(record: dict) -> str:
 
 
 def write_summary(md: str, out_path: str | None = None) -> dict:
-    """写摘要: GITHUB_STEP_SUMMARY 优先 (追加), 不在/写失败回落 --out
-    (缺省 job-summary.md)。返回 {ok, written, error?}。"""
-    targets = []
+    """写摘要: GITHUB_STEP_SUMMARY 优先 (追加); env 不在场或写失败才回落
+    --out (缺省 job-summary.md)。返回 {ok, written, error?}。"""
+    written, errors = [], []
     gh = os.environ.get("GITHUB_STEP_SUMMARY", "").strip()
     if gh:
-        targets.append(gh)
-    fallback = out_path or "job-summary.md"
-    if fallback not in targets:
-        targets.append(fallback)
-    written, errors = [], []
-    for target in targets:
         try:
-            parent = os.path.dirname(os.path.abspath(target))
+            parent = os.path.dirname(os.path.abspath(gh))
             os.makedirs(parent, exist_ok=True)
-            with open(target, "a", encoding="utf-8") as f:
+            with open(gh, "a", encoding="utf-8") as f:
                 f.write(md)
-            written.append(target)
+            written.append(gh)
         except OSError as e:
-            errors.append(f"{target}: {e}")
+            errors.append(f"{gh}: {e}")
+    if not written:
+        # env 不在场或写失败 → 回落 (GH 成功时不产生多余的本地文件)
+        fallback = out_path or "job-summary.md"
+        try:
+            parent = os.path.dirname(os.path.abspath(fallback))
+            os.makedirs(parent, exist_ok=True)
+            with open(fallback, "a", encoding="utf-8") as f:
+                f.write(md)
+            written.append(fallback)
+        except OSError as e:
+            errors.append(f"{fallback}: {e}")
     return {"ok": bool(written), "written": written, "error": "; ".join(errors)}
 
 
