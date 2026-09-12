@@ -15,6 +15,7 @@ from runtime_common import (  # noqa: F401  (再导出: 保持 mod.X 调用面, 
     load_json_file, load_json_strict, load_skill_section, load_workspace_state,
     load_workspace_state_for_update, now_iso, output_json,
     project_config_file, save_json_file, save_skill_section,
+    state_write_lock,  # F-127 (工单 P1-3): serial_mux 读改写锁
     workspace_root,
 )
 from runtime_common import make_result as _common_make_result  # F-029 T3: serial 适配器转调目标
@@ -347,8 +348,12 @@ def get_mux_info(workspace: str | None = None) -> dict | None:
     if not mux_info:
         return None
     if not is_mux_alive(mux_info):
-        state.pop("serial_mux", None)
-        save_workspace_state(state, workspace)
+        # F-127 (工单 P1-3): 持锁读最新再改——旧版拿上面的快照直接 pop+覆盖,
+        # 会回滚探测窗口内其他工具的写入
+        with state_write_lock(workspace):
+            state = load_workspace_state_for_update(workspace)
+            state.pop("serial_mux", None)
+            save_workspace_state(state, workspace)
         return None
     return mux_info
 

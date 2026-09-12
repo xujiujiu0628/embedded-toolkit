@@ -16,6 +16,9 @@ import json
 import os
 import subprocess
 import sys
+import threading
+import time
+from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -92,13 +95,106 @@ def load_json_strict(path: str | Path) -> dict:
 
 def save_json_file(path: str | Path, data: dict) -> None:
     """原子保存: 先写 .tmp 再 os.replace — 并发读方要么看到旧文件要么看到
-    新文件, 不再有半截 JSON (F-019: 撕裂读曾把下游引入"损坏→清空"链)"""
+    新文件, 不再有半截 JSON (F-019: 撕裂读曾把下游引入"损坏→清空"链)。
+    注意: 原子替换只防撕裂, 不防 read-modify-write 丢更新 (F-127, 见 state_write_lock)。"""
     file_path = Path(path)
     file_path.parent.mkdir(parents=True, exist_ok=True)
     tmp_path = file_path.with_name(f"{file_path.name}.{os.getpid()}.tmp")  # F-023: pid 防双进程互顶
     tmp_path.write_text(json.dumps(data, ensure_ascii=False, indent=2),
                         encoding="utf-8")
     os.replace(tmp_path, file_path)
+
+
+# ── workspace state 读改写锁 (F-127, 工单 P1-3) ────────────────────────
+# 缺陷: serial_mux start 的"取快照 → 起子进程等数秒 → 旧快照整体覆盖"与
+# update_state_entry 的无锁 RMW 互相静默回滚对方写入 (原子替换只防撕裂)。
+# 锁: O_CREAT|O_EXCL lockfile + 超时重试 + finally 删除, 零第三方依赖。
+
+STATE_LOCK_STALE_SECONDS = 30.0
+_STATE_LOCK_THREADS = threading.Lock()  # 同进程线程互斥 (lockfile 只辨进程不辨线程)
+
+
+def _state_lock_path(workspace: str | None = None) -> Path:
+    return workspace_root(workspace) / STATE_DIR_NAME / (STATE_FILE_NAME + ".lock")
+
+
+def _state_lock_is_stale(lock_path: Path) -> bool:
+    """陈旧锁回收判据。
+
+    F-117 教训内化: Windows 上 os.kill(pid, 0) 是 TerminateProcess 不是探活
+    ——这里绝不重蹈。跨进程判死只在 POSIX 用 os.kill(pid,0); Windows 无法廉价
+    探活, 只认超龄 (mtime 超 STATE_LOCK_STALE_SECONDS)。holder==本 pid 不回收
+    (线程共享 pid, 误回收会破坏线程互斥), 同样落到超龄兜底。"""
+    try:
+        holder = int(lock_path.read_text().strip() or "0")
+        mtime = lock_path.stat().st_mtime
+    except (OSError, ValueError):
+        return True  # 空/坏/读不到的锁文件按陈旧处理
+    if holder == os.getpid():
+        return time.time() - mtime > STATE_LOCK_STALE_SECONDS
+    if os.name != "nt":
+        try:
+            os.kill(holder, 0)   # POSIX 真探活 (信号 0 不杀进程)
+            return False
+        except ProcessLookupError:
+            return True
+        except PermissionError:
+            return False         # 活着但属于别人
+        except OSError:
+            return True
+    return time.time() - mtime > STATE_LOCK_STALE_SECONDS
+
+
+@contextmanager
+def state_write_lock(workspace: str | None = None, *, timeout: float = 5.0):
+    """workspace state 读改写的进程+线程互斥锁 (best-effort)。
+
+    两层: 进程内 threading 锁 (lockfile 只辨进程不辨线程) + 跨进程
+    O_EXCL lockfile。等锁超过 timeout → 向 stderr 诚实告警后降级无锁执行
+    ——state.json 是可再生缓存, 工具卡死比丢一次更新更糟。锁文件随 finally 删除。"""
+    lock_path = _state_lock_path(workspace)
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    got_thread = _STATE_LOCK_THREADS.acquire(timeout=timeout)
+    acquired = False
+    try:
+        if not got_thread:
+            print(f"Warning: state.json 写锁等待超时 ({timeout}s), "
+                  f"降级无锁执行, 并发丢更新风险自担 (本进程内): {lock_path}",
+                  file=sys.stderr)
+            yield
+            return
+        deadline = time.time() + timeout
+        while True:
+            try:
+                fd = os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+                try:
+                    os.write(fd, str(os.getpid()).encode())
+                finally:
+                    os.close(fd)
+                acquired = True
+                break
+            except FileExistsError:
+                if _state_lock_is_stale(lock_path):
+                    try:
+                        lock_path.unlink()
+                    except OSError:
+                        pass
+                    continue
+                if time.time() >= deadline:
+                    print(f"Warning: state.json 写锁等待超时 ({timeout}s), "
+                          f"降级无锁执行, 并发丢更新风险自担: {lock_path}",
+                          file=sys.stderr)
+                    break
+                time.sleep(0.05)
+        yield
+    finally:
+        if acquired:
+            try:
+                lock_path.unlink()
+            except OSError:
+                pass
+        if got_thread:
+            _STATE_LOCK_THREADS.release()
 
 
 def output_json(data: dict, *, indent: int = 2) -> None:
@@ -246,10 +342,13 @@ def save_workspace_state(state: dict, workspace: str | None = None, *, serialize
 
 def update_state_entry(category: str, record: dict, workspace: str | None = None, *, serialize=None) -> dict:
     ws = workspace_root(workspace)
-    state = load_workspace_state_for_update(workspace)
-    entry = {**record, "timestamp": record.get("timestamp") or now_iso()}
-    state[category] = serialize(entry, ws) if serialize else entry
-    file_path = save_workspace_state(state, workspace, serialize=serialize)
+    # F-127 (工单 P1-3): 持锁 → 读最新 → 改 → 写。旧版无锁 RMW 与并发写者
+    # 互相静默回滚 (serial_mux 长快照覆写 / 两个工具同时 update 不同 category)。
+    with state_write_lock(workspace):
+        state = load_workspace_state_for_update(workspace)
+        entry = {**record, "timestamp": record.get("timestamp") or now_iso()}
+        state[category] = serialize(entry, ws) if serialize else entry
+        file_path = save_workspace_state(state, workspace, serialize=serialize)
     return {
         "workspace": str(ws),
         "file": str(file_path),

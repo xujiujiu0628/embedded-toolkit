@@ -29,11 +29,24 @@ from serial_runtime import (
     is_mux_alive,
     make_result,
     output_json,
+    state_write_lock,  # F-127 (工单 P1-3): state 读改写锁
 )
 
 DEFAULT_MUX_PORT = 20001
 DEFAULT_VSERIAL_LINK = "/tmp/serial_mux_vserial"
 STATE_KEY = "serial_mux"
+
+
+def _mutate_mux_state(workspace, mutate) -> None:
+    """workspace state 的持锁读改写 (F-127, 工单 P1-3)。
+
+    旧版三处都是"取快照 → (慢副作用: 起子进程等数秒) → 用旧快照整体覆盖
+    落盘"——期间的他人写入被静默回滚。本函数把 读→改→写 收进锁内且只
+    紧邻执行, mutate 拿到的是最新 state。"""
+    with state_write_lock(workspace):
+        state = load_workspace_state_for_update(workspace)
+        mutate(state)
+        save_workspace_state(state, workspace)
 
 
 def find_free_port(start: int = DEFAULT_MUX_PORT) -> int:
@@ -236,9 +249,8 @@ def start_mux(port: str, baudrate: int | None, workspace: str | None, vserial_li
                               "则整个 mux 不可用, Windows 不支持 (解耦为后续增强)"},
         )
 
-    # 检查已运行的 mux (F-019: 后续可能清理保存, 用隔离加载防"损坏→覆写")
-    state = load_workspace_state_for_update(workspace)
-    existing = state.get(STATE_KEY)
+    # 只读检查已运行的 mux (F-019: 后续可能清理保存, 用隔离加载防"损坏→覆写")
+    existing = load_workspace_state_for_update(workspace).get(STATE_KEY)
     if existing:
         if is_mux_alive(existing):
             return make_result(
@@ -249,9 +261,8 @@ def start_mux(port: str, baudrate: int | None, workspace: str | None, vserial_li
                 details=existing,
             )
         else:
-            # 清理僵尸状态
-            state.pop(STATE_KEY, None)
-            save_workspace_state(state, workspace)
+            # 清理僵尸状态 (F-127: 持锁读最新再改, 不回滚他人条目)
+            _mutate_mux_state(workspace, lambda s: s.pop(STATE_KEY, None))
 
     # 获取串口配置
     cfg, sources = get_serial_config(
@@ -372,9 +383,11 @@ def start_mux(port: str, baudrate: int | None, workspace: str | None, vserial_li
         "started_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
     }
 
-    # 保存状态
-    state[STATE_KEY] = mux_info
-    save_workspace_state(state, workspace)
+    # 保存状态 (F-127: 持锁读最新再改——起子进程的数秒窗口里, 其他工具
+    # 写入的条目不再被旧快照整体覆盖回滚)
+    def _store(s):
+        s[STATE_KEY] = mux_info
+    _mutate_mux_state(workspace, _store)
     save_project_config(workspace, {
         "port": real_port,
         "baudrate": cfg["baudrate"],
@@ -394,8 +407,7 @@ def start_mux(port: str, baudrate: int | None, workspace: str | None, vserial_li
 
 def stop_mux(workspace: str | None = None):
     """停止串口多路复用"""
-    state = load_workspace_state_for_update(workspace)
-    mux_info = state.get(STATE_KEY)
+    mux_info = load_workspace_state_for_update(workspace).get(STATE_KEY)  # F-127: 只读检查
 
     if not mux_info:
         return make_result(
@@ -426,9 +438,8 @@ def stop_mux(workspace: str | None = None):
         except OSError:
             pass
 
-    # 清理状态
-    state.pop(STATE_KEY, None)
-    save_workspace_state(state, workspace)
+    # 清理状态 (F-127: 持锁读最新再改)
+    _mutate_mux_state(workspace, lambda s: s.pop(STATE_KEY, None))
 
     if failed:
         return make_result(
@@ -461,8 +472,8 @@ def status_mux(workspace: str | None = None):
 
     alive = is_mux_alive(mux_info)
     if not alive:
-        state.pop(STATE_KEY, None)
-        save_workspace_state(state, workspace)
+        # 清理残留状态 (F-127: 持锁读最新再改, 不回滚他人条目)
+        _mutate_mux_state(workspace, lambda s: s.pop(STATE_KEY, None))
         return make_result(
             success=True,
             action="mux_status",
