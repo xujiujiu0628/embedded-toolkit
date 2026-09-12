@@ -105,7 +105,8 @@ jobs:
       # sim-demo 要真构建 (gcc_build 预检 machine.json 的 make_exe/gcc_path),
       # 与 unittest 金丝雀"永不建 machine.json"的刻意设计不冲突
       - name: Write CI machine.json
-        run: python -c "import json; json.dump({'gcc_path': '/usr/bin', 'make_exe': '/usr/bin/make', 'openocd_exe': 'openocd'}, open('machine.json', 'w'))"
+        run: |
+          python -c "import json; json.dump({'gcc_path': '/usr/bin', 'make_exe': '/usr/bin/make', 'openocd_exe': 'openocd'}, open('machine.json', 'w'))"
       - name: sim-demo end-to-end verify (build → qemu sim → judge)
         run: |
           set -o pipefail
