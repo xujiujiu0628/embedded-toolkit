@@ -952,6 +952,9 @@ def main():
             "description": description,
             "needs_ai_judgement": True,
         }
+        # F-148 ③: record 命名捕获组的提取值 — 顶层 records 数组
+        # ([{id, 组名: 值}, ...] 平铺; 行级明细在 steps.verify.results[*].records)
+        result["records"] = ev["records"]
         # capture 空兜底 (与 legacy 同款归因)
         if capture_empty and flash_ran:
             verification_result["description"] = (

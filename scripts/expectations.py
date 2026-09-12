@@ -153,6 +153,33 @@ def load_expectations(workspace):
         fb_errs = check_forbidden_fields(item)     # F-112: 结构+自杀配置, 与 lint E10/E11 同源
         if fb_errs:
             raise ExpectationError(fb_errs[0][1])  # (code,msg) 元组, 取 msg
+        # F-148 ②: ordered (按序命中) — 结构校验, 默认 False 零回归
+        od = item.get("ordered")
+        if od is not None and not isinstance(od, bool):
+            raise ExpectationError(f"{eid}: ordered 须为布尔")
+        # F-148 ③: record (命名捕获组 → records 数组) — 结构/搭配/互斥/命名组
+        # 四重校验 (与 lint E12 同源; record 与 capture_group/min/max 互斥是
+        # 工单钉死的语义: 前者全量记录, 后者首匹配定界, 二选一)
+        rec = item.get("record")
+        if rec is not None:
+            if (not isinstance(rec, list) or not rec
+                    or not all(isinstance(s, str) and s.strip() for s in rec)):
+                raise ExpectationError(
+                    f"{eid}: record 须为非空字符串数组 (命名捕获组名)")
+            if not ok_pats:
+                raise ExpectationError(f"{eid}: record 须与 patterns 搭配")
+            if item.get("capture_group") is not None \
+                    or item.get("min") is not None \
+                    or item.get("max") is not None:
+                raise ExpectationError(
+                    f"{eid}: record 与 capture_group/min/max 互斥 — 记录值用 "
+                    "record 全量落 records 数组, 定界断言用 capture_group, 二选一")
+            groups = set(re.compile(pats[0]).groupindex)
+            missing = [n for n in rec if n not in groups]
+            if missing:
+                raise ExpectationError(
+                    f"{eid}: record 引用未定义的命名捕获组: {missing} "
+                    f"(patterns[0] 须写 (?P<{missing[0]}>...) 形态)")
     return data["expectations"]
 
 
@@ -175,17 +202,42 @@ def _forbidden_hit(item, output):
 def _expect_matched(item, output):
     """单条期望匹配判定 (spec §3): texts 全命中 且 patterns 全命中;
     capture_group/min/max 数值断言作用于 patterns[0] 首个 match。
-    返回 (matched, 失败细节)。"""
-    missing = [t for t in item.get("texts", []) if t not in output]
-    if missing:
-        return False, f"missing texts: {missing}"
+    返回 (matched, 失败细节)。
+
+    F-148 ②: 条目带 ordered=true 时按序命中 — texts 依次 find(从上一命中
+    之后), patterns 依次 search(从上一 match.end() 之后); 默认 False,
+    既有"任意位置命中"语义零改动。"""
+    ordered = bool(item.get("ordered"))
+    texts = item.get("texts", [])
+    if ordered and texts:
+        pos = 0
+        for t in texts:
+            i = output.find(t, pos)
+            if i < 0:
+                return False, f"ordered: {t!r} 未在位置 {pos} 之后按序命中"
+            pos = i + len(t)
+    else:
+        missing = [t for t in texts if t not in output]
+        if missing:
+            return False, f"missing texts: {missing}"
     first = None
-    for j, pat in enumerate(item.get("patterns", [])):
-        m = re.search(pat, output)
-        if not m:
-            return False, f"pattern 未命中: {pat!r}"
-        if j == 0:
-            first = m
+    if ordered and item.get("patterns"):
+        pos = 0
+        for j, pat in enumerate(item.get("patterns", [])):
+            m = re.compile(pat).search(output, pos)
+            if not m:
+                return False, (f"ordered: pattern {pat!r} 未在位置 {pos} 之后"
+                               "按序命中")
+            if j == 0:
+                first = m
+            pos = m.end()
+    else:
+        for j, pat in enumerate(item.get("patterns", [])):
+            m = re.search(pat, output)
+            if not m:
+                return False, f"pattern 未命中: {pat!r}"
+            if j == 0:
+                first = m
     cg = item.get("capture_group")
     if cg is not None:
         try:
@@ -201,6 +253,16 @@ def _expect_matched(item, output):
     return True, ""
 
 
+def _extract_records(item, output):
+    """F-148 ③: record 命名捕获组 — patterns[0] 全量匹配, 每次匹配一行
+    {组名: 值} 记录 (字符串原样, 不做数值整形)。无 record 键返回 None。"""
+    names = item.get("record")
+    if not names:
+        return None
+    return [{n: m.group(n) for n in names}
+            for m in re.finditer(item["patterns"][0], output)]
+
+
 def evaluate_expectations(output, expectations):
     """四态判定纯函数 (spec §4): PASS=匹配&非xfail; XFAIL=未匹配&xfail;
     XPASS=匹配&xfail(严格红); FAIL=未匹配&非xfail。
@@ -209,14 +271,34 @@ def evaluate_expectations(output, expectations):
     F-112 负断言优先律: forbidden 命中 → 无条件 FAIL (先于正向求值,
     亦先于 XPASS/XFAIL——禁止后果出现时, 无论该条目是否实现/是否欠条,
     都不存在"符合预期"的解释空间)。
+
+    F-148 ① 行终止符语义 (防早判): 判定发生在采集窗超时后, 全文 (含
+    未终止尾行) 都参与匹配——"未终止的值超时才判"。命中若仅存在于未终止
+    尾行 (存在已终止前缀而命中避开它), 结果行标注 `unterminated_hit:
+    true`: 值可能在窗口关闭瞬间被截断 (如 "mv=319" 实为 3192 的前缀),
+    消费方 (CI/agent) 对数值断言应谨慎采信; 判定状态不变, 既有清单零
+    回归。全文无任何终止行时不标注 (无相对信号可归因)。要消除标注,
+    让固件输出行终止符 (printf 带 \\n)。
+
+    F-148 ③: 带 record 的条目, 结果行附 `records` 数组 (patterns[0] 每次
+    匹配一行 {组名: 值}); 返回值聚合 `records` = [{id, 组名: 值}, ...] 平铺。
     """
     results = []
+    records = []
+    committed = output[:output.rfind("\n") + 1]   # 已终止前缀 (含末 \\n)
     for item in expectations:
         hit = _forbidden_hit(item, output)
         if hit is not None:
             results.append({"id": item["id"], "status": "fail", "detail": hit})
             continue
         ok, detail = _expect_matched(item, output)
+        # F-148 ①: 存在已终止前缀、而命中避开了它 = 值落在未终止尾行。
+        # 全文无任何终止行时不标注 — 相对信号才有截断归因力 (半主机收尾
+        # 本就常无换行), 也让既有清单零回归。
+        unterminated = False
+        if ok and committed:
+            ok_committed, _ = _expect_matched(item, committed)
+            unterminated = not ok_committed
         xfail = bool(item.get("xfail"))
         if ok and not xfail:
             status = "pass"
@@ -229,7 +311,14 @@ def evaluate_expectations(output, expectations):
         r = {"id": item["id"], "status": status}
         if detail and status in ("fail", "xpass"):
             r["detail"] = detail
+        if unterminated:
+            r["unterminated_hit"] = True
+        entries = _extract_records(item, output)
+        if entries is not None:
+            r["records"] = entries
+            records.extend({"id": item["id"], **e} for e in entries)
         results.append(r)
     verdict = "ok" if all(r["status"] in ("pass", "xfail") for r in results) else "fail"
     return {"results": results, "verdict": verdict,
-            "xpass_ids": [r["id"] for r in results if r["status"] == "xpass"]}
+            "xpass_ids": [r["id"] for r in results if r["status"] == "xpass"],
+            "records": records}

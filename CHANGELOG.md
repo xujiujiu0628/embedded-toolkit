@@ -81,6 +81,32 @@
   退出码; 全量 762 例仅本机 WSL 缺席的 9 例 hooks 环境失败 (CI ubuntu
   正常)。
   （zc/hardware @ 本条 commit，合流待协调）
+- **F-148 (T4/N-2) 期望判定三件套 — 行终止符防早判 / ordered 按序 / record 命名捕获组，feat+test+docs，expectations.py / expectations_lint.py / verify.py**:
+  ① **行终止符语义 (防早判)**: "未终止的值超时才判"——判定发生在采集窗
+  超时后, 全文 (含未终止尾行) 参与匹配; 当存在已终止前缀而命中避开它
+  (值只落在未终止尾行) 时, 结果行标注 `unterminated_hit: true` (值可能
+  在窗口关闭瞬间被截断, "mv=319" 实为 3192 前缀, 数值断言消费方谨慎采信),
+  **状态不变零回归** (全文无任何终止行时不标注——半主机收尾常无换行, 无
+  相对信号可归因; 该语义取舍登记, 主控可否决)。② **ordered: true 按序
+  命中**: texts 依次 find(自上一命中末尾)、patterns 依次
+  re.search(output, pos)(自上一 match.end()); 默认 False 既有"任意位置
+  命中"逐字节不变; capture_group 数值断言仍作用于 patterns[0] 首个
+  match。③ **record 命名捕获组**: patterns[0] 全量匹配 (finditer), 每次
+  匹配一行 {组名: 值} — 行级 results[*].records + verify 顶层 `records`
+  平铺数组 ([{id, 组名: 值}, ...]); 与 capture_group/min/max **互斥**
+  (全量记录 vs 首匹配定界, 二选一), loader 四重校验 (非空字符串数组/
+  仅与 patterns 搭配/互斥/命名组须在 patterns[0] 定义) 抛
+  ExpectationError, lint 新增 **E12** (record 同判据) 与 **E13** (ordered
+  须为布尔), 判据单一事实源不另起分叉。
+  测试 `tests/test_expectations_f148.py` 17 例 (独立文件—避免与 P2-3
+  双写收敛的共享测试冲突面): 尾行标注/无终止行不标注/截断值仍按数值边界
+  fail/标注不翻四态 (含 xfail+尾行命中仍 XPASS 红)/ordered 文本与正则
+  顺序成败/无 ordered 键零回归/ordered×capture_group/records 行级+顶层
+  平铺/多命名组/无命中空数组/loader-lint 校验×6 (先红后绿);
+  test_verify_expectations 的 master 基线钉按新增 records 聚合键同步
+  (共享测试文件改动登记)。全量 782 例仅本机 WSL 缺席的 9 例 hooks 环境
+  失败 (CI ubuntu 正常)。
+  （zc/hardware @ 本条 commit，合流待协调）
 
 ## Unreleased — 2026-09-12（F-117~ 第三方审查工单第一批 P0 逐条清账）
 
