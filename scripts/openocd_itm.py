@@ -9,9 +9,7 @@
 from __future__ import annotations
 
 import argparse
-import signal
 import socket
-import subprocess
 import sys
 import time
 from pathlib import Path
@@ -22,6 +20,9 @@ if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
 from openocd_runtime import (  # noqa: E402
+    start_openocd_server,  # noqa: F401  (F-123 再导出: 本地逐字节副本删除, 调用面不变)
+    cleanup,  # noqa: F401  (F-123 再导出, 调用面不变)
+    wait_itm_ready,  # noqa: F401  (F-123 本地 wait_server_ready 收编后的规范名)
     default_config_path,
     emit_stream_record,
     get_state_entry,
@@ -60,6 +61,8 @@ def build_openocd_cmd(
     pin_freq: str = "",
     itm_ports: list[str] | None = None,
 ) -> list[str]:
+    """itm 扩展变体 (F-029 真分叉裁决保留): tpiu/traceclk/pin_freq/itm_ports
+    是 ITM 特有需求, 不并入 runtime 的通用 build_openocd_cmd。"""
     cmd = [exe]
     if search:
         cmd.extend(["-s", search])
@@ -86,65 +89,10 @@ def build_openocd_cmd(
         cmd.extend(["-c", "itm ports on"])
     return cmd
 
-
-def start_openocd_server(cmd: list[str]) -> subprocess.Popen:
-    popen_kwargs = hidden_subprocess_kwargs()
-    creationflags = subprocess.CREATE_NEW_PROCESS_GROUP if sys.platform == "win32" else 0
-    if popen_kwargs.get("creationflags"):
-        creationflags |= popen_kwargs["creationflags"]
-    return subprocess.Popen(
-        cmd,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        creationflags=creationflags,
-        startupinfo=popen_kwargs.get("startupinfo"),
-    )
-
-
-def wait_server_ready(proc: subprocess.Popen, trace_port: int, timeout: int = 15) -> tuple[bool, list[str]]:
-    started = time.time()
-    lines: list[str] = []
-    ready = False
-    ready_deadline = 0.0
-    critical_keywords = [
-        "error:",
-        "failed to start adapter's trace",
-        "not supported by the device",
-    ]
-    while time.time() - started < timeout:
-        if proc.poll() is not None:
-            lines.extend(proc.stderr.read().splitlines())
-            return False, lines
-        line = proc.stderr.readline()
-        if not line:
-            time.sleep(0.1)
-            if ready and time.time() >= ready_deadline:
-                return True, lines
-            continue
-        stripped = line.strip()
-        lines.append(stripped)
-        lowered = stripped.lower()
-        if any(keyword in lowered for keyword in critical_keywords):
-            return False, lines
-        if f"port {trace_port}" in lowered or "trace data" in lowered:
-            ready = True
-            ready_deadline = time.time() + 1.0
-    return ready, lines
-
-
-def cleanup(proc: subprocess.Popen | None) -> None:
-    if proc and proc.poll() is None:
-        try:
-            if sys.platform == "win32":
-                proc.terminate()
-            else:
-                proc.send_signal(signal.SIGTERM)
-            proc.wait(timeout=5)
-        except (subprocess.TimeoutExpired, OSError):
-            proc.kill()
+# F-123 (工单 P0-7): 本地 start_openocd_server (与 runtime 逐字节相同) 已删,
+# wait_server_ready 收编为 openocd_runtime.wait_itm_ready (readline 阻塞换
+# daemon 排空线程, timeout 真生效; grace/critical/全行契约原样保留),
+# cleanup 收编为 openocd_runtime.cleanup。
 
 
 def _state_lookup(state: dict) -> dict:
@@ -365,7 +313,7 @@ def main() -> None:
                 itm_ports=args.itm_ports,
             )
         )
-        ready, lines = wait_server_ready(proc, args.trace_port)
+        ready, lines = wait_itm_ready(proc, args.trace_port)
         if not ready:
             message = "; ".join(line for line in lines if line) or "OpenOCD ITM 初始化失败"
             result = make_result(

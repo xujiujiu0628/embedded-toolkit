@@ -8,9 +8,7 @@ import argparse
 import json
 import os
 import re
-import signal
 import socket
-import subprocess
 import sys
 import time
 from pathlib import Path
@@ -23,6 +21,9 @@ if str(SCRIPT_DIR) not in sys.path:
 from openocd_runtime import (
     resolve_openocd_params,  # noqa: F401  (F-091 再导出, 调用面不变)
     start_openocd_server,  # noqa: F401  (F-091 再导出, 调用面不变)
+    build_openocd_cmd,  # noqa: F401  (F-123 再导出, 调用面不变)
+    cleanup_proc,  # noqa: F401  (F-123 再导出=runtime cleanup 别名, 调用面不变)
+    wait_server_ready,  # noqa: F401  (F-123 再导出, 调用面不变)
     hidden_subprocess_kwargs,
     load_project_config,
     save_project_config,
@@ -32,81 +33,9 @@ from openocd_runtime import (
     is_missing,
 )
 
-
-# ── OpenOCD 服务器启动（复用 openocd_gdb.py 模式） ──────────────────
-
-def build_openocd_cmd(exe: str, board: str = "", interface: str = "", target: str = "",
-                      search: str = "", adapter_speed: str = "", transport: str = "",
-                      gdb_port: int = 3333, telnet_port: int = 4444) -> list:
-    """构建 OpenOCD 命令行"""
-    cmd = [exe]
-    if search:
-        cmd.extend(["-s", search])
-    if board:
-        cmd.extend(["-f", board])
-    else:
-        if interface:
-            cmd.extend(["-f", interface])
-        if target:
-            cmd.extend(["-f", target])
-    if adapter_speed:
-        cmd.extend(["-c", f"adapter speed {adapter_speed}"])
-    if transport:
-        cmd.extend(["-c", f"transport select {transport}"])
-    cmd.extend(["-c", f"gdb_port {gdb_port}"])
-    cmd.extend(["-c", f"telnet_port {telnet_port}"])
-    return cmd
-
-
-def wait_server_ready(proc: subprocess.Popen, telnet_port: int, timeout: int = 15) -> tuple:
-    """等待 OpenOCD 就绪，返回 (ready, errors)"""
-    start = time.time()
-    errors = []
-    ready = False
-    while time.time() - start < timeout:
-        if proc.poll() is not None:
-            remaining = proc.stderr.read()
-            for line in remaining.splitlines():
-                if "Error:" in line:
-                    errors.append(line.strip())
-            return False, errors
-        line = proc.stderr.readline()
-        if not line:
-            time.sleep(0.1)
-            continue
-        line = line.strip()
-        if "Error:" in line:
-            errors.append(line)
-        if f"Listening on port {telnet_port}" in line or "listening on" in line.lower():
-            ready = True
-            break
-
-    if not ready:
-        return False, errors
-
-    critical_keywords = [
-        "open failed", "init mode failed", "no device found",
-        "cannot connect", "error connecting dp", "examination failed",
-        "failed to read memory", "failed to write memory",
-        "cannot read idr", "polling failed",
-    ]
-    critical_errors = [e for e in errors if any(k in e.lower() for k in critical_keywords)]
-    if critical_errors:
-        return False, critical_errors
-    return True, errors
-
-
-def cleanup_proc(proc: subprocess.Popen):
-    """清理 OpenOCD 进程"""
-    if proc and proc.poll() is None:
-        try:
-            if sys.platform == "win32":
-                proc.terminate()
-            else:
-                proc.send_signal(signal.SIGTERM)
-            proc.wait(timeout=5)
-        except (subprocess.TimeoutExpired, OSError):
-            proc.kill()
+# F-123 (工单 P0-7): 本地 build_openocd_cmd / wait_server_ready /
+# cleanup_proc 三份拷贝已删除, 统一用 openocd_runtime 单实现
+# (readline 阻塞换 daemon 排空线程, timeout 真生效)。
 
 
 # ── Telnet 连接层 ──────────────────────────────────────────────
