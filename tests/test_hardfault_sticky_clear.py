@@ -15,11 +15,9 @@ r"""F-109: SCB CFSR/HFSR 粘滞位"读后清除"回归钉。
   - 结论: 工具侧"读→报告→W1C 清→复核 residual"; BFAR/MMFAR 普通 R/W
     不清 (VALID 位清后其值即失效)。固件 handler 不写清位——保位留现场。
 """
-import io
 import os
 import sys
 import unittest
-from contextlib import redirect_stdout
 from unittest import mock
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(

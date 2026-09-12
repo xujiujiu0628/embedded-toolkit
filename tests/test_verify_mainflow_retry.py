@@ -92,11 +92,6 @@ class VerifyMainflowRetryTests(unittest.TestCase):
             "metrics": {"errors": 0, "warnings": 0},
             "details": {"log_file": "build.log", "hex_file": HEX_FILE},
         }
-        analyze_result = {
-            "status": "ok",
-            "summary": {"errors": 0, "warnings": 0, "matched": 0,
-                        "unmatched": 0},
-        }
         flash_iter = iter(flash_results)
 
         def _flash(*a, **k):

@@ -74,7 +74,6 @@ class SerialMonitorFilterTests(unittest.TestCase):
         self.assertFalse(em)
 
     def test_pass_through_prints(self):
-        import re
         buf = io.StringIO()
         with redirect_stdout(buf):
             em = serial_monitor.emit_line("hello", self._cfg(),

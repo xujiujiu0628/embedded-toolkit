@@ -24,7 +24,9 @@ from unittest import mock
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(
     os.path.abspath(__file__))), "scripts"))
 
-import wb_runtime, openocd_runtime, serial_runtime  # noqa: E402
+import wb_runtime
+import openocd_runtime
+import serial_runtime  # noqa: E402
 
 RUNTIMES = [wb_runtime, openocd_runtime, serial_runtime]
 WB_SER = "wb/serial"

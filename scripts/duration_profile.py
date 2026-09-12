@@ -16,7 +16,6 @@ import argparse
 import json
 import os
 import sys
-import statistics
 
 
 # 已知 step 名 (与 verify.py result.steps 对应)

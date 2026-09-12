@@ -26,7 +26,6 @@ archive 路径, 唤起 keil_build / keil_analyze 需手动 cp 副本到仓内。
 """
 
 import argparse
-import hashlib
 import json
 import os
 import re
@@ -50,15 +49,15 @@ def _openocd_exe() -> str:
     return load_machine()["openocd_exe"]
 
 from runtime_common import output_json  # noqa: E402  (F-041: doctor --json 复用共享层)
-from openocd_runtime import swd_probe  # noqa: E402  (F-041: SWD 探测与 release G0.5 同源)
-from expectations import (ExpectationError, contract_hashes,  # noqa: E402  (F-055: 拆分件再导出, verify.X 调用面不变)
+from openocd_runtime import swd_probe  # noqa: E402,F401  (F-041: SWD 探测与 release G0.5 同源)
+from expectations import (ExpectationError, contract_hashes,  # noqa: E402,F401  (F-055: 拆分件再导出, verify.X 调用面不变)
                           evaluate_expectations, load_expectations,
                           _expect_matched, check_forbidden_fields, _forbidden_hit)
 from capture_rtt import step_capture_rtt as _step_capture_rtt  # noqa: E402  (F-056: 拆分件再导出, 旧私有名保持——3 处测试钉兼容)
 from physical_gate import step_physical_gate  # noqa: E402  (F-057: 拆分件再导出, 同名同签名)
-from doctor import (doctor_report, fixture_health,  # noqa: E402  (F-058: 拆分件再导出, 调用面不变)
+from doctor import (doctor_report, fixture_health,  # noqa: E402,F401  (F-058: 拆分件再导出, 调用面不变)
                     _print_doctor, _detect_default_branch, _fixture_main_sha)
-from checkpoint_ledger import (CHECKPOINT_STATUSES, _git_head,  # noqa: E402  (F-059: 拆分件再导出, 调用面不变)
+from checkpoint_ledger import (CHECKPOINT_STATUSES, _git_head,  # noqa: E402,F401  (F-059: 拆分件再导出, 调用面不变)
                                record_checkpoint)
 from failure_context import (_filter_capture_lines,  # noqa: E402  (F-060: 拆分件再导出, 调用面不变)
                               resolve_capture_timeout, _save_failure_context)

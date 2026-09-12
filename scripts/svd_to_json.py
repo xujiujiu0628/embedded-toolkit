@@ -49,7 +49,6 @@ def parse_dim_element_group(reg_elem):
         return [(None, None)]
 
     dim_count = int(dim.text, 0) if dim.text else 1
-    incr = int(dim_increment.text, 0) if dim_increment.text else 0
 
     indices = []
     if dim_index_text is not None and dim_index_text.text:
@@ -82,7 +81,6 @@ def resolve_derived_from(reg_elem, all_registers, peripheral_name):
         return reg_elem
 
     # Merge: child elements override parent
-    merged = base.copy() if hasattr(base, 'copy') else base
     # For simplicity, just copy fields if child has none
     if reg_elem.find('fields') is None and base.find('fields') is not None:
         # Deep copy fields from base

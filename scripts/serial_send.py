@@ -4,7 +4,6 @@ import argparse
 import json
 import sys
 import time
-from pathlib import Path
 
 from serial_runtime import (
     get_serial_config,

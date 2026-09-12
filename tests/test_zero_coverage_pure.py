@@ -5,14 +5,10 @@
 全部纯逻辑或临时文件; 唯一的真实数据读取是 data/stm32f103-ref.json 冒烟
 (只读, 不触硬件)。
 """
-import json
 import os
-import shutil
 import sys
-import tempfile
 import unittest
 import xml.etree.ElementTree as ET
-from unittest import mock
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(
     os.path.abspath(__file__))), "scripts"))
