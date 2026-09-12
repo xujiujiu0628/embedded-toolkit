@@ -59,6 +59,16 @@ ERROR_PATTERNS = [
 
 ALL_ACTIONS = ["probe", "flash", "erase", "reset", "reset-init", "targets", "flash-banks", "adapter-info", "raw"]
 
+# ── v2 T8 (F-155) N-3: 构造性标记法 ─────────────────────────────────────
+# OpenOCD 克隆适配器偶发打印吓人文案 (Error:/Warn: 行) 但脚本实际完整跑完
+# ——靠"退出码 + 措辞嗅探"判成败两头吃亏: fail-open 误判成功, 措辞过敏误判
+# 失败。改为构造性证据: flash/erase 命令串尾追加 `echo MARK_ACTION_DONE`,
+# 只有脚本真跑到底标记才在场。成功 = exit 0 且标记在场; 措辞行进
+# backend_warnings 留痕, 不改判。
+ACTION_DONE_MARKER = "MARK_ACTION_DONE"
+_ACTION_DONE_CMD = f"echo {ACTION_DONE_MARKER}"
+_WARNING_LINE_RE = re.compile(r"\b(Error|Warn(?:ing)?)\s*:", re.I)
+
 # F-123 (工单 P0-7): 本地 build_openocd_cmd 副本已删除, 统一 import
 # openocd_runtime.build_openocd_cmd (无端口调用传 gdb_port=telnet_port=None,
 # 输出与旧副本逐元素一致)。
@@ -241,6 +251,10 @@ def run_openocd(
     # flash+capture 段互斥, 防两路 agent/两份 clone 同时抢探针。冲突 fail-fast
     # 返回 resource_busy (error 文本点名持有者); 其余动作 (probe/reset/targets)
     # 只读, 不抢锁。
+    marker_expected = action in ("flash", "erase")
+    if marker_expected:
+        # v2 T8 (F-155) N-3: 串尾构造性标记 — 只有脚本跑到底才在场
+        action_commands = list(action_commands) + [_ACTION_DONE_CMD]
     lease = None
     if action in ("flash", "erase"):
         lease = hw_lease.acquire(purpose=f"openocd_run {action}",
@@ -300,6 +314,11 @@ def run_openocd(
 
     details = {"board": board, "interface": interface, "target": target, "elapsed_ms": elapsed_ms, "returncode": proc.returncode}
     details.update({key: value for key, value in parsed.items() if key != "raw"})
+    # N-3: 失败措辞行留痕不改判 — 克隆适配器的吓人文案与真实失败解耦
+    backend_warnings = [ln.strip() for ln in combined.splitlines()
+                        if _WARNING_LINE_RE.search(ln)]
+    if backend_warnings:
+        details["backend_warnings"] = backend_warnings[-10:]
     summary = f"{action} 成功"
     if action == "flash" and parsed.get("speed_kbps"):
         summary = f"flash 成功，{parsed['bytes_written']} bytes @ {parsed['speed_kbps']} KiB/s"
@@ -325,6 +344,17 @@ def run_openocd(
                 "error": {"code": "command_failed", "message": error_lines[-1].strip() if error_lines else f"执行返回非零退出码: {proc.returncode}"},
                 "details": details,
             }
+    elif marker_expected and ACTION_DONE_MARKER not in combined:
+        # N-3: exit 0 但串尾标记缺席 = OpenOCD 提前退出, 脚本没跑完 —
+        # 不许按成功入账 (构造性证据优先于退出码)
+        return {
+            "status": "error",
+            "action": action,
+            "error": {"code": "action_incomplete",
+                      "message": ("构造性标记缺席 — OpenOCD exit 0 但动作脚本未跑完 "
+                                  "(串尾 echo 未出现), 拒绝按成功入账")},
+            "details": details,
+        }
 
     return {"status": status, "action": action, "summary": summary, "details": details}
 
