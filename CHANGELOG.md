@@ -59,6 +59,23 @@
   契约本就含 BDTR 成员，`pwm-tim1-apb2` 用例即覆盖 TIM1 输出。templates/docs
   无引用（grep 零命中）。测试 `GenPwmTests` +2 例（TIM1 有 MOE / TIM2~4 反向
   钉无 BDTR，先红 1 后绿）+ 烟测 67 例全绿（本机 arm-none-eabi-gcc 在场实跑）。
+- **F-123 处置（工单 P0-7 wait_server_ready 阻塞 readline 使 timeout 失效 + 长会话不排空 stderr，fix+refactor+test，openocd_runtime/gdb/telnet/itm/run）**:
+  三份拷贝（gdb/telnet/itm 的 wait_server_ready）同病——`proc.stderr.readline()`
+  在"进程存活但沉默"时无限阻塞，外层 while-timeout 永不可达（timeout 形同虚设）;
+  且 gdb server 常驻与 itm 主循环 ready 后无人再读 stderr，OpenOCD 刷日志填满
+  管道缓冲（~64KB）后自身阻塞→全链死锁。收编为 openocd_runtime 单实现（正解
+  同 capture_rtt daemon 排空先例）: `_start_stderr_pump` daemon 线程把 stderr
+  灌入有界队列（满丢最旧保活性），主循环 `q.get(timeout=0.1)` 非阻塞轮询墙钟
+  真超时; `wait_server_ready`（gdb/telnet 口径）与 `wait_itm_ready`（itm 口径:
+  全行收集/critical 即时否决/1s grace——契约原样保留）分立，itm 的 error: 词表
+  与 server 版不同属真分叉不强并。同批收编 `build_openocd_cmd`（gdb/telnet/run
+  三副本→参数化单实现, run 传 gdb_port=telnet_port=None 关端口行输出与旧副本
+  逐元素一致; itm 扩展版 F-029 裁决保留本地）、`cleanup`（gdb/itm 逐字副本 +
+  telnet cleanup_proc→单实现+别名）、itm 的 start_openocd_server 第三份逐字副本。
+  四入口本地定义全删改 import 再导出。测试: 新 `tests/test_openocd_startup_wait.py`
+  10 例（timeout 真生效×2 / server 口径语义×4 / itm 口径×3 / 真子进程 3.2MB 灌
+  stderr 排空不死锁×1——末项即"长会话死锁"的直接回归钉）+ `test_openocd_dedup.py`
+  补三件套身份钉与 itm 入 start_server 钉名单。
 
 ## Unreleased — 2026-09-10（F-103~F-107 P3 清账第一轮：边界报错泛化 / 迁移告警 / ID 唯一性 / 过滤收窄 / 文档回填）
 

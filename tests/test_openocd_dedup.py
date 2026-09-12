@@ -34,10 +34,30 @@ class ReExportIdentityTests(unittest.TestCase):
                               openocd_runtime.resolve_openocd_params)
 
     def test_start_server_identity_across_consumers(self):
-        for mod in (openocd_gdb, openocd_telnet):
+        # F-123: itm 本地副本删除后补入钉名单 (工单 P0-7 验收)
+        import openocd_itm
+        for mod in (openocd_gdb, openocd_telnet, openocd_itm):
             with self.subTest(mod=mod.__name__):
                 self.assertIs(mod.start_openocd_server,
                               openocd_runtime.start_openocd_server)
+
+    def test_startup_trio_identity_across_consumers(self):
+        """F-123 (工单 P0-7): build_openocd_cmd / wait / cleanup 收编身份钉。
+        itm 的 build_openocd_cmd 是真分叉 (tpiu/trace 扩展, F-029 裁决保留),
+        只钉 wait/cleanup; gdb/telnet 三件套全钉。"""
+        import openocd_itm
+        for mod in (openocd_gdb, openocd_telnet):
+            with self.subTest(mod=mod.__name__):
+                self.assertIs(mod.build_openocd_cmd,
+                              openocd_runtime.build_openocd_cmd)
+                self.assertIs(mod.wait_server_ready,
+                              openocd_runtime.wait_server_ready)
+                self.assertIs(mod.cleanup if mod is openocd_gdb else mod.cleanup_proc,
+                              openocd_runtime.cleanup)
+        self.assertIs(openocd_itm.cleanup, openocd_runtime.cleanup)
+        self.assertIs(openocd_itm.wait_itm_ready, openocd_runtime.wait_itm_ready)
+        self.assertIsNot(openocd_itm.build_openocd_cmd,
+                         openocd_runtime.build_openocd_cmd)
 
     def test_itm_variant_not_unified(self):
         """itm 的扩展变体保留 (F-029 真分叉裁决): 有独立参数但主五参同源"""

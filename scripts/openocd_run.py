@@ -17,6 +17,7 @@ if str(ROOT_DIR) not in sys.path:
 
 from openocd_runtime import (  # noqa: E402
     resolve_openocd_params,  # noqa: F401  (F-091 再导出, 调用面不变)
+    build_openocd_cmd,  # noqa: F401  (F-123 再导出; 无端口调用传 gdb_port=None)
     build_artifacts,
     default_config_path,
     get_state_entry,
@@ -62,34 +63,9 @@ ERROR_PATTERNS = [
 
 ALL_ACTIONS = ["probe", "flash", "erase", "reset", "reset-init", "targets", "flash-banks", "adapter-info", "raw"]
 
-
-def build_openocd_cmd(
-    exe: str,
-    board: str = "",
-    interface: str = "",
-    target: str = "",
-    search: str = "",
-    adapter_speed: str = "",
-    transport: str = "",
-    extra_commands: list[str] | None = None,
-) -> list[str]:
-    cmd = [exe]
-    if search:
-        cmd.extend(["-s", search])
-    if board:
-        cmd.extend(["-f", board])
-    else:
-        if interface:
-            cmd.extend(["-f", interface])
-        if target:
-            cmd.extend(["-f", target])
-    if adapter_speed:
-        cmd.extend(["-c", f"adapter speed {adapter_speed}"])
-    if transport:
-        cmd.extend(["-c", f"transport select {transport}"])
-    for command in extra_commands or []:
-        cmd.extend(["-c", command])
-    return cmd
+# F-123 (工单 P0-7): 本地 build_openocd_cmd 副本已删除, 统一 import
+# openocd_runtime.build_openocd_cmd (无端口调用传 gdb_port=telnet_port=None,
+# 输出与旧副本逐元素一致)。
 
 
 def infer_mass_erase_command(target: str, board: str) -> str:
@@ -275,6 +251,9 @@ def run_openocd(
                 search=search,
                 adapter_speed=adapter_speed,
                 transport=transport,
+                # F-123: runtime 版收编; run 口径从不带端口行, 显式 None 关闭
+                gdb_port=None,
+                telnet_port=None,
                 extra_commands=action_commands,
             ),
             capture_output=True,
