@@ -21,7 +21,6 @@ from openocd_runtime import (  # noqa: E402
     wait_server_ready,  # noqa: F401  (F-123 再导出, 调用面不变)
     build_artifacts,
     default_config_path,
-    get_state_entry,
     is_missing,
     load_json_file,
     load_project_config,
@@ -34,6 +33,7 @@ from openocd_runtime import (  # noqa: E402
     parameter_context,
     resolve_param,
     save_project_config,
+    state_lookup,
     update_state_entry,
     workspace_root,
 )
@@ -105,23 +105,8 @@ def _legacy_mode() -> bool:
     return not (len(sys.argv) > 1 and sys.argv[1] in GDB_ACTIONS)
 
 
-def _state_lookup(state: dict) -> dict:
-    last_build = get_state_entry(state, "last_build")
-    last_flash = get_state_entry(state, "last_flash")
-    last_debug = get_state_entry(state, "last_debug")
-    artifacts = last_build.get("artifacts", {})
-    return {
-        "board": last_debug.get("board") or last_flash.get("board"),
-        "interface": last_debug.get("interface") or last_flash.get("interface"),
-        "target": last_debug.get("target") or last_flash.get("target"),
-        "search": last_debug.get("search"),
-        "adapter_speed": last_debug.get("adapter_speed") or last_flash.get("adapter_speed"),
-        "transport": last_debug.get("transport") or last_flash.get("transport"),
-        "gdb_port": last_debug.get("gdb_port"),
-        "telnet_port": last_debug.get("telnet_port"),
-        "elf_file": last_build.get("debug_file") or last_build.get("elf_file") or artifacts.get("debug_file"),
-        "debug_file": last_build.get("debug_file") or artifacts.get("debug_file"),
-    }
+# F-156 (P2-1): _state_lookup 收编 openocd_runtime.state_lookup 超集单实现
+_state_lookup = state_lookup
 
 
 def _summary(command: str, parsed: dict) -> str:

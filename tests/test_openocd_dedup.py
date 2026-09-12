@@ -75,6 +75,15 @@ class ReExportIdentityTests(unittest.TestCase):
             self.assertIn(key, out)
 
 
+    def test_state_lookup_identity_across_consumers(self):
+        """F-156 (P2-1): 四入口 last_* 状态映射收编 openocd_runtime 超集"""
+        import openocd_itm
+        for mod in (openocd_gdb, openocd_run, openocd_telnet, openocd_itm):
+            with self.subTest(mod=mod.__name__):
+                self.assertIs(mod._state_lookup,
+                              openocd_runtime.state_lookup)
+
+
 class ResolveParamsSemanticsTests(unittest.TestCase):
     """行为钉: canonical 实现的三级优先语义"""
 

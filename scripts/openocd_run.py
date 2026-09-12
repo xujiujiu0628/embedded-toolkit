@@ -17,7 +17,6 @@ from openocd_runtime import (  # noqa: E402
     build_openocd_cmd,  # noqa: F401  (F-123 再导出; 无端口调用传 gdb_port=None)
     build_artifacts,
     default_config_path,
-    get_state_entry,
     hidden_subprocess_kwargs,
     load_json_file,
     load_project_config,
@@ -30,6 +29,7 @@ from openocd_runtime import (  # noqa: E402
     parameter_context,
     resolve_param,
     save_project_config,
+    state_lookup,
     update_state_entry,
     workspace_root,
 )
@@ -359,20 +359,8 @@ def run_openocd(
     return {"status": status, "action": action, "summary": summary, "details": details}
 
 
-def _state_lookup(state: dict) -> dict:
-    last_build = get_state_entry(state, "last_build")
-    last_flash = get_state_entry(state, "last_flash")
-    last_debug = get_state_entry(state, "last_debug")
-    artifacts = last_build.get("artifacts", {})
-    return {
-        "board": last_debug.get("board") or last_flash.get("board"),
-        "interface": last_debug.get("interface") or last_flash.get("interface"),
-        "target": last_debug.get("target") or last_flash.get("target"),
-        "search": last_debug.get("search"),
-        "adapter_speed": last_debug.get("adapter_speed") or last_flash.get("adapter_speed"),
-        "transport": last_debug.get("transport") or last_flash.get("transport"),
-        "flash_file": last_build.get("flash_file") or artifacts.get("flash_file"),
-    }
+# F-156 (P2-1): _state_lookup 收编 openocd_runtime.state_lookup 超集单实现
+_state_lookup = state_lookup
 
 
 def main() -> None:
