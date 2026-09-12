@@ -73,6 +73,32 @@
   错误态断言与 hex json-mode 假 stdout 随收编更新 (共享测试文件改动
   记账); 全量 840 例仅 9 例本机 WSL 环境失败 (CI ubuntu 正常)。
   （zc/hardware @ 本条 commit，待审）
+- **F-157 (T10b/P2-3) 双源收敛 — 判据/时间戳/哈希/原子写/咒语五族归一，refactor+test，expectations.py / expectations_lint.py / wb_common.py / runtime_common.py / verify.py / hardfault.py / feedback_db.py / release.py / release_audit.py / gen_periph.py / phase_minus_one.py / rm_lookup.py / coverage_lint.py / duration_profile.py / fsd_coverage.py**:
+  ① **expectations E2~E8+E12/E13 双写收敛**: 新增
+  `expectations.item_rule_errors(item)` 单一判据源 (check_forbidden_fields
+  同款 (code,core) 模式), loader (首条 raise) 与 lint (全量收集) 双消费方
+  拼接各自的 label 形态 — 消息文本逐字保持; E2 id 重复 (跨条目) 与 E9
+  min>max (结构矛盾) 仍归 lint 专项 (loader 不查的语义分工不变);
+  ② **now_iso 三份收编**: verify/hardfault/feedback_db 的 UTC+8 硬编码
+  本地版删除, 统一 runtime_common 共享版 (`datetime.now().astimezone()`)
+  ——**时区口径变化: UTC+8 固定 → 本机本地时区** (checkpoint_ledger:10-12
+  有账; 本机即 +08:00 零可见变化, 非 +08 时区机器上新台账时间戳随本地
+  时区), CHANGELOG 记账; ③ **sha256_file ×2 收编** wb_common (release/
+  release_audit); ④ **load_ref ×3 收编** wb_common (gen_periph/
+  phase_minus_one/rm_lookup, REF_PATH 同迁); ⑤ **原子写行尾统一**:
+  runtime_common.save_json_file 补 newline="\n" 与
+  wb_common.atomic_write_json LF 口径对齐 (此前 Windows CRLF/LF 两套,
+  注释固化 + 收敛); ⑥ **feedback_db 改 wb_common.atomic_write_json**
+  (save_feedback_db/save_calibration; F-014 .corrupt 兜底保留) +
+  test_writeback_guards 新增 FeedbackDbAtomicWriteGuardTests (损坏读 →
+  .corrupt 现场 → 原子写回 → 零 tmp 残骸); ⑦ **UTF-8 reconfigure 咒语 ×5
+  收编** `wb_common.force_utf8_streams` (coverage_lint/duration_profile/
+  expectations_lint/feedback_db/fsd_coverage; StringIO 无 reconfigure 静默
+  跳过)。
+  测试: test_writeback_guards +1 类 (feedback_db 原子写卫兵) — 其余靠
+  既有 841 例全量回归零语义漂移钉死 (lint E1~E13 消息、loader 报错文案、
+  发布记录字节全部原样)，先红后绿。
+  （zc/hardware @ 本条 commit，待审）
 
 - **F-145 (T1/B-1 v2 修订) 机器级设备锁 — OS 级文件锁 + 用户目录 device-locks，feat+test+docs，hw_lease.py (新) / verify.py / openocd_run.py**:
   同一探针/板子同时只被一个 agent 占用——这是 P1-3 (F-127 state 写锁) 的

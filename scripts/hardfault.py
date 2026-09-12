@@ -28,9 +28,9 @@ import re
 import subprocess
 import sys
 import time
-from datetime import datetime, timedelta, timezone
 
 from wb_common import find_project_root, load_machine
+from runtime_common import now_iso  # F-157: UTC+8 本地版收编共享层
 
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -72,10 +72,8 @@ HFSR_BITS = {
 }
 
 
-def now_iso() -> str:
-    tz = timezone(timedelta(hours=8))
-    return datetime.now(tz).isoformat(timespec="seconds")
-
+# F-157: 本地 now_iso (UTC+8 硬编码) 删除, 收编 runtime_common 共享版
+# (astimezone 本地时区) — 时区口径变化见 CHANGELOG。
 
 def run_openocd_diag() -> str:
     """运行 OpenOCD 读取故障寄存器, 返回原始输出文本"""

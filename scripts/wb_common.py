@@ -85,3 +85,35 @@ def atomic_write_json(path, data):
     with open(tmp, "w", encoding="utf-8", newline="\n") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
     os.replace(tmp, path)
+
+
+REF_PATH = os.path.join(TOOLKIT_ROOT, "data", "stm32f103-ref.json")
+
+
+def load_ref():
+    """读 55 外设寄存器知识库 (F-157 P2-3: gen_periph/phase_minus_one/
+    rm_lookup 三份逐字拷贝收编到 Layer 0)。"""
+    with open(REF_PATH, "r", encoding="utf-8") as f:
+        return json.load(f)
+
+
+def sha256_file(path):
+    """文件字节哈希 (F-157 P2-3: release/release_audit 双份收编到 Layer 0)。"""
+    import hashlib
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(65536), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def force_utf8_streams():
+    """stdout/stderr 强制 UTF-8 (F-157 P2-3: 五处 reconfigure 咒语收编)。
+
+    F-025 先例: Windows ANSI 代码页 (GBK) 下 ensure_ascii=False 的中文
+    输出会崩或乱码; StringIO 等无 reconfigure 的流静默跳过 (测试缝)。"""
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8")
+        except (AttributeError, ValueError):
+            pass

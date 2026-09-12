@@ -33,6 +33,7 @@ import serial_runtime  # noqa: E402
 import runtime_common  # noqa: E402  (F-029 T2 起 save_json_file 的 os.replace 住在这里)
 import gcc_build  # noqa: E402
 import wb_common  # noqa: E402
+import feedback_db  # noqa: E402  (F-157: 原子写收编卫兵扩展)
 
 RUNTIMES = [wb_runtime, openocd_runtime, serial_runtime]
 CORRUPT = "{ 不是 JSON"
@@ -356,6 +357,42 @@ class LocalConfigGuardTests(unittest.TestCase):
             wb_runtime.save_local_config({"x": 2})
         with open(self.cfg, encoding="utf-8") as f:
             self.assertEqual(json.load(f), {"port": "COM9", "x": 2})
+
+
+class FeedbackDbAtomicWriteGuardTests(unittest.TestCase):
+    """F-157 (P2-3): feedback_db 改走 wb_common.atomic_write_json —
+    损坏读 → .corrupt 兜底 (F-014 契约保留) → 原子写回新库; 全程零 .tmp
+    残骸, .corrupt 取证现场不被写回清掉。"""
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        os.makedirs(os.path.join(self.tmp, ".workbench"))
+        with open(os.path.join(self.tmp, ".workbench", "config.json"), "w",
+                  encoding="utf-8") as f:
+            json.dump({"builder": "gcc"}, f)
+        self.fb = os.path.join(self.tmp, ".workbench", "feedback")
+        self.db = os.path.join(self.fb, "feedback_db.json")
+        self._old_cwd = os.getcwd()
+        os.chdir(self.tmp)
+        self.addCleanup(os.chdir, self._old_cwd)
+        self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
+
+    def test_corrupt_read_backs_up_then_atomic_write(self):
+        os.makedirs(self.fb, exist_ok=True)   # 首次落账由 log_event makedirs 建
+        with open(self.db, "w", encoding="utf-8") as f:
+            f.write(CORRUPT)
+        db = feedback_db.load_feedback_db()   # 损坏 → .corrupt 兜底重建
+        self.assertEqual(db["total_events"], 0)
+        self.assertTrue(os.path.exists(self.db + ".corrupt"),
+                        "损坏原文必须留 .corrupt 取证现场")
+        db["total_events"] = 5
+        feedback_db.save_feedback_db(db)
+        with open(self.db, encoding="utf-8") as f:
+            self.assertEqual(json.load(f)["total_events"], 5)
+        self.assertTrue(os.path.exists(self.db + ".corrupt"),
+                        "写回不得清掉 .corrupt 现场")
+        leftovers = [fn for fn in os.listdir(self.fb) if fn.endswith(".tmp")]
+        self.assertEqual(leftovers, [], "原子写不得残留 .tmp")
 
 
 if __name__ == "__main__":
