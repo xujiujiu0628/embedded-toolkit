@@ -179,6 +179,22 @@
   traceback/缺失输入 exit 2)，先红后绿; 全量 803 例仅 9 例本机 WSL 环境
   失败 (CI ubuntu 正常)。
   （zc/hardware @ 本条 commit，合流待协调）
+- **F-152 (T8/D-1) 真机 CI 冒烟 workflow — self-hosted runner 门控，feat+test，hw-smoke.yml (新) / tests/test_workflows_valid.py (新)**:
+  新增 `.github/workflows/hw-smoke.yml`: `workflow_dispatch` 手动触发 +
+  `if: vars.HW_RUNNER_READY == 'true'` 仓库变量门控 — **仓库未配置真机
+  runner 时永不运行**, 主 CI (ci.yml) 零影响。内容: self-hosted windows
+  runner 上 doctor 环境矩阵 (含 SWD 连通性) → 仓库变量 `HW_VERIFY_PROJECT`
+  在场时对指定真机工程跑完整闭环 verify (schedule origin, F-046 审计
+  口径; 未设置则仅 doctor 冒烟——真机工程不在仓内, 指向由维护者配置) →
+  F-151 evidence_export 摘要 (if: always())。与主 CI sim-demo job 的分工
+  文档化: sim 无板闭环在主 CI, 真机 hardware_validated 证据走本 workflow。
+  验收: 双 workflow `yaml.safe_load` 本地校验通过 (施工中修掉两处
+  "name/run 值含 ': ' 被 YAML 当映射"错误——一处在本文件, 一处在 F-151
+  的 ci.yml machine.json 步骤); 回归钉 `tests/test_workflows_valid.py`
+  3 例 (双文件可解析 / 门控契约钉含 `on:`→True 的 YAML 1.1 坑 / 主 CI
+  六 job 清单完整; pyyaml 缺席环境自动 skip——CI 各 job 零第三方依赖
+  纪律不破)，先红后绿。
+  （zc/hardware @ 本条 commit，合流待协调）
 
 ## Unreleased — 2026-09-12（F-117~ 第三方审查工单第一批 P0 逐条清账）
 

@@ -1,0 +1,48 @@
+# F-152 (总工单 v2 T8/D-1): 真机 CI 冒烟 — self-hosted runner 专属。
+#
+# 纪律: workflow_dispatch 手动触发 + HW_RUNNER_READY 仓库变量门控 —
+# 仓库未配置真机 runner 时本 workflow **永不运行**, 不影响主 CI (ci.yml)。
+# runner (维护者本机 Windows + ST-Link) 在场时: doctor 环境矩阵 → 按仓库
+# 变量 HW_VERIFY_PROJECT 指向的真机工程跑闭环 verify (schedule origin,
+# F-046 审计口径)。摘要走 F-151 evidence_export, 失败运行也出报告。
+#
+# sim 后端 (examples/sim-demo) 不需要本 workflow — 它在主 CI 的 sim-demo
+# job 无硬件跑; 这里是"真机证据 hardware_validated"的冒烟通道。
+
+name: HW Smoke
+
+on:
+  workflow_dispatch:
+
+jobs:
+  hw-smoke:
+    if: vars.HW_RUNNER_READY == 'true'
+    runs-on: [self-hosted, windows]
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      PYTHONIOENCODING: utf-8
+      PYTHONUTF8: "1"
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: "环境预检 (doctor: toolkit/Python/machine.json/gcc/openocd/make/SWD)"
+        run: python scripts/verify.py --doctor --json
+      # HW_VERIFY_PROJECT 未设置时只冒烟 doctor (SWD 连通性已在其中);
+      # 设置后对指定真机工程跑完整闭环 (schedule origin 审计可辨)
+      - name: 真机闭环 verify (HW_VERIFY_PROJECT 在场时)
+        if: vars.HW_VERIFY_PROJECT != ''
+        run: |
+          python scripts/verify.py --project "$env:HW_VERIFY_PROJECT" --json --task-origin schedule --require-schedule-origin | Tee-Object -FilePath verify-result.json
+      - name: Export evidence summary (F-151)
+        if: always()
+        run: |
+          if (Test-Path verify-result.json) {
+            python scripts/evidence_export.py --verify-file verify-result.json
+          } else {
+            Write-Host "verify 未运行 (HW_VERIFY_PROJECT 未设置) — 仅 doctor 冒烟"
+          }
