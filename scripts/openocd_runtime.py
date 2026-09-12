@@ -268,6 +268,30 @@ def resolve_openocd_params(args, project_config: dict, state_lookup: dict) -> di
     }
 
 
+def state_lookup(state: dict) -> dict:
+    """F-156 (P2-1): run/gdb/itm/telnet 四入口共用的 last_* 状态映射 —
+    三份 _state_lookup 逐字拷贝 + telnet 内联第四份收编为超集单实现
+    (gdb 的 gdb_port/telnet_port/elf_file/debug_file + run 的 flash_file
+    并入; 各入口按需取键, 多余键无消费方即无害)。"""
+    last_build = get_state_entry(state, "last_build")
+    last_flash = get_state_entry(state, "last_flash")
+    last_debug = get_state_entry(state, "last_debug")
+    artifacts = last_build.get("artifacts", {})
+    return {
+        "board": last_debug.get("board") or last_flash.get("board"),
+        "interface": last_debug.get("interface") or last_flash.get("interface"),
+        "target": last_debug.get("target") or last_flash.get("target"),
+        "search": last_debug.get("search"),
+        "adapter_speed": last_debug.get("adapter_speed") or last_flash.get("adapter_speed"),
+        "transport": last_debug.get("transport") or last_flash.get("transport"),
+        "flash_file": last_build.get("flash_file") or artifacts.get("flash_file"),
+        "gdb_port": last_debug.get("gdb_port"),
+        "telnet_port": last_debug.get("telnet_port"),
+        "elf_file": last_build.get("debug_file") or last_build.get("elf_file") or artifacts.get("debug_file"),
+        "debug_file": last_build.get("debug_file") or artifacts.get("debug_file"),
+    }
+
+
 def start_openocd_server(cmd: list) -> subprocess.Popen:
     """启动 OpenOCD 进程（F-091 自 openocd_gdb/openocd_telnet 双副本收敛;
     F-123 收编 openocd_itm 第三份逐字节副本）"""

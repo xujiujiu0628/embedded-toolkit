@@ -1,24 +1,15 @@
 """串口数据发送"""
 
 import argparse
-import json
 import sys
 import time
 
 from serial_runtime import (
-    get_serial_config,
-    open_serial_port,
-    save_project_config,
+    connect_serial,          # F-156 (P2-1): 公共骨架 ②
+    output_json,             # F-156: 规范版收编 (字节不变)
+    resolve_serial_config,   # F-156 (P2-1): 公共骨架 ①
     update_state_entry,
 )
-
-PARITY_MAP = {"none": "N", "even": "E", "odd": "O", "mark": "M", "space": "S"}
-
-
-def output_json(obj):
-    sys.stdout.buffer.write(json.dumps(obj, ensure_ascii=False, indent=2).encode("utf-8"))
-    sys.stdout.buffer.write(b"\n")
-    sys.stdout.buffer.flush()
 
 
 def error_exit(code, message, use_json):
@@ -69,31 +60,10 @@ def main():
     parser.add_argument("--json", action="store_true", help="JSON 输出")
     args = parser.parse_args()
 
-    # 获取配置
-    cfg, sources = get_serial_config(
-        cli_port=args.port,
-        cli_baudrate=args.baudrate,
-        cli_bytesize=args.bytesize,
-        cli_parity=args.parity,
-        cli_stopbits=args.stopbits,
-        cli_encoding=args.encoding,
-    )
-
-    if cfg is None:
-        if sources.get("need_selection"):
-            error_exit("multiple_candidates", f"{sources['error']}，请用 --port 指定", args.json)
-        else:
-            error_exit("config_error", sources.get("error", "配置错误"), args.json)
-
-    # 保存确认的配置
-    save_project_config(values={
-        "port": cfg["port"],
-        "baudrate": cfg["baudrate"],
-        "bytesize": cfg["bytesize"],
-        "parity": cfg["parity"],
-        "stopbits": cfg["stopbits"],
-        "encoding": cfg["encoding"],
-    })
+    # 获取配置 + 写回 (F-156: 公共骨架 ①)
+    cfg = resolve_serial_config(
+        args,
+        fail=lambda code, message: error_exit(code, message, args.json))
 
     line_ending = "crlf" if args.crlf else ("cr" if args.cr else ("lf" if args.lf else ""))
 
@@ -101,13 +71,11 @@ def main():
     if payload is None:
         error_exit("bad_hex", "Hex 解析失败，请检查输入格式", args.json)
 
-    try:
-        use_mux = not args.direct
-        ser = open_serial_port(cfg, use_mux=use_mux)
-        if getattr(ser, "_serial_skill_using_mux", False):
-            print("[mux] 警告: 通过多路复用发送数据，如 minicom 同时在写入会导致串口数据冲突", file=sys.stderr)
-    except Exception as e:
-        error_exit("connect_failed", str(e), args.json)
+    # 开串口 + mux 警告 (F-156: 公共骨架 ②)
+    ser = connect_serial(
+        cfg, args,
+        mux_warn="[mux] 警告: 通过多路复用发送数据，如 minicom 同时在写入会导致串口数据冲突",
+        fail=lambda code, message: error_exit(code, message, args.json))
 
     results = []
     try:

@@ -46,6 +46,33 @@
   rc!=0 → command_failed 不变; probe 反向钉), test_hw_lease 假 openocd
   输出补标记 (夹具随契约同步)，先红后绿。
   （zc/hardware @ 本条 commit，待审）
+- **F-156 (T9v2/P2-1) serial 族剩余收编 — 规范输出/公共骨架/状态映射/扫描去重，refactor+test，serial_runtime / serial_monitor / serial_hex / serial_send / serial_log / serial_scan / openocd_runtime / openocd_run / openocd_gdb / openocd_itm / openocd_telnet**:
+  ① **output_json 规范版**: serial_runtime 新增 `output_json` (indent=2,
+  原 send/log/scan 本地副本形态) 与 `output_jsonl` (紧凑单行, 原
+  monitor/hex JSON Lines 形态) — 两种字节形态不可互替, 五入口本地副本
+  删除改 import, 身份钉+逐字节钉锁死 (实测 reconfigure+print 与 buffer
+  直写在真实 stdout 字节一致, 取 print 形兼容测试缝; output_json 自
+  runtime_common 再导出列表移除, F811 清零); ② **公共骨架**:
+  `resolve_serial_config` (取配置→失败分流→写回确认配置) +
+  `connect_serial` (开串口+mux 警告) — 四工具 85% 同文块删除, fail 回调
+  注入各家 error_exit 签名差异, mux 警告文案经 mux_warn 参数化
+  (monitor/hex/log 与 send 的文案差异保留); monitor 的正则编译等中间步
+  原顺序保留; ③ **PARITY_MAP ×4 死码删除** (monitor/hex/send/log 模块级
+  定义零引用; open_serial_port 内功能性本地映射保留); ④ **_state_lookup
+  ×3.5 收编 openocd_runtime.state_lookup** — run/gdb/itm 三份逐字拷贝 +
+  telnet 内联第四份合并为超集单实现 (gdb 的 gdb_port/telnet_port/
+  elf_file/debug_file + run 的 flash_file 并入, 各入口按需取键), 四入口
+  `_state_lookup` 改别名 (调用面不变); ⑤ **serial_scan** 本地 40 行扫描
+  副本删除改委托 `serial_runtime.scan_serial_ports` (load_chip_map 保留
+  — test_zero_cov_finish 钉在; 错误态 ports None→[] 收敛, main 只判 err
+  行为不变)。
+  测试: 新 `tests/test_serial_dedup.py` 12 例 (身份钉×2/字节钉×2/死码×1/
+  scan 委托×1/骨架×6) + test_openocd_dedup 补四入口 _state_lookup 身份
+  钉; 共享测试缝迁移: test_serial_log_record 改 patch
+  resolve_serial_config/connect_serial, test_zero_cov_finish 的 scan
+  错误态断言与 hex json-mode 假 stdout 随收编更新 (共享测试文件改动
+  记账); 全量 840 例仅 9 例本机 WSL 环境失败 (CI ubuntu 正常)。
+  （zc/hardware @ 本条 commit，待审）
 
 - **F-145 (T1/B-1 v2 修订) 机器级设备锁 — OS 级文件锁 + 用户目录 device-locks，feat+test+docs，hw_lease.py (新) / verify.py / openocd_run.py**:
   同一探针/板子同时只被一个 agent 占用——这是 P1-3 (F-127 state 写锁) 的

@@ -26,8 +26,8 @@ from openocd_runtime import (
     load_project_config,
     save_project_config,
     load_workspace_state,
-    get_state_entry,
     resolve_param,
+    state_lookup as build_state_lookup,   # F-156 (P2-1): 内联第四份收编
     workspace_root,
 )
 
@@ -46,6 +46,10 @@ def parse_hex_addr(text: str) -> int:
 # F-123 (工单 P0-7): 本地 build_openocd_cmd / wait_server_ready /
 # cleanup_proc 三份拷贝已删除, 统一用 openocd_runtime 单实现
 # (readline 阻塞换 daemon 排空线程, timeout 真生效)。
+
+# F-156 (P2-1): _state_lookup 别名 — 内联第四份 last_* 映射收编
+# openocd_runtime.state_lookup 超集单实现
+_state_lookup = build_state_lookup
 
 
 # ── Telnet 连接层 ──────────────────────────────────────────────
@@ -245,13 +249,8 @@ def main():
     workspace = workspace_root(args.workspace)
     project_config = load_project_config(str(workspace))
     state = load_workspace_state(str(workspace))
-    state_lookup = {
-        "board": get_state_entry(state, "last_debug").get("board") or get_state_entry(state, "last_flash").get("board"),
-        "interface": get_state_entry(state, "last_debug").get("interface") or get_state_entry(state, "last_flash").get("interface"),
-        "target": get_state_entry(state, "last_debug").get("target") or get_state_entry(state, "last_flash").get("target"),
-        "adapter_speed": get_state_entry(state, "last_debug").get("adapter_speed") or get_state_entry(state, "last_flash").get("adapter_speed"),
-        "transport": get_state_entry(state, "last_debug").get("transport") or get_state_entry(state, "last_flash").get("transport"),
-    }
+    # F-156 (P2-1): last_* 状态映射收编 openocd_runtime 超集单实现
+    state_lookup = build_state_lookup(state)
     oc_params = resolve_openocd_params(args, project_config, state_lookup)
 
     # 使用解析后的参数

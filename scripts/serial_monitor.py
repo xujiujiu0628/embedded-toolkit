@@ -1,7 +1,6 @@
 """串口实时文本监控"""
 
 import argparse
-import json
 import re
 import signal
 import sys
@@ -9,20 +8,13 @@ import time
 from datetime import datetime
 
 from serial_runtime import (
-    get_serial_config,
-    open_serial_port,
-    save_project_config,
+    connect_serial,          # F-156 (P2-1): 公共骨架 ②
+    output_jsonl as output_json,  # F-156: JSON Lines 紧凑态收编 (字节不变)
+    resolve_serial_config,   # F-156 (P2-1): 公共骨架 ①
     update_state_entry,
 )
 
-PARITY_MAP = {"none": "N", "even": "E", "odd": "O", "mark": "M", "space": "S"}
 IDLE_FLUSH_SEC = 0.2
-
-
-def output_json(obj):
-    sys.stdout.buffer.write(json.dumps(obj, ensure_ascii=False).encode("utf-8"))
-    sys.stdout.buffer.write(b"\n")
-    sys.stdout.buffer.flush()
 
 
 def error_exit(action, code, message, use_json):
@@ -82,32 +74,10 @@ def main():
 
     start_time = time.time()
 
-    # 获取配置
-    cfg, sources = get_serial_config(
-        cli_port=args.port,
-        cli_baudrate=args.baudrate,
-        cli_bytesize=args.bytesize,
-        cli_parity=args.parity,
-        cli_stopbits=args.stopbits,
-        cli_encoding=args.encoding,
-    )
-
-    if cfg is None:
-        if sources.get("need_selection"):
-            # 多候选情况
-            error_exit("monitor", "multiple_candidates", f"{sources['error']}，请用 --port 指定", args.json)
-        else:
-            error_exit("monitor", "config_error", sources.get("error", "配置错误"), args.json)
-
-    # 保存确认的配置
-    save_project_config(values={
-        "port": cfg["port"],
-        "baudrate": cfg["baudrate"],
-        "bytesize": cfg["bytesize"],
-        "parity": cfg["parity"],
-        "stopbits": cfg["stopbits"],
-        "encoding": cfg["encoding"],
-    })
+    # 获取配置 + 写回 (F-156: 公共骨架 ①, 本地 85% 同文块删除)
+    cfg = resolve_serial_config(
+        args,
+        fail=lambda code, message: error_exit("monitor", code, message, args.json))
 
     include_re = None
     exclude_re = None
@@ -122,14 +92,12 @@ def main():
         except re.error:
             error_exit("monitor", "bad_regex", f"无效正则: {args.exclude}", args.json)
 
-    try:
-        use_mux = not args.direct
-        ser = open_serial_port(cfg, use_mux=use_mux)
-        if getattr(ser, "_serial_skill_using_mux", False):
-            print("[mux] 已通过多路复用连接，请避免在 minicom 中同时写入以免串口数据冲突", file=sys.stderr)
-        ser.timeout = 0.1
-    except Exception as e:
-        error_exit("monitor", "connect_failed", str(e), args.json)
+    # 开串口 + mux 警告 (F-156: 公共骨架 ②)
+    ser = connect_serial(
+        cfg, args,
+        mux_warn="[mux] 已通过多路复用连接，请避免在 minicom 中同时写入以免串口数据冲突",
+        fail=lambda code, message: error_exit("monitor", code, message, args.json))
+    ser.timeout = 0.1
 
     line_count = 0
     running = True

@@ -22,7 +22,6 @@ from openocd_runtime import (  # noqa: E402
     wait_itm_ready,  # noqa: F401  (F-123 本地 wait_server_ready 收编后的规范名)
     default_config_path,
     emit_stream_record,
-    get_state_entry,
     is_missing,
     load_json_file,
     load_project_config,
@@ -35,6 +34,7 @@ from openocd_runtime import (  # noqa: E402
     parameter_context,
     resolve_param,
     save_project_config,
+    state_lookup,
     update_state_entry,
     workspace_root,
 )
@@ -90,17 +90,8 @@ def build_openocd_cmd(
 # cleanup 收编为 openocd_runtime.cleanup。
 
 
-def _state_lookup(state: dict) -> dict:
-    last_debug = get_state_entry(state, "last_debug")
-    last_flash = get_state_entry(state, "last_flash")
-    return {
-        "board": last_debug.get("board") or last_flash.get("board"),
-        "interface": last_debug.get("interface") or last_flash.get("interface"),
-        "target": last_debug.get("target") or last_flash.get("target"),
-        "search": last_debug.get("search"),
-        "adapter_speed": last_debug.get("adapter_speed") or last_flash.get("adapter_speed"),
-        "transport": last_debug.get("transport") or last_flash.get("transport"),
-    }
+# F-156 (P2-1): _state_lookup 收编 openocd_runtime.state_lookup 超集单实现
+_state_lookup = state_lookup
 
 
 def resolve_openocd_params(args, project_config: dict, state_lookup: dict) -> dict:
