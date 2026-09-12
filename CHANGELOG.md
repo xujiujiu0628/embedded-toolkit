@@ -76,6 +76,23 @@
   10 例（timeout 真生效×2 / server 口径语义×4 / itm 口径×3 / 真子进程 3.2MB 灌
   stderr 排空不死锁×1——末项即"长会话死锁"的直接回归钉）+ `test_openocd_dedup.py`
   补三件套身份钉与 itm 入 start_server 钉名单。
+- **F-124 处置（工单 P1-1 CI 增加 Windows 矩阵，change，ci.yml）**:
+  四个 job 全跑 ubuntu-latest，而 README 宣称"Windows 为主要开发/真机平台"
+  与"Win/Linux 全绿"——CI 从未在 Windows 验证过，Windows 专属测试
+  （test_verify_failure_paths 的 CREATE_NEW_PROCESS_GROUP 钉）恒 skip，宣传
+  与事实矛盾。unittest job matrix 扩为 os:[ubuntu, windows]×py[3.10,3.12]
+  （fail-fast:false 已有, 每平台注入 PYTHONIOENCODING/PYTHONUTF8 防中文
+  stderr 在 ANSI 代码页上乱码/报错）。syntax-smoke 暂留 ubuntu（arm-none-eabi
+  安装脚本平台专属, 工单允许后续再扩）。.gitattributes 现仓已有, checkout
+  行尾归一行为两平台一致。**注: 本笔在 Windows runner 上的首跑属"立此存照"
+  ——若暴露存量 Windows-only 失败, 按 F 编号记账修复, 不回头降级矩阵。**
+- **F-125 处置（工单 P1-2 测试类定义在 unittest.main() 之后，fix，test_gcc_build.py）**:
+  `MakeTimingScaleTests`（F-099 回归钉）定义在 :84-85 的 `unittest.main()`
+  之后——单文件直跑时该类不被收集, 钉形同虚设。`__main__` 块挪至文件尾并
+  注记原因。全仓扫描（grep 行号序比对）: 其余文件均无同类问题
+  （test_release.py 无 main 块属 collect 友好而非缺陷）。验收:
+  `python tests/test_gcc_build.py` 实跑 **Ran 9** 且 OK（修复前旧文件实跑
+  Ran 7——两个 F-099 钉缺席）。
 
 ## Unreleased — 2026-09-10（F-103~F-107 P3 清账第一轮：边界报错泛化 / 迁移告警 / ID 唯一性 / 过滤收窄 / 文档回填）
 
