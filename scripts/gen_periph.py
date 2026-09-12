@@ -416,6 +416,12 @@ def gen_adc(adc: str, ch: int, pin: str, hclk_mhz: int = 72) -> str:
     err = _hclk_error(hclk_mhz)  # F-111 (M-3): 库级域校验
     if err:
         return err
+    # F-119 (工单 P0-4): 通道域校验 (仿 gen_pwm F-103 三连守卫)。F103 ADC
+    # 合法通道 0~17; 旧版 ch=20 写 SMPR1 保留位 (硬件静默无效), 负数生成
+    # 负位移 C 代码 (UB)。
+    if ch < 0 or ch > 17:
+        return (f"/* ERROR: ADC 通道 {ch} 越界 — F103 合法通道 0~17 "
+                f"(0~15 外部引脚, 16/17 为 vrefint/temp 内部通道)。*/")
     port = pin_port(pin)
     shift = pin_cr_shift(pin)
 
@@ -459,6 +465,10 @@ def gen_adc(adc: str, ch: int, pin: str, hclk_mhz: int = 72) -> str:
     lines.append(f"")
     lines.append(f"/* 3. ADC 配置 (单次转换, 软件触发) */")
     lines.append(f"// 采样时间: 55.5 cycles (推荐用于 12-bit 精度)")
+    if ch >= 16:
+        # F-119: 16=内部 vrefint, 17=内部 temp sensor — 不接外部引脚,
+        # 上面的 GPIO 模拟输入步骤对内部通道无意义 (RM0008 §11.5)
+        lines.append(f"// CH{ch} 为内部通道 ({'vrefint' if ch == 16 else '温度传感器'}) — 无需外部引脚")
     if ch <= 9:
         lines.append(f"{adc}->SMPR2 |= (5UL << {(ch)*3});  // CH{ch}: 55.5 cycles")
     else:
@@ -949,7 +959,7 @@ GPIO 模式 (F-103: 由 --mode choices 强制, 未知模式报错):
     parser.add_argument("--rx", default="PA10", help="RX 引脚")
     # pwm
     parser.add_argument("--timer", default="TIM2", help="定时器: TIM2/3/4")
-    parser.add_argument("--ch", type=int, default=1, help="通道: 1-4")
+    parser.add_argument("--ch", type=int, default=1, help="通道: PWM 1-4 / ADC 0-17 (16/17 内部通道)")
     parser.add_argument("--freq", type=int, default=1000, help="PWM 频率 Hz")
     parser.add_argument("--duty", type=int, default=50, help="占空比 %% (0-100)")
     # F-110: --hclk 单一入口 (标准 APB 分频假设 HPRE=1/PPRE2=1/PPRE1=2,
@@ -1012,7 +1022,9 @@ GPIO 模式 (F-103: 由 --mode choices 强制, 未知模式报错):
         if not args.pin:
             print("Error: --pin required for ADC", file=sys.stderr)
             sys.exit(1)
-        print(gen_adc(args.adc, args.ch, args.pin, args.hclk))
+        # F-119 (工单 P0-4): 旧版此处裸 print — ERROR 也恒 exit 0。
+        # 改走 _emit 统一 ERROR→exit 1 纪律 (F-103 收敛遗漏的一半)。
+        _emit(gen_adc(args.adc, args.ch, args.pin, args.hclk))
 
     elif args.type == "systick":
         _emit(gen_systick(args.freq, args.hclk))

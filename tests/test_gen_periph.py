@@ -306,6 +306,38 @@ class GenAdcTests(unittest.TestCase):
         self.assertIn("(3UL << 14)", out)   # 清 14:15 两位掩码 0x3<<14
         self.assertIn("(2UL << 14)", out)   # 置 10b = /6
 
+    # --- F-119 (工单 P0-4): 通道域校验 ---
+
+    def test_channel_out_of_range_reports_error_f119(self):
+        """ch∉[0,17] → 显式 ERROR。ch=20 旧版写 SMPR1 保留位 (静默无效),
+        负数生成负位移 C 代码 (UB)。"""
+        self.assertTrue(gen_periph.gen_adc("ADC1", 20, "PA1").startswith("/* ERROR"))
+        self.assertTrue(gen_periph.gen_adc("ADC1", -1, "PA1").startswith("/* ERROR"))
+
+    def test_boundary_channels_0_and_17_still_generate(self):
+        for ch in (0, 17):
+            with self.subTest(ch=ch):
+                out = gen_periph.gen_adc("ADC1", ch, "PA1")
+                self.assertNotIn("/* ERROR", out)
+
+    def test_external_channel_16_17_note_vrefint_temp_f119(self):
+        """16/17 是 vrefint/temp 内部通道——合法但需提示, 不误伤。"""
+        for ch in (16, 17):
+            with self.subTest(ch=ch):
+                out = gen_periph.gen_adc("ADC1", ch, "PA1")
+                self.assertNotIn("/* ERROR", out)
+                self.assertIn("内部通道", out)
+
+    def test_adc_cli_out_of_range_exits_1_f119(self):
+        """CLI 层: --ch 20 经 _emit 收敛 exit 1 (旧版 adc 分支裸 print 恒 0)。"""
+        with mock.patch.object(sys, "argv",
+                               ["gen_periph.py", "--type", "adc",
+                                "--adc", "ADC1", "--ch", "20", "--pin", "PA1"]):
+            with redirect_stdout(io.StringIO()):
+                with self.assertRaises(SystemExit) as ctx:
+                    gen_periph.main()
+        self.assertEqual(ctx.exception.code, 1)
+
 
 class GenTimerIntTests(unittest.TestCase):
 

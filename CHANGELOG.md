@@ -23,6 +23,15 @@
   `idx = (lr>>2)&3` 映射回 F1/F5/F9/FD，文案改为"返回到哪"口径，保留值 F5
   （M3 上 Handler+PSP 非法组合）显式标注不再静默 unknown。
   测试 `ExcReturnDecodeTests` 4 例（F1/F9/FD/F5，先红 4 后绿）。
+- **F-119 处置（工单 P0-4 gen_adc 通道域校验，fix+test，gen_periph.py）**:
+  `gen_adc` 对 ch 零校验——`--ch 20` 写 SMPR1 保留位（硬件静默无效），负数
+  生成负位移 C 代码（UB）；且 adc 分支是 `main()` 里唯一裸 `print` 出口
+  （F-103 的 `_emit` ERROR→exit 1 收敛漏网），错误产出恒退 0。修复: 库级
+  `0<=ch<=17` 显式 ERROR（仿 gen_pwm F-103 三连守卫），CLI 改走 `_emit`，
+  16/17 内部通道（vrefint/temp）合法放行并生成"无需外部引脚"注记，
+  `--ch` help 同步 ADC 范围（不设 choices: PWM 1-4 / ADC 0-17 共用参数，
+  choices 取交集会伤另一侧）。测试 `GenAdcTests` +4 例（越界/边界/内部注记/
+  CLI exit 1，先红 4 后绿）+ `test_adc_type_requires_pin` 等既有钉零改动。
 
 ## Unreleased — 2026-09-10（F-103~F-107 P3 清账第一轮：边界报错泛化 / 迁移告警 / ID 唯一性 / 过滤收窄 / 文档回填）
 
