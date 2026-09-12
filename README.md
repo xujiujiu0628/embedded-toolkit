@@ -326,7 +326,45 @@ embedded-toolkit/
   `HANDOFF-AGENT.md`](#) — 已于 0.4 边界决策迁维护者私有仓
   `<维护者私有仓 embedded-handoff>`，公开工具库不含维护者 ↔ Agent 协作私约
 
+## 生态位
+
+同类项目各有所长：agentic-hil 以有界 MCP 工具 + 硬件租约 + plan 门禁见长，
+agentic-embedded-lab 做仿真控制面（claim + fidelity 证据分级），pytest-embedded /
+Renode 把仿真做成平级判定后端，hardci / jlink-mcp 验证了 MCP 分发路径。
+
+本仓的独特处不在单点能力，而在**完整治理链**——同类项目普遍假设"固件已存在
+只管测"，本仓从需求一路管到事后审计：
+
+1. **四态判定 + XPASS 判红**——期望清单里 `xfail` 欠条落地瞬间判红，杜绝
+   "顺便实现了"静默混入
+2. **FSD 对账**（`fsd_coverage.py`）——需求 ↔ 断言双向对账，xfail（欠条）与
+   waived（豁免）两级不混用
+3. **G0–G3 发布门禁 + R1–R8 事后审计**——全绿才打 tag；证据等级四档
+   （`hardware_validated` / `simulation_validated` / `static` /
+   `production_approved`），仿真/静态证据进不了发布记录，发布后篡改在
+   契约哈希锚（R7）与批准留痕（R8）下现形
+4. **反馈校准**（`feedback_db.py`）——修复事件落账，按流水线长出准确率校准
+5. **寄存器知识库 + 代码生成**（`rm_lookup.py` + `gen_periph.py`）——
+   55 外设参考数据直接生成寄存器级初始化代码，AI 生成物先过五重门控再进编译
+6. **构建错误知识库**——gcc/ARMCC 错误自生长，修复纪律靠回归测试钉住
+
 ## 路线图
+
+### 已落地/立项方向（2026-09-12 同类调研，见 CHANGELOG 工单二系列）
+
+- **MCP 接口**——已落地：`scripts/mcp_server.py` 六工具有界包装（白名单校验、
+  零业务复制、不给 agent 任意 shell）；调研来源 agentic-hil / hardci / jlink-mcp
+- **无板仿真闭环**——已落地：`capture.backend: "sim"`（qemu-system-arm +
+  semihosting，`examples/sim-demo` 即跑）；调研来源 pytest-embedded / Renode；
+  spike 记录 F-149（含 M-profile SYS_EXIT 0x18 不退出的实测坑）
+- **分发形态**（PyPI / uvx / Claude Code 插件，"一行安装"）——**已立项未实施**：
+  风险点在 `data/`、`VERSION`、machine.json 的包数据定位策略，需先做
+  spike 再立项；调研来源 agentic-hil / hardci
+- **真机 CI 冒烟**——已落地（门控形态）：`.github/workflows/hw-smoke.yml`
+  仅在仓库配置了 self-hosted runner（`HW_RUNNER_READY` 变量）时运行；
+  调研来源 jlink-mcp 的真机徽章 + ESP32/树莓派 runner 案例
+
+### 已知遗留
 
 如实列出已编目的已知遗留（对外部审查的尊重：登记在册，不藏）：
 

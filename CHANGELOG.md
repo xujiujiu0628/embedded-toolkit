@@ -195,6 +195,19 @@
   六 job 清单完整; pyyaml 缺席环境自动 skip——CI 各 job 零第三方依赖
   纪律不破)，先红后绿。
   （zc/hardware @ 本条 commit，合流待协调）
+- **F-153 (T9/D-3) README 生态位与路线图更新，docs，README.md**:
+  新增"生态位"短节: 同类一句带过 (agentic-hil 的 MCP+租约+plan 门禁 /
+  AEL 的仿真控制面与 claim+fidelity / pytest-embedded、Renode 的仿真判定
+  后端 / hardci、jlink-mcp 的分发路径), 强调本仓独有链路——需求→判定→
+  发布门禁→事后审计→知识沉淀的完整治理链六点 (四态判定+XPASS 判红 /
+  FSD 对账 / G0-G3+R1-R8 证据四档门禁审计 / feedback 校准 / 寄存器知识库
+  +代码生成 / 构建错误知识库)。路线图重构为两节: "已落地/立项方向"登记
+  MCP 接口 (F-130 落地)、无板仿真闭环 (F-150 落地+spike F-149)、分发形态
+  (PyPI/uvx/插件——**已立项未实施**, 风险点=包数据定位策略)、真机 CI 冒烟
+  (F-152 门控形态), 各带调研来源; "已知遗留"节保持 F-031/F-032 等既有
+  编目不动。措辞逐条对仓内实际能力核对过 (mcp_server.py / capture_sim.py /
+  hw-smoke.yml 均在库), 禁止超前宣传 (F-124 纪律): 分发形态如实标"未实施"。
+  （zc/hardware @ 本条 commit，合流待协调）
 
 ## Unreleased — 2026-09-12（F-117~ 第三方审查工单第一批 P0 逐条清账）
 
