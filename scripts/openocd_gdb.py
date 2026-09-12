@@ -412,6 +412,7 @@ def main() -> None:
     )
 
     proc: subprocess.Popen | None = None
+    server_ready = False  # F-121 (工单 P0-3): 区分"启动失败"与"常驻服务正常退出"
     try:
         proc = start_openocd_server(cmd)
         ready, errors = wait_server_ready(proc, int(gdb_port or 3333))
@@ -431,6 +432,7 @@ def main() -> None:
             else:
                 print(f"[{args.command}] 失败 — {message}", file=sys.stderr)
             sys.exit(1)
+        server_ready = True
 
         if args.command == "server":
             state_info = update_state_entry(
@@ -591,7 +593,10 @@ def main() -> None:
             print(f"错误: {message}", file=sys.stderr)
         sys.exit(1)
     finally:
-        if args.command != "server":
+        # F-121 (工单 P0-3): 旧条件 command != "server" 让 server 模式启动
+        # 失败 (ready 未达成) 时进程留存独占 ST-Link。现在只有 ready 成功的
+        # 常驻 server 才跳过 cleanup; 启动失败经 SystemExit 也走到这里被回收。
+        if not (args.command == "server" and server_ready):
             cleanup(proc)
 
 

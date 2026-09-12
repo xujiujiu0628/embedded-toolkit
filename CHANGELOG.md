@@ -43,6 +43,13 @@
   subprocess 依赖 mux 退出码, verify.py 不在此列。
   测试 `tests/test_json_exit_code_contract.py` 8 例: 进程内 mock 驱动 main,
   error→1 / ok→0 正反各钉（先红 4 后绿），gdb 用假 proc 覆盖"真跑失败"分支。
+- **F-121 处置（工单 P0-3 gdb server 启动失败孤儿进程，fix+test，openocd_gdb.py）**:
+  finally 旧条件 `command != "server"` 不区分"启动失败"与"常驻服务正常退出"
+  ——server 模式 ready 未达成（超时但进程仍活）时 sys.exit(1) 穿过 finally
+  也不 cleanup，OpenOCD 留存独占 ST-Link。修复: `server_ready` 标志区分两态，
+  仅 ready 成功的常驻 server 跳过 cleanup，启动失败经 SystemExit 照常回收。
+  测试 `tests/test_gdb_server_orphan_cleanup.py` 3 例: 启动失败必 cleanup /
+  ready 成功不回归 / 非 server 模式原行为零改动（先红 2 后绿）。
 
 ## Unreleased — 2026-09-10（F-103~F-107 P3 清账第一轮：边界报错泛化 / 迁移告警 / ID 唯一性 / 过滤收窄 / 文档回填）
 
