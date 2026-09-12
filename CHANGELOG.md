@@ -3,6 +3,37 @@
 格式约定: 每条含发现编号（代管期 findings 编目）与证据 commit。当前版本以
 `VERSION` 文件为准（`wb_common.toolkit_version()` 读取）。
 
+## Unreleased — zc/hardware（总工单 v2: zc/hardware 分支任务 T1~T9, 编号段 F-145 起）
+
+- **F-145 (T1/B-1 v2 修订) 机器级设备锁 — OS 级文件锁 + 用户目录 device-locks，feat+test+docs，hw_lease.py (新) / verify.py / openocd_run.py**:
+  同一探针/板子同时只被一个 agent 占用——这是 P1-3 (F-127 state 写锁) 的
+  功能级答案: state 锁防数据竞争, 设备锁防硬件资源竞争 (两个并发 verify 抢
+  ST-Link, 后者烧到一半被前者复位)。设计按总工单 v2 修订三点: ① 锁本体 =
+  OS 级文件锁 (Windows `msvcrt.locking` / POSIX `fcntl.flock`, 非阻塞独占
+  1 字节), **进程崩溃 = OS 自动释放, 不做 PID 探活 (F-117: Windows os.kill
+  是 TerminateProcess) 不做 mtime 超期回收** (OS 锁无泄漏, 无需兜底);
+  ② 锁位置 = 机器级用户目录 `%USERPROFILE%\.embedded-toolkit\device-locks\
+  <device>.lock` (同一台机两份 clone 互斥), 元数据 acquired_at/pid/token/
+  purpose/workspace 写同名 `.meta.json` 旁车 (崩溃残留由下次成功获取覆写);
+  ③ 冲突 fail-fast → error 含 `resource_busy` 并点名持有者 purpose +
+  acquired_at, `--lease-wait N` (verify/openocd_run 双 CLI + acquire(wait=N))
+  有界等待 (0.2s 轮询)。接入点: verify flash+capture 段全程持有 (胜利方
+  flash 执行瞬间锁在场; 正常出口 / flash_failed / capture 三处失败早退 /
+  HIL 守卫拒绝 / capture 超时 (_finish_capture_timeout 新增 lease kwarg) /
+  HIL capture 守卫拒绝共七类出口全释放), openocd_run flash/erase 动作粒度
+  acquire→subprocess→finally 释放 (probe/reset 只读不抢), 默认设备名
+  "stlink" 两工具同名互斥, `ETK_DEVICE_LOCK_DIR` 支持多环境重定向。
+  hw_lease.py CLI (status/acquire) 供人工排查; release 子命令如实说明
+  "OS 锁只认持锁 fd, 不能跨进程代放"。README 工程契约节补设备锁段。
+  测试 `tests/test_hw_lease.py` 18 例: 验收五条 (获取含旁车字段 / 冲突
+  fail-fast 点名持有者 / 正常释放可重取 / **真实 subprocess 持锁再 kill
+  后立即可重取** / 与 F-127 state 锁共存互不干扰) + 伪造 lease dict 不可
+  释放 / 有界等待成败两侧 / 设备名命名空间 / 环境重定向 / verify 集成
+  四钉 (一成一败, 败方 exit 2 报错可行动) / openocd_run 集成四钉
+  (flash/erase 上锁, probe 零 acquire, resource_busy code)，先红后绿;
+  全量 743 例仅本机 WSL 缺席的 9 例 hooks 环境失败 (CI ubuntu 正常)。
+  （zc/hardware @ 本条 commit，合流待协调）
+
 ## Unreleased — 2026-09-12（F-117~ 第三方审查工单第一批 P0 逐条清账）
 
 - **F-117 处置（工单 P0-1 is_mux_alive Windows 杀进程，fix+test，serial_runtime.py / serial_mux.py）**:

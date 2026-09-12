@@ -30,6 +30,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(
     os.path.abspath(__file__))), "scripts"))
 
 import verify  # noqa: E402
+import hw_lease  # noqa: E402  (F-131: LEASE_FILE 重定向目标)
 
 CAPTURED_TEXT = "=== boot ===\n[init] CLK OK\nADC raw=2000 mv=1600\n"
 HEX_FILE = "build/firmware.hex"
@@ -123,6 +124,9 @@ class VerifyMainflowRetryTests(unittest.TestCase):
             # F-129: 判定后复位是真实 openocd 子进程, 测试一律 mock 防触硬件
             mock.patch.object(verify, "reset_target",
                               return_value={"status": "ok"}),
+            # F-131: 租约文件重定向临时目录 (测试零触仓根)
+            mock.patch.object(hw_lease, "DEVICE_LOCK_DIR",
+                              os.path.join(self.ws, "device-locks")),
         ]
         if capture_side is None:
             patchers.append(mock.patch.object(

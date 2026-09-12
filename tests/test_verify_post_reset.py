@@ -27,6 +27,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(
 
 import openocd_runtime  # noqa: E402
 import verify  # noqa: E402
+import hw_lease  # noqa: E402  (F-131: LEASE_FILE 重定向目标)
 
 
 def _completed(stdout="", stderr="", returncode=0):
@@ -145,6 +146,8 @@ class PostResetMainFlowTests(unittest.TestCase):
                 mock.patch.object(verify, "run_semihosting_session",
                                   mock.Mock(return_value=(capture_text, ""))), \
                 mock.patch.object(verify, "reset_target", reset_mock), \
+                mock.patch.object(hw_lease, "DEVICE_LOCK_DIR",
+                                  os.path.join(self.ws, "device-locks")), \
                 mock.patch.object(verify, "record_checkpoint"):
             with redirect_stdout(out), redirect_stderr(err):
                 try:
@@ -212,6 +215,8 @@ class PostResetMainFlowTests(unittest.TestCase):
                                   mock.Mock(return_value={
                                       "status": "error", "stderr": "swd"})), \
                 mock.patch.object(verify, "reset_target", reset_mock), \
+                mock.patch.object(hw_lease, "DEVICE_LOCK_DIR",
+                                  os.path.join(self.ws, "device-locks")), \
                 mock.patch.object(verify, "record_checkpoint"):
             with redirect_stdout(out), redirect_stderr(err):
                 with self.assertRaises(SystemExit):
