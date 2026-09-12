@@ -41,8 +41,9 @@ desktop.ini
 # 嵌入伪工程防线 (F-015 前科 + F-052): .workbench/ 属固件工程；仓内出现即为
 # 事故产物（state.json / checkpoints.jsonl 等运行时台账），不入库
 .workbench/
-# F-150: examples/sim-demo 是仓内自带的示例固件工程 — 其契约文件有意入库,
-# 运行台账 (state/ build/) 仍不入库
+# F-150: examples/sim-demo 是仓内自带的示例固件工程 — 仅契约两文件有意
+# 入库，其余运行时台账 (state.json / state/ / feedback/ / build/) 仍不入库
 !examples/sim-demo/.workbench/
+examples/sim-demo/.workbench/*
 !examples/sim-demo/.workbench/config.json
 !examples/sim-demo/.workbench/expectations.json
