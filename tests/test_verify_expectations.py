@@ -259,6 +259,8 @@ class ForbiddenAssertionTests(unittest.TestCase):
 
     def test_old_manifest_unchanged_results(self):
         # 无 forbidden 键的旧清单: 全部行为与 master 一致 (逐字段比对固化基线)
+        # F-148: evaluate 返回值新增 records 聚合键 (无 record 条目时为空数组);
+        # 无新键条目的四态判定逐字段不变。
         exp = [{"id": "A", "texts": ["ok"]},
                {"id": "B", "patterns": [r"TGL (\d+)"], "capture_group": 1,
                 "min": 1, "max": 10},
@@ -270,7 +272,7 @@ class ForbiddenAssertionTests(unittest.TestCase):
             {"id": "A", "status": "pass"},
             {"id": "B", "status": "pass"},
             {"id": "C", "status": "xfail"}],
-            "verdict": "ok", "xpass_ids": []})
+            "verdict": "ok", "xpass_ids": [], "records": []})
 
     # --- loader 校验钉 ---
 

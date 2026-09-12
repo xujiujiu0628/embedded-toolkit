@@ -17,6 +17,10 @@
   E10 forbidden_texts/patterns 结构 (非空字符串数组) + 非法正则 (F-112)
   E11 自杀配置: 同串并存于 texts 与 forbidden_texts (永远 FAIL) /
       xfail 条目配负断言 (WARNING, 语义错位疑点) (F-112)
+  E12 record 结构 (非空字符串数组) + 仅与 patterns 搭配 +
+      与 capture_group/min/max 互斥 (全量记录 vs 首匹配定界, 二选一) +
+      引用的命名捕获组须在 patterns[0] 中定义 (F-148)
+  E13 ordered 须为布尔 (F-148)
 
 退出码: 0 = 干净/仅警告, 1 = 存在 error, 2 = 用法/文件不可得
 
@@ -103,6 +107,38 @@ def lint_expectations(expectations):
             warnings.append(
                 f"E11: {eid} xfail 条目配了负断言 — 未实现的功能谈不上"
                 "\"禁止的恢复方式\", 疑为配置错位 (实现落地翻转后再配)")
+        # F-148: E12 record (命名捕获组) / E13 ordered — 与 loader 同判据
+        od = item.get("ordered")
+        if od is not None and not isinstance(od, bool):
+            errors.append(f"E13: {eid} ordered 须为布尔")
+        rec = item.get("record")
+        if rec is not None:
+            if (not isinstance(rec, list) or not rec
+                    or not all(isinstance(s, str) and s.strip() for s in rec)):
+                errors.append(
+                    f"E12: {eid} record 须为非空字符串数组 (命名捕获组名)")
+                rec = None
+        if rec is not None:
+            if not ok_pats:
+                errors.append(f"E12: {eid} record 须与 patterns 搭配")
+            elif item.get("capture_group") is not None \
+                    or item.get("min") is not None \
+                    or item.get("max") is not None:
+                errors.append(
+                    f"E12: {eid} record 与 capture_group/min/max 互斥 — "
+                    "记录值用 record 全量落 records 数组, 定界断言用 "
+                    "capture_group, 二选一")
+            else:
+                try:
+                    groups = set(re.compile(pats[0]).groupindex)
+                except re.error:
+                    groups = None   # E5 已报, 此处不重复
+                if groups is not None:
+                    missing = [n for n in rec if n not in groups]
+                    if missing:
+                        errors.append(
+                            f"E12: {eid} record 引用未定义的命名捕获组: "
+                            f"{missing} (patterns[0] 须写 (?P<{missing[0]}>...))")
     if any(item.get("xfail") for item in expectations if isinstance(item, dict)):
         n = sum(1 for item in expectations
                 if isinstance(item, dict) and item.get("xfail"))
