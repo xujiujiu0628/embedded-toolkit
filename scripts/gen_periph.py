@@ -408,6 +408,10 @@ def gen_pwm(timer: str, ch: int, pin: str, freq: int, duty: int,
     lines.append(f"{timer}->{ccmr} = (6<<{ocxm_shift}) | (1<<{ocxpe_shift});  // CH{ch}: PWM mode 1, preload")
     lines.append(f"{timer}->CCER  |= (1<<{(ch-1)*4});           // CH{ch} output enable")
     lines.append(f"{timer}->CR1 = (1<<7) | 1;        // ARPE + enable")
+    # F-122 (工单 P0-5): 高级定时器 MOE 缺位是 B 类静默缺陷——编译通过、
+    # 运行永远无波形 (RM0008 §17.4.23 BDTR.MOE=0 强制关闭全部 OC 输出)。
+    if timer == "TIM1":
+        lines.append(f"{timer}->BDTR |= (1<<15);        // MOE: 主输出使能（高级定时器必需）")
     return "\n".join(lines)
 
 
