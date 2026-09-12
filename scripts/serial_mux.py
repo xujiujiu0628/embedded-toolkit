@@ -537,6 +537,9 @@ def main():
             print("Mux 未运行. 使用 'start --port <串口>' 启动")
 
     output_json(result)
+    # F-120 (工单 P0-2): main 全程无退出码——start 失败 (socat 缺失/串口
+    # 打不开/已运行) 也退 0。契约统一: status 决定退出码。
+    sys.exit(0 if result.get("status") == "ok" else 1)
 
 
 if __name__ == "__main__":

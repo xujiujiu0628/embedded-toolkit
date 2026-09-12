@@ -526,7 +526,9 @@ def main() -> None:
 
     if args.as_json:
         output_json(result)
-        return
+        # F-120 (工单 P0-2): 旧版此处 return → 执行失败也退 0，与本文件
+        # 早段校验 JSON 分支的 exit(1) 自相矛盾。契约统一: status 决定退出码。
+        sys.exit(0 if result["status"] == "ok" else 1)
 
     if result["status"] == "ok":
         print(f"[{args.action}] {result['summary']}")
