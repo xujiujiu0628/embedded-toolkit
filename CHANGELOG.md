@@ -50,6 +50,15 @@
   仅 ready 成功的常驻 server 跳过 cleanup，启动失败经 SystemExit 照常回收。
   测试 `tests/test_gdb_server_orphan_cleanup.py` 3 例: 启动失败必 cleanup /
   ready 成功不回归 / 非 server 模式原行为零改动（先红 2 后绿）。
+- **F-122 处置（工单 P0-5 gen_pwm TIM1 缺 BDTR.MOE 永远无输出，fix+test，gen_periph.py）**:
+  TIM1 为高级定时器，MOE=0 时 OC 输出被硬件强制关闭（RM0008 §17.4.23）——
+  旧版生成时钟/GPIO/PSC/ARR/CCR/CCMR/CCER/CR1 全套唯独缺 BDTR.MOE，编译通过
+  但永远无波形（B 类静默缺陷）。TIM1 是合法输入（TIM_BUS F-077 认真处理 APB2、
+  gen_timer_int 处理 TIM1 向量），故按工单推荐方案 a 补齐: timer==TIM1 追加
+  `TIM1->BDTR |= (1<<15)`，TIM2~4 无 BDTR 寄存器不得误加。语法烟测的 stub
+  契约本就含 BDTR 成员，`pwm-tim1-apb2` 用例即覆盖 TIM1 输出。templates/docs
+  无引用（grep 零命中）。测试 `GenPwmTests` +2 例（TIM1 有 MOE / TIM2~4 反向
+  钉无 BDTR，先红 1 后绿）+ 烟测 67 例全绿（本机 arm-none-eabi-gcc 在场实跑）。
 
 ## Unreleased — 2026-09-10（F-103~F-107 P3 清账第一轮：边界报错泛化 / 迁移告警 / ID 唯一性 / 过滤收窄 / 文档回填）
 

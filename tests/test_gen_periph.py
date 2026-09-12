@@ -267,6 +267,20 @@ class GenPwmTests(unittest.TestCase):
         out100 = gen_periph.gen_pwm("TIM2", 1, "PA0", 1000, 100)
         self.assertIn("TIM2->CCR1 = 1000;", out100)   # == ARR+1, 全开
 
+    def test_tim1_emits_bdtr_moe_f122(self):
+        """F-122 (工单 P0-5): TIM1 是高级定时器, MOE=0 时输出被硬件强制关闭
+        ——旧版生成全套寄存器唯独缺 BDTR.MOE, 编译通过但永远无波形 (B 类静默)。"""
+        out = gen_periph.gen_pwm("TIM1", 1, "PA8", 1000, 50)
+        self.assertIn("TIM1->BDTR |= (1<<15);", out)   # MOE 主输出使能
+        self.assertIn("MOE", out)                      # 注释必须说明 MOE 语义
+
+    def test_basic_timer_no_bdtr_f122(self):
+        """TIM2~4 无 BDTR/MOE 寄存器——不得误加 (引用即幻影成员, 烟测/真编译双红)。"""
+        for timer in ("TIM2", "TIM3", "TIM4"):
+            with self.subTest(timer=timer):
+                out = gen_periph.gen_pwm(timer, 1, "PA0", 1000, 50)
+                self.assertNotIn("BDTR", out)
+
 
 class GenAdcTests(unittest.TestCase):
 
