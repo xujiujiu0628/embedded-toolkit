@@ -130,6 +130,23 @@
   addCleanup 兜底 — 全局 tempdir (tempfile.gettempdir()/serial_mux/) 的
   跨运行残留不再假绿/假红。
   （zc/hardware @ 本条 commit，待审）
+- **F-160 (T13/P1-4) verify.py main() 拆分 — 550 行编排分解为九段纯接线，refactor，verify.py**:
+  B-1/N-1/N-2/C-1/N-4/N-3 全部进仓后的行为零变更重构 (机械块级搬移, 零改
+  写): `main()` 瘦身为 parse→doctor 分流→pipeline 三行接线; 新增九段 —
+  `_parse_args` (argparse 装配) / `_run_doctor` (诊断分支) /
+  `_prepare_context` (工程根发现+配置/版本装载) / `_run_build_step`
+  (build+analyze+重试) / `_run_flash_step` (设备锁+flash+重试) /
+  `_run_capture_step` (sim/rtt/semihosting 三后端分派) / `_run_judgement`
+  (HardFault 检测+物理门控+四态判定+顶层 status) / `_finalize_run`
+  (post_reset+租约释放+失败现场+落账+checkpoint+唯一出口) / `_run_pipeline`
+  (编排骨架串接)。早退 sys.exit 语义、exit 0/1/2 契约、_JUNIT_OUT 与
+  WORKSPACE 模块级状态、全部步骤函数调用面原样保留。
+  **硬验收**: ① 全量 842 例零测试文件修改仍全绿 (仅本机 WSL 缺席的 9 例
+  hooks 环境失败, CI ubuntu 正常); ② `--json` 输出逐字段结构一致 —
+  sim-demo 端到端实跑比对拆分前后顶层/steps/capture/verify 键集合与
+  status/evidence/records/post_reset 值完全相同。顺手收 verify.py --doctor
+  帮助文本 "四键→三键" 一行 (F-131 拆挂项; doctor.py 侧 F-131 已改)。
+  （zc/hardware @ 本条 commit，待审）
 
 - **F-145 (T1/B-1 v2 修订) 机器级设备锁 — OS 级文件锁 + 用户目录 device-locks，feat+test+docs，hw_lease.py (新) / verify.py / openocd_run.py**:
   同一探针/板子同时只被一个 agent 占用——这是 P1-3 (F-127 state 写锁) 的
