@@ -27,6 +27,7 @@ from serial_runtime import (
     save_workspace_state,
     save_project_config,
     is_missing,
+    is_mux_alive,
     make_result,
     output_json,
 )
@@ -444,19 +445,6 @@ def stop_mux(workspace: str | None = None):
             summary=f"Mux 已停止 ({len(killed)} 个进程已终止)",
             details={"killed": killed, "vserial": mux_info.get("vserial")},
         )
-
-
-def is_mux_alive(mux_info: dict) -> bool:
-    """检查 mux 进程是否存活"""
-    for pid_key in ("tcp_pid", "pty_pid"):
-        pid = mux_info.get(pid_key)
-        if not pid:
-            return False
-        try:
-            os.kill(pid, 0)
-        except (ProcessLookupError, PermissionError):
-            return False
-    return True
 
 
 def status_mux(workspace: str | None = None):

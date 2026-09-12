@@ -3,6 +3,20 @@
 格式约定: 每条含发现编号（代管期 findings 编目）与证据 commit。当前版本以
 `VERSION` 文件为准（`wb_common.toolkit_version()` 读取）。
 
+## Unreleased — 2026-09-12（F-117~ 第三方审查工单第一批 P0 逐条清账）
+
+- **F-117 处置（工单 P0-1 is_mux_alive Windows 杀进程，fix+test，serial_runtime.py / serial_mux.py）**:
+  `os.kill(pid, 0)` 在 Windows 上非探活——CPython 对非 CTRL 类信号一律
+  `TerminateProcess`，每次开串口（`open_serial_port → get_mux_info → is_mux_alive`）
+  都会无条件杀掉被探测的 mux 进程；PID 不存在时 OpenProcess 失败抛 SystemError
+  穿透 `(ProcessLookupError, PermissionError)` 捕获面。修复: Windows 分支改
+  TCP 连通性探测（`connect_ex(("127.0.0.1", tcp_port)) == 0` 即存活，mux 本就是
+  本机 TCP 服务），POSIX 保留原语义。`serial_mux.py:449-459` 的逐字拷贝删除，
+  改 import 共享实现（收编方向见工单 P2-1，本项完成 is_mux_alive 一半）。
+  当前被 mux 的 socat Linux 门掩蔽、`--no-pty` 落地后即爆，属提前拆弹。
+  测试 `tests/test_mux_alive_probe.py` 6 例: Windows 零 os.kill / 死端口 False /
+  缺 tcp_port False / POSIX 双 pid os.kill / 身份钉 `serial_mux.is_mux_alive IS serial_runtime.is_mux_alive`。
+
 ## Unreleased — 2026-09-10（F-103~F-107 P3 清账第一轮：边界报错泛化 / 迁移告警 / ID 唯一性 / 过滤收窄 / 文档回填）
 
 - **F-103 处置（审计 P3 数值边界组，fix+test，gen_periph.py）**: 四项

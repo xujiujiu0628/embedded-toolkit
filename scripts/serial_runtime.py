@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import signal
+import socket
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -312,7 +313,24 @@ def get_serial_config(
 
 
 def is_mux_alive(mux_info: dict) -> bool:
-    """检查 mux 进程是否存活"""
+    """检查 mux 进程是否存活
+
+    F-117 (工单 P0-1): Windows 上 os.kill(pid, 0) 不是探活——CPython 对非
+    CTRL 类信号一律 TerminateProcess，会无条件杀掉被探测进程（PID 复用时
+    还可能误杀无关进程）。改为 TCP 连通性探测：mux 本就是 127.0.0.1 上的
+    TCP 服务，connect_ex 返回 0 即存活。POSIX 保留 os.kill(pid, 0)。
+    两份拷贝中的 serial_mux 版本已删除，统一 import 本实现。
+    """
+    if os.name == "nt":
+        tcp_port = mux_info.get("tcp_port", 0)
+        if not tcp_port:
+            return False
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                s.settimeout(1.0)
+                return s.connect_ex(("127.0.0.1", int(tcp_port))) == 0
+        except OSError:
+            return False
     for pid_key in ("tcp_pid", "pty_pid"):
         pid = mux_info.get(pid_key, 0)
         if not pid:
