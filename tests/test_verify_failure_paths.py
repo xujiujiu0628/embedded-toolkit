@@ -162,7 +162,9 @@ class FeedbackLoggingTests(unittest.TestCase):
         state = verify._log_feedback_event(self._result(), gate_run=False)
         self.assertTrue(state["logged"])
         self.assertEqual(state["event_id"], "bf_1")
-        event = json.loads(m_run.call_args.args[0][3])
+        # F-159: argv 位置索引 [0][3] → 按值定位 (--log 后随事件 JSON)
+        cmd = m_run.call_args.args[0]
+        event = json.loads(cmd[cmd.index("--log") + 1])
         self.assertEqual(event["pipeline"], "build_fix")
         self.assertEqual(event["outcome"], "fixed")     # ok 且无 hardfault
         self.assertEqual(event["verify_result"], "pass")
@@ -177,7 +179,9 @@ class FeedbackLoggingTests(unittest.TestCase):
         r["steps"]["hardfault"] = {"fault_type": "BusFault"}
         state = verify._log_feedback_event(r, gate_run=False)
         self.assertTrue(state["logged"])
-        event = json.loads(m_run.call_args.args[0][3])
+        # F-159: 按值定位 (同上)
+        cmd = m_run.call_args.args[0]
+        event = json.loads(cmd[cmd.index("--log") + 1])
         self.assertEqual(event["pipeline"], "hardfault")
         self.assertEqual(event["outcome"], "still_broken")
         self.assertEqual(event["fault_type"], "BusFault")

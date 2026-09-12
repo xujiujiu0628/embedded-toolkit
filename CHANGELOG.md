@@ -118,6 +118,18 @@
   用例改传占用字典 + 新增 skip 分支钉, run_check 冒烟调用随签名更新
   (共享测试文件改动记账)。
   （zc/hardware @ 本条 commit，待审）
+- **F-159 (T12/P2-7) 测试套加固 — 三处易碎钉根治，test，test_gcc_build.py / test_verify_failure_paths.py / test_serial_mux_lifecycle.py**:
+  ① `test_gcc_build_source_uses_ms_conversion` 文本钉 ("* 1000" 子串匹配)
+  **AST 化**: 遍历 gcc_build.py 的 make_timing Call 节点, 断言实参子树含
+  Mult×1000 BinOp — 换行/空格/写法漂移不再假红假绿 (行为钉
+  test_timing_ms_is_milliseconds_not_seconds 兜底不变); ②
+  `test_verify_failure_paths` 两处 argv 位置索引 `call_args.args[0][3]`
+  → 按值定位 `cmd[cmd.index("--log") + 1]` — feedback_db 命令行参数顺序
+  调整不再误读; ③ `test_serial_mux_lifecycle` 端口 29876/29877 硬编码 →
+  `serial_mux.find_free_port()` 动态空闲口 + 死亡标记 setUp 先清 +
+  addCleanup 兜底 — 全局 tempdir (tempfile.gettempdir()/serial_mux/) 的
+  跨运行残留不再假绿/假红。
+  （zc/hardware @ 本条 commit，待审）
 
 - **F-145 (T1/B-1 v2 修订) 机器级设备锁 — OS 级文件锁 + 用户目录 device-locks，feat+test+docs，hw_lease.py (新) / verify.py / openocd_run.py**:
   同一探针/板子同时只被一个 agent 占用——这是 P1-3 (F-127 state 写锁) 的
