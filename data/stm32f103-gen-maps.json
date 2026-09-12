@@ -1,0 +1,37 @@
+{
+  "_help": "F-158 (P2-4): gen_periph 引脚/时钟/中断映射数据外置 — 生成器纯逻辑, 数据单一事实源。键形态: TIM_CH_PINS 用 'TIMx:ch' (载入时还原为 tuple 键); SPI_BAUD_DIV / I2C_SPEED_MODES 的整型键载入时转 int。改数据 = 改本文件, 生成器代码零改动。",
+  "gpio_base": { "A": "GPIOA", "B": "GPIOB", "C": "GPIOC" },
+  "gpio_clock_bit": { "A": "IOPAEN", "B": "IOPBEN", "C": "IOPCEN" },
+  "gpio_cr_offset": { "0-7": "CRL", "8-15": "CRH" },
+  "gpio_mode_map": {
+    "out-pp-50mhz": ["0x3", "通用推挽输出 50MHz"],
+    "out-pp-2mhz": ["0x2", "通用推挽输出 2MHz"],
+    "out-od-50mhz": ["0x7", "通用开漏输出 50MHz"],
+    "af-pp-50mhz": ["0xB", "复用推挽输出 50MHz (UART TX / PWM)"],
+    "af-od-50mhz": ["0xF", "复用开漏输出 50MHz (I2C)"],
+    "in-floating": ["0x4", "浮空输入"],
+    "in-pullup": ["0x8", "上拉输入"],
+    "in-analog": ["0x0", "模拟输入 (ADC)"]
+  },
+  "tim_ch_pins": {
+    "TIM2:1": "PA0", "TIM2:2": "PA1", "TIM2:3": "PA2", "TIM2:4": "PA3",
+    "TIM3:1": "PA6", "TIM3:2": "PA7", "TIM3:3": "PB0", "TIM3:4": "PB1",
+    "TIM4:1": "PB6", "TIM4:2": "PB7", "TIM4:3": "PB8", "TIM4:4": "PB9"
+  },
+  "tim_clock_bit": { "TIM2": "TIM2EN", "TIM3": "TIM3EN", "TIM4": "TIM4EN" },
+  "tim_bus": { "TIM1": "APB2" },
+  "tim_irq": { "TIM1": 25, "TIM2": 28, "TIM3": 29, "TIM4": 30 },
+  "i2c_clock_bit": {
+    "I2C1": ["APB1ENR", "I2C1EN", 21],
+    "I2C2": ["APB1ENR", "I2C2EN", 22]
+  },
+  "spi_clock_bit": {
+    "SPI1": ["APB2ENR", "SPI1EN", 12, "APB2"],
+    "SPI2": ["APB1ENR", "SPI2EN", 14, "APB1"]
+  },
+  "spi_baud_div": { "2": 0, "4": 1, "8": 2, "16": 3, "32": 4, "64": 5, "128": 6, "256": 7 },
+  "i2c_speed_modes": {
+    "100000": ["standard", false, false],
+    "400000": ["fast", true, false]
+  }
+}

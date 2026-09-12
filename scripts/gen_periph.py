@@ -14,54 +14,54 @@ STM32F103 外设代码生成器 — 参数 → 寄存器级 C init 代码
 """
 
 import argparse
+import json
 import os
 import sys
 
-from wb_common import find_project_root, load_ref  # F-157: 三份 load_ref 收编
+from wb_common import TOOLKIT_ROOT, find_project_root, load_ref  # F-157: 三份 load_ref 收编
+
+# F-158 (P2-4): 引脚/时钟/中断映射数据外置 data/stm32f103-gen-maps.json —
+# 生成器纯逻辑, 数据单一事实源; 载入后还原为与旧字面量完全相同的内存形态
+# (tuple 键/整型键/元组值), 生成物逐字节不变。
+_GEN_MAPS = json.load(open(os.path.join(TOOLKIT_ROOT, "data",
+                                        "stm32f103-gen-maps.json"),
+                           encoding="utf-8"))
 
 # ---- GPIO 引脚地址映射 ----
-GPIO_BASE = {"A": "GPIOA", "B": "GPIOB", "C": "GPIOC"}
-GPIO_CLOCK_BIT = {"A": "IOPAEN", "B": "IOPBEN", "C": "IOPCEN"}
-GPIO_CR_OFFSET = {"0-7": "CRL", "8-15": "CRH"}
+GPIO_BASE = _GEN_MAPS["gpio_base"]
+GPIO_CLOCK_BIT = _GEN_MAPS["gpio_clock_bit"]
+GPIO_CR_OFFSET = _GEN_MAPS["gpio_cr_offset"]
 
-# ---- TIM 通道 → 引脚映射 (默认复用映射) ----
+# ---- TIM 通道 → 引脚映射 (默认复用映射; JSON 键 "TIM2:1" 还原 tuple) ----
 TIM_CH_PINS = {
-    ("TIM2", 1): "PA0", ("TIM2", 2): "PA1", ("TIM2", 3): "PA2", ("TIM2", 4): "PA3",
-    ("TIM3", 1): "PA6", ("TIM3", 2): "PA7", ("TIM3", 3): "PB0", ("TIM3", 4): "PB1",
-    ("TIM4", 1): "PB6", ("TIM4", 2): "PB7", ("TIM4", 3): "PB8", ("TIM4", 4): "PB9",
+    (t, int(c)): v
+    for k, v in _GEN_MAPS["tim_ch_pins"].items()
+    for t, c in [k.split(":")]
 }
 
 # ---- TIM 基址和时钟映射 ----
-TIM_CLOCK_BIT = {"TIM2": "TIM2EN", "TIM3": "TIM3EN", "TIM4": "TIM4EN"}
+TIM_CLOCK_BIT = _GEN_MAPS["tim_clock_bit"]
 
 # ---- TIM 总线映射 (F-077, RM0008: TIM1 高级定时器挂 APB2, TIM2~7 挂 APB1) ----
 # 旧版两个 TIM 生成器硬编码 APB1ENR, TIM1 会产出 RCC_APB1ENR_TIM1EN —
 # 该宏在 CMSIS 头文件不存在 (TIM1EN 在 APB2ENR bit 0), 编译即失败;
 # 更隐蔽的变体是 AI 顺手"修"成使能别的位 → 定时器时钟从未开启。
-TIM_BUS = {"TIM1": "APB2"}
+TIM_BUS = _GEN_MAPS["tim_bus"]
 
 # ---- I2C 时钟映射 ----
-I2C_CLOCK_BIT = {
-    "I2C1": ("APB1ENR", "I2C1EN", 21),
-    "I2C2": ("APB1ENR", "I2C2EN", 22),
-}
+I2C_CLOCK_BIT = {k: tuple(v) for k, v in _GEN_MAPS["i2c_clock_bit"].items()}
 
 # ---- SPI 时钟映射 ----
 # F-110: 第 4 项从 pclk 字面量 (72/36) 改为总线归属——时钟走 apb_clock_mhz
 # 统一推导, 表不再各自携带频率常数。
-SPI_CLOCK_BIT = {
-    "SPI1": ("APB2ENR", "SPI1EN", 12, "APB2"),  # bus_reg, bit_name, bit_num, bus
-    "SPI2": ("APB1ENR", "SPI2EN", 14, "APB1"),
-}
+SPI_CLOCK_BIT = {k: tuple(v) for k, v in _GEN_MAPS["spi_clock_bit"].items()}
 
 # ---- SPI 分频表 (BR[2:0]) ----
-SPI_BAUD_DIV = {2: 0, 4: 1, 8: 2, 16: 3, 32: 4, 64: 5, 128: 6, 256: 7}
+SPI_BAUD_DIV = {int(k): v for k, v in _GEN_MAPS["spi_baud_div"].items()}
 
 # ---- I2C 速度模式 ----
-I2C_SPEED_MODES = {
-    100000: ("standard", False, False),   # SM, DUTY=0, F/S=0
-    400000: ("fast", True, False),         # FM, DUTY=0, F/S=1
-}
+I2C_SPEED_MODES = {int(k): tuple(v)
+                   for k, v in _GEN_MAPS["i2c_speed_modes"].items()}
 
 # ---- F-110: 时钟树推导 (单一事实源) ----
 HCLK_MIN, HCLK_MAX = 2, 72  # 2 起: pclk1=HCLK//2 须 ≥1; 72 = F103 规格上限
@@ -124,17 +124,8 @@ def pin_cr_reg(pin: str) -> str:
 # ============================================================
 
 # F-103: mode_map 提为模块级并单一事实源 (argparse choices 与 gen_gpio 共用,
-# 两处判据永不漂移)。
-GPIO_MODE_MAP = {
-    "out-pp-50mhz":  ("0x3", "通用推挽输出 50MHz"),
-    "out-pp-2mhz":   ("0x2", "通用推挽输出 2MHz"),
-    "out-od-50mhz":  ("0x7", "通用开漏输出 50MHz"),
-    "af-pp-50mhz":   ("0xB", "复用推挽输出 50MHz (UART TX / PWM)"),
-    "af-od-50mhz":   ("0xF", "复用开漏输出 50MHz (I2C)"),
-    "in-floating":   ("0x4", "浮空输入"),
-    "in-pullup":     ("0x8", "上拉输入"),
-    "in-analog":     ("0x0", "模拟输入 (ADC)"),
-}
+# 两处判据永不漂移)。F-158: 数据外置 gen-maps.json。
+GPIO_MODE_MAP = {k: tuple(v) for k, v in _GEN_MAPS["gpio_mode_map"].items()}
 
 
 def gen_gpio(pin: str, mode: str) -> str:
@@ -521,7 +512,7 @@ def gen_timer_int(timer: str, period_ms: int,
         return f"/* ERROR: period {period_ms}ms 非法 — 必须为正整数。*/"
 
     # IRQ 号
-    irq_map = {"TIM1": 25, "TIM2": 28, "TIM3": 29, "TIM4": 30}
+    irq_map = _GEN_MAPS["tim_irq"]   # F-158: 数据外置
     irq = irq_map.get(timer, 28)
 
     # 计算 PSC/ARR
