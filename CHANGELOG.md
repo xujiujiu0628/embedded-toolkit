@@ -124,6 +124,42 @@
   拉宽复现旧竞态）/ 锁文件建删 / holder pid / 超龄锁秒抢 / 超时降级 stderr
   留痕 / mux mutate 不回滚他人条目 / 读改写调用序钉（先红后绿——红灯由
   no-lock 桩实测双更新必丢其一）。
+- **F-131 处置（工单 P2-2 Keil 退役清扫收尾，fix+test+change，6 文件）**:
+  ① `doctor.py` `_DOCTOR_KEYS` 移除 `uv4_exe`（与 machine.example.json
+  "仓内零 Keil 引用"对齐; `load_machine`/doctor 按下标取键，旧 machine.json
+  残留该键自动容忍——本机 machine.json 实测含 uv4_exe, 行为零变化只是不再
+  进报告），`test_doctor` 三处键集钉同步 + 新增"旧键无害"反向钉；
+  ② `failure_context.py` build_failed agent_hint 的 "ARMCC V5 C90
+  incompatibility" 换 GCC 诊断语境（-Wall/C23/链接脚本越界）；
+  ③ `gen_periph.py` gen_usart printf 重定向从 Keil Microlib
+  `int fputc(int, FILE*)` 改 newlib 系统桩 `int _write(int fd, char*, int)`
+  （fputc 在 GCC/newlib-nano 下 printf 根本不调用——重定向静默失效;
+  `_write` 形态经 arm-none-eabi-gcc -fsyntax-only 四变体实测选定，含
+  `#include <unistd.h>` 落在生成块内/函数体内两态）, 母版钉
+  `test_gen_periph:169` 同步为 `_write` 正钉 + `fputc` 反向钉；
+  ④ `gcc_build.py` artifacts 键表删死键 `axf_file`（Keil 产物, gcc details
+  从不产出, elf_file 才是 GCC 侧主产物）；
+  ⑤ `cube_to_keil.py` 改名 `cube_usercode.py`（git mv, 工具与 Keil 无关——
+  服务 CubeMX 重生成的 USER CODE 保全）: docstring 第 4 步 "Keil 编译验证"
+  改 GCC 验证、PROJECT_ROOT 锚从 `parents[1]` 死锚仓根改
+  `wb_common.find_project_root` 懒解析（import 期零 IO 零 exit, 纯函数
+  `extract_user_code/_dedent` 可安全 import; 命令入口 `_bind_roots()` 发现
+  失败体面 exit 1 + 中文指引），`test_zero_cov_finish`/
+  `test_coverage_lint_reachability` 引用同步（alias import 保留旧符号面）。
+  ⑥ `machine.example.json` _help 与 doctor 实际口径核对后更新（三键预检 +
+  uv4_exe 旧键容忍声明）; doctor.py/verify.py 帮助文本"四键→三键"
+  **拆挂**——verify.py 是并行会话在改文件（F-128~130 工单二），单行文案
+  修复并入 P1-4（verify 重构）一起做，避免搅动他人在制品。
+  测试: 定向 13 模块（doctor/gen_periph/smoke/gcc_build/zero_cov/
+  reachability/failure_hints/hooks/machine_fallback 等）全绿。
+- **F-132 处置（工单 P2-5 文档漂移同步，docs+fix，hooks-install.md / test_hooks_behavior.py）**:
+  ① `docs/hooks-install.md` "已知限制（F-096 登记, 修复待拍板）"节改写为
+  "F-096 已修复"事实态（hooks 三脚本 2026-09-09 已 --cached 优先+工作树
+  回落, 金丝雀组已翻转改名）；② `test_hooks_behavior.py` 模块 docstring
+  从"行为记录+缺陷登记, 不是回归钉"改写为回归钉口径（与 :110 翻转注记
+  对齐）；③ :74 注释 typo "System32\x08sh.exe"（写注释时 `\b` 被转义层吃掉
+  成退格控制符）修为可见文本 `System32\bash.exe`——F-053 同款教训的又一例,
+  docstring/注释含 `\b` 一律用 raw 字符串或双写。
 
 ## Unreleased — 2026-09-12（工单二: GitHub 同类项目借鉴落地）
 

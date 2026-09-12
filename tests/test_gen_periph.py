@@ -166,7 +166,10 @@ class GenUsartTests(unittest.TestCase):
         self.assertIn("RCC->APB2ENR |= RCC_APB2ENR_USART1EN;", out)
         self.assertIn("* PCLK2=72MHz, BRR=0x0271 (39.1/16)", out)
         self.assertIn("USART1->BRR = 0x0271;", out)   # 39 + 1/16 = 39.0625
-        self.assertIn("int fputc(int ch, FILE *f) {", out)
+        # F-131 (工单 P2-2): Keil Microlib fputc 重定向退役, 改 newlib _write
+        self.assertIn("int _write(int fd, char *buf, int len) {", out)
+        self.assertIn("#include <unistd.h>", out)
+        self.assertNotIn("int fputc", out)
 
     def test_usart2_on_apb1_36mhz_brr_0xea6_at_9600(self):
         out = gen_periph.gen_usart("USART2", 9600, "PA2", "PA3")

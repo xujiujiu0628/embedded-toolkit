@@ -21,7 +21,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(
 import serial_hex  # noqa: E402
 import serial_monitor  # noqa: E402
 import serial_scan  # noqa: E402
-import cube_to_keil  # noqa: E402
+import cube_usercode as cube_to_keil  # noqa: E402
 
 
 class SerialHexTests(unittest.TestCase):
@@ -106,7 +106,7 @@ class SerialScanChipMapTests(unittest.TestCase):
 
 
 class CubeToKeilExtractTests(unittest.TestCase):
-    """cube_to_keil: USER CODE 块提取 (纯文本解析)"""
+    """cube_usercode (原 cube_to_keil, F-131): USER CODE 块提取 (纯文本解析)"""
 
     def test_extract_user_code_blocks(self):
         import tempfile

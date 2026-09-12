@@ -293,11 +293,17 @@ def gen_usart(usart: str, baud: int, tx: str, rx: str,
     lines.append(f"{usart}->CR1 = USART_CR1_TE | USART_CR1_RE;")
     lines.append(f"{usart}->CR1 |= USART_CR1_UE;")
     lines.append("")
-    lines.append("/* 4. printf 重定向 (Microlib fputc) */")
-    lines.append("int fputc(int ch, FILE *f) {")
-    lines.append(f"    while (!({usart}->SR & (1UL<<7)));  // wait TXE")
-    lines.append(f"    {usart}->DR = (uint8_t)ch;")
-    lines.append("    return ch;")
+    # F-131 (工单 P2-2): Keil Microlib 的 int fputc(int, FILE*) 在 GCC/newlib-nano
+    # 下 printf 根本不调用它——重定向静默失效 (旧产物来自 Keil 时代, 退役后成
+    # 死代码)。改 newlib 系统桩 _write: printf/puts 最终都走 write(fd,buf,len)。
+    lines.append("/* 4. printf 重定向 (GCC/newlib-nano 系统桩 _write; Keil Microlib 的 fputc 在此链不生效) */")
+    lines.append("#include <unistd.h>")
+    lines.append("int _write(int fd, char *buf, int len) {")
+    lines.append("    for (int i = 0; i < len; i++) {")
+    lines.append(f"        while (!({usart}->SR & (1UL<<7)));  // wait TXE")
+    lines.append(f"        {usart}->DR = (uint8_t)buf[i];")
+    lines.append("    }")
+    lines.append("    return len;")
     lines.append("}")
     lines.append("")
     lines.append("/* 5. 轮询读写 */")
