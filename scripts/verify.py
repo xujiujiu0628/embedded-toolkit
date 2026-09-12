@@ -51,6 +51,11 @@ def _openocd_exe() -> str:
 from runtime_common import output_json  # noqa: E402  (F-041: doctor --json 复用共享层)
 from openocd_runtime import reset_target, swd_probe  # noqa: E402,F401  (F-041: SWD 探测与 release G0.5 同源; F-129: 判定后复位)
 import hw_lease  # noqa: E402  (F-145: flash+capture 段机器级设备锁)
+import junit_xml  # noqa: E402  (F-147: --junit-xml 报告, 生成逻辑在模块内)
+
+# F-147: --junit-xml 的输出路径, main() 设置; _output 是唯一出口汇点,
+# 报告在出口统一落盘 (含 preflight 拒绝的早退运行)。
+_JUNIT_OUT: str | None = None
 from expectations import (ExpectationError, contract_hashes,  # noqa: E402,F401  (F-055: 拆分件再导出, verify.X 调用面不变)
                           evaluate_expectations, load_expectations,
                           _expect_matched, check_forbidden_fields, _forbidden_hit)
@@ -481,7 +486,16 @@ def main():
                         default=0.0,
                         help="F-145: 设备锁冲突时有界等待秒数 (默认 0 = "
                              "fail-fast; 等 span 含 flash+capture 全程)")
+    parser.add_argument("--junit-xml", dest="junit_xml", default=None,
+                        metavar="PATH",
+                        help="F-147: 另写 JUnit XML 报告到 PATH (CI 测试面板"
+                             "用; preflight 拒绝 = 期望全 skipped + 一条 "
+                             "preflight error; 写失败记 junit_xml_error "
+                             "并拉低退出码)")
     args = parser.parse_args()
+
+    global _JUNIT_OUT
+    _JUNIT_OUT = args.junit_xml
 
     if args.doctor:
         # F-041: 诊断分支先于工程发现 —— doctor 不依赖 .workbench 工程
@@ -1022,8 +1036,11 @@ def main():
     )
 
     _output(result, args.json)
-    # 退出码契约: ok=0, 其余(fail/timing_fail/hardfault 等)=1
-    sys.exit(0 if result.get("status") == "ok" else 1)
+    # 退出码契约: ok=0, 其余(fail/timing_fail/hardfault 等)=1;
+    # F-147: junit 报告写失败 → 拉低为 1 (CI 必须知道报告没落盘)
+    failed = (result.get("status") != "ok"
+              or bool(result.get("junit_xml_error")))
+    sys.exit(1 if failed else 0)
 
 
 def _log_feedback_event(result: dict, gate_run: bool) -> dict:
@@ -1117,6 +1134,11 @@ def _output(result: dict, as_json: bool):
     # F-128: evidence 统一在唯一出口落字段 — main() 的失败早退 (build/
     # flash/capture 失败) 也汇到这里, 消费方无需对任何 status 特判缺键
     result["evidence"] = _evidence_level(result)
+    # F-147: JUnit 报告旁路 — 写失败不炸主流程, 记 junit_xml_error 拉低退出码
+    if _JUNIT_OUT:
+        jr = junit_xml.write_junit_report(result, _JUNIT_OUT, workspace=WORKSPACE)
+        if not jr.get("ok"):
+            result["junit_xml_error"] = jr.get("error", "junit write failed")
     if as_json:
         # Force UTF-8 stdout for JSON output (Windows console uses GBK by default)
         try:
