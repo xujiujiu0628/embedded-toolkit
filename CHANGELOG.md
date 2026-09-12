@@ -59,6 +59,28 @@
   既有 evidence 字面量全量改名 (9+6+4 处); 全量 752 例仅本机 WSL 缺席的
   9 例 hooks 环境失败 (CI ubuntu 正常)。
   （zc/hardware @ 本条 commit，合流待协调）
+- **F-147 (T3/N-1) verify --junit-xml JUnit 报告旁路，feat+test+docs，junit_xml.py (新) / verify.py**:
+  CI 测试面板只认 JUnit XML — verify 的四态判定与 preflight 拒绝此前在
+  GitHub Actions test report 里不可见。新增 `scripts/junit_xml.py` (生成
+  逻辑全部住这里, 纯函数可测), verify.py 只做最小接线 (argparse + 唯一
+  出口汇点 _output, 模块级 _JUNIT_OUT 由 main 设置): 映射契约按总工单
+  v2 N-1 全文——expectations 逐条 → testcase; pass → 直认; fail →
+  `<failure type="fail">`; xpass → `<failure type="xpass">` (XPASS 判红,
+  文案提示翻转 xfail); **xfail 未翻转 → `<skipped>`** (欠条不是通过,
+  报告不计失败, 文档明写); lint/preflight 拒绝 (build/flash/capture 失败
+  等没跑到判定的状态) → 期望清单逐条 skipped (ID 从 workspace 的
+  expectations.json 现读) + 一条 preflight `<error>` case 点名 status/error;
+  **只写实测时间** (testsuite time = elapsed_sec 正数才写, testcase 不编造
+  per-case 时长); 父目录自动创建; 写失败不抛 — result 记 `junit_xml_error`
+  且**拉低退出码** (ok 判定 + 报告没落盘 = exit 1, CI 必须知情报告缺失);
+  早退运行同样经 _output 出报告 (preflight 形态)。
+  测试 `tests/test_junit_xml.py` 15 例: 四态映射 / preflight 全 skipped+
+  error / 无期望仍留 error case / XML 可解析+计数正确 (failures=2 含
+  xpass, skipped=1) / 特殊字符 id 转义不破格式 / time 只在实测时写 /
+  父目录自动创建落盘可解析 / 写失败错误信封 / main 端到端 / 写失败拉低
+  退出码; 全量 762 例仅本机 WSL 缺席的 9 例 hooks 环境失败 (CI ubuntu
+  正常)。
+  （zc/hardware @ 本条 commit，合流待协调）
 
 ## Unreleased — 2026-09-12（F-117~ 第三方审查工单第一批 P0 逐条清账）
 
