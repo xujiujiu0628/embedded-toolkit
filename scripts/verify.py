@@ -49,7 +49,7 @@ def _openocd_exe() -> str:
     return load_machine()["openocd_exe"]
 
 from runtime_common import output_json  # noqa: E402  (F-041: doctor --json 复用共享层)
-from openocd_runtime import swd_probe  # noqa: E402,F401  (F-041: SWD 探测与 release G0.5 同源)
+from openocd_runtime import reset_target, swd_probe  # noqa: E402,F401  (F-041: SWD 探测与 release G0.5 同源; F-129: 判定后复位)
 from expectations import (ExpectationError, contract_hashes,  # noqa: E402,F401  (F-055: 拆分件再导出, verify.X 调用面不变)
                           evaluate_expectations, load_expectations,
                           _expect_matched, check_forbidden_fields, _forbidden_hit)
@@ -942,6 +942,22 @@ def main():
     else:
         result["status"] = verification_result["status"]
     result["elapsed_sec"] = round(time.time() - started_ts, 1)
+
+    # ---- Step 6: 判定后硬件自恢复 (F-129, 工单二 A-2) ----
+    # flash 实际发生过的运行结束后复位目标——超时/卡死场景留下的挂着断点
+    # 或半初始化外设不留给下一次运行 (借鉴 agentic-hil)。复位失败只记录
+    # (post_reset: ok|failed|skipped), 绝不改判 verdict; capture.post_reset:
+    # false 显式关闭; --no-flash / flash 未跑成的运行不触发 (无判定即无复位,
+    # 早退出口也不复位——OpenOCD 卡死场景下复位大概率同样卡死)。
+    flash_ok = result.get("steps", {}).get("flash", {}).get("status") == "ok"
+    if flash_ok and (config.get("capture", {}) or {}).get("post_reset", True):
+        rs = reset_target(_openocd_exe())
+        result["post_reset"] = "ok" if rs.get("status") == "ok" else "failed"
+        if rs.get("status") != "ok":
+            print(f"[warn] 判定后复位失败 (不影响 verdict): {rs.get('message', '')}",
+                  file=sys.stderr)
+    else:
+        result["post_reset"] = "skipped"
 
     # 验证失败 (fail/timing_fail) 时保存失败现场供 Agent 分析
     if result["status"] in ("fail", "timing_fail"):

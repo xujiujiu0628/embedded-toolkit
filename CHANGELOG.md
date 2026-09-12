@@ -148,6 +148,24 @@
   build_record 透传与缺省 static）+ test_release_audit 5 例（R8 四分支+static
   拦截），先红后绿; 全量 660→686 全绿（仅本机 WSL 缺席的 9 例 hooks 环境失败,
   CI ubuntu 正常）。
+- **F-129 (工单二 A-2) verify 判定结束后硬件自恢复 post reset，feat+test+docs，openocd_runtime.py / verify.py**:
+  借鉴 agentic-hil 的失败自恢复——"板子状态不留给下一次运行"。旧行为判定后
+  无论红绿都不复位目标, 超时/卡死场景留下挂着断点或半初始化外设的板子污染
+  下一次 verify。新增共享函数 `openocd_runtime.reset_target(exe, cfg)`:
+  `openocd -f <cfg> -c init -c "reset run" -c shutdown` 形态, cfg 缺省与
+  step_flash 同款 stlink+stm32f1x（exe 由调用方经既有 resolve 链取好传入,
+  本函数不读 machine.json 保持纯函数）; 判据沿 swd_probe 内容口径
+  （"shutdown command invoked" 在场且无 "init mode failed"——克隆适配器偶发
+  非零退出不否决）。verify.py 正常路径判定结束后调用: flash 实际发生
+  (steps.flash.status=="ok") 且 capture.post_reset 非 false 才触发, 结果落
+  顶层 `post_reset`: "ok"|"failed"|"skipped"——复位失败仅 stderr 告警, 绝不
+  改判 verdict; --no-flash / flash 未跑成 / 无判定的早退出口 (build/flash/
+  capture_failed) 一律 skipped 不触发。6 处既有 main() 驱动测试补 reset_target
+  mock（本机有真 openocd+ST-Link, 测试零触硬件纪律）。README config 片段补
+  post_reset 键说明。测试 `tests/test_verify_post_reset.py` 13 例
+  （reset_target 内容判据×7 含超时/OSError/非零退出容忍; main 流: FAIL 判决
+  后复位被调 / 绿也复位 / 复位失败 verdict 不变 / --no-flash / post_reset:
+  false / flash 失败早退不复位且无字段），先红后绿。
 
 ## Unreleased — 2026-09-10（F-103~F-107 P3 清账第一轮：边界报错泛化 / 迁移告警 / ID 唯一性 / 过滤收窄 / 文档回填）
 

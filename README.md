@@ -174,6 +174,9 @@ STM32 工程。以下 `<工程根>` 指你的固件目录，脚本从任意 cwd 
                "sram_base": "0x20000000", "sram_size": 2048,
                "id": "SEGGER RTT", "boot_delay_ms": 300 }
 }
+# 可选: "post_reset": false 加进 capture 段可关闭"判定后自动复位"
+#（默认开——flash 实际发生过的运行在判定结束后执行 init;reset run;shutdown,
+#  板子状态不留给下一次运行; 复位失败只落 post_reset 字段, 不改判定）
 
 # 2. 写下期望清单（【无需硬件】）：
 #    <工程根>/.workbench/expectations.json

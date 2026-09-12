@@ -89,6 +89,9 @@ class VerifyMainSuccessPathTests(unittest.TestCase):
             mock.patch.object(
                 verify, "run_semihosting_session",
                 _slow_mock((CAPTURED_TEXT, ""))),
+            # F-129: 判定后复位是真实 openocd 子进程, 测试一律 mock 防触硬件
+            mock.patch.object(verify, "reset_target",
+                              _slow_mock({"status": "ok"})),
         ]
         for p in patchers:
             p.start()
@@ -205,6 +208,8 @@ class ExpectationsMigrationWarningTests(unittest.TestCase):
                                               "stdout": ""})), \
                 mock.patch.object(verify, "run_semihosting_session",
                                   _slow_mock(("x\n", ""))), \
+                mock.patch.object(verify, "reset_target",
+                                  mock.Mock(return_value={"status": "ok"})), \
                 mock.patch.object(verify, "record_checkpoint"):
             with redirect_stdout(out), redirect_stderr(err):
                 try:

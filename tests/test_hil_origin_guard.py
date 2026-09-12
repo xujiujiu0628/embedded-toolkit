@@ -146,6 +146,7 @@ class MainFlowGuardTests(unittest.TestCase):
         # 把 worktree 的 .workbench 作为 cwd
         old_cwd = os.getcwd()
         os.chdir(self.ws)
+        # F-129: 判定后复位是真实 openocd 子进程, 测试一律 mock 防触硬件
         try:
             with mock.patch.object(sys, "argv",
                                    ["verify.py"] + list(argv_extra)), \
@@ -158,6 +159,8 @@ class MainFlowGuardTests(unittest.TestCase):
                                    return_value={"status": "ok", "method": "rtt",
                                                  "lines": 0, "duration_sec": 0.0,
                                                  "raw_length": 0}), \
+                 mock.patch.object(verify, "reset_target",
+                                   return_value={"status": "ok"}), \
                  redirect_stdout(io.StringIO()) as out, \
                  redirect_stderr(io.StringIO()) as err:
                 with self.assertRaises(SystemExit) as ctx:
