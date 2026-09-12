@@ -476,6 +476,82 @@ def diagnose(regs: dict, symbols: list[dict]) -> str:
     return "\n".join(parts)
 
 
+def _read_fault_text(spec: str) -> str:
+    """读 --fault-text 指定的捕获文本 ('-' = stdin)。不可读返回空串。"""
+    try:
+        if spec == "-":
+            return sys.stdin.read()
+        with open(spec, encoding="utf-8", errors="replace") as f:
+            return f.read()
+    except OSError as e:
+        print(f"WARNING: --fault-text 不可读: {e}", file=sys.stderr)
+        return ""
+
+
+def _diagnose_from_text(args, started_at, started_ts) -> None:
+    """--no-probe 仅解析通道 (F-130, 工单二 A-3): 不触 OpenOCD。
+
+    MCP diagnose_hardfault 工具的底座: agent 手里已有捕获文本 (run_verify
+    产物), 解析层 1 [HF] PC=/LR= 现场行即可定位故障点, 不必也无权抢探针。
+    无 live 寄存器 → fault_type/CFSR 分析缺席, 诚实标注而非伪装完整诊断。
+    退出码: 解析出诊断 = 0; 文本不可得/无现场行 = 1 (消费方按 rc 分流)。"""
+    if not args.fault_text:
+        result = {"status": "error",
+                  "error": "--no-probe 需要配 --fault-text (无探针即无 live 寄存器, "
+                           "没有文本就没有可解析的现场)"}
+        print(json.dumps(result, ensure_ascii=False, indent=2)
+              if args.json else result["error"])
+        sys.exit(1)
+
+    cap_text = _read_fault_text(args.fault_text)
+    map_path = args.map or _default_map_path()
+    symbols = parse_map_symbols(map_path)
+    note = _map_degradation_note(map_path, symbols)
+    if note:
+        print("WARNING: " + note, file=sys.stderr)
+    site = parse_hf_site(cap_text)
+
+    resolved = {}
+    fault_site = None
+    if site:
+        fault_site = {
+            "pc": f"0x{site['pc']:08X}",
+            "lr": f"0x{site['lr']:08X}",
+            "source": "layer1_stacked_frame",
+        }
+        for key in ("pc", "lr"):
+            if site[key] > 0x08000000:
+                sym = resolve_address(site[key], symbols)
+                if sym:
+                    fault_site[key + "_sym"] = f"{sym['name']}+{sym['offset']}"
+                    resolved[key] = fault_site[key + "_sym"]
+
+    result = {
+        "status": "parsed_text_only" if site else "no_fault_marker",
+        "probe": "skipped (--no-probe, 仅解析不触硬件)",
+        **({"fault_site": fault_site} if fault_site else {}),
+        "resolved": resolved,
+        "diagnosis": (
+            "仅层 1 现场行解析 (--no-probe): 故障点已定位; fault_type/CFSR "
+            "位级归因需 live 探针, 建议接入真机后跑完整 hardfault.py 复核"
+            if site else
+            "捕获文本无 [HF] PC=/LR= 现场行 — 无 HardFault 痕迹或文本不是 "
+            "故障现场 (--no-probe 无 live 寄存器可兜底)"),
+        "symbols_total": len(symbols),
+        "needs_ai_judgement": True,
+        "_meta": {
+            "map_file": map_path,
+            "timestamp": started_at,
+            "elapsed_sec": round(time.time() - started_ts, 1),
+        },
+    }
+    if args.json:
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+    else:
+        print(result["diagnosis"])
+    sys.exit(0 if site else 1)
+
+
 def _default_map_path() -> str:
     """默认 .map: 从 cwd 向上发现工程根, 取 lst/ 下第一个 .map。
 
@@ -505,10 +581,17 @@ def main():
     parser.add_argument("--fault-text", default=None,
                         help="含层 1 [HF] PC=/LR= 行的捕获文本路径, '-'=stdin "
                              "(F-116/H-1: handler 自旋场景下 live PC 非故障现场)")
+    parser.add_argument("--no-probe", action="store_true",
+                        help="只解析不探针 (F-130, MCP 通道底座): 跳过 OpenOCD "
+                             "现场读取, 仅用 --fault-text 的层 1 现场行出诊断")
     args = parser.parse_args()
 
     started_at = now_iso()
     started_ts = time.time()
+
+    if args.no_probe:
+        _diagnose_from_text(args, started_at, started_ts)
+        return
 
     # 1. 运行 OpenOCD 读取寄存器
     raw = run_openocd_diag()

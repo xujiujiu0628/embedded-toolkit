@@ -1,0 +1,3 @@
+# MCP server 专用依赖 (scripts/mcp_server.py) — 仅 MCP 接入需要。
+# 工具库其余功能 (verify/lint/gen/lookup/audit/...) 全部零第三方依赖。
+mcp>=1.0

@@ -166,6 +166,29 @@
   （reset_target 内容判据×7 含超时/OSError/非零退出容忍; main 流: FAIL 判决
   后复位被调 / 绿也复位 / 复位失败 verdict 不变 / --no-flash / post_reset:
   false / flash 失败早退不复位且无字段），先红后绿。
+- **F-130 (工单二 A-3) MCP server 包装现有工具，feat+test+docs，mcp_server.py (新) / hardfault.py**:
+  借鉴 agentic-hil / hardci / jlink-mcp 的第一接口形态: agent 经有界 MCP 工具
+  使用本工具库, 不再靠 shell 拼装。新增 `scripts/mcp_server.py` (stdio
+  transport) 六工具: run_verify / lint_expectations / gen_peripheral /
+  rm_lookup / diagnose_hardfault / doctor。两条铁律第一版守住 (agentic-hil
+  安全设计): ① 工具 = 对现有脚本的子进程调用透传, 零业务逻辑复制 (CLI 仍是
+  唯一事实源, 注册表单一数据结构, 测试钉"每个工具映射的脚本真实存在"); ②
+  入参白名单校验——未知键拒绝、值以 "-" 开头拒绝 (flag 注入)、整数边界/正则
+  逐项校验、bool 显式类型检查 (True 不得冒充 ch=1)、工程根必须存在
+  .workbench/config.json (不给文件系统探测面), **不给 agent 任意 shell**。
+  架构: plan_tool_call (纯计划层, 校验→argv/stdin/cwd/timeout) + 
+  run_planned_call (子进程透传, F-120 后 returncode 判 ok, JSON 结果与
+  stderr 尾巴透传, 本层不加工语义)。MCP SDK 可选依赖 requirements-mcp.txt
+  单列, 缺失时给可行动报错 (指向安装命令, 注明其余工具零依赖不受影响);
+  仓根 .mcp.json.example 模板入库 (.mcp.json 已在 .gitignore, 照抄
+  machine.json 模板惯例)。hardfault.py 新增 `--no-probe` 仅解析通道
+  (MCP diagnose_hardfault 底座): 跳过 OpenOCD 现场读取, 仅用 --fault-text
+  层 1 [HF] PC=/LR= 行出 fault_site+符号解析, 状态诚实标 parsed_text_only
+  / no_fault_marker, 无 live 寄存器不伪装完整诊断。README 新增"MCP 接入"节
+  (含 Claude Code .mcp.json 配置示例) + 工具速查表补两行。
+  测试 `tests/test_mcp_server.py` 27 例 (注册表完整性/工程守卫×4/参数白名单
+  ×6/分发计划×5/mock 子进程透传与错误透传×4/SDK 缺失文案×2/--no-probe
+  专项×3 含"绝不触 run_openocd_diag"安全钉)，先红后绿。
 
 ## Unreleased — 2026-09-10（F-103~F-107 P3 清账第一轮：边界报错泛化 / 迁移告警 / ID 唯一性 / 过滤收窄 / 文档回填）
 

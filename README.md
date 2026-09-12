@@ -205,7 +205,7 @@ python scripts/release.py --project <工程根> --tag v1.0.0 --dry-run
 | `scripts/verify.py` | 闭环编排：build→analyze→flash→capture→判定，`--json` 结构化输出 | ✅ |
 | `scripts/gcc_build.py` | GCC/make 构建后端，JSON 契约输出 + 产物登记 | ❌ |
 | `scripts/release.py` | G0→G3 门禁发布：全绿才打 tag，记录含双重哈希锚 | ✅ |
-| `scripts/release_audit.py` | 发布记录事后审计 R1~R7（tag 指向/hex 重算/契约锚） | ❌ |
+| `scripts/release_audit.py` | 发布记录事后审计 R1~R8（tag 指向/hex 重算/契约锚/证据等级） | ❌ |
 | `scripts/expectations_lint.py` | expectations.json 提交前校验 E1~E11（含 F-112 负断言） | ❌ |
 | `scripts/fsd_coverage.py` | FSD 需求 ↔ expectations 断言对账 C1/C2/C3 + 漂移对照表（F-113） | ❌ |
 | `scripts/handoff_guard.py` | 外部智能体代管分支的三级禁线机检 | ❌ |
@@ -214,6 +214,37 @@ python scripts/release.py --project <工程根> --tag v1.0.0 --dry-run
 | `scripts/gen_periph.py` | 参数 → 寄存器级 C 初始化代码 / 外设文档（时钟经 `--hclk` 参数化，默认 72MHz 按标准 APB 分频推导，非默认值生成物头注回显前提；`--tim-clk` 显式值优先） | ❌ |
 | `scripts/hardfault.py` | HardFault 现场：寄存器 + 符号表定位出错函数 | ✅ |
 | `scripts/serial_*` / `openocd_*` | 串口与探针底层族（RTT/GDB/telnet） | ✅ |
+| `scripts/mcp_server.py` | MCP 接入：六工具有界包装（见下节），零业务复制 | 视工具 |
+
+## MCP 接入（AI agent 第一接口）
+
+把六个核心工具包装成有界 MCP 工具（stdio transport）：`run_verify` /
+`lint_expectations` / `gen_peripheral` / `rm_lookup` / `diagnose_hardfault`
+（仅解析不触探针）/ `doctor`。安全设计与 agentic-hil 同源：工具=对现有脚本的
+子进程透传（零业务逻辑复制，CLI 仍是唯一事实源）、入参白名单校验、
+**不给 agent 任意 shell**。
+
+```bash
+# MCP SDK 是唯一可选依赖（其余工具零第三方依赖，不受影响）
+pip install -r requirements-mcp.txt
+```
+
+Claude Code 注册：把仓根 `.mcp.json.example` 拷为工程根（或 `~/.claude`）的
+`.mcp.json`（本机文件，不入库），把 `<TOOLKIT_ROOT>` 替换为本仓绝对路径：
+
+```jsonc
+{
+  "mcpServers": {
+    "embedded-toolkit": {
+      "command": "python",
+      "args": ["<TOOLKIT_ROOT>/scripts/mcp_server.py"]
+    }
+  }
+}
+```
+
+`run_verify` 等需要工程的工具要求 `project` 参数指向持有
+`.workbench/config.json` 的固件工程根——不存在或不是工程即拒绝。
 
 ## 工程契约（`.workbench/`）
 
