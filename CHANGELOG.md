@@ -160,6 +160,15 @@
   对齐）；③ :74 注释 typo "System32\x08sh.exe"（写注释时 `\b` 被转义层吃掉
   成退格控制符）修为可见文本 `System32\bash.exe`——F-053 同款教训的又一例,
   docstring/注释含 `\b` 一律用 raw 字符串或双写。
+- **F-133 登记（工单 P2-6 边角缺陷打包，test-only 红基线，实现移交 zc/hardware）**:
+  `tests/test_p2_edge_pack.py` 16 用例 22 钉先红入账覆盖 a~k——a 过滤
+  fail-closed / b 物理门 expected<=0 守卫 / c svd_to_json 死函数+meta 覆写 /
+  d rm_lookup format_result 参数化 / e duration_profile 共享根发现 /
+  f telnet 地址显式解析 / g operation_mode JSON 契约 / h 三入口 ROOT_DIR 死锚 /
+  i Popen 平台守卫 / j save_json_file tmp 残骸 / k serial_runtime 注解。
+  j 项设计注记: 真实落盘 + os.replace 失败制造 tmp（mock write_text 不落盘
+  是假绿陷阱——已修）。基线实跑 **16 例全红（15 failures + 7 errors 含 subTest）**;
+  实现与转绿由 zc/hardware 完成（桌面《zcode 任务清单 v2》T0 项），本条待合流补账。
 
 ## Unreleased — 2026-09-12（工单二: GitHub 同类项目借鉴落地）
 
