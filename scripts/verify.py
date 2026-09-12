@@ -286,6 +286,22 @@ def append_audit_entry(workspace: str, origin: str, step: str,
         print(f"[warn] audit 落盘失败: {audit_path}", file=sys.stderr)
 
 
+def _hardfault_trigger(captured_text, capture_empty, flash_ran):
+    """F-115 (B1): HardFault 诊断触发路径归因 (spec rtt-hardfault §3.2)。
+
+    "marker"        = C 级 handler 显式标记在场 (主路径; 判定只查文本,
+                      semihosting/RTT 后端无关——RTT 工程回填 handler 即走此路);
+    "empty_fallback"= 本次确实烧录但捕获全空 (真兜底, 归因以层 2 诊断为准);
+    None            = 不触发 (--no-build/--no-flash 空输出是预期,
+                      08-12 误触发回归 hf_20260812_100345 守卫)。
+    同帧病态输入 (标记在但行数 0) 归因取 marker——携带信息更强。"""
+    if "HARDFAULT" in captured_text:
+        return "marker"
+    if capture_empty and flash_ran:
+        return "empty_fallback"
+    return None
+
+
 def _step_durations_from(result: dict) -> tuple[list, dict]:
     """F-050 时长画像样本组装 (F-085 提取为共享 helper)。
 
@@ -789,19 +805,27 @@ def main():
     #   旧逻辑在此场景误触发诊断并污染反馈库 (hf_20260812_100345 事件)。
     #   仅当输出含显式 HARDFAULT 标记 (C 级 handler 打印的 === HARDFAULT ===)
     #   或"本次确实烧录过但完全无输出"时才运行诊断, 归因以诊断结果为准。
-    has_hardfault = ("HARDFAULT" in captured_text)
+    capture_empty = (len(captured_lines) == 0)
     flash_ran = (not args.no_flash) and \
         result.get("steps", {}).get("flash", {}).get("status") == "ok"
-    capture_empty = (len(captured_lines) == 0)
-    if has_hardfault or (capture_empty and flash_ran):
+    hf_trigger = _hardfault_trigger(captured_text, capture_empty, flash_ran)
+    has_hardfault = hf_trigger == "marker"
+    if hf_trigger:
         hf_path = os.path.join(TOOLKIT_ROOT, "scripts", "hardfault.py")
         if os.path.exists(hf_path):
             try:
+                hf_cmd = [sys.executable, hf_path, "--json"]
+                hf_kw = {}
+                # F-116/H-1: marker 路径把捕获文本递给层 2, 解析 [HF] PC=/LR=
+                # 行 → fault_site (真实故障点)。live PC 在自旋场景恒指 handler。
+                if hf_trigger == "marker" and "[HF] PC=" in captured_text:
+                    hf_cmd += ["--fault-text", "-"]
+                    hf_kw["input"] = captured_text
                 hf_result = subprocess.run(
-                    [sys.executable, hf_path, "--json"],
+                    hf_cmd,
                     capture_output=True, text=True,
                     encoding='utf-8', errors='replace',
-                    timeout=60, cwd=WORKSPACE
+                    timeout=60, cwd=WORKSPACE, **hf_kw
                 )
                 if hf_result.returncode == 0 and hf_result.stdout.strip():
                     hf_data = json.loads(hf_result.stdout)
@@ -812,12 +836,16 @@ def main():
                     result["steps"]["hardfault"] = {
                         "status": ("hardfault_detected" if hf_fault_type != "no_fault"
                                    else "checked_no_fault"),
+                        "trigger": hf_trigger,   # F-115 归因: marker/empty_fallback
                         "fault_type": hf_fault_type,
                         "diagnosis": _sanitize_text(hf_data.get("diagnosis", "")),
                         "registers": hf_data.get("registers", {}),
                         "fault_registers": hf_data.get("fault_registers", {}),
                         "resolved": hf_data.get("resolved", {}),
                     }
+                    if hf_data.get("fault_site"):
+                        result["steps"]["hardfault"]["fault_site"] = \
+                            hf_data["fault_site"]
                     # 注入点 ②: HardFault 检测到 → 标记需要对立审查
                     if hf_fault_type != "no_fault":
                         result["steps"]["hardfault"]["review_needed"] = True
@@ -829,12 +857,14 @@ def main():
                 else:
                     result["steps"]["hardfault"] = {
                         "status": "error",
+                        "trigger": hf_trigger,   # F-115
                         "message": ("Diagnosis failed" +
                                     (f": {hf_result.stderr[-200:]}" if hf_result.stderr else ""))
                     }
             except Exception as e:
                 result["steps"]["hardfault"] = {
-                    "status": "error", "message": str(e)
+                    "status": "error", "trigger": hf_trigger,  # F-115
+                    "message": str(e)
                 }
 
     # ---- Step 4c: 物理层门控 (TIMING_FAIL) ----
