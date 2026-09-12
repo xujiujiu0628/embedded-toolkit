@@ -7,13 +7,10 @@ import os
 import subprocess
 import sys
 import time
-from pathlib import Path
 from shutil import which
 
-
-ROOT_DIR = Path(__file__).resolve().parents[2]
-if str(ROOT_DIR) not in sys.path:
-    sys.path.insert(0, str(ROOT_DIR))
+# F-133/h: 旧 ROOT_DIR=parents[2] 无效锚清除 (指向仓外, 插 sys.path 从不
+# 命中); 直接脚本运行时 sys.path[0]=scripts/ 已覆盖 import 需求
 
 from openocd_gdb_common import build_gdb_commands, parse_gdb_output, run_gdb_commands  # noqa: E402
 from openocd_runtime import (  # noqa: E402

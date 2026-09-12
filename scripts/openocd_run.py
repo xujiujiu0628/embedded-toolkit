@@ -8,12 +8,9 @@ import re
 import subprocess
 import sys
 import time
-from pathlib import Path
 
-
-ROOT_DIR = Path(__file__).resolve().parents[2]
-if str(ROOT_DIR) not in sys.path:
-    sys.path.insert(0, str(ROOT_DIR))
+# F-133/h: 旧 ROOT_DIR=parents[2] 无效锚清除 — parents[2] 指向仓外 (D:\ 层),
+# 插进 sys.path 从不命中; 直接脚本运行时 sys.path[0]=scripts/ 已覆盖 import 需求
 
 from openocd_runtime import (  # noqa: E402
     resolve_openocd_params,  # noqa: F401  (F-091 再导出, 调用面不变)
@@ -416,7 +413,29 @@ def main() -> None:
             print(f"错误: {exc}", file=sys.stderr)
         sys.exit(1)
 
-    if args.action == "raw" and int(config.get("operation_mode", 1)) >= 3:
+    # F-133/g: operation_mode 非数字 → JSON 错误契约 (旧版裸 ValueError traceback)
+    try:
+        operation_mode = int(config.get("operation_mode", 1))
+    except (TypeError, ValueError):
+        bad_mode = config.get("operation_mode")
+        result = make_result(
+            status="error",
+            action=args.action,
+            summary=f"operation_mode 非数字: {bad_mode!r}",
+            details={},
+            context=parameter_context(provider="openocd", workspace=str(workspace), parameter_sources=parameter_sources, config_path=config_path),
+            error={"code": "invalid_config",
+                   "message": (f"operation_mode 非数字: {bad_mode!r} — "
+                               f"{config_path} 该键须为整数")},
+            timing=make_timing(started_at, (time.time() - started_ts) * 1000),
+        )
+        if args.as_json:
+            output_json(result)
+        else:
+            print(f"错误: {result['error']['message']}", file=sys.stderr)
+        sys.exit(1)
+
+    if args.action == "raw" and operation_mode >= 3:
         message = "operation_mode=3 时禁止直接执行 raw 命令，请先切换模式或显式确认后再执行"
         result = make_result(
             status="error",

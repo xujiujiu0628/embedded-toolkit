@@ -3,7 +3,35 @@
 格式约定: 每条含发现编号（代管期 findings 编目）与证据 commit。当前版本以
 `VERSION` 文件为准（`wb_common.toolkit_version()` 读取）。
 
-## Unreleased — zc/hardware（总工单 v2: zc/hardware 分支任务 T1~T9, 编号段 F-145 起）
+## Unreleased — zc/hardware（总工单 v2 全量承接: 编号对照 T1~T9=F-145~F-152/T9=F-153, 新任务 F-154 起顺延）
+
+- **F-154 (T10/P2-6) 红基线 22 钉转绿 — 边角缺陷打包实现，fix+test，serial_monitor / physical_gate / svd_to_json / rm_lookup / duration_profile / openocd_telnet / openocd_run / openocd_gdb / openocd_itm / capture_semihosting / serial_mux / serial_runtime / runtime_common**:
+  F-133 红基线 (tests/test_p2_edge_pack.py, 16 用例 22 断言) 逐条实现:
+  **a** `serial_monitor.emit_line` 过滤器异常 fail-closed + stderr 告警
+  (旧 except pass = 坏过滤器全放行污染监控输出); **b** `physical_gate`
+  expected<=0 前置守卫 — 碰子进程前短路返回 probe_error (旧版除零使
+  deviation 恒 0 恒绿); **c** `svd_to_json` 删 `resolve_derived_from` 死
+  函数 + `merge_into_ref` 不再硬编码覆写 `_meta.version/updated` (ref
+  语义版本与是否跑过 SVD 同步无关); **d** `rm_lookup.format_result` 增
+  显式 ref_data 参数 (库态调用不再 NameError), `--list` 的 peripherals
+  裸下标改 `.get` 链; **e** `duration_profile` 工程根发现收编
+  `wb_common.find_project_root` (本地 while 上溯简版缺双布局兜底);
+  **f** `openocd_telnet`: 新增 `parse_hex_addr` (地址必须 0x 前缀十六
+  进制, 十进制 "134217726" 曾被 int(x,16) 静默误读) + 地址类动作在启动
+  OpenOCD 前显式解析, 非法 → invalid_address 错误契约; **--exe 缺省
+  None 走 resolve_param 链 (cli>config.exe>machine.json>PATH, 旧
+  default="openocd" 使配置永不生效 — 行为变更)** + gdb/telnet 端口缺省
+  None 读工程配置 (openocd 段 gdb_port/telnet_port), 非整数 →
+  invalid_config 契约; **g** `openocd_run` operation_mode 非数字 →
+  invalid_config JSON 错误契约 exit 1 (旧版裸 ValueError traceback;
+  附带 output_json 的 reconfigure 加 StringIO 重定向守卫); **h** 三入口
+  `ROOT_DIR=parents[2]` 无效锚清除 (指向仓外 D:\ 层, 插 sys.path 从不
+  命中); **i** `capture_semihosting`+`serial_mux` Popen 补
+  `hidden_subprocess_kwargs()` (Windows 不弹控制台窗; serial_runtime
+  增补该再导出); **j** `save_json_file` 写失败 finally 清 .tmp 残骸;
+  **k** `get_serial_config` 注解修正 `tuple[dict | None, dict]`。
+  验收 = 22 钉全绿 + 全量回归 (合流时 Claude 复审重点抽查项)。
+  （zc/hardware @ 本条 commit，待审）
 
 - **F-145 (T1/B-1 v2 修订) 机器级设备锁 — OS 级文件锁 + 用户目录 device-locks，feat+test+docs，hw_lease.py (新) / verify.py / openocd_run.py**:
   同一探针/板子同时只被一个 agent 占用——这是 P1-3 (F-127 state 写锁) 的
