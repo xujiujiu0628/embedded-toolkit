@@ -81,10 +81,6 @@ class GccSectionLoadTests(unittest.TestCase):
         self.assertEqual(load_project_config(self.tmp).get("gcc", {}), {})
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 class MakeTimingScaleTests(unittest.TestCase):
     """F-099 修复钉: gcc_build 的 timing_ms 必须是毫秒量级 (P2-4: 曾把秒
     直接当毫秒传入 make_timing, elapsed_ms 偏小 1000 倍)。性质断言: 真实
@@ -112,3 +108,9 @@ class MakeTimingScaleTests(unittest.TestCase):
         for line in found:
             self.assertIn("* 1000", line,
                           f"make_timing 调用缺毫秒换算: {line.strip()}")
+
+
+if __name__ == "__main__":
+    # F-125 (工单 P1-2): unittest.main() 必须在全部类定义之后 —— 旧位置在
+    # MakeTimingScaleTests 之前, 单文件直跑时该类不被收集, F-099 回归钉形同虚设
+    unittest.main()

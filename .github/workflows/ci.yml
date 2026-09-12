@@ -10,8 +10,14 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        os: [ubuntu-latest, windows-latest]   # F-124 (工单 P1-1): Windows 是主开发/真机平台, CI 终于同轨
         python-version: ["3.10", "3.12"]
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
+    env:
+      # Windows runner 默认 ANSI 代码页会打乱中文 stderr 甚至诱发编码错误;
+      # 与本地开发约定 (README 工单口径) 对齐, 固定 UTF-8 运行时。
+      PYTHONIOENCODING: utf-8
+      PYTHONUTF8: "1"
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-python@v6
