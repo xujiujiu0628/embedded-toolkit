@@ -69,6 +69,8 @@ from failure_context import (_filter_capture_lines,  # noqa: E402  (F-060: 拆�
                               resolve_capture_timeout, _save_failure_context)
 from capture_semihosting import (run_semihosting_session,  # noqa: E402  (F-061: 拆分件再导出)
                                  SemihostingTimeout)
+from capture_sim import (DEFAULT_MACHINE, SimTimeout,  # noqa: E402  (F-150: sim 后端)
+                         resolve_qemu, run_sim_session)
 
 GCC_BUILD = os.path.join(TOOLKIT_ROOT, "scripts", "gcc_build.py")         # 默认后端 (builder=gcc)
 # Keil 退役桥 (2026-09-05 F-067b 拆 archive): 仓内不再保留 keil_*.py,
@@ -412,13 +414,16 @@ def verify(output: str, expect: list[str], description: str = "", expect_pattern
 
 
 def _finish_capture_timeout(proc, result: dict, capture_timeout: int,
-                            max_retries: int, as_json: bool, lease=None):
+                            max_retries: int, as_json: bool, lease=None,
+                            method: str = "semihosting",
+                            tool: str = "OpenOCD"):
     """F-003: OpenOCD 卡死超时 — 回收部分输出并诚实判 capture_failed。
 
     旧行为丢弃已收输出并按 capture ok(lines=0) 入账, 把"采集工具超时"
     伪装成"程序无输出"归因。正常路径 OpenOCD 必然经 sleep+halt+shutdown
     退出, 超时只发生在工具自身卡死 — 输出不可信但部分留证仍有价值。
-    待真机终判: 修复前后需各跑一次真机确认归因链。"""
+    待真机终判: 修复前后需各跑一次真机确认归因链。
+    F-150: method/tool 参数化 — sim 后端 (qemu) 复用同一收尸/归因出口。"""
     proc.kill()
     try:
         stdout, stderr = proc.communicate(timeout=5)
@@ -426,11 +431,11 @@ def _finish_capture_timeout(proc, result: dict, capture_timeout: int,
         stdout, stderr = "", ""
     partial = _filter_capture_lines((stdout or "") + (stderr or ""))
     result["steps"]["capture"] = {
-        "status": "error", "method": "semihosting",
+        "status": "error", "method": method,
         "timeout_sec": capture_timeout,
         "lines": len(partial),
         "partial_output": _sanitize_text("\n".join(partial))[:2000],
-        "error": (f"OpenOCD 未在 {capture_timeout + 30}s 内退出 — 采集超时"
+        "error": (f"{tool} 未在 {capture_timeout + 30}s 内退出 — 采集超时"
                   "是工具故障, 非'程序无输出' (F-003)"),
     }
     result["status"] = "capture_failed"
@@ -577,6 +582,7 @@ def main():
         build_attempts = []
         build_ok = False
         analyze = None   # F-008: build 循环内的分析结果, 循环后复用不再双跑
+        elf_file = ""    # F-150: sim 后端内核 (gcc details.elf_file)
         for attempt in range(max_retries + 1):
             build = step_build(config, builder, rebuild=args.rebuild)
             build_info = {
@@ -590,6 +596,7 @@ def main():
             if build.get("status") == "ok":
                 log_file = build.get("details", {}).get("log_file", "")
                 hex_file = build.get("details", {}).get("hex_file", "")
+                elf_file = build.get("details", {}).get("elf_file", "")  # F-150: sim 内核
 
                 if log_file or builder == "gcc":
                     analyze = step_analyze(log_file, builder, build.get("metrics"))
@@ -681,30 +688,48 @@ def main():
         # 从 state.json 读取上次构建产物 (gcc/keil 后端 build 时写入)
         # F-007: 无产物走 step_flash 的明确报错, 不再回落 blink 退役残留路径
         hex_file = ""
+        elf_file = ""
         try:
             state_path = os.path.join(WORKSPACE, ".workbench", "state.json")
             if os.path.exists(state_path):
                 with open(state_path, 'r', encoding='utf-8') as f:
                     state = json.load(f)
                 hex_file = state.get("last_build", {}).get("hex_file", "")
+                # F-150: sim 后端的内核 = 上次构建 elf 产物
+                elf_file = (state.get("last_build", {}).get("elf_file", "")
+                            or state.get("last_build", {}).get("artifacts", {})
+                            .get("elf_file", ""))
         except (json.JSONDecodeError, UnicodeDecodeError, OSError):
             hex_file = ""   # state.json 损坏不再裸 traceback, 走无产物报错
         result["steps"]["build"] = {"status": "skipped"}
         result["steps"]["analyze"] = {"status": "skipped"}
+
+    # F-150: sim 后端在 Step 1 前就由 config 决定 — 全程无烧录无探针
+    cap_backend = (config.get("capture", {}) or {}).get("backend", "semihosting")
+    sim_cfg = (config.get("capture", {}) or {}).get("sim", {}) or {}
+    sim_mode = (cap_backend == "sim")
 
     # ---- Step 3: Flash (with retry) ----
     # F-046: HIL 入口守卫 — 拒 manual 时给友好提示, exit 2 (区别于 0=成功/1=失败)
     # F-145: 机器级设备锁 — flash+capture 段全程持有, 同一探针/板子同时只被
     # 一个 verify (或 openocd_run flash/erase) 占用; 冲突方拿 resource_busy +
     # 持有者信息 fail-fast (exit 2), --lease-wait 可有界等待。
-    lease = hw_lease.acquire(
-        purpose=f"verify flash+capture ({os.path.basename(WORKSPACE)})",
-        workspace=WORKSPACE,
-        wait=getattr(args, "lease_wait", 0.0))
-    if not lease.get("ok"):
-        print(f"错误: {lease.get('error', '设备锁获取失败')}", file=sys.stderr)
-        sys.exit(2)
-    if not args.no_flash:
+    # F-150: sim 后端不触探针 → 不持锁 (CI 可并行)。
+    lease = None
+    if not sim_mode:
+        lease = hw_lease.acquire(
+            purpose=f"verify flash+capture ({os.path.basename(WORKSPACE)})",
+            workspace=WORKSPACE,
+            wait=getattr(args, "lease_wait", 0.0))
+        if not lease.get("ok"):
+            print(f"错误: {lease.get('error', '设备锁获取失败')}", file=sys.stderr)
+            sys.exit(2)
+    if sim_mode:
+        result["steps"]["flash"] = {
+            "status": "skipped",
+            "reason": "F-150 sim 后端: qemu 直接加载 elf, 无烧录步骤",
+        }
+    elif not args.no_flash:
         flash_t0 = time.time()  # F-050: step-level timing
         # F-046 守卫 (F-050 自审发现: 此前曾误写两行同参数调用, 已删冗余)
         allowed, deny_reason = enforce_hil_origin(
@@ -758,26 +783,74 @@ def main():
     else:
         result["steps"]["flash"] = {"status": "skipped"}
 
-    # ---- Step 4: Capture (semihosting 默认 | capture.backend=rtt) ----
+    # ---- Step 4: Capture (semihosting 默认 | rtt | F-150 sim) ----
     # 共同原则: reset halt 确定性起点 (2026-08-16 教训), 行过滤后进 verify()
     # F-046: capture 也是 HIL 步骤 — 守卫幂等, 第二次调用也是放行结果
+    # F-150: sim 后端非硬件步骤 — 不跑 HIL 守卫 (CI 免 manual 限制),
+    # 不落 F-046 台账, 不持设备锁 (见 Step 3)。
     capture_t0 = time.time()  # F-050: step-level timing
-    allowed_capture, deny_reason_capture = enforce_hil_origin(
-        args.task_origin, args.require_schedule_origin)
-    if not allowed_capture:
-        _release_hw_lease(lease)
-        print(f"错误: {deny_reason_capture}", file=sys.stderr)
-        sys.exit(2)
+    if not sim_mode:
+        allowed_capture, deny_reason_capture = enforce_hil_origin(
+            args.task_origin, args.require_schedule_origin)
+        if not allowed_capture:
+            _release_hw_lease(lease)
+            print(f"错误: {deny_reason_capture}", file=sys.stderr)
+            sys.exit(2)
     capture_started = time.time()
     capture_timeout = resolve_capture_timeout(args.timeout, config.get("capture", {}))
     # F-016: 预告窗口 (stderr, 不污染 --json 的 stdout); 人工输入期望需知何时按键
     print("[capture] 采集窗 %ds 自烧录/复位起开启 — 含人工输入期望请全程按键"
           % capture_timeout, file=sys.stderr)
-    cap_backend = (config.get("capture", {}) or {}).get("backend", "semihosting")
     captured_lines = []
     captured_text = ""
 
-    if cap_backend == "rtt":
+    if sim_mode:
+        # ---- F-150: sim 后端 — qemu 直接加载 elf, 判定逻辑零改动 ----
+        try:
+            qemu_exe, qemu_source = resolve_qemu(sim_cfg)
+            kernel = sim_cfg.get("kernel", "") or elf_file
+            if not kernel:
+                raise RuntimeError(
+                    "sim 后端缺 elf 内核: 构建 details.elf_file 与 "
+                    "config capture.sim.kernel 均不可得 (先完整构建一次)")
+            if not os.path.isabs(kernel):
+                kernel = os.path.join(WORKSPACE, kernel)
+            if not os.path.isfile(kernel):
+                raise RuntimeError(f"sim 内核不存在: {kernel}")
+            stdout_sim, stderr_sim = run_sim_session(
+                capture_timeout, sim_cfg.get("machine", DEFAULT_MACHINE),
+                kernel, qemu_exe=qemu_exe, sim_cfg=sim_cfg,
+                workspace=WORKSPACE)
+        except SimTimeout as _to:
+            _finish_capture_timeout(_to.proc, result, capture_timeout,
+                                    max_retries, args.json, lease=lease,
+                                    method="sim", tool="qemu")
+        except Exception as e:
+            result["steps"]["capture"] = {
+                "status": "error", "method": "sim", "error": str(e)
+            }
+            result["status"] = "capture_failed"
+            result["error"] = str(e)
+            _release_hw_lease(lease)
+            _save_failure_context(result, max_retries, workspace=WORKSPACE)
+            _output(result, args.json)
+            # F-047 自审 Finding 2: 早退路径也必须落 checkpoint
+            _record_checkpoint_early_exit(result, args)
+            sys.exit(1)   # 失败早退必须非零 (审计: 原先恒 0 误导脚本化调用方)
+        captured_lines = _filter_capture_lines(stdout_sim + stderr_sim)
+        captured_text = "\n".join(captured_lines)
+        result["steps"]["capture"] = {
+            "status": "ok",
+            "method": "sim",
+            "machine": sim_cfg.get("machine", DEFAULT_MACHINE),
+            "kernel": os.path.relpath(kernel, WORKSPACE).replace(os.sep, "/"),
+            "qemu_source": qemu_source,
+            "timeout_sec": capture_timeout,
+            "lines": len(captured_lines),
+            "duration_sec": round(time.time() - capture_t0, 1),
+            "origin": args.task_origin,   # 溯源一致; sim 非 HIL 不落台账
+        }
+    elif cap_backend == "rtt":
         cap = _step_capture_rtt(capture_timeout, config.get("capture", {}), WORKSPACE)
         if cap.get("status") != "ok":
             result["steps"]["capture"] = {

@@ -61,7 +61,7 @@ ALERT HIGH mv=3190
 > | 取值 | 含义 |
 > |---|---|
 > | `"hardware_validated"` | capture 后端（rtt/semihosting）真机实跑采到运行时输出 |
-> | `"simulation_validated"` | sim 后端（仿真器直接加载执行，无真机在场；路线图 C 项） |
+> | `"simulation_validated"` | sim 后端：qemu 直接加载 elf（`capture.backend: "sim"`，见 `examples/sim-demo`）——与真机平级的判定后端，**不进发布门禁**（G2 只认 hardware_validated） |
 > | `"static"` | 仅构建/lint，或 capture 未跑成——无任何运行时证据 |
 > | `"production_approved"` | 发布后经 `release_audit --approve` 人工批准投产（仅 audit 回填，verify 不产出） |
 >
@@ -199,6 +199,11 @@ python scripts/expectations_lint.py --project <工程根>
 # 4. 构建 + 烧录 + 采集 + 判定（【需板子】；--json 供 AI 消费）
 python scripts/verify.py --project <工程根> --json
 
+# 4b. 无板闭环（F-150 sim 后端）：qemu 直接加载 elf, 无需任何硬件
+#     现成示例: examples/sim-demo（qemu-system-arm + arm-none-eabi-gcc 即跑）
+python scripts/verify.py --project examples/sim-demo --json
+#     sim 证据恒 evidence="simulation_validated", 不进发布门禁 (G2 只认真机证据)
+
 # 5. 发布演练（【需板子】，dry-run 不打 tag 不落库）
 python scripts/release.py --project <工程根> --tag v1.0.0 --dry-run
 ```
@@ -218,6 +223,7 @@ python scripts/release.py --project <工程根> --tag v1.0.0 --dry-run
 | `scripts/rm_lookup.py` | STM32F103 55 外设寄存器/位域速查（JSON 知识库） | ❌ |
 | `scripts/gen_periph.py` | 参数 → 寄存器级 C 初始化代码 / 外设文档（时钟经 `--hclk` 参数化，默认 72MHz 按标准 APB 分频推导，非默认值生成物头注回显前提；`--tim-clk` 显式值优先） | ❌ |
 | `scripts/hardfault.py` | HardFault 现场：寄存器 + 符号表定位出错函数 | ✅ |
+| `scripts/capture_sim.py` | sim 采集会话：qemu-system-arm 直接加载 elf（无板闭环，F-150） | ❌ |
 | `scripts/serial_*` / `openocd_*` | 串口与探针底层族（RTT/GDB/telnet） | ✅ |
 | `scripts/mcp_server.py` | MCP 接入：六工具有界包装（见下节），零业务复制 | 视工具 |
 
