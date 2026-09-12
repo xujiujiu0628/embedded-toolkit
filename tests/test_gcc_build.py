@@ -61,7 +61,6 @@ class GccSectionLoadTests(unittest.TestCase):
 
     def setUp(self):
         import tempfile
-        from wb_runtime import save_json_file
         self.tmp = tempfile.mkdtemp()
         self.addCleanup(__import__("shutil").rmtree, self.tmp, True)
         os.makedirs(os.path.join(self.tmp, ".workbench"), exist_ok=True)

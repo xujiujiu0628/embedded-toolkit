@@ -4,7 +4,6 @@ r"""serial_log 主记录循环的行为测试 (F-102 补充)。
 timestamp 前缀。串口打开由 mock open_serial_port 供给假端口
 (readline 返回预置字节流), 不碰真机。
 """
-import io
 import json
 import os
 import sys

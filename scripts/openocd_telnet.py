@@ -6,7 +6,6 @@ halt / resume / step / reg / read-mem / write-mem / bp / rbp / run-to
 
 import argparse
 import json
-import os
 import re
 import socket
 import sys
@@ -24,13 +23,11 @@ from openocd_runtime import (
     build_openocd_cmd,  # noqa: F401  (F-123 再导出, 调用面不变)
     cleanup_proc,  # noqa: F401  (F-123 再导出=runtime cleanup 别名, 调用面不变)
     wait_server_ready,  # noqa: F401  (F-123 再导出, 调用面不变)
-    hidden_subprocess_kwargs,
     load_project_config,
     save_project_config,
     load_workspace_state,
     get_state_entry,
     workspace_root,
-    is_missing,
 )
 
 # F-123 (工单 P0-7): 本地 build_openocd_cmd / wait_server_ready /
@@ -362,7 +359,6 @@ def main():
 def execute_action(telnet: TelnetConnection, args) -> dict:
     """根据 action 执行 Telnet 调试命令"""
     action = args.action
-    start_time = time.time()
 
     if action == "halt":
         halt_raw = telnet.send("halt")

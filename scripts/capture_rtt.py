@@ -13,7 +13,6 @@ sys/subprocess/time 共享模块对象，对本模块同样生效。
 （subprocess.Popen / socket.create_connection / time.sleep）即可驱动全流程，
 RTT 时序断言（下）由此成为真单测。
 """
-import os
 import socket
 import subprocess
 import sys

@@ -7,14 +7,12 @@ import signal
 import sys
 import time
 from datetime import datetime
-from pathlib import Path
 
 from serial_runtime import (
     get_serial_config,
     open_serial_port,
     save_project_config,
     update_state_entry,
-    make_timing,
 )
 
 PARITY_MAP = {"none": "N", "even": "E", "odd": "O", "mark": "M", "space": "S"}

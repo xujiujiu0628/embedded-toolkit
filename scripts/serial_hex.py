@@ -6,7 +6,6 @@ import signal
 import sys
 import time
 from datetime import datetime
-from pathlib import Path
 
 from serial_runtime import (
     get_serial_config,

@@ -28,7 +28,6 @@ import re
 import subprocess
 import sys
 import time
-from collections import namedtuple
 from datetime import datetime, timedelta, timezone
 
 from wb_common import find_project_root, load_machine
@@ -644,10 +643,10 @@ def _print_readable(r: dict):
     print("  HardFault 诊断报告")
     print("=" * 60)
     print(f"\nFault Type: {r['fault_type']}")
-    print(f"\nRegisters:")
+    print("\nRegisters:")
     for name, val in r["registers"].items():
         print(f"  {name:>5}: {val}")
-    print(f"\nFault Registers:")
+    print("\nFault Registers:")
     fr = r["fault_registers"]
     print(f"  CFSR:  {fr['cfsr']['raw']}  ({len(fr['cfsr']['bits'])} bits active)")
     print(f"  HFSR:  {fr['hfsr']['raw']}  ({len(fr['hfsr']['bits'])} bits active)")
@@ -664,12 +663,12 @@ def _print_readable(r: dict):
         print(f"  {reg.upper()} 粘滞位: {info['before']} → 清后复核 "
               f"{info['after'] or '?'} ({mark})")
     if r["resolved"]:
-        print(f"\nResolved:")
+        print("\nResolved:")
         for k, v in r["resolved"].items():
             print(f"  {k}: {v}")
     fs = r.get("fault_site")
     if fs:
-        print(f"\nFault Site (层 1 压栈帧, F-116/H-1):")
+        print("\nFault Site (层 1 压栈帧, F-116/H-1):")
         print(f"  PC: {fs['pc']}"
               + (f" → {fs['pc_sym']}" if fs.get("pc_sym") else ""))
         print(f"  LR: {fs['lr']}"

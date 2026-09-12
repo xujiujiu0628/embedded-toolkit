@@ -44,7 +44,7 @@ class TrackedFilePathHygieneTests(unittest.TestCase):
                         hits.append(f"{f}:{i}")
         self.assertEqual(
             hits, [],
-            f"tracked 文件出现裸工作区根路径 (F-089 扫描钉):\n" + "\n".join(hits))
+            "tracked 文件出现裸工作区根路径 (F-089 扫描钉):\n" + "\n".join(hits))
 
     def test_exemption_list_is_explicit_and_minimal(self):
         """豁免清单显式声明且最小——防静默扩大豁免面"""

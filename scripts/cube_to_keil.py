@@ -317,9 +317,9 @@ def cmd_diff():
             if old_code != new_code:
                 print(f"  [CHANGED] {rel} -> USER CODE {name}")
                 if new_code and not old_code:
-                    print(f"    → CubeMX 新增了内容")
+                    print("    → CubeMX 新增了内容")
                 elif old_code and not new_code:
-                    print(f"    → CubeMX 清空了此区块!")
+                    print("    → CubeMX 清空了此区块!")
 
     return 0
 

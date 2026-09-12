@@ -112,7 +112,6 @@ class ReadLoopDeathTraceTests(unittest.TestCase):
 
 
 import shutil  # noqa: E402
-import time  # noqa: E402
 
 if __name__ == "__main__":
     unittest.main()

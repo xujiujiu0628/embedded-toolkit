@@ -14,8 +14,6 @@ STM32F103 参考手册快速查询工具
 import argparse
 import json
 import os
-import re
-import sys
 
 from wb_common import TOOLKIT_ROOT
 
@@ -193,7 +191,7 @@ def format_result(result: dict):
                     print(f"    公式: {rdata['formula']}")
                 bits_list = rdata.get("bits", {})
                 if isinstance(bits_list, dict) and bits_list:
-                    print(f"    位域:")
+                    print("    位域:")
                     for pos, info in bits_list.items():
                         if isinstance(info, dict):
                             print(f"      bit {pos}: {info.get('name','')} — {info.get('desc','')}")

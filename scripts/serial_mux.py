@@ -22,7 +22,6 @@ from pathlib import Path
 
 from serial_runtime import (
     get_serial_config,
-    load_workspace_state,
     load_workspace_state_for_update,
     save_workspace_state,
     save_project_config,

@@ -93,6 +93,21 @@
   （test_release.py 无 main 块属 collect 友好而非缺陷）。验收:
   `python tests/test_gcc_build.py` 实跑 **Ran 9** 且 OK（修复前旧文件实跑
   Ran 7——两个 F-099 钉缺席）。
+- **F-126 处置（工单 P1-5 CI 引入 ruff lint 门禁，change，ruff.toml / ci.yml / 30 文件清理）**:
+  仓库从未有 lint/类型检查。起步: `ruff.toml` 选默认 E/F、白名单登记四项
+  纯风格存量债（E501 行宽 491 / E741 19 / E701 15 / E402 3——sys.path
+  bootstrap 启动模式属标准用法）；正确性类逐条处置——F541 ×136 安全自动修
+  （`f"{{}}"` → 字面 `{{` 的转义行为经 gen_periph 全套母版钉验证不变）、
+  F401 基线 44 处: 死 import 删除 35 处（capture_rtt.os / verify.hashlib / duration_profile.statistics（P2-6 顺带提前做一条）/ serial_runtime.signal
+  / 四入口冗余再导出 / 六串口工具 Path 等——删前逐一 grep 确认无 mod.X
+  属性面消费方; verify.py F-041/055/058/059 再导出有 test_doctor/test_fixture_doctor/
+  test_checkpoint_ledger 钉消费, 余 9 处补 noqa: F401 声明再导出契约）、
+  F841 ×9 死局部量删除
+  （gen_periph.nss_port / telnet.start_time / serial_runtime.local_cfg /
+  svd_to_json.incr+merged / handoff_guard.commit / verify 测试块 analyze_result）、
+  F811 ×1 test_serial_mux_lifecycle 尾部重复 import 删除。ci.yml 新增 lint job
+  （astral-sh/ruff-action@v3, `ruff check scripts tests`）。验收: 本地 ruff
+  All checks passed + 全量 **653 例零测试文件语义改动仍全绿**（清理纯减法）。
 
 ## Unreleased — 2026-09-10（F-103~F-107 P3 清账第一轮：边界报错泛化 / 迁移告警 / ID 唯一性 / 过滤收窄 / 文档回填）
 

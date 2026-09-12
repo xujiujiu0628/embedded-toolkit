@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import os
-import signal
 import socket
 from datetime import datetime
 from pathlib import Path
@@ -215,7 +214,6 @@ def get_serial_config(
     获取串口配置，按优先级解析参数。
     返回 (config_dict, sources_dict)
     """
-    local_cfg = load_local_config()
     proj_cfg = load_project_config(workspace)
     state = load_workspace_state(workspace)
 

@@ -49,6 +49,16 @@ jobs:
       - name: Coverage floor (ratchet, only goes up)
         run: python -m coverage report --include="scripts/*" --omit="*/legacy/*" --fail-under=38
 
+  # F-126 (工单 P1-5): lint 门禁零起步——ruff E/F 规则集, 正确性类已清零,
+  # 存量风格债白名单见 ruff.toml (登记制, 只降不升)。
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: astral-sh/ruff-action@v3
+        with:
+          args: check scripts tests
+
   # F-100: 覆盖缺口门禁接入 CI (CONTRIBUTING 声明的"可机检"终于有机检)。
   # 覆盖率提升后须同步缩减 scripts/coverage_lint.py 视角的未覆盖清单。
   coverage-lint:

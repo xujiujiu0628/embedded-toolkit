@@ -114,7 +114,7 @@ class GuardHarness(unittest.TestCase):
     # ---------- 该拦的：L1 文件禁线 ----------
 
     def test_L1_machine_json_blocked(self):
-        sha1 = self._commit("fix: unrelated", {"scripts/util.py": "X = 1\n"})
+        _ = self._commit("fix: unrelated", {"scripts/util.py": "X = 1\n"})
         sha2 = self._commit("feat: new toolchain path",
                             {"machine.json": '{"gcc_path": "D:/other/bin"}'})
         v = self._guard()
@@ -144,7 +144,7 @@ class GuardHarness(unittest.TestCase):
         self.assertEqual(hits[0]["file"].replace("\\", "/"), "scripts/port_opener.py")
 
     def test_L2_flash_command_and_rtt_port_blocked(self):
-        sha = self._commit("feat: flash step",
+        _ = self._commit("feat: flash step",
                            {"scripts/build_flow.py":
                             "CMD = 'openocd -c \"flash write_image erase fw.hex\"'\nPORT = 19021\n"})
         v = self._guard()

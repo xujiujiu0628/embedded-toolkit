@@ -18,7 +18,6 @@ phase_minus_one.py — Drafter 前置兼容性检查
 import argparse
 import json
 import os
-import sys
 
 from wb_common import TOOLKIT_ROOT
 
@@ -219,7 +218,7 @@ def cmd_list(ref):
 
     print(f"\nFULL:  {len(periphs)} peripherals (register-level KB)")
     print(f"PARTIAL: {len(rels) - len([k for k in rels if k in periphs])} peripherals (relationship data only)")
-    print(f"Chip: STM32F103C8T6 | Flash: 64KB | SRAM: 20KB\n")
+    print("Chip: STM32F103C8T6 | Flash: 64KB | SRAM: 20KB\n")
 
 
 def main():

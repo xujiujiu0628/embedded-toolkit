@@ -42,7 +42,7 @@ def lint_expectations(expectations):
     warnings = []
     seen = set()
     if not isinstance(expectations, list) or not expectations:
-        return [f"E1: expectations 须为非空数组"], warnings
+        return ["E1: expectations 须为非空数组"], warnings
     for i, item in enumerate(expectations):
         where = f"expectations[{i}]"
         if not isinstance(item, dict):
