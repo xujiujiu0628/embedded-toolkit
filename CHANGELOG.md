@@ -256,12 +256,18 @@
   marker 失效的窗口——旧判据同险非新引入, 缓冲 512B 实测 9 行未触顶,
   登记 spec R1 伴生项）、L-3（8/8 补验 primary 落盘件在会话 tool-results,
   仓内以 checkpoint+feedback 事件为账, 成功路径不留原始文本是设计使然）。
-- **真机复验状态（如实）**: fault_site 端到端取证**未完成**——ST-Link
-  掉线（USB 总线无 VID_0483/无全零克隆, OpenOCD `Error: open failed`,
-  WMI+tasklist 双取证排除进程/驱动面; 克隆间歇失联旧账复发）。host 面
-  全绿后合入**暂缓**, 待板前补: ① 注入复验（期望 fault_site.pc_sym 指
-  向 main 内注入点 + live 指 wb_hardfault_body）; ② 恢复正常运行回归
-  （mpu6050 + adc-oled 各一）。复验红绿入本段续账后才 merge master。
+- **真机复验（2026-09-12 板前完成, ST-Link 重连后）**——H-1 修复获端到端铁证:
+  ① 注入复验: `fault_site = {pc: 0x0800100A → **main+198**, lr →
+  My_OLED_Update+33, live_pc_note}`——真实故障点第一次被**正确**归因到
+  main 内注入行（对照 F-115 时段的假命中"main+670"）; live PC 如实报
+  `wb_hardfault_body+368`（非 static 后 handler 地址自带真名）。
+  ② mpu6050 反向: 回退注入烧正式固件后 hardfault step 缺席、5/8
+  （KEY×2+OLED-02 属人工动作期望）。③ adc-oled 回填后正常运行回归:
+  hardfault 零误挂 + 3/4（FR-ALERT-01 需窗口内拧电位器过 3.0V, 人工轮
+  未及配合, 与 KEY 同类交用户自持窗补验, `! ...verify.py --no-build
+  --no-flash --json --timeout 40` 随时可跑）。板子已恢复 mpu6050 正式
+  固件（Verified OK）。**真人期望窗自持纪律第三次印证**（09-10 门禁/
+  昨日 8/8/本轮 ALERT）——工具侧不再代发"现在开始按"。
 - 测试 +16 例（13+2 装配钉 +1 skip 编译探针口径注）, 全量
   **609 passed, 6 skipped, 248 subtests（collected 615, --co 实测）**;
   coverage_lint --strict 0 未覆盖保持。
