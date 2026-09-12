@@ -16,6 +16,13 @@
   当前被 mux 的 socat Linux 门掩蔽、`--no-pty` 落地后即爆，属提前拆弹。
   测试 `tests/test_mux_alive_probe.py` 6 例: Windows 零 os.kill / 死端口 False /
   缺 tcp_port False / POSIX 双 pid os.kill / 身份钉 `serial_mux.is_mux_alive IS serial_runtime.is_mux_alive`。
+- **F-118 处置（工单 P0-6 EXC_RETURN 解码索引错误，fix+test，hardfault.py）**:
+  `diagnose` 旧实现 `idx = lr & 0xF` 配 4 项表——合法值 0xFFFFFFF1/F9/FD 分别
+  落 1/9/13，最常见的 0xFFFFFFF9（返回 Thread/MSP）恒落 "unknown"，0xFFFFFFF1
+  被错标。修复: 按 ARMv7-M 语义 bit3(返回模式)/bit2(返回堆栈) 取
+  `idx = (lr>>2)&3` 映射回 F1/F5/F9/FD，文案改为"返回到哪"口径，保留值 F5
+  （M3 上 Handler+PSP 非法组合）显式标注不再静默 unknown。
+  测试 `ExcReturnDecodeTests` 4 例（F1/F9/FD/F5，先红 4 后绿）。
 
 ## Unreleased — 2026-09-10（F-103~F-107 P3 清账第一轮：边界报错泛化 / 迁移告警 / ID 唯一性 / 过滤收窄 / 文档回填）
 

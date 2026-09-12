@@ -448,10 +448,19 @@ def diagnose(regs: dict, symbols: list[dict]) -> str:
     if lr:
         # LR 在异常返回时有一个特殊值 EXC_RETURN
         if lr >= 0xFFFFFFF0:
-            exc_return = ["Handler→Handler (MSP)", "Thread→Handler (MSP)",
-                          "Handler→Thread (MSP)", "Thread→Thread (PSP)"]
-            idx = lr & 0xF
-            desc = exc_return[idx] if idx < len(exc_return) else "unknown"
+            # F-118 (工单 P0-6): 旧实现 idx = lr & 0xF 对合法值 F1/F9/FD 得
+            # 1/9/13, 4 项表 → F9 (最常见, 返回 Thread/MSP) 恒 unknown,
+            # F1 被错标。按 ARMv7-M: EXC_RETURN 描述"返回到哪", 低位语义
+            # bit3=目标模式, bit2=目标堆栈 → 合法值恰为 F1/F5/F9/FD。
+            exc_return = {
+                0x1: "返回 Handler 模式 (MSP)",
+                0x5: "保留/Secure (M3 非法组合: Handler+PSP)",
+                0x9: "返回 Thread 模式 (MSP)",
+                0xD: "返回 Thread 模式 (PSP)",
+            }
+            idx = (lr >> 2) & 3
+            key = 0x1 | (idx << 2)  # idx 0→F1, 1→F5, 2→F9, 3→FD
+            desc = exc_return.get(key, "unknown")
             parts.append(f"LR=0x{lr:08X} (EXC_RETURN: {desc})")
         else:
             lr_sym = resolve_address(lr, symbols)
