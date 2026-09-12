@@ -132,6 +132,9 @@ class WriteSummaryTests(unittest.TestCase):
         self.assertTrue(rs["ok"])
         with open(gh, encoding="utf-8") as f:
             self.assertEqual(f.read(), "old\nnew\n")   # 追加语义
+        # GH 写成功时不得在 CWD 产生多余回落文件 (施工实录: 曾双写)
+        self.assertFalse(os.path.exists("job-summary.md"),
+                         "GH 在场且写成功 → 不落 CWD 回落文件")
 
     def test_unwritable_github_env_falls_back_to_out(self):
         # GH 路径父目录是文件 → 写失败 → 回落 --out (if: always() 语义)
