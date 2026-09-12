@@ -76,8 +76,10 @@ class DoctorReportTests(unittest.TestCase):
         for key in ("tool", "toolkit_version", "python", "machine", "tools", "swd", "summary"):
             self.assertIn(key, rep)
         self.assertEqual(rep["tool"], "doctor")
+        # F-131 (工单 P2-2): uv4_exe 随 Keil 退役从 _DOCTOR_KEYS 移除;
+        # 旧 machine.json 里残留的该键应被容忍 (不出现在报告里) 而非报错
         self.assertEqual(set(rep["machine"]["keys"]),
-                         {"uv4_exe", "openocd_exe", "gcc_path", "make_exe"})
+                         {"openocd_exe", "gcc_path", "make_exe"})
         self.assertTrue(rep["machine"]["mode"].startswith(("machine.json", "fallback", "missing")))
         for name in ("gcc", "openocd", "make"):
             self.assertIn(rep["tools"][name]["status"], ("ok", "warn", "skipped"))
@@ -91,6 +93,7 @@ class DoctorReportTests(unittest.TestCase):
 
     def test_placeholder_paths_never_executed(self):
         """安全钉: machine.example.json 的 "<...>" 占位值绝不能被当作命令执行。"""
+        # F-131: 含 uv4_exe 的旧 machine.json 输入须被容忍 (不出现在报告、不报错)
         placeholder = {k: f"<本机 {k} 绝对路径>"
                        for k in ("uv4_exe", "openocd_exe", "gcc_path", "make_exe")}
 
@@ -103,16 +106,20 @@ class DoctorReportTests(unittest.TestCase):
             # F-048: skip_drift_check=True 跳过 git main 对比, 不让 fixture 体检破守卫
             rep = verify.doctor_report(probe=True, skip_drift_check=True)
         self.assertTrue(all(v["placeholder"] for v in rep["machine"]["keys"].values()))
+        self.assertNotIn("uv4_exe", rep["machine"]["keys"])  # F-131: 退役键不再报
         for name in ("gcc", "openocd", "make"):
             self.assertEqual(rep["tools"][name]["status"], "skipped")
         self.assertEqual(rep["swd"]["status"], "skipped")
 
     def test_empty_machine_values_reported(self):
         with mock.patch.object(doctor, "load_machine",
-                               return_value={"openocd_exe": "", "make_exe": None}):
+                               return_value={"openocd_exe": "", "make_exe": None,
+                                             "uv4_exe": "<旧 Keil 键>"}):
             rep = verify.doctor_report(probe=False)
-        self.assertFalse(rep["machine"]["keys"]["uv4_exe"]["value_set"])
-        self.assertIsNone(rep["machine"]["keys"]["uv4_exe"]["path_exists"])
+        # F-131: uv4_exe 退役——报告键集只含三活键, 旧键多余也无害
+        self.assertEqual(set(rep["machine"]["keys"]),
+                         {"openocd_exe", "gcc_path", "make_exe"})
+        self.assertFalse(rep["machine"]["keys"]["openocd_exe"]["value_set"])
         self.assertEqual(rep["tools"]["gcc"]["status"], "skipped")
         self.assertEqual(rep["tools"]["openocd"]["status"], "skipped")
         self.assertEqual(rep["tools"]["make"]["status"], "skipped")

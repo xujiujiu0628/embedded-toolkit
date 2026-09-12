@@ -1,6 +1,6 @@
 r"""环境预检 --doctor (F-058) — verify.py 拆分件（防腐方案 §3.3 步骤 5a）.
 
-打印工具链环境矩阵: toolkit/Python/machine.json 四键/gcc/openocd/make/SWD
+打印工具链环境矩阵: toolkit/Python/machine.json 三键/gcc/openocd/make/SWD
 连通性/契约 fixture 健康。诊断专用——报告不是门禁, 退出码恒 0; 占位路径
 永不执行 (test_doctor 安全钉死)。
 
@@ -25,7 +25,10 @@ from wb_common import (TOOLKIT_ROOT, load_machine,
 # --doctor --json, 消灭"环境不同"类往返。是报告不是门禁 —— 退出码恒 0,
 # 占位路径永不执行 (test_doctor 安全钉死)。
 
-_DOCTOR_KEYS = ("uv4_exe", "openocd_exe", "gcc_path", "make_exe")
+# F-131 (工单 P2-2): uv4_exe 随 Keil 退役移出预检键——与 machine.example.json
+# "仓内零 Keil 引用"声明对齐。旧 machine.json 里残留的 uv4_exe 键被容忍
+# (按下标取键只遍历本表, 多余键无害不报错)。
+_DOCTOR_KEYS = ("openocd_exe", "gcc_path", "make_exe")
 
 
 def _first_version_line(cmd: list) -> tuple:
