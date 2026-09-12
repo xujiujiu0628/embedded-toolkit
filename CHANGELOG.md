@@ -127,6 +127,40 @@
   结论 **GO** → T6 立项: capture_sim.py 驱动 qemu, method="sim",
   evidence="simulation_validated" (不进发布门禁, F-146 呼应)。
   （zc/hardware @ 本条 commit，合流待协调）
+- **F-150 (T6/C-1) capture.backend: "sim" — 无板全链路闭环，feat+test+docs，capture_sim.py (新) / verify.py / examples/sim-demo (新) / ci.yml / machine.example.json / .gitignore**:
+  基于 F-149 spike GO 结论, qemu-system-arm + semihosting 单一方案 (不引
+  Renode)。新增 `scripts/capture_sim.py`: 命令形态 `-M <machine> -kernel
+  <elf> -semihosting-config enable=on,target=native -nographic -no-reboot`
+  (spike 实证); exe 解析链 config capture.sim.exe > machine.json **qemu_exe
+  (新可选键, 模板已注)** > PATH > 缺省名; 控制流契约与 capture_semihosting
+  同款 (成功返回 (stdout, stderr) / 超时 SimTimeout 携 proc 不收尸 / 异常
+  原样抛), communicate 双管道排空 + stdin DEVNULL (F-123 readline 地雷不在
+  本路径); qemu 缺席的 WinError 2 裸抛改为点名 exe+解析来源的可行动报错。
+  verify.py 分派: backend=sim → flash 步骤 skipped (带 reason), 内核 =
+  config capture.sim.kernel > 构建 details.elf_file (--no-build 走
+  state.json last_build), 缺内核/文件不在场 → capture_failed 早退;
+  capture method="sim"、evidence="simulation_validated" (F-146 四档直接
+  生效); **不持 F-145 设备锁、不跑 F-046 HIL 守卫、不落 HIL 台账** (sim 非
+  硬件步骤, CI 可并行); post_reset 自动 skipped; 判定逻辑零改动——同一份
+  expectations 四态判定, F-148 record 命名捕获组在 sim 下照常提取。
+  _finish_capture_timeout 参数化 method/tool (sim 超时复用 F-003 收尸/
+  归因出口, OpenOCD 口径逐字节不变)。**CI 大奖**: examples/sim-demo
+  (微型 Makefile 工程 + 自带 .workbench 契约, 四态齐备含 F-148 record)
+  + ci.yml 新 `sim-demo` job (apt 装 qemu-system-arm + gcc-arm-none-eabi →
+  写 CI machine.json → 端到端 verify)——"陌生人克隆"路径第一次覆盖
+  build→capture→judge 闭环判定链。施工实录: -O1 下固件 fault 进不完整
+  向量表 (HardFault 向量取到 .text 字节被当指令执行 → qemu 报 Unsupported
+  SemiHosting SWI 0xdeadbeef), 补全向量表 + 模板定 -O0 后端到端绿;
+  .gitignore 为 sim-demo 的 .workbench 契约文件开白名单 (state/build 仍
+  不入库)。README: 5 分钟上手加"无板闭环"路径, 证据表更新, 工具速查补行。
+  验收: 本机 Windows 真跑端到端绿 (build 0.3s → qemu 0.4s → 四态判定
+  status=ok, evidence=simulation_validated, records=[{id: FR-ADC-01,
+  mv: "3192"}]); 真机路径回归零影响 (791 例仅 9 例本机 WSL 环境失败);
+  文档明写 sim 证据不进发布门禁 (README 证据表 + G2 契约)。
+  测试 `tests/test_capture_sim.py` 9 例 (解析链×3/命令形态+stdin DEVNULL/
+  SimTimeout 携 proc/端到端 green 钉 flash-skip+method+evidence+零锁/
+  缺内核 capture_failed/sim-demo 契约 lint+四态齐备)，先红后绿。
+  （zc/hardware @ 本条 commit，合流待协调）
 
 ## Unreleased — 2026-09-12（F-117~ 第三方审查工单第一批 P0 逐条清账）
 
