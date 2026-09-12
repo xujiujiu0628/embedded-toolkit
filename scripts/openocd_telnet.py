@@ -397,6 +397,9 @@ def main():
 
         if args.as_json:
             output_json(result)
+            # F-120 (工单 P0-2): 旧版 error 时 JSON 分支不退出 (print_result
+            # 的 exit(1) 只在非 JSON 分支生效)。finally 清理照常执行。
+            sys.exit(0 if result.get("status") == "ok" else 1)
         else:
             print_result(result, args.action)
 

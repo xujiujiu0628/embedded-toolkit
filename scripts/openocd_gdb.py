@@ -563,6 +563,9 @@ def main() -> None:
 
         if args.as_json:
             output_json(result)
+            # F-120 (工单 P0-2): JSON 失败出口统一退 1 (旧版落到 if/elif/else
+            # 之后隐式退 0)。finally 的 cleanup 经 SystemExit 照常执行。
+            sys.exit(0 if result["status"] == "ok" else 1)
         elif result["status"] == "ok":
             print(f"[gdb-{args.command}] {result['summary']}")
             output = result.get("details", {}).get("output", "")

@@ -32,6 +32,17 @@
   `--ch` help 同步 ADC 范围（不设 choices: PWM 1-4 / ADC 0-17 共用参数，
   choices 取交集会伤另一侧）。测试 `GenAdcTests` +4 例（越界/边界/内部注记/
   CLI exit 1，先红 4 后绿）+ `test_adc_type_requires_pin` 等既有钉零改动。
+- **F-120 处置（工单 P0-2 JSON 模式失败退出码为 0，fix+test，openocd_run/gdb/telnet + serial_mux）**:
+  执行失败的 JSON 出口只 output_json 不退出（run `return`、gdb/telnet 落
+  if/elif/else 后隐式退 0、mux main 全程无退出码），而同文件早段校验失败
+  JSON 分支是 exit(1)——同一契约自相矛盾，机器消费方按 rc 判成败会漏报。
+  统一为 `output_json(result); sys.exit(0 if status=="ok" else 1)` 覆盖四脚本
+  执行结果出口（telnet 本地 `output_json` 拷贝暂留，收编在工单 P2-1 方向
+  一并处理; 早段校验出口本就正确、零改动）。注: mux `stop` 未运行按既有
+  契约是 error（not_running）→ 现在退 1，属契约统一而非回归; 全仓无
+  subprocess 依赖 mux 退出码, verify.py 不在此列。
+  测试 `tests/test_json_exit_code_contract.py` 8 例: 进程内 mock 驱动 main,
+  error→1 / ok→0 正反各钉（先红 4 后绿），gdb 用假 proc 覆盖"真跑失败"分支。
 
 ## Unreleased — 2026-09-10（F-103~F-107 P3 清账第一轮：边界报错泛化 / 迁移告警 / ID 唯一性 / 过滤收窄 / 文档回填）
 
