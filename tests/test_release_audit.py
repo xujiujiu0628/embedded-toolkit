@@ -59,7 +59,7 @@ class ReleaseAuditTests(unittest.TestCase):
         shutil.rmtree(self.ws, ignore_errors=True)
 
     def _record(self, tag="v1.1.0", results=None, waived=None, git_head=None,
-                contracts=None):
+                contracts=None, evidence="real-hardware"):
         return {
             "tag": tag, "git_head": git_head if git_head is not None else self.head,
             "branch": "master", "timestamp": "2026-08-30T12:00:00+08:00",
@@ -67,6 +67,7 @@ class ReleaseAuditTests(unittest.TestCase):
             "artifacts": {"hex": {"path": self.hex_rel, "sha256": _sha(self.hex_data)}},
             "results": results if results is not None else [{"id": "FR-A", "status": "pass"}],
             "xfail_waived": waived if waived is not None else [],
+            "evidence": evidence,   # F-128; 测试传 None 模拟 R8 之前的旧记录
             "tools": {"toolkit": "0.1", "python": "3.x", "gcc": "gnu-13"},
             "contracts": contracts if contracts is not None else {
                 "expectations_sha256": _sha(self.exp_data),
@@ -90,7 +91,7 @@ class ReleaseAuditTests(unittest.TestCase):
         out = release_audit.audit_record(self.ws, "v1.1.0", rel)
         self.assertEqual(out["verdict"], "clean", out["checks"])
         self.assertEqual([c["id"] for c in out["checks"]],
-                         ["R1", "R2", "R3", "R4", "R5", "R6", "R7"])
+                         ["R1", "R2", "R3", "R4", "R5", "R6", "R7", "R8"])
 
     def test_old_record_without_contracts_warns(self):
         # F-018: R7 之前的旧记录 (如 adc-oled v1.1.0) 缺绑定 → 警告不阻断
@@ -209,6 +210,55 @@ class ReleaseAuditTests(unittest.TestCase):
         out = release_audit.audit_record(self.ws, "v9.9.9", rel)
         self.assertEqual(out["verdict"], "failed")
         self.assertEqual(out["checks"][0]["id"], "R1")
+
+    def test_r8_legacy_record_without_evidence_warns(self):
+        # F-128: R8 之前的旧版 release.py 产物缺 evidence → 警告不阻断 (同 R7 例)
+        rec = self._record()
+        del rec["evidence"]
+        rel = self._write(rec)
+        out = release_audit.audit_record(self.ws, "v1.1.0", rel)
+        self.assertEqual(out["verdict"], "warned", out["checks"])
+        r8 = [c for c in out["checks"] if c["id"] == "R8"][0]
+        self.assertEqual(r8["status"], "warn")
+
+    def test_r8_sim_evidence_without_waiver_fails(self):
+        # 工单验收: sim 证据混进发布记录 → 审计拒绝 (防门禁被绕过/记录被篡改)
+        rec = self._record(evidence="simulator")
+        rel = self._write(rec)
+        out = release_audit.audit_record(self.ws, "v1.1.0", rel)
+        self.assertEqual(out["verdict"], "failed", out["checks"])
+        r8 = [c for c in out["checks"] if c["id"] == "R8"][0]
+        self.assertEqual(r8["status"], "fail")
+        self.assertIn("simulator", r8["detail"])
+
+    def test_r8_sim_evidence_with_waiver_warns(self):
+        # 显式豁免 (--allow-non-hardware-evidence) → 放行但降级警告留痕可见
+        rec = self._record(evidence="simulator", )
+        rec["evidence_waiver"] = True
+        rel = self._write(rec)
+        out = release_audit.audit_record(self.ws, "v1.1.0", rel)
+        self.assertEqual(out["verdict"], "warned", out["checks"])
+        r8 = [c for c in out["checks"] if c["id"] == "R8"][0]
+        self.assertEqual(r8["status"], "warn")
+        self.assertIn("豁免", r8["detail"])
+
+    def test_r8_waiver_with_real_hardware_contradiction_warns(self):
+        # evidence=real-hardware 却带豁免留痕 → 字段矛盾, 疑似手工编辑
+        rec = self._record(evidence="real-hardware")
+        rec["evidence_waiver"] = True
+        rel = self._write(rec)
+        out = release_audit.audit_record(self.ws, "v1.1.0", rel)
+        self.assertEqual(out["verdict"], "warned", out["checks"])
+        r8 = [c for c in out["checks"] if c["id"] == "R8"][0]
+        self.assertEqual(r8["status"], "warn")
+        self.assertIn("矛盾", r8["detail"])
+
+    def test_r8_static_evidence_without_waiver_fails(self):
+        # static (仅构建) 同样不得支撑发布 — 三档里只有 real-hardware 放行
+        rel = self._write(self._record(evidence="static"))
+        out = release_audit.audit_record(self.ws, "v1.1.0", rel)
+        r8 = [c for c in out["checks"] if c["id"] == "R8"][0]
+        self.assertEqual(r8["status"], "fail")
 
     def test_audit_project_aggregates(self):
         self._write(self._record(), tag="v1.1.0")

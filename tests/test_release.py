@@ -77,6 +77,7 @@ class ReleaseGateTests(unittest.TestCase):
     def test_g2_blocks_unflipped_xfail(self, m_gate1, _probe):
         m_gate1.return_value = {
             "status": "ok",
+            "evidence": "real-hardware",   # F-128: 证据门与 xfail 门独立
             "steps": {"verify": {"results": [
                 {"id": "FR-A", "status": "pass"},
                 {"id": "FR-B", "status": "xfail"},
@@ -92,12 +93,70 @@ class ReleaseGateTests(unittest.TestCase):
     def test_g2_allow_xfail_waives(self, m_gate1, _probe):
         m_gate1.return_value = {
             "status": "ok",
+            "evidence": "real-hardware",
             "steps": {"verify": {"results": [{"id": "FR-B", "status": "xfail"}]}},
         }
         ok, _, ctx = release.run_gates(self.ws, "v1.0.0", allow_xfail=True,
                                        timeout=10, openocd_exe="openocd")
         self.assertTrue(ok)
         self.assertEqual(ctx["waived"], ["FR-B"])
+        self.assertEqual(ctx["evidence"], "real-hardware")
+        self.assertFalse(ctx["evidence_waiver"])
+
+    @mock.patch.object(release, "swd_probe", return_value=(True, "ok"))
+    @mock.patch.object(release, "gate1")
+    def test_g2_blocks_sim_evidence(self, m_gate1, _probe):
+        # F-128 (工单二 A-1): 仿真证据永不升级为发布证据
+        m_gate1.return_value = {
+            "status": "ok", "evidence": "simulator",
+            "steps": {"verify": {"results": [{"id": "FR-A", "status": "pass"}]}},
+        }
+        ok, msg, _ = release.run_gates(self.ws, "v1.0.0", allow_xfail=False,
+                                       timeout=10, openocd_exe="openocd")
+        self.assertFalse(ok)
+        self.assertIn("simulator", msg)
+        self.assertIn("real-hardware", msg)
+
+    @mock.patch.object(release, "swd_probe", return_value=(True, "ok"))
+    @mock.patch.object(release, "gate1")
+    def test_g2_blocks_missing_evidence_as_static(self, m_gate1, _probe):
+        # 旧版 verify 无 evidence 键 → 按 static 拦 (升 toolkit 后重发)
+        m_gate1.return_value = {
+            "status": "ok",
+            "steps": {"verify": {"results": [{"id": "FR-A", "status": "pass"}]}},
+        }
+        ok, msg, _ = release.run_gates(self.ws, "v1.0.0", allow_xfail=False,
+                                       timeout=10, openocd_exe="openocd")
+        self.assertFalse(ok)
+        self.assertIn("static", msg)
+
+    @mock.patch.object(release, "swd_probe", return_value=(True, "ok"))
+    @mock.patch.object(release, "gate1")
+    def test_g2_non_hw_evidence_requires_explicit_flag(self, m_gate1, _probe):
+        # 新旗标显式豁免: 放行但 evidence_waiver 留痕 (审计 R8 可见)
+        m_gate1.return_value = {
+            "status": "ok", "evidence": "simulator",
+            "steps": {"verify": {"results": [{"id": "FR-A", "status": "pass"}]}},
+        }
+        ok, _, ctx = release.run_gates(
+            self.ws, "v1.0.0", allow_xfail=False, timeout=10,
+            openocd_exe="openocd", allow_non_hw_evidence=True)
+        self.assertTrue(ok)
+        self.assertEqual(ctx["evidence"], "simulator")
+        self.assertTrue(ctx["evidence_waiver"])
+
+    @mock.patch.object(release, "swd_probe", return_value=(True, "ok"))
+    @mock.patch.object(release, "gate1")
+    def test_g2_real_hw_evidence_passes(self, m_gate1, _probe):
+        m_gate1.return_value = {
+            "status": "ok", "evidence": "real-hardware",
+            "steps": {"verify": {"results": [{"id": "FR-A", "status": "pass"}]}},
+        }
+        ok, _, ctx = release.run_gates(self.ws, "v1.0.0", allow_xfail=False,
+                                       timeout=10, openocd_exe="openocd")
+        self.assertTrue(ok)
+        self.assertEqual(ctx["evidence"], "real-hardware")
+        self.assertFalse(ctx["evidence_waiver"])
 
     def test_gate1_passes_f046_origin_flags(self):
         # F-046 触发链补完: G1 重跑 verify 时必须传 task-origin=schedule
@@ -150,3 +209,24 @@ class ReleaseGateTests(unittest.TestCase):
         # 旧版 verify 无 contract_hashes 键 → 空字典, R7 走警告路径
         rec = release.build_record(self.ws, "v2.0.0", [], [])
         self.assertEqual(rec["contracts"], {})
+
+    def test_build_record_carries_evidence(self):
+        # F-128: G1 verify 的 evidence 透传进发布记录; 无豁免时不留痕
+        rec = release.build_record(
+            self.ws, "v2.0.0", [{"id": "A", "status": "pass"}], [],
+            evidence="real-hardware")
+        self.assertEqual(rec["evidence"], "real-hardware")
+        self.assertNotIn("evidence_waiver", rec)
+
+    def test_build_record_evidence_waiver_leaves_trace(self):
+        # 豁免留痕: evidence_waiver=True 仅在显式旗标下出现, R8 据此降级警告
+        rec = release.build_record(
+            self.ws, "v2.0.0", [{"id": "A", "status": "pass"}], [],
+            evidence="simulator", evidence_waiver=True)
+        self.assertEqual(rec["evidence"], "simulator")
+        self.assertTrue(rec["evidence_waiver"])
+
+    def test_build_record_default_evidence_static(self):
+        # 缺省 (旧调用方) 落 static — 与 R8 的"宁低勿高"口径一致
+        rec = release.build_record(self.ws, "v2.0.0", [], [])
+        self.assertEqual(rec["evidence"], "static")

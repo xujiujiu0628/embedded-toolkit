@@ -1029,7 +1029,37 @@ def _sanitize_text(text: str) -> str:
     return ''.join(c for c in text if c.isprintable() or c in '\n\r\t')
 
 
+# ── 证据分级 (F-128, 工单二 A-1) ──────────────────────────────────────────
+# 借鉴 agentic-embedded-lab 的 claim + fidelity 概念: "仿真通过永不升级为
+# 硬件等价声明"。顶层 evidence 字段让消费方机检区分三类证据; 发布门禁
+# (release.py G2) 与事后审计 (release_audit.py R8) 据此拒绝非真机证据入档。
+EVIDENCE_REAL = "real-hardware"   # capture 后端 rtt/semihosting 实跑
+EVIDENCE_SIM = "simulator"        # sim 后端 (仿真器直接加载执行, 无真机在场)
+EVIDENCE_STATIC = "static"        # 仅构建/lint, 或 capture 未跑成 — 无运行时证据
+_METHOD_EVIDENCE = {
+    "rtt": EVIDENCE_REAL,
+    "semihosting": EVIDENCE_REAL,
+    "sim": EVIDENCE_SIM,   # C-1 capture_sim.py 落地即生效, 本表无需再改
+}
+
+
+def _evidence_level(result: dict) -> str:
+    """从 result.steps.capture 推导本次运行的证据等级 (三档)。
+
+    判据 = capture 步骤实际使用的后端; capture 未跑成 (build/flash 失败
+    早退、capture_failed) 一律 static — 没采到运行时输出就是静态证据,
+    不给"差一点就是真机"的模糊地带。判定 verdict 与证据等级正交:
+    FAIL 也是真机证据, PASS 也可能是静态证据。"""
+    cap = (result.get("steps") or {}).get("capture") or {}
+    if cap.get("status") == "ok":
+        return _METHOD_EVIDENCE.get(cap.get("method"), EVIDENCE_STATIC)
+    return EVIDENCE_STATIC
+
+
 def _output(result: dict, as_json: bool):
+    # F-128: evidence 统一在唯一出口落字段 — main() 的失败早退 (build/
+    # flash/capture 失败) 也汇到这里, 消费方无需对任何 status 特判缺键
+    result["evidence"] = _evidence_level(result)
     if as_json:
         # Force UTF-8 stdout for JSON output (Windows console uses GBK by default)
         try:
