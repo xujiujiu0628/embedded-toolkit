@@ -107,4 +107,11 @@ jobs:
       - name: Write CI machine.json
         run: python -c "import json; json.dump({'gcc_path': '/usr/bin', 'make_exe': '/usr/bin/make', 'openocd_exe': 'openocd'}, open('machine.json', 'w'))"
       - name: sim-demo end-to-end verify (build → qemu sim → judge)
-        run: python scripts/verify.py --project examples/sim-demo --json --timeout 20
+        run: |
+          set -o pipefail
+          python scripts/verify.py --project examples/sim-demo --json --timeout 20 | tee verify-result.json
+      # F-151: 判定结果 → GITHUB_STEP_SUMMARY; if: always() 保证失败运行
+      # 也出摘要 (输入非法时 evidence_export 只 exit 码报错, 不炸步骤)
+      - name: Export evidence summary
+        if: always()
+        run: python scripts/evidence_export.py --verify-file verify-result.json --project examples/sim-demo

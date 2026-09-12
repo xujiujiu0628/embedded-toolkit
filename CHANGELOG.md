@@ -161,6 +161,24 @@
   SimTimeout 携 proc/端到端 green 钉 flash-skip+method+evidence+零锁/
   缺内核 capture_failed/sim-demo 契约 lint+四态齐备)，先红后绿。
   （zc/hardware @ 本条 commit，合流待协调）
+- **F-151 (T7/N-4) evidence_export — verify 结果/发布记录 → GITHUB_STEP_SUMMARY，feat+test+docs，evidence_export.py (新) / ci.yml**:
+  CI 测试页要人话摘要 — verify --json / 发布记录渲染成 Markdown 判定报告
+  (四态表 ✅/❌/⏭/❌ + record 提取值 + F-146 fidelity 字段 + junit 报错
+  留痕 + 采集输出前 500 字符折叠块), 写入 GITHUB_STEP_SUMMARY (追加语义);
+  环境变量不在场/写失败时回落 --out (缺省 job-summary.md)——**if: always()
+  安全**: 输入缺失/非法 JSON 只 exit 2/1 报错不抛 traceback, CI 失败运行
+  的摘要步骤不会把绿变红。脱敏统一走 `redact()`: Windows 盘符路径与
+  POSIX 家目录族 → `<path>` (workspace 根/TOOLKIT_ROOT → `<toolkit>`,
+  长前缀先替换), **machine.json 内容从不被读取** — 摘要可能进公开 CI 页
+  (SENSITIVE_FINDINGS 脱敏口径)。ci.yml sim-demo job 接入实际用法
+  (`tee verify-result.json` + `if: always()` 摘要步骤) 作文档示范。
+  测试 `tests/test_evidence_export.py` 12 例: 渲染×3 (四态标记/record 值/
+  junit 报错/发布记录含批准留痕与签名占位) / 脱敏×3 (双平台路径/长前缀
+  优先/machine.json 键值零进入红线钉) / 降级落盘×3 (无 env 回落/GH 追加
+  语义/GH 写失败回落并留痕) / CLI×3 (端到端脱敏输出/非法 JSON exit 2 无
+  traceback/缺失输入 exit 2)，先红后绿; 全量 803 例仅 9 例本机 WSL 环境
+  失败 (CI ubuntu 正常)。
+  （zc/hardware @ 本条 commit，合流待协调）
 
 ## Unreleased — 2026-09-12（F-117~ 第三方审查工单第一批 P0 逐条清账）
 
