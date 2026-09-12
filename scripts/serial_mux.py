@@ -22,6 +22,7 @@ from pathlib import Path
 
 from serial_runtime import (
     get_serial_config,
+    hidden_subprocess_kwargs,  # F-133/i: Popen 控制台窗抑制 (经 serial_runtime 再导出)
     load_workspace_state_for_update,
     save_workspace_state,
     save_project_config,
@@ -313,7 +314,10 @@ def start_mux(port: str, baudrate: int | None, workspace: str | None, vserial_li
     cmd2 = ["socat", "-d", "-d", f"PTY,link={vserial_link},raw,echo=0", f"TCP:127.0.0.1:{tcp_port}"]
 
     try:
-        p1 = subprocess.Popen(cmd1, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        # F-133/i: hidden_subprocess_kwargs — Windows 不弹控制台窗
+        p1 = subprocess.Popen(cmd1, stdout=subprocess.DEVNULL,
+                              stderr=subprocess.DEVNULL,
+                              **hidden_subprocess_kwargs())
         _mux_procs = [p1]
         if not wait_for_tcp_server(tcp_port, p1):
             # F-097: p1 已启动但起服务失败/超时 → 必须回收, 否则孤儿进程
@@ -330,7 +334,9 @@ def start_mux(port: str, baudrate: int | None, workspace: str | None, vserial_li
                 error={"code": "port_open_failed", "message": f"串口 {real_port} 打开失败，请检查是否被占用"},
             )
 
-        p2 = subprocess.Popen(cmd2, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        p2 = subprocess.Popen(cmd2, stdout=subprocess.DEVNULL,
+                              stderr=subprocess.DEVNULL,
+                              **hidden_subprocess_kwargs())
         _mux_procs.append(p2)
         time.sleep(0.3)
         if p2.poll() is not None:

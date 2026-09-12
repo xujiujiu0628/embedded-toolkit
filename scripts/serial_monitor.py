@@ -39,15 +39,21 @@ def emit_line(text, cfg, args, include_re, exclude_re):
         try:
             if not include_re.search(text):
                 return False
-        except Exception:
-            pass
+        except Exception as e:
+            # F-133/a: 过滤器异常 fail-closed — 旧 except pass 会把坏过滤器
+            # 变成"全放行", 监控输出被污染
+            print(f"[warn] include 过滤器异常, 该行跳过 (fail-closed): {e}",
+                  file=sys.stderr)
+            return False
 
     if exclude_re:
         try:
             if exclude_re.search(text):
                 return False
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"[warn] exclude 过滤器异常, 该行跳过 (fail-closed): {e}",
+                  file=sys.stderr)
+            return False
 
     now = datetime.now().isoformat(timespec="milliseconds")
     if args.json:

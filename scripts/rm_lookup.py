@@ -156,8 +156,9 @@ def search_relationships(query: str, ref: dict) -> dict:
         }
 
 
-def format_result(result: dict):
-    """人类可读输出"""
+def format_result(result: dict, ref_data: dict):
+    """人类可读输出。F-133/d: ref_data 显式入参 — 旧版读模块级全局, 库态
+    (未跑 main) 调用即 NameError; 对 peripherals 的裸下标取数同批清除。"""
     query = result["query"]
     periphs = result["peripherals"]
     regs = result["registers"]
@@ -279,7 +280,8 @@ def main():
             if recipes_count:
                 print(f"  配方: {recipes_count} 个")
             print()
-        print(f"共 {len(ref_data['peripherals'])} 个外设, 版本 {ref_data['_meta']['version']}")
+        print(f"共 {len(ref_data.get('peripherals', {}))} 个外设, "
+              f"版本 {ref_data.get('_meta', {}).get('version', '?')}")
         return
 
     if args.recipe:
@@ -287,7 +289,7 @@ def main():
         if args.json:
             print(json.dumps(result, ensure_ascii=False, indent=2))
         else:
-            format_result(result)
+            format_result(result, ref_data)
         return
 
     if args.rel:
@@ -306,7 +308,7 @@ def main():
     if args.json:
         print(json.dumps(result, ensure_ascii=False, indent=2))
     else:
-        format_result(result)
+        format_result(result, ref_data)
 
 
 if __name__ == "__main__":

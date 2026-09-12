@@ -68,27 +68,6 @@ def parse_dim_element_group(reg_elem):
     return result
 
 
-def resolve_derived_from(reg_elem, all_registers, peripheral_name):
-    """Resolve derivedFrom attribute by copying fields from base register."""
-    derived = reg_elem.get('derivedFrom')
-    if not derived:
-        return reg_elem
-
-    base = all_registers.get(derived)
-    if base is None:
-        print(f"Warning: {peripheral_name}: derivedFrom '{derived}' not found",
-              file=sys.stderr)
-        return reg_elem
-
-    # Merge: child elements override parent
-    # For simplicity, just copy fields if child has none
-    if reg_elem.find('fields') is None and base.find('fields') is not None:
-        # Deep copy fields from base
-        pass  # Handled during field extraction
-
-    return reg_elem
-
-
 def extract_fields(reg_elem, all_registers):
     """Extract bit fields from a register element."""
     fields = {}
@@ -293,9 +272,9 @@ def merge_into_ref(all_data: dict, ref_path: str) -> tuple[int, int]:
         existing[name] = data
         added += 1
 
-    ref["_meta"]["version"] = "2.0.0"
-    ref["_meta"]["updated"] = "2026-08-12"
     ref["_meta"]["peripheral_count"] = len(existing)
+    # F-133/c: 版本号/updated 不再硬编码覆写 — ref 的语义版本与"是否跑过一次
+    # SVD 同步"无关, 现值 (人工维护的演进版本) 必须保留
 
     with open(ref_path, 'w', encoding='utf-8') as f:
         json.dump(ref, f, ensure_ascii=False, indent=2)

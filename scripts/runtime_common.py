@@ -102,7 +102,16 @@ def save_json_file(path: str | Path, data: dict) -> None:
     tmp_path = file_path.with_name(f"{file_path.name}.{os.getpid()}.tmp")  # F-023: pid 防双进程互顶
     tmp_path.write_text(json.dumps(data, ensure_ascii=False, indent=2),
                         encoding="utf-8")
-    os.replace(tmp_path, file_path)
+    try:
+        os.replace(tmp_path, file_path)
+    except OSError:
+        # F-133/j: 写失败 (目标被锁/盘满等) 不留 .tmp 残骸 — 残骸毒化目录
+        # 扫描类消费方, 且掩盖失败现场
+        try:
+            os.remove(tmp_path)
+        except OSError:
+            pass
+        raise
 
 
 # ── workspace state 读改写锁 (F-127, 工单 P1-3) ────────────────────────
@@ -199,7 +208,10 @@ def state_write_lock(workspace: str | None = None, *, timeout: float = 5.0):
 
 def output_json(data: dict, *, indent: int = 2) -> None:
     """输出 JSON 到 stdout"""
-    sys.stdout.reconfigure(encoding="utf-8")
+    try:
+        sys.stdout.reconfigure(encoding="utf-8")
+    except (AttributeError, ValueError):
+        pass   # F-133/g: StringIO 等重定向流无 reconfigure — 尽力而为
     print(json.dumps(data, ensure_ascii=False, indent=indent), flush=True)
 
 

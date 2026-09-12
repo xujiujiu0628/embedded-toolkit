@@ -27,8 +27,21 @@ from openocd_runtime import (
     save_project_config,
     load_workspace_state,
     get_state_entry,
+    resolve_param,
     workspace_root,
 )
+
+
+def parse_hex_addr(text: str) -> int:
+    """F-133/f: 地址必须显式 0x 十六进制 — 旧 execute_action 把裸串直接
+    拼进 telnet 命令, 十进制 "134217726" 曾被 int(x,16) 静默误读; 非法
+    输入 (空/无前缀/坏字符) 一律 ValueError, 由调用方转 JSON 错误契约。"""
+    if not isinstance(text, str) or not text.startswith(("0x", "0X")):
+        raise ValueError(f"地址须为 0x 前缀十六进制: {text!r}")
+    body = text[2:]
+    if not body or not all(c in "0123456789abcdefABCDEF" for c in body):
+        raise ValueError(f"地址须为 0x 前缀十六进制: {text!r}")
+    return int(body, 16)
 
 # F-123 (工单 P0-7): 本地 build_openocd_cmd / wait_server_ready /
 # cleanup_proc 三份拷贝已删除, 统一用 openocd_runtime 单实现
@@ -204,15 +217,18 @@ ALL_ACTIONS = ["halt", "resume", "step", "reg", "read-mem", "write-mem", "bp", "
 def main():
     parser = argparse.ArgumentParser(description="OpenOCD Telnet 调试命令")
     parser.add_argument("action", choices=ALL_ACTIONS)
-    parser.add_argument("--exe", default="openocd", help="openocd 路径")
+    # F-133/f: --exe 缺省 None 走 resolve_param 链 (cli > config.exe >
+    # machine.json openocd_exe > PATH); 旧 default="openocd" 使配置永不生效
+    parser.add_argument("--exe", default=None, help="openocd 路径")
     parser.add_argument("--board", default=None, help="board 配置文件")
     parser.add_argument("--interface", default=None, help="interface 配置文件")
     parser.add_argument("--target", default=None, help="target 配置文件")
     parser.add_argument("--search", default="", help="额外配置脚本搜索目录")
     parser.add_argument("--adapter-speed", default=None, help="调试速率 kHz")
     parser.add_argument("--transport", default=None, choices=["", "swd", "jtag"], help="传输协议")
-    parser.add_argument("--gdb-port", type=int, default=3333, help="GDB 端口")
-    parser.add_argument("--telnet-port", type=int, default=4444, help="Telnet 端口")
+    # F-133/f: 端口缺省 None 读工程配置 (openocd 段 gdb_port/telnet_port)
+    parser.add_argument("--gdb-port", type=int, default=None, help="GDB 端口 (默认 3333, 可经工程配置)")
+    parser.add_argument("--telnet-port", type=int, default=None, help="Telnet 端口 (默认 4444, 可经工程配置)")
     parser.add_argument("--address", default="", help="地址（read-mem/write-mem/bp/rbp/run-to 用）")
     parser.add_argument("--length", type=int, default=16, help="读取长度（read-mem 用，单位为 width 数量）")
     parser.add_argument("--value", default="", help="写入值（write-mem 用）")
@@ -244,6 +260,28 @@ def main():
     target = oc_params["target"]
     adapter_speed = oc_params["adapter_speed"]
     transport = oc_params["transport"]
+
+    # F-133/f: exe/端口走解析链 (cli > 工程配置 > 既有缺省)
+    exe, _exe_source = resolve_param("exe", args.exe, config=project_config,
+                                     config_keys=["exe"])
+    try:
+        telnet_port = int(args.telnet_port
+                          if args.telnet_port is not None
+                          else project_config.get("telnet_port", 4444))
+        gdb_port = int(args.gdb_port
+                       if args.gdb_port is not None
+                       else project_config.get("gdb_port", 3333))
+    except (TypeError, ValueError) as e:
+        result = {
+            "status": "error", "action": args.action,
+            "error": {"code": "invalid_config",
+                      "message": f"gdb_port/telnet_port 须为整数: {e}"},
+        }
+        if args.as_json:
+            output_json(result)
+        else:
+            print(f"错误: {result['error']['message']}", file=sys.stderr, flush=True)
+        sys.exit(1)
 
     # 参数校验
     if not board and not interface and not target:
@@ -279,18 +317,33 @@ def main():
             print(f"错误: {result['error']['message']}", file=sys.stderr, flush=True)
         sys.exit(1)
 
+    # F-133/f: 地址显式 0x 解析 — 非法地址在启动 OpenOCD 前拒 (错误契约)
+    if args.action in ("read-mem", "write-mem", "bp", "rbp", "run-to"):
+        try:
+            parse_hex_addr(args.address)
+        except ValueError as e:
+            result = {
+                "status": "error", "action": args.action,
+                "error": {"code": "invalid_address", "message": str(e)},
+            }
+            if args.as_json:
+                output_json(result)
+            else:
+                print(f"错误: {result['error']['message']}", file=sys.stderr, flush=True)
+            sys.exit(1)
+
     # 构建 OpenOCD 命令并启动
     cmd = build_openocd_cmd(
-        exe=args.exe, board=board or "", interface=interface or "", target=target or "",
+        exe=exe, board=board or "", interface=interface or "", target=target or "",
         search=args.search, adapter_speed=adapter_speed or "", transport=transport or "",
-        gdb_port=args.gdb_port, telnet_port=args.telnet_port,
+        gdb_port=gdb_port, telnet_port=telnet_port,
     )
 
     proc = None
     telnet = None
     try:
         proc = start_openocd_server(cmd)
-        ready, errors = wait_server_ready(proc, args.telnet_port)
+        ready, errors = wait_server_ready(proc, telnet_port)
 
         if not ready:
             error_msg = "; ".join(errors) if errors else "OpenOCD 启动失败或超时"
@@ -305,7 +358,7 @@ def main():
             sys.exit(1)
 
         # 连接 Telnet
-        telnet = TelnetConnection(port=args.telnet_port)
+        telnet = TelnetConnection(port=telnet_port)
         telnet.connect()
 
         # 执行调试命令
@@ -332,7 +385,7 @@ def main():
     except FileNotFoundError:
         result = {
             "status": "error", "action": args.action,
-            "error": {"code": "exe_not_found", "message": f"openocd 不存在或不在 PATH 中: {args.exe}"},
+            "error": {"code": "exe_not_found", "message": f"openocd 不存在或不在 PATH 中: {exe}"},
         }
         if args.as_json:
             output_json(result)

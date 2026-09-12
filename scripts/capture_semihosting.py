@@ -17,6 +17,7 @@ boot 输出——只有复位给确定性起点。
 """
 import subprocess
 
+from runtime_common import hidden_subprocess_kwargs
 from wb_common import load_machine
 
 
@@ -53,7 +54,8 @@ def run_semihosting_session(capture_timeout: int, workspace=None) -> tuple:
         openocd_cmd,
         stdout=subprocess.PIPE, stderr=subprocess.PIPE,
         text=True, encoding='utf-8', errors='replace',
-        cwd=workspace
+        cwd=workspace,
+        **hidden_subprocess_kwargs(),   # F-133/i: Windows 不弹控制台窗 (三入口同款)
     )
     try:
         stdout, stderr = proc.communicate(timeout=capture_timeout + 30)

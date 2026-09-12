@@ -12,6 +12,7 @@ from typing import Any
 from runtime_common import (  # noqa: F401  (再导出: 保持 mod.X 调用面, F-029)
     # normalize_path 不并入: serial 自带独立契约 (可带 base、相对输入不 resolve), 见 F-029 T3 裁决
     JSONCorruptError, _first_resolved, _serialize_state_value, is_missing,
+    hidden_subprocess_kwargs,  # F-133/i: serial_mux Popen 控制台窗抑制
     load_json_file, load_json_strict, load_skill_section, load_workspace_state,
     load_workspace_state_for_update, now_iso, output_json,
     project_config_file, save_json_file, save_skill_section,
@@ -210,10 +211,11 @@ def get_serial_config(
     cli_encoding: str | None = None,
     cli_timeout: float | None = None,
     workspace: str | None = None,
-) -> tuple[dict, dict]:
+) -> tuple[dict | None, dict]:
     """
     获取串口配置，按优先级解析参数。
-    返回 (config_dict, sources_dict)
+    返回 (config_dict, sources_dict)；config_dict 可为 None (F-133/k:
+    resolve_param 对全缺参数返回 None — 旧注解 tuple[dict, dict] 撒谎)。
     """
     proj_cfg = load_project_config(workspace)
     state = load_workspace_state(workspace)

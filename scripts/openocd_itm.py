@@ -12,12 +12,9 @@ import argparse
 import socket
 import sys
 import time
-from pathlib import Path
 
-
-ROOT_DIR = Path(__file__).resolve().parents[2]
-if str(ROOT_DIR) not in sys.path:
-    sys.path.insert(0, str(ROOT_DIR))
+# F-133/h: 旧 ROOT_DIR=parents[2] 无效锚清除 (指向仓外, 插 sys.path 从不
+# 命中); 直接脚本运行时 sys.path[0]=scripts/ 已覆盖 import 需求
 
 from openocd_runtime import (  # noqa: E402
     start_openocd_server,  # noqa: F401  (F-123 再导出: 本地逐字节副本删除, 调用面不变)
