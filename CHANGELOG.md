@@ -107,6 +107,26 @@
   (共享测试文件改动登记)。全量 782 例仅本机 WSL 缺席的 9 例 hooks 环境
   失败 (CI ubuntu 正常)。
   （zc/hardware @ 本条 commit，合流待协调）
+- **F-149 (T5/C-1 spike) qemu-system-arm 跑 STM32F103 可行性 — 结论 GO，docs，spikes/c1-qemu-spike/ (新, 可回放现场)**:
+  实测环境 QEMU 11.1.0 (Windows x64, winget `SoftwareFreedomConservancy.QEMU`
+  一键装; **CI 安装路径: ubuntu `apt-get install qemu-system-arm`**) +
+  arm-none-eabi-gcc 10.3.1。机器模型 `-M stm32vldiscovery` (STM32F100,
+  Cortex-M3) 确认在 QEMU 支持列表 (另一 M-profile 选项仅 olimex-stm32-h405,
+  Cortex-M4)。三个实验 (spikes/c1-qemu-spike/ 可回放):
+  ① printf 全文采集 ✓ — semihosting SYS_WRITE0 (`-semihosting-config
+  enable=on,target=native`) 输出走 **stderr** (与 OpenOCD semihosting 采集
+  stdout+stderr 合并的既有口径一致); ② 超时行为 ✓ — 固件自旋时外部 kill,
+  部分输出仍完整可采 (对齐 F-003 归因纪律: 采集超时是工具故障不是程序无
+  输出); **关键发现: M-profile 旧 SYS_EXIT(0x18) 被 qemu 无声忽略, 进程
+  永不退出** — 必须 SYS_EXIT_EXTENDED(0x20) (r1 指向 64 位
+  {ADP_Stopped_ApplicationExit, 0} 内存块) 才干净退出, sim 后端模板与
+  C-1 实现须用 0x20, 自旋固件依赖外部 timeout; ③ 附加: USART1 直写 DR
+  转发到 `-serial stdio` 的 **stdout** (qemu 不 gate RCC 时钟位) — UART
+  备选通道可行。Renode 未测 (本机未装): qemu 通路已证足, 方案定为
+  **qemu-system-arm + semihosting 单一后端** (不引 Renode 双方案)。
+  结论 **GO** → T6 立项: capture_sim.py 驱动 qemu, method="sim",
+  evidence="simulation_validated" (不进发布门禁, F-146 呼应)。
+  （zc/hardware @ 本条 commit，合流待协调）
 
 ## Unreleased — 2026-09-12（F-117~ 第三方审查工单第一批 P0 逐条清账）
 
