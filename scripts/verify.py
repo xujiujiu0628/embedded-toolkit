@@ -444,7 +444,8 @@ def _finish_capture_timeout(proc, result: dict, capture_timeout: int,
     sys.exit(1)
 
 
-def main():
+def _parse_args(argv=None):
+    """F-160 (P1-4 拆分): argparse 装配独立函数 — main() 纯接线。"""
     parser = argparse.ArgumentParser(
         description="闭环验证 — Build → Analyze → Flash → Capture → Verify",
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -475,7 +476,7 @@ def main():
     parser.add_argument("--gate-run", dest="gate_run", action="store_true",
                         help="发布门禁发起的运行: 跳过 feedback_db 落账")
     parser.add_argument("--doctor", action="store_true",
-                        help="环境预检: 打印 toolkit/Python/machine.json 四键/gcc/openocd/"
+                        help="环境预检: 打印 toolkit/Python/machine.json 三键/gcc/openocd/"
                              "make/SWD 连通性矩阵后退出 (诊断报告, 不做门禁判定, 退出码恒 0)")
     parser.add_argument("--task-origin", dest="task_origin",
                         choices=list(HIL_ORIGINS), default="manual",
@@ -495,19 +496,21 @@ def main():
                              "用; preflight 拒绝 = 期望全 skipped + 一条 "
                              "preflight error; 写失败记 junit_xml_error "
                              "并拉低退出码)")
-    args = parser.parse_args()
 
-    global _JUNIT_OUT
-    _JUNIT_OUT = args.junit_xml
+    return parser.parse_args(argv)
 
-    if args.doctor:
-        # F-041: 诊断分支先于工程发现 —— doctor 不依赖 .workbench 工程
-        report = doctor_report()
-        if args.json:
-            output_json(report)
-        else:
-            _print_doctor(report)
-        return
+
+def _run_doctor(args) -> None:
+    """F-041: 诊断分支先于工程发现 —— doctor 不依赖 .workbench 工程。"""
+    report = doctor_report()
+    if args.json:
+        output_json(report)
+    else:
+        _print_doctor(report)
+
+
+def _prepare_context(args):
+    """F-160 (P1-4 拆分): 工程根发现 + 配置/版本装载。"""
 
     # 工程根: --project > cwd 向上发现
     global WORKSPACE
@@ -529,6 +532,29 @@ def main():
     if cfg_min and not version_ok(toolkit_version(), cfg_min):
         print(f"错误: 工具库版本 {toolkit_version()} 低于工程要求 {cfg_min}", file=sys.stderr)
         sys.exit(1)
+
+    return config, builder
+
+
+def main():
+    args = _parse_args()
+
+    global _JUNIT_OUT
+    _JUNIT_OUT = args.junit_xml
+
+    if args.doctor:
+        _run_doctor(args)
+        return
+
+    _run_pipeline(args)
+
+
+def _run_pipeline(args):
+    """F-160 (P1-4 拆分): 编排骨架 — 各段实现见 _prepare_context/
+    _run_build_step/_run_flash_step/_run_capture_step/_run_judgement/
+    _finalize_run; 行为零变更搬移 (硬验收: 全量测试零修改全绿 +
+    --json 输出逐字段结构一致)。"""
+    config, builder = _prepare_context(args)
 
     # Clamp retry
     max_retries = max(0, min(args.retry, 3))
@@ -573,6 +599,31 @@ def main():
         "retry_config": {"max_retries": max_retries, "retry_delay": retry_delay},
         "steps": {}
     }
+
+    hex_file, elf_file = _run_build_step(
+        args, config, builder, result, max_retries, retry_delay)
+
+    # F-150: sim 后端在 Step 1 前就由 config 决定 — 全程无烧录无探针
+    cap_backend = (config.get("capture", {}) or {}).get("backend", "semihosting")
+    sim_cfg = (config.get("capture", {}) or {}).get("sim", {}) or {}
+    sim_mode = (cap_backend == "sim")
+
+    lease = _run_flash_step(args, config, result, hex_file, sim_mode,
+                            max_retries, retry_delay)
+
+    captured_text, captured_lines, capture_timeout = _run_capture_step(
+        args, config, result, lease, sim_mode, cap_backend, sim_cfg,
+        max_retries, elf_file)
+
+    _run_judgement(args, config, result, captured_text, captured_lines,
+                   capture_timeout, expect, description, expectations,
+                   expect_mode, started_ts)
+
+    _finalize_run(args, config, result, lease, max_retries, captured_text)
+
+
+def _run_build_step(args, config, builder, result, max_retries, retry_delay):
+    """Step 1-2: Build + Analyze (with retry) — 失败早退 (sys.exit) 原样保留。"""
 
     # ---- Step 1-2: Build + Analyze (with retry) ----
     if not args.no_build:
@@ -702,10 +753,12 @@ def main():
         result["steps"]["build"] = {"status": "skipped"}
         result["steps"]["analyze"] = {"status": "skipped"}
 
-    # F-150: sim 后端在 Step 1 前就由 config 决定 — 全程无烧录无探针
-    cap_backend = (config.get("capture", {}) or {}).get("backend", "semihosting")
-    sim_cfg = (config.get("capture", {}) or {}).get("sim", {}) or {}
-    sim_mode = (cap_backend == "sim")
+    return hex_file, elf_file
+
+
+def _run_flash_step(args, config, result, hex_file, sim_mode, max_retries,
+                    retry_delay):
+    """Step 3: Flash (with retry) + 设备锁获取 — 返回 lease (sim 模式为 None)。"""
 
     # ---- Step 3: Flash (with retry) ----
     # F-046: HIL 入口守卫 — 拒 manual 时给友好提示, exit 2 (区别于 0=成功/1=失败)
@@ -780,6 +833,14 @@ def main():
                            " ".join(sys.argv))
     else:
         result["steps"]["flash"] = {"status": "skipped"}
+
+    return lease
+
+
+def _run_capture_step(args, config, result, lease, sim_mode, cap_backend,
+                      sim_cfg, max_retries, elf_file):
+    """Step 4: Capture (semihosting 默认 | rtt | sim) — 返回 (captured_text,
+    captured_lines, capture_timeout)。"""
 
     # ---- Step 4: Capture (semihosting 默认 | rtt | F-150 sim) ----
     # 共同原则: reset halt 确定性起点 (2026-08-16 教训), 行过滤后进 verify()
@@ -914,6 +975,15 @@ def main():
         # F-046: 台账落盘 (semihosting 后端, 同上)
         append_audit_entry(WORKSPACE, args.task_origin, "capture", "ok",
                            " ".join(sys.argv))
+
+    return captured_text, captured_lines, capture_timeout
+
+
+def _run_judgement(args, config, result, captured_text, captured_lines,
+                   capture_timeout, expect, description, expectations,
+                   expect_mode, started_ts):
+    """Step 4b/4c/5: HardFault 检测 + 物理门控 + 四态判定 + 顶层 status。"""
+    verify_cfg = config.get("verify", {})
 
     # ---- Step 4b: HardFault 自动检测 ----
     # 触发条件 (修复 2026-08-12):
@@ -1063,6 +1133,11 @@ def main():
         result["status"] = verification_result["status"]
     result["elapsed_sec"] = round(time.time() - started_ts, 1)
 
+
+
+def _finalize_run(args, config, result, lease, max_retries, captured_text):
+    """Step 6 + 落账 + 唯一出口 (F-128 evidence/F-147 junit 在 _output 汇聚)。"""
+
     # ---- Step 6: 判定后硬件自恢复 (F-129, 工单二 A-2) ----
     # flash 实际发生过的运行结束后复位目标——超时/卡死场景留下的挂着断点
     # 或半初始化外设不留给下一次运行 (借鉴 agentic-hil)。复位失败只记录
@@ -1115,6 +1190,9 @@ def main():
     failed = (result.get("status") != "ok"
               or bool(result.get("junit_xml_error")))
     sys.exit(1 if failed else 0)
+
+
+
 
 
 def _log_feedback_event(result: dict, gate_run: bool) -> dict:
