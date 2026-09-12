@@ -17,7 +17,7 @@ import json
 import os
 import sys
 
-from wb_common import find_project_root
+from wb_common import find_project_root, force_utf8_streams
 
 
 # 已知 step 名 (与 verify.py result.steps 对应)
@@ -162,11 +162,7 @@ def _demo_stats() -> dict:
 def main() -> int:
     # F-099: stdout/stderr 强制 UTF-8 (F-025 先例, expectations_lint 同款) —
     # Windows GBK 控制台下 ensure_ascii=False 的中文会崩或乱码
-    for _stream in (sys.stdout, sys.stderr):
-        try:
-            _stream.reconfigure(encoding="utf-8")
-        except Exception:
-            pass
+    force_utf8_streams()   # F-157: UTF-8 咒语收编 wb_common
     parser = argparse.ArgumentParser(
         description="verify step-level 时长画像 (F-050, 方案四-4)")
     parser.add_argument("--project", default=None,

@@ -36,7 +36,7 @@ import subprocess
 import sys
 
 from runtime_common import now_iso, save_json_file
-from wb_common import find_project_root
+from wb_common import find_project_root, sha256_file
 
 REQUIRED_KEYS = ("tag", "git_head", "timestamp", "build_mode", "artifacts",
                  "results", "xfail_waived", "tools")
@@ -58,12 +58,7 @@ def _git_bytes(args_, cwd):
     return r.returncode, (r.stdout or b""), (r.stderr or b"").decode("utf-8", "replace")
 
 
-def sha256_file(path):
-    h = hashlib.sha256()
-    with open(path, "rb") as f:
-        for chunk in iter(lambda: f.read(65536), b""):
-            h.update(chunk)
-    return h.hexdigest()
+# F-157 (P2-3): 本地 sha256_file 删除, 收编 wb_common 共享版
 
 
 def _check(checks, cid, status, detail):

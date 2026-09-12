@@ -14,19 +14,10 @@ STM32F103 外设代码生成器 — 参数 → 寄存器级 C init 代码
 """
 
 import argparse
-import json
 import os
 import sys
 
-from wb_common import TOOLKIT_ROOT, find_project_root
-
-REF_PATH = os.path.join(TOOLKIT_ROOT, "data", "stm32f103-ref.json")
-
-
-def load_ref():
-    with open(REF_PATH, 'r', encoding='utf-8') as f:
-        return json.load(f)
-
+from wb_common import find_project_root, load_ref  # F-157: 三份 load_ref 收编
 
 # ---- GPIO 引脚地址映射 ----
 GPIO_BASE = {"A": "GPIOA", "B": "GPIOB", "C": "GPIOC"}

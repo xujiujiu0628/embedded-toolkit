@@ -37,7 +37,7 @@ import os
 import re
 import sys
 
-from wb_common import find_project_root
+from wb_common import find_project_root, force_utf8_streams
 
 # FSD 需求标题: ### FR-MPU-01：地址探测 / ## FR-KEY-02: 长短按识别 / ### NFR-01：性能
 # (容全/半角冒号; FR 带域段可选, NFR 无域段; 只在行首标题层级匹配,
@@ -294,11 +294,7 @@ def _print_human(result):
 
 
 def main():
-    for stream in (sys.stdout, sys.stderr):
-        try:
-            stream.reconfigure(encoding="utf-8")
-        except Exception:
-            pass
+    force_utf8_streams()   # F-157: UTF-8 咒语收编 wb_common
     ap = argparse.ArgumentParser(
         description="FSD ↔ expectations 覆盖率对账 (离线, 不触硬件)")
     ap.add_argument("fsd", nargs="?", default=None,

@@ -19,9 +19,8 @@ import argparse
 import json
 import os
 
-from wb_common import TOOLKIT_ROOT
+from wb_common import TOOLKIT_ROOT, load_ref  # F-157: 三份 load_ref 收编
 
-REF_PATH = os.path.join(TOOLKIT_ROOT, "data", "stm32f103-ref.json")
 ISSUES_PATH = os.path.join(TOOLKIT_ROOT, "data", "f103_known_issues.json")
 
 # ── 项目当前固定引脚占用（从 CLAUDE.md 和 main.c 提取）──
@@ -34,11 +33,6 @@ FIXED_PINS = {
     "PB0": "Button (GPIO Input, pull-up)",
     "PC13": "LED heartbeat (GPIO Output)",
 }
-
-
-def load_ref():
-    with open(REF_PATH, 'r', encoding='utf-8') as f:
-        return json.load(f)
 
 
 def load_issues():

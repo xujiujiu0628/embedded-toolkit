@@ -32,7 +32,6 @@ import re
 import subprocess
 import sys
 import time
-from datetime import datetime, timezone, timedelta
 
 
 WORKSPACE = None  # 工程根, main() 中 --project 或 cwd 向上发现后设置
@@ -48,7 +47,7 @@ def _openocd_exe() -> str:
     惰性化后 import 卫生由 test_import_hygiene 钉死。"""
     return load_machine()["openocd_exe"]
 
-from runtime_common import output_json  # noqa: E402  (F-041: doctor --json 复用共享层)
+from runtime_common import now_iso, output_json  # noqa: E402  (F-041: doctor --json 复用共享层; F-157: now_iso 收编)
 from openocd_runtime import reset_target, swd_probe  # noqa: E402,F401  (F-041: SWD 探测与 release G0.5 同源; F-129: 判定后复位)
 import hw_lease  # noqa: E402  (F-145: flash+capture 段机器级设备锁)
 import junit_xml  # noqa: E402  (F-147: --junit-xml 报告, 生成逻辑在模块内)
@@ -109,9 +108,8 @@ def _keil_bridge_paths():
             f"请核对 archive 副本完整性。")
     return build, analyze
 
-def now_iso() -> str:
-    tz = timezone(timedelta(hours=8))
-    return datetime.now(tz).isoformat(timespec="seconds")
+# F-157: 本地 now_iso (UTC+8 硬编码) 删除, 收编 runtime_common 共享版
+# (astimezone 本地时区) — 时区口径变化见 CHANGELOG。
 
 
 def load_config(project_root: str) -> dict:

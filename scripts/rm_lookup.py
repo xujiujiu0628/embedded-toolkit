@@ -13,16 +13,8 @@ STM32F103 参考手册快速查询工具
 
 import argparse
 import json
-import os
 
-from wb_common import TOOLKIT_ROOT
-
-REF_PATH = os.path.join(TOOLKIT_ROOT, "data", "stm32f103-ref.json")
-
-
-def load_ref() -> dict:
-    with open(REF_PATH, 'r', encoding='utf-8') as f:
-        return json.load(f)
+from wb_common import load_ref  # F-157: 三份 load_ref 收编
 
 
 def search_peripheral(query: str, ref: dict) -> list[dict]:

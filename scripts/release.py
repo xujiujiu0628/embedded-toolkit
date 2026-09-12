@@ -13,7 +13,6 @@
   python release.py --tag v1.0.0 [--project DIR] [--dry-run] [--allow-xfail]
 """
 import argparse
-import hashlib
 import json
 import os
 import subprocess
@@ -22,7 +21,7 @@ from datetime import datetime
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from wb_common import (TOOLKIT_ROOT, atomic_write_json, find_project_root,  # noqa: E402
-                       load_machine, toolkit_version)
+                       load_machine, sha256_file, toolkit_version)
 from openocd_runtime import swd_probe  # noqa: E402  (F-041: 下沉共享层, doctor 与 G0.5 同源)
 
 VERIFY = os.path.join(TOOLKIT_ROOT, "scripts", "verify.py")
@@ -81,12 +80,7 @@ def gate1(ws, timeout):
         return {"status": "error", "error": f"verify 输出不可解析: {tail}"}
 
 
-def sha256_file(path):
-    h = hashlib.sha256()
-    with open(path, "rb") as f:
-        for chunk in iter(lambda: f.read(65536), b""):
-            h.update(chunk)
-    return h.hexdigest()
+# F-157 (P2-3): 本地 sha256_file 删除, 收编 wb_common 共享版
 
 
 def _gcc_version():

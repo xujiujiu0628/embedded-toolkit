@@ -17,9 +17,9 @@ import json
 import os
 import sys
 from dataclasses import dataclass, field, asdict
-from datetime import datetime, timezone, timedelta
 
-from wb_common import find_project_root
+from wb_common import atomic_write_json, find_project_root, force_utf8_streams  # F-157: 原子写/咒语收编
+from runtime_common import now_iso  # F-157: UTC+8 本地版收编共享层
 
 
 def _project_feedback_dir():
@@ -71,10 +71,8 @@ class FeedbackEvent:
     outcome: str = ""              # "fixed" | "still_broken" | "false_positive"
 
 
-def now_iso() -> str:
-    tz = timezone(timedelta(hours=8))
-    return datetime.now(tz).isoformat(timespec="seconds")
-
+# F-157: 本地 now_iso (UTC+8 硬编码) 删除, 收编 runtime_common 共享版
+# (astimezone 本地时区) — 时区口径变化见 CHANGELOG。
 
 def _load_json_or_rebuild(path: str, empty: dict, what: str) -> dict:
     """F-014: 校准库损坏曾裸 traceback → 全部后续落账崩死, verify 侧留痕但
@@ -108,8 +106,9 @@ def load_feedback_db() -> dict:
 
 
 def save_feedback_db(data: dict) -> None:
-    with open(os.path.join(_feedback_dir(), "feedback_db.json"), 'w', encoding='utf-8', newline='\n') as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
+    # F-157 (P2-3): 原子写收编 wb_common.atomic_write_json — truncate 写在
+    # 并发读方曾喂出"损坏→清空"链; .corrupt 兜底 (_load_json_or_rebuild) 保留
+    atomic_write_json(os.path.join(_feedback_dir(), "feedback_db.json"), data)
 
 
 def load_calibration() -> dict:
@@ -120,8 +119,7 @@ def load_calibration() -> dict:
 
 
 def save_calibration(data: dict) -> None:
-    with open(os.path.join(_feedback_dir(), "calibration.json"), 'w', encoding='utf-8', newline='\n') as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
+    atomic_write_json(os.path.join(_feedback_dir(), "calibration.json"), data)
 
 
 def make_event_id(pipeline: str, timestamp: str | None = None) -> str:
@@ -306,11 +304,7 @@ def export_calibration() -> dict:
 def main():
     # F-099: stdout/stderr 强制 UTF-8 (F-025 先例, expectations_lint 同款) —
     # Windows GBK 控制台下 ensure_ascii=False 的中文会崩或乱码
-    for _stream in (sys.stdout, sys.stderr):
-        try:
-            _stream.reconfigure(encoding="utf-8")
-        except Exception:
-            pass
+    force_utf8_streams()   # F-157: UTF-8 咒语收编 wb_common
     parser = argparse.ArgumentParser(description="反馈数据库")
     parser.add_argument("--log", type=str, help="JSON 字符串格式的事件记录")
     parser.add_argument("--stats", type=str, help="查询 pipeline 统计 (build_fix|hardfault|code_gen)")

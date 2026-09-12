@@ -96,12 +96,14 @@ def load_json_strict(path: str | Path) -> dict:
 def save_json_file(path: str | Path, data: dict) -> None:
     """原子保存: 先写 .tmp 再 os.replace — 并发读方要么看到旧文件要么看到
     新文件, 不再有半截 JSON (F-019: 撕裂读曾把下游引入"损坏→清空"链)。
-    注意: 原子替换只防撕裂, 不防 read-modify-write 丢更新 (F-127, 见 state_write_lock)。"""
+    注意: 原子替换只防撕裂, 不防 read-modify-write 丢更新 (F-127, 见 state_write_lock)。
+    F-157: newline="\n" 与 wb_common.atomic_write_json 行尾口径统一 (此前
+    Windows 上 CRLF/LF 两套并存, 注释固化 + 收敛为 LF)。"""
     file_path = Path(path)
     file_path.parent.mkdir(parents=True, exist_ok=True)
     tmp_path = file_path.with_name(f"{file_path.name}.{os.getpid()}.tmp")  # F-023: pid 防双进程互顶
     tmp_path.write_text(json.dumps(data, ensure_ascii=False, indent=2),
-                        encoding="utf-8")
+                        encoding="utf-8", newline="\n")
     try:
         os.replace(tmp_path, file_path)
     except OSError:
