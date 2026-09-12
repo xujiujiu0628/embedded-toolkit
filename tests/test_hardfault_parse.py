@@ -219,5 +219,31 @@ class ClassifyAddressRangeTests(unittest.TestCase):
                 self.assertEqual(hardfault.classify_address_range(addr), expect)
 
 
+class ExcReturnDecodeTests(unittest.TestCase):
+    """diagnose 的 EXC_RETURN 解码 (F-118, 工单 P0-6)。
+
+    缺陷: idx = lr & 0xF 对合法值 0xFFFFFFF1/F9/FD 得 1/9/13，查找表仅 4 项
+    → 最常见的 0xFFFFFFF9 (返回 Thread/MSP) 恒落 unknown，0xFFFFFFF1 被错标。
+    修复: idx = (lr >> 2) & 3 (bit3=返回模式, bit2=返回堆栈)，文案按
+    "返回到哪" 的 ARMv7-M 语义重排 (0xF1→0 / 0xF5→1 / 0xF9→2 / 0xFD→3)。
+    """
+
+    def _diag(self, lr: int) -> str:
+        return hardfault.diagnose({"lr": lr}, [])
+
+    def test_fffffff1_returns_to_handler_msp(self):
+        self.assertIn("EXC_RETURN: 返回 Handler 模式 (MSP)", self._diag(0xFFFFFFF1))
+
+    def test_fffffff9_returns_to_thread_msp(self):
+        self.assertIn("EXC_RETURN: 返回 Thread 模式 (MSP)", self._diag(0xFFFFFFF9))
+
+    def test_fffffffd_returns_to_thread_psp(self):
+        self.assertIn("EXC_RETURN: 返回 Thread 模式 (PSP)", self._diag(0xFFFFFFFD))
+
+    def test_reserved_f5_not_silently_wrong(self):
+        # 0xFFFFFFF5 在 ARMv8-M 是 Secure 返回, M3 上保留——不得静默错标
+        self.assertIn("EXC_RETURN: 保留/Secure", self._diag(0xFFFFFFF5))
+
+
 if __name__ == "__main__":
     unittest.main()
