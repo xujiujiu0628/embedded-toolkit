@@ -1080,13 +1080,19 @@ def _sanitize_text(text: str) -> str:
     return ''.join(c for c in text if c.isprintable() or c in '\n\r\t')
 
 
-# ── 证据分级 (F-128, 工单二 A-1) ──────────────────────────────────────────
+# ── 证据分级 (F-128 A-1; F-146 T2 retro-fit 对齐 AEL 命名) ─────────────────
 # 借鉴 agentic-embedded-lab 的 claim + fidelity 概念: "仿真通过永不升级为
-# 硬件等价声明"。顶层 evidence 字段让消费方机检区分三类证据; 发布门禁
+# 硬件等价声明"。顶层 evidence 字段让消费方机检区分证据等级; 发布门禁
 # (release.py G2) 与事后审计 (release_audit.py R8) 据此拒绝非真机证据入档。
-EVIDENCE_REAL = "real-hardware"   # capture 后端 rtt/semihosting 实跑
-EVIDENCE_SIM = "simulator"        # sim 后端 (仿真器直接加载执行, 无真机在场)
-EVIDENCE_STATIC = "static"        # 仅构建/lint, 或 capture 未跑成 — 无运行时证据
+# F-146 迁移 (一次性切换, 不留别名, 仓内无外部消费方):
+#   real-hardware → hardware_validated, simulator → simulation_validated;
+#   第四档 production_approved 不由 verify 产出 — 是 release_audit --approve
+#   在发布后对 hardware_validated 记录的人工批准回填 (见 release_audit)。
+EVIDENCE_REAL = "hardware_validated"    # capture 后端 rtt/semihosting 实跑
+EVIDENCE_SIM = "simulation_validated"   # sim 后端 (仿真器加载执行, 无真机在场)
+EVIDENCE_STATIC = "static"              # 仅构建/lint, 或 capture 未跑成 — 无运行时证据
+EVIDENCE_LEVELS = (EVIDENCE_STATIC, EVIDENCE_SIM, EVIDENCE_REAL,
+                   "production_approved")
 _METHOD_EVIDENCE = {
     "rtt": EVIDENCE_REAL,
     "semihosting": EVIDENCE_REAL,

@@ -1,7 +1,7 @@
 r"""F-128 (工单二 A-1) 证据分级回归钉 — verify --json 顶层 evidence 字段。
 
 契约:
-  1. 取值三档: real-hardware (rtt/semihosting 实跑) / simulator (sim 后端,
+  1. 取值三档: hardware_validated (rtt/semihosting 实跑) / simulation_validated (sim 后端,
      C-1 预留) / static (capture 未跑成 — build/flash 失败早退同样 static);
   2. 字段随一切出口存在: main() 所有出口汇于 _output, 失败早退不缺键;
   3. 判定 verdict 与证据等级正交: 四态判定 (pass/xfail/xpass/fail) 下
@@ -42,18 +42,18 @@ class EvidenceLevelUnitTests(unittest.TestCase):
     def test_rtt_is_real_hardware(self):
         cap = {"status": "ok", "method": "rtt"}
         self.assertEqual(verify._evidence_level(_result(capture=cap)),
-                         "real-hardware")
+                         "hardware_validated")
 
     def test_semihosting_is_real_hardware(self):
         cap = {"status": "ok", "method": "semihosting"}
         self.assertEqual(verify._evidence_level(_result(capture=cap)),
-                         "real-hardware")
+                         "hardware_validated")
 
-    def test_sim_is_simulator(self):
+    def test_sim_is_simulation_validated(self):
         # C-1 预留: capture_sim.py 落地后 verify 分派 method="sim"
         cap = {"status": "ok", "method": "sim"}
         self.assertEqual(verify._evidence_level(_result(capture=cap)),
-                         "simulator")
+                         "simulation_validated")
 
     def test_capture_failed_is_static(self):
         # capture 跑了但失败 → 没采到运行时证据, 不给"差一点就是真机"地带
@@ -74,29 +74,42 @@ class EvidenceLevelUnitTests(unittest.TestCase):
 
     def test_evidence_values_are_the_documented_three(self):
         # 契约钉: 三档取值是输出契约的一部分, 改名即红 (README 同步改)
-        self.assertEqual(verify.EVIDENCE_REAL, "real-hardware")
-        self.assertEqual(verify.EVIDENCE_SIM, "simulator")
+        self.assertEqual(verify.EVIDENCE_REAL, "hardware_validated")
+        self.assertEqual(verify.EVIDENCE_SIM, "simulation_validated")
         self.assertEqual(verify.EVIDENCE_STATIC, "static")
+
+    def test_evidence_levels_contract_is_the_ael_four(self):
+        # F-146: 四档命名对齐 AEL (裁剪 model_dependent); production_approved
+        # 仅由 release_audit --approve 回填产出, verify 运行结果永不出现
+        self.assertEqual(
+            set(verify.EVIDENCE_LEVELS),
+            {"static", "simulation_validated", "hardware_validated",
+             "production_approved"})
+        cap = {"status": "ok", "method": "semihosting"}
+        self.assertNotIn("production_approved",
+                         (verify._evidence_level(_result(capture=cap)),
+                          verify.EVIDENCE_REAL, verify.EVIDENCE_SIM,
+                          verify.EVIDENCE_STATIC))
 
 
 class EvidenceVerdictOrthogonalityTests(unittest.TestCase):
     """验收: 四种判定状态下 evidence 字段均存在且取值正确"""
 
     def test_four_verdicts_all_real_hardware(self):
-        # 真机 capture 下, pass/xfail/xpass/fail 判定全为 real-hardware —
+        # 真机 capture 下, pass/xfail/xpass/fail 判定全为 hardware_validated —
         # 证据等级描述"证据从哪来", 不描述"判了什么"
         for verdict in ("pass", "xfail", "xpass", "fail"):
             r = _result(verify_status=verdict,
                         capture={"status": "ok", "method": "semihosting"})
-            self.assertEqual(verify._evidence_level(r), "real-hardware",
+            self.assertEqual(verify._evidence_level(r), "hardware_validated",
                              f"verdict={verdict}")
 
-    def test_four_verdicts_all_simulator_under_sim_backend(self):
-        # 同一清单判真机也判仿真 — 仿真后端下四态证据恒 simulator
+    def test_four_verdicts_all_simulation_validated_under_sim_backend(self):
+        # 同一清单判真机也判仿真 — 仿真后端下四态证据恒 simulation_validated
         for verdict in ("pass", "xfail", "xpass", "fail"):
             r = _result(verify_status=verdict,
                         capture={"status": "ok", "method": "sim"})
-            self.assertEqual(verify._evidence_level(r), "simulator",
+            self.assertEqual(verify._evidence_level(r), "simulation_validated",
                              f"verdict={verdict}")
 
 
@@ -110,7 +123,7 @@ class OutputAttachesEvidenceTests(unittest.TestCase):
         with redirect_stdout(buf):
             verify._output(r, True)
         out = json.loads(buf.getvalue())
-        self.assertEqual(out["evidence"], "real-hardware")
+        self.assertEqual(out["evidence"], "hardware_validated")
 
     def test_build_failed_early_exit_json_has_evidence(self):
         # 早退出口 (build_failed, 无 capture 步骤) 不缺键 — 消费方无需特判
@@ -185,12 +198,12 @@ class MainEndToEndEvidenceTests(unittest.TestCase):
     def test_success_run_evidence_real_hardware(self):
         result = json.loads(self._run_main())
         self.assertEqual(result["status"], "ok")
-        self.assertEqual(result["evidence"], "real-hardware")
+        self.assertEqual(result["evidence"], "hardware_validated")
 
     def test_no_flash_run_still_real_hardware(self):
         # --no-flash 跳烧录但 capture 仍实跑真机 (固件已在板上) → 证据不降级
         result = json.loads(self._run_main(["--no-flash", "--no-build"]))
-        self.assertEqual(result["evidence"], "real-hardware")
+        self.assertEqual(result["evidence"], "hardware_validated")
 
 
 if __name__ == "__main__":

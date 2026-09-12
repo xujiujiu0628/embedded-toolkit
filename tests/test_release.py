@@ -77,7 +77,7 @@ class ReleaseGateTests(unittest.TestCase):
     def test_g2_blocks_unflipped_xfail(self, m_gate1, _probe):
         m_gate1.return_value = {
             "status": "ok",
-            "evidence": "real-hardware",   # F-128: 证据门与 xfail 门独立
+            "evidence": "hardware_validated",   # F-128: 证据门与 xfail 门独立
             "steps": {"verify": {"results": [
                 {"id": "FR-A", "status": "pass"},
                 {"id": "FR-B", "status": "xfail"},
@@ -93,14 +93,14 @@ class ReleaseGateTests(unittest.TestCase):
     def test_g2_allow_xfail_waives(self, m_gate1, _probe):
         m_gate1.return_value = {
             "status": "ok",
-            "evidence": "real-hardware",
+            "evidence": "hardware_validated",
             "steps": {"verify": {"results": [{"id": "FR-B", "status": "xfail"}]}},
         }
         ok, _, ctx = release.run_gates(self.ws, "v1.0.0", allow_xfail=True,
                                        timeout=10, openocd_exe="openocd")
         self.assertTrue(ok)
         self.assertEqual(ctx["waived"], ["FR-B"])
-        self.assertEqual(ctx["evidence"], "real-hardware")
+        self.assertEqual(ctx["evidence"], "hardware_validated")
         self.assertFalse(ctx["evidence_waiver"])
 
     @mock.patch.object(release, "swd_probe", return_value=(True, "ok"))
@@ -108,14 +108,14 @@ class ReleaseGateTests(unittest.TestCase):
     def test_g2_blocks_sim_evidence(self, m_gate1, _probe):
         # F-128 (工单二 A-1): 仿真证据永不升级为发布证据
         m_gate1.return_value = {
-            "status": "ok", "evidence": "simulator",
+            "status": "ok", "evidence": "simulation_validated",
             "steps": {"verify": {"results": [{"id": "FR-A", "status": "pass"}]}},
         }
         ok, msg, _ = release.run_gates(self.ws, "v1.0.0", allow_xfail=False,
                                        timeout=10, openocd_exe="openocd")
         self.assertFalse(ok)
-        self.assertIn("simulator", msg)
-        self.assertIn("real-hardware", msg)
+        self.assertIn("simulation_validated", msg)
+        self.assertIn("hardware_validated", msg)
 
     @mock.patch.object(release, "swd_probe", return_value=(True, "ok"))
     @mock.patch.object(release, "gate1")
@@ -135,27 +135,27 @@ class ReleaseGateTests(unittest.TestCase):
     def test_g2_non_hw_evidence_requires_explicit_flag(self, m_gate1, _probe):
         # 新旗标显式豁免: 放行但 evidence_waiver 留痕 (审计 R8 可见)
         m_gate1.return_value = {
-            "status": "ok", "evidence": "simulator",
+            "status": "ok", "evidence": "simulation_validated",
             "steps": {"verify": {"results": [{"id": "FR-A", "status": "pass"}]}},
         }
         ok, _, ctx = release.run_gates(
             self.ws, "v1.0.0", allow_xfail=False, timeout=10,
             openocd_exe="openocd", allow_non_hw_evidence=True)
         self.assertTrue(ok)
-        self.assertEqual(ctx["evidence"], "simulator")
+        self.assertEqual(ctx["evidence"], "simulation_validated")
         self.assertTrue(ctx["evidence_waiver"])
 
     @mock.patch.object(release, "swd_probe", return_value=(True, "ok"))
     @mock.patch.object(release, "gate1")
     def test_g2_real_hw_evidence_passes(self, m_gate1, _probe):
         m_gate1.return_value = {
-            "status": "ok", "evidence": "real-hardware",
+            "status": "ok", "evidence": "hardware_validated",
             "steps": {"verify": {"results": [{"id": "FR-A", "status": "pass"}]}},
         }
         ok, _, ctx = release.run_gates(self.ws, "v1.0.0", allow_xfail=False,
                                        timeout=10, openocd_exe="openocd")
         self.assertTrue(ok)
-        self.assertEqual(ctx["evidence"], "real-hardware")
+        self.assertEqual(ctx["evidence"], "hardware_validated")
         self.assertFalse(ctx["evidence_waiver"])
 
     def test_gate1_passes_f046_origin_flags(self):
@@ -214,19 +214,41 @@ class ReleaseGateTests(unittest.TestCase):
         # F-128: G1 verify 的 evidence 透传进发布记录; 无豁免时不留痕
         rec = release.build_record(
             self.ws, "v2.0.0", [{"id": "A", "status": "pass"}], [],
-            evidence="real-hardware")
-        self.assertEqual(rec["evidence"], "real-hardware")
+            evidence="hardware_validated")
+        self.assertEqual(rec["evidence"], "hardware_validated")
         self.assertNotIn("evidence_waiver", rec)
 
     def test_build_record_evidence_waiver_leaves_trace(self):
         # 豁免留痕: evidence_waiver=True 仅在显式旗标下出现, R8 据此降级警告
         rec = release.build_record(
             self.ws, "v2.0.0", [{"id": "A", "status": "pass"}], [],
-            evidence="simulator", evidence_waiver=True)
-        self.assertEqual(rec["evidence"], "simulator")
+            evidence="simulation_validated", evidence_waiver=True)
+        self.assertEqual(rec["evidence"], "simulation_validated")
         self.assertTrue(rec["evidence_waiver"])
 
     def test_build_record_default_evidence_static(self):
         # 缺省 (旧调用方) 落 static — 与 R8 的"宁低勿高"口径一致
         rec = release.build_record(self.ws, "v2.0.0", [], [])
         self.assertEqual(rec["evidence"], "static")
+
+    def test_build_record_carries_fidelity_contract(self):
+        # F-146: 发布记录自带 fidelity 契约 — 边界声明按证据等级落档,
+        # limitations 缺省不虚报 (空列表), signature 留空占位
+        rec = release.build_record(self.ws, "v2.0.0", [], [],
+                                   evidence="hardware_validated")
+        self.assertEqual(
+            rec["fidelity_boundaries"],
+            ["真机 capture 输出匹配判定; 不构成产品级/认证级/长期可靠性声明"])
+        self.assertEqual(rec["limitations"], [])
+        self.assertEqual(rec["signature"], "")
+
+    def test_build_record_fidelity_sim_boundary_and_custom(self):
+        # 仿真证据的边界声明必须写明"不升级为硬件等价"; 显式传入胜出
+        rec = release.build_record(self.ws, "v2.0.0", [], [],
+                                   evidence="simulation_validated")
+        self.assertIn("不升级为硬件等价声明", rec["fidelity_boundaries"][0])
+        rec2 = release.build_record(self.ws, "v2.0.0", [], [],
+                                    fidelity_boundaries=["自定义边界"],
+                                    limitations=["单板单次采样"])
+        self.assertEqual(rec2["fidelity_boundaries"], ["自定义边界"])
+        self.assertEqual(rec2["limitations"], ["单板单次采样"])

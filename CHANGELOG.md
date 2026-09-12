@@ -33,6 +33,32 @@
   (flash/erase 上锁, probe 零 acquire, resource_busy code)，先红后绿;
   全量 743 例仅本机 WSL 缺席的 9 例 hooks 环境失败 (CI ubuntu 正常)。
   （zc/hardware @ 本条 commit，合流待协调）
+- **F-146 (T2/A-1 v2 retro-fit) evidence 命名对齐 AEL 四档 + 发布记录 fidelity 契约 + approve 批准回填，feat+test+docs，verify.py / release.py / release_audit.py / README**:
+  F-128 落地的三档证据分级按总工单 v2 修订对齐 agentic-embedded-lab 的
+  claim+fidelity 五级命名 (裁剪 model_dependent): `real-hardware` →
+  `hardware_validated`、`simulator` → `simulation_validated`、`static` 不变,
+  新增第四档 `production_approved`——**一次性切换不留别名** (仓内无外部
+  消费方, 行为变更由本条目与 README 注记说明迁移)。verify.py 新增
+  EVIDENCE_LEVELS 四档元组; production_approved 不由 verify 产出, 是
+  release_audit 新增 `--approve <tag>` 在发布后对 hardware_validated 记录的
+  人工批准回填——record 必须 ① 存在可解析 ② R1~R8 审计无 fail ③ 现有
+  evidence == hardware_validated (仿真/静态/已豁免记录不配"投产"), 通过后
+  原子写 (F-022 同款 tmp+replace): evidence 翻转 + `production_approved_at`
+  批准留痕 + fidelity_boundaries 追加批准声明, signature 保持留空不假装
+  已签; R8 对 production_approved 缺批准留痕 = fail (手工改值视同篡改),
+  带留痕 = pass。release.py: G2 门措辞同步新命名; 发布记录补 fidelity
+  契约字段——`fidelity_boundaries` 按证据等级落"证明了什么/没证明什么"
+  边界声明 (默认值表 _FIDELITY_BOUNDARIES, 显式传入胜出)、`limitations`
+  缺省空列表 (不虚报)、`signature` 留空占位。release_audit 模块定位从
+  "只读"改为"默认只读, --approve 唯一写路径" (模块 docstring 同步)。
+  README 证据分级表改四档 + 迁移说明 + fidelity 字段说明。
+  测试: test_verify_evidence +1 例 (EVIDENCE_LEVELS 四档契约 + verify
+  运行永不产出 approved), test_release +2 例 (fidelity 契约默认/自定义),
+  test_release_audit +6 例 (approved 缺留痕 fail / 带留痕 clean / approve
+  回填主路径含 signature 不动 / 非真机证据拒绝 / 篡改记录拒绝 / 幂等),
+  既有 evidence 字面量全量改名 (9+6+4 处); 全量 752 例仅本机 WSL 缺席的
+  9 例 hooks 环境失败 (CI ubuntu 正常)。
+  （zc/hardware @ 本条 commit，合流待协调）
 
 ## Unreleased — 2026-09-12（F-117~ 第三方审查工单第一批 P0 逐条清账）
 

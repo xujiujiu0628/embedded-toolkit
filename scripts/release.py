@@ -128,25 +128,42 @@ def run_gates(ws, tag, allow_xfail, timeout, openocd_exe,
         return False, ("G2 存在未翻转 xfail: " + ", ".join(xfailed) +
                        "\n  实现并翻转后重试; 或 --allow-xfail 显式豁免 (留痕入档)"), {}
     waived = list(xfailed)
-    # F-128 (工单二 A-1): G2 证据等级门 — 仿真/静态证据不得支撑发布
-    # (借鉴 agentic-embedded-lab: 仿真通过永不升级为硬件等价声明)。
+    # F-128 (工单二 A-1) / F-146 (T2 命名对齐 AEL): G2 证据等级门 — 仿真/
+    # 静态证据不得支撑发布 ("仿真通过永不升级为硬件等价声明")。
     # 旧版 verify 无 evidence 键按 static 处理, 同样拦 (升 toolkit 后重发)。
     evidence = res.get("evidence", "static")
-    if evidence != "real-hardware" and not allow_non_hw_evidence:
-        return False, (f"G2 证据等级 {evidence!r} != real-hardware — "
+    if evidence != "hardware_validated" and not allow_non_hw_evidence:
+        return False, (f"G2 证据等级 {evidence!r} != hardware_validated — "
                        "非真机证据不得进发布门禁\n"
                        "  或 --allow-non-hardware-evidence 显式豁免"
                        " (evidence_waiver 留痕入档, 审计 R8 可见)"), {}
     return True, "G0~G2 全过", {"verify_result": res, "results": results,
                                 "waived": waived, "evidence": evidence,
                                 "evidence_waiver": bool(
-                                    evidence != "real-hardware")}
+                                    evidence != "hardware_validated")}
+
+
+# F-146: 各证据等级的 fidelity 边界声明 (AEL claim+fidelity 的落档形态) —
+# 发布记录必须自带"这证据证明了什么/没证明什么", 不许只落一个裸等级值。
+_FIDELITY_BOUNDARIES = {
+    "hardware_validated":
+        "真机 capture 输出匹配判定; 不构成产品级/认证级/长期可靠性声明",
+    "simulation_validated":
+        "仿真后端通过; 不升级为硬件等价声明 (仿真与真机是平级判定后端, 各证各的)",
+    "static":
+        "仅构建/静态证据; 无任何运行时行为判定",
+    "production_approved":
+        "hardware_validated 基础上经 release_audit --approve 人工批准投产",
+}
 
 
 def build_record(ws, tag, results, waived, contracts=None, evidence="static",
-                 evidence_waiver=False):
-    """构建发布记录。evidence 为 F-128 证据分级透传 (G1 verify 输出);
-    evidence_waiver 仅在 G2 证据门被显式豁免时为 True (留痕, 审计 R8 可见)。"""
+                 evidence_waiver=False, fidelity_boundaries=None,
+                 limitations=None):
+    """构建发布记录。evidence 为 F-128/F-146 证据分级透传 (G1 verify 输出);
+    evidence_waiver 仅在 G2 证据门被显式豁免时为 True (留痕, 审计 R8 可见);
+    fidelity_boundaries 默认按证据等级落边界声明, limitations 默认空列表
+    (不虚报), signature 留空占位 (签名机制登记不实现)。"""
     artifacts = {}
     state_p = os.path.join(ws, ".workbench", "state.json")
     arts = {}
@@ -176,7 +193,14 @@ def build_record(ws, tag, results, waived, contracts=None, evidence="static",
         "contracts": contracts or {},
         "results": results,
         "xfail_waived": waived,
-        "evidence": evidence,   # F-128: real-hardware | simulator | static
+        "evidence": evidence,   # F-146: hardware_validated | simulation_validated | static | production_approved
+        # F-146: fidelity 契约 — 记录自带"证据证明了什么/没证明什么"
+        "fidelity_boundaries": (list(fidelity_boundaries)
+                                if fidelity_boundaries is not None
+                                else [_FIDELITY_BOUNDARIES.get(
+                                    evidence, f"未知证据等级 {evidence!r}")]),
+        "limitations": list(limitations) if limitations is not None else [],
+        "signature": "",   # 留空占位: 签名机制登记不实现 (总工单 v2 A-1)
         **({"evidence_waiver": True} if evidence_waiver else {}),
         "tools": {"toolkit": toolkit_version(),
                   "python": sys.version.split()[0],
