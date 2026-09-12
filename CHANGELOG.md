@@ -108,6 +108,22 @@
   F811 ×1 test_serial_mux_lifecycle 尾部重复 import 删除。ci.yml 新增 lint job
   （astral-sh/ruff-action@v3, `ruff check scripts tests`）。验收: 本地 ruff
   All checks passed + 全量 **653 例零测试文件语义改动仍全绿**（清理纯减法）。
+- **F-127 处置（工单 P1-3 state.json 读改写竞态丢更新，fix+test，runtime_common.py / serial_mux.py / serial_runtime.py）**:
+  F-019 的原子替换只防撕裂不防丢更新——serial_mux start 的"取快照 → 起子进程
+  等数秒 → 旧快照整体覆盖落盘"与 `update_state_entry` 的无锁 RMW 互相静默回滚
+  对方写入（两个工具同时 update 不同 category 同丢）。修复: 新增
+  `runtime_common.state_write_lock`——O_CREAT|O_EXCL lockfile + 超时重试 +
+  finally 删除，进程内 threading 锁与跨进程 lockfile 双层（lockfile 只辨进程
+  不辨线程）; 陈旧锁回收只认超龄（Windows 不做 PID 探活, F-117 教训: os.kill
+  在 Windows 是 TerminateProcess 不是探活; POSIX 用信号 0 真探活）+ holder==本
+  pid 不回收防线程误拆; 等锁超时向 stderr 诚实告警后降级无锁执行（state.json
+  是可再生缓存, 工具卡死比丢一次更新更糟），绝不改判定绝不阻塞。四处 RMW 收编
+  持锁读最新再改: `update_state_entry`、serial_mux start 的僵尸清理与落盘、
+  stop/status 清理路径、`get_mux_info` 探活失败清理。测试
+  `tests/test_state_write_lock.py` 7 例: 双线程交错 update 双存活（写盘窗口
+  拉宽复现旧竞态）/ 锁文件建删 / holder pid / 超龄锁秒抢 / 超时降级 stderr
+  留痕 / mux mutate 不回滚他人条目 / 读改写调用序钉（先红后绿——红灯由
+  no-lock 桩实测双更新必丢其一）。
 
 ## Unreleased — 2026-09-10（F-103~F-107 P3 清账第一轮：边界报错泛化 / 迁移告警 / ID 唯一性 / 过滤收窄 / 文档回填）
 
