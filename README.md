@@ -52,6 +52,21 @@ ALERT HIGH mv=3190
 
 > 注：本段为 **0.2 时期**的真机实录，`toolkit_version` 字段如实保留当时的 `"0.2"`
 > （不随版本推进改写历史输出）。0.3 的输出字段结构与此一致，仅版本号与哈希值不同。
+>
+> **0.5 起新增顶层 `evidence` 字段**（证据分级，输出契约的一部分）：本次判定的
+> 证据从哪来，与判定 verdict 正交——FAIL 也是真机证据，PASS 也可能是静态证据。
+> 三档取值：
+>
+> | 取值 | 含义 |
+> |---|---|
+> | `"real-hardware"` | capture 后端（rtt/semihosting）真机实跑采到运行时输出 |
+> | `"simulator"` | sim 后端（仿真器直接加载执行，无真机在场；路线图 C 项） |
+> | `"static"` | 仅构建/lint，或 capture 未跑成——无任何运行时证据 |
+>
+> 发布门禁（release.py G2）要求 `evidence == "real-hardware"`，仿真/静态证据
+> 混入发布需 `--allow-non-hardware-evidence` 显式豁免并留痕；事后审计
+> （release_audit.py R8）对发布记录复核该字段。上例若在当前版本重跑，
+> 顶层会多出 `"evidence": "real-hardware"`——历史实录不加字段，不回放篡改。
 
 ```jsonc
 {

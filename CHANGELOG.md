@@ -125,6 +125,30 @@
   留痕 / mux mutate 不回滚他人条目 / 读改写调用序钉（先红后绿——红灯由
   no-lock 桩实测双更新必丢其一）。
 
+## Unreleased — 2026-09-12（工单二: GitHub 同类项目借鉴落地）
+
+- **F-128 (工单二 A-1) verify --json 证据分级字段 evidence，feat+test+docs，verify.py / release.py / release_audit.py**:
+  借鉴 agentic-embedded-lab 的 claim+fidelity 概念（"仿真通过永不升级为硬件等价
+  声明"）。verify 结果 JSON 顶层新增 `evidence` 字段，三档取值:
+  `real-hardware`（capture 后端 rtt/semihosting 实跑）/ `simulator`（sim 后端,
+  C-1 预留, 方法映射表落位即生效）/ `static`（仅构建+lint、capture 未跑成——
+  build/flash 失败早退与 capture_failed 一律 static, 不给"差一点就是真机"的
+  模糊地带）。实现取 main() 唯一出口汇点 `_output` 统一落字段（八处出口零
+  逐点改动）, 判据 = steps.capture 实际后端, 判定 verdict 与证据等级正交。
+  release.py: G1 结果透传 evidence 入发布记录; G2 新增证据等级门——非
+  real-hardware 拒绝发布, `--allow-non-hardware-evidence` 显式豁免并以
+  `evidence_waiver: true` 留痕入档（旧版 verify 无 evidence 键按 static 拦）。
+  release_audit.py: 新增 **R8** 证据等级一致性——缺 evidence（R8 之前旧记录）
+  警告; 非 real-hardware 且无豁免留痕 fail（防门禁被绕过/记录被篡改）; 有豁免
+  留痕警告可见; real-hardware 带豁免留痕按字段矛盾警告。README 效果预览的
+  0.2 真机实录按 F-034 诚实化原则不加字段、以加注补当前输出契约（含三档表）。
+  测试 `tests/test_verify_evidence.py` 14 例（三档映射/未知 method 落 static/
+  四态判定×真机与 sim 正交/早退出口不缺键/main() 成功线端到端/--no-flash 不
+  降级）+ test_release 7 例（G2 证据门拦 sim/缺键按 static 拦/豁免旗标留痕/
+  build_record 透传与缺省 static）+ test_release_audit 5 例（R8 四分支+static
+  拦截），先红后绿; 全量 660→686 全绿（仅本机 WSL 缺席的 9 例 hooks 环境失败,
+  CI ubuntu 正常）。
+
 ## Unreleased — 2026-09-10（F-103~F-107 P3 清账第一轮：边界报错泛化 / 迁移告警 / ID 唯一性 / 过滤收窄 / 文档回填）
 
 - **F-103 处置（审计 P3 数值边界组，fix+test，gen_periph.py）**: 四项

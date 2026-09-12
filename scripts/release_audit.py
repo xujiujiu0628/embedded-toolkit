@@ -14,6 +14,9 @@ annotated tag 都是本地 git 操作, 无签名 — 事后可被手工篡改而
   R6  记录文件已被 git 提交入库 (未提交 = 警告级)
   R7  契约哈希锚点 (F-018): 记录 contracts 的 expectations/config sha256
       与 git show git_head: 重算一致 (不匹配 = fail; 旧记录缺绑定 = 警告)
+  R8  证据等级一致性 (F-128): 记录 evidence 必须 real-hardware; 缺失 =
+      R8 之前的旧版产物 (警告); 非真机证据且无 evidence_waiver 留痕 = fail
+      (仿真/静态证据混入发布); 豁免留痕在册 = 警告可见
 
 用法:
   python scripts/release_audit.py --project <工程根> --tag v1.1.0
@@ -188,6 +191,26 @@ def audit_record(ws, tag, rel_path):
             _check(checks, "R7", "pass", f"{r7_ok} 项契约哈希与 git_head 一致")
         else:
             _check(checks, "R7", "warn", "记录契约哈希均为空 (legacy 无清单?)")
+
+    # R8 证据等级一致性 (F-128, 工单二 A-1): 发布记录必须由真机证据支撑 —
+    # "仿真通过永不升级为硬件等价声明" (agentic-embedded-lab claim+fidelity)。
+    # 发布时 G2 已拦, 此处防篡改/绕过: 记录事后被改成 sim 证据而无留痕即现形。
+    evidence = record.get("evidence")
+    if evidence is None:
+        _check(checks, "R8", "warn",
+               "记录缺 evidence 字段 (R8 之前的旧版 release.py 产物)")
+    elif evidence != "real-hardware" and not record.get("evidence_waiver"):
+        _check(checks, "R8", "fail",
+               f"发布证据等级 {evidence!r} != real-hardware 且无豁免留痕 — "
+               "仿真/静态证据不得支撑发布记录 (门禁被绕过或记录被篡改)")
+    elif evidence != "real-hardware":
+        _check(checks, "R8", "warn",
+               f"非真机证据 {evidence!r} 已豁免放行 (evidence_waiver 留痕在册)")
+    elif record.get("evidence_waiver"):
+        _check(checks, "R8", "warn",
+               "evidence=real-hardware 但存在豁免留痕 — 字段矛盾, 疑似手工编辑")
+    else:
+        _check(checks, "R8", "pass", f"发布证据等级: {evidence}")
 
     if any(c["status"] == "fail" for c in checks):
         verdict = "failed"
