@@ -210,6 +210,120 @@
 - **真机面**: 零（纯离线判定层）; FR-MPU-02 负断言示范随下次板前窗口
   verify 回归收口（F-112 段同约）。
 
+## Unreleased — 2026-09-12（F-116 fresh-checker 复审 F-115：H-1 误归因根治 + M×4 处置 + 两工程收编）
+
+- **复审结论**（对象 `b508898..b19d160`, 无上下文审计员 impl 模式）:
+  **通过但有保留** C0/H1/M4/L5（落账 fc_20260912_005711）。核心定性:
+  B1 主判据（marker 触发/fault_type/status/exit）**成立**——但
+  "层 2 `resolved.pc=main+670` 命中"是**误归因**: halt 现场 xPSR=0x01000003
+  的 IPSR=3 铁证 CPU 停在 handler 自旋内, live PC 不可能在 main;
+  static 函数不进 map → "最近前导全局符号"兜底把 handler 地址吞成 main+N
+  （审计实跑 resolve_address 复现: 0x08001400→main+856）。真实故障点
+  只活在层 1 `[HF] PC=/LR=` 行里, 而层 2 从不读它——**未来任何真故障的
+  层 2 头条都会指向 handler 自己**。
+- **H-1 处置（fix+test+真机半）**: ① 模板 handler 体改
+  `wb_hardfault_body` **非 static**（保 used）→ 进 map 全局符号, live PC
+  如实命名; nm 实证两工程均落 `T wb_hardfault_body`。② hardfault.py 新增
+  `parse_hf_site` 纯函数 + `--fault-text`（文件/stdin）→ 解析层 1 现场行,
+  经 resolve_address 出 `fault_site{pc,pc_sym,lr,lr_sym,live_pc_note}`
+  （live PC 与故障现场**分开呈现**, IPSR≠0 时附注）; verify marker 路径
+  自动把 captured_text 从 stdin 递进去（`"[HF] PC=" in text` 才传,
+  empty_fallback 面行为零变化）。③ 人读输出增 "Fault Site (层 1 压栈帧)"
+  段。测试: test_hardfault_fault_site.py 13 例（解析 6 + 模板契约 6 +
+  编译探针 1）+ 装配钉升级 2 例。
+- **M-1（模板中文注释违反 spec §3.1 "纯 ASCII"）**→ 全模板注释重写为
+  ASCII 英文（grep -P 字节级 0 非 ASCII + -Os -Wall -Wextra 真编译复核）;
+  工具链中立理由本就在 spec 手里, 无偏离可登。
+- **M-2（模板烟测两档皆缺）**→ TemplateContractTests 静态契约钉
+  （marker/非 static/VALID 门控/printf 禁区/不清粘滞位）+
+  TemplateCompileProbeTests 真编译器探针（which 定位, 缺则 skip 如实;
+  本机 arm-gcc 10.2021.10 实绿, CI syntax-smoke 双档齐）。
+- **M-3（adc-oled 未回填未挂账）**→ 已回填并 commit `969a618`
+  （clean 重建 0e0w, text 9268→10404 +1136B handler; 配对括号法删桩——
+  首轮 Allman 风格锚点截错炸出编译红, 当场回滚重做, 未伤及既有账）。
+  既有脏项（My_OLED 回写等）**分毫未碰**。mpu6050 模板同步 commit
+  `68b6f3b`。正常运行真机回归随复验一并补。**新账**: adc-oled 无
+  .gitattributes（autocrlf 警告复现 v0.5 行尾漂移坑的前置条件）——挂
+  "新工程入库照此办理"清单。
+- **M-4（"text 29644B 与 0.5 基线一致"两头不对）**→ 订正: 29644 =
+  0.5 基线 28580B + handler 增量 ~1064B（接线纯增量, "一致"是错的
+  自洽声明）。F-115 段④已改写。
+- **L 处置**: L-1 装配钉升级 `count('"trigger": hf_trigger')==3`（error
+  分支漏装配不再假绿; 仍是源码级, 行为面由真机背书——如实）+ 新增
+  `--fault-text` 装配钉; L-4 BFAR/MMFAR 按 BFARVALID(b15)/MMARVALID(b7)
+  门控输出 `(valid)/(INVALID)`（E000ED38 伪装地址现象根除此）; L-5 模板
+  头声明 STKERR 垃圾帧与 lockup 极限。**挂账**: L-2（RTT 半行截断使
+  marker 失效的窗口——旧判据同险非新引入, 缓冲 512B 实测 9 行未触顶,
+  登记 spec R1 伴生项）、L-3（8/8 补验 primary 落盘件在会话 tool-results,
+  仓内以 checkpoint+feedback 事件为账, 成功路径不留原始文本是设计使然）。
+- **真机复验（2026-09-12 板前完成, ST-Link 重连后）**——H-1 修复获端到端铁证:
+  ① 注入复验: `fault_site = {pc: 0x0800100A → **main+198**, lr →
+  My_OLED_Update+33, live_pc_note}`——真实故障点第一次被**正确**归因到
+  main 内注入行（对照 F-115 时段的假命中"main+670"）; live PC 如实报
+  `wb_hardfault_body+368`（非 static 后 handler 地址自带真名）。
+  ② mpu6050 反向: 回退注入烧正式固件后 hardfault step 缺席、5/8
+  （KEY×2+OLED-02 属人工动作期望）。③ adc-oled 回填后正常运行回归:
+  hardfault 零误挂 + 3/4（FR-ALERT-01 需窗口内拧电位器过 3.0V, 人工轮
+  未及配合, 与 KEY 同类交用户自持窗补验, `! ...verify.py --no-build
+  --no-flash --json --timeout 40` 随时可跑）。板子已恢复 mpu6050 正式
+  固件（Verified OK）。**真人期望窗自持纪律第三次印证**（09-10 门禁/
+  昨日 8/8/本轮 ALERT）——工具侧不再代发"现在开始按"。
+- 测试 +16 例（13+2 装配钉 +1 skip 编译探针口径注）, 全量
+  **609 passed, 6 skipped, 248 subtests（collected 615, --co 实测）**;
+  coverage_lint --strict 0 未覆盖保持。
+
+## Unreleased — 2026-09-11（F-115 RTT 工程 HardFault 闭环补齐：C 级 RTT 现场 + verify 触发归因）
+
+- **F-115 处置（互锁链真机断点 B1，feature+test+docs+真机，Orchestrator 亲执行;
+  spec: embedded-handoff `docs/superpowers/specs/2026-09-11-rtt-hardfault-coverage-design.md`
+  2026-09-11 批准）**: 层 1 C 级 handler 建于 semihosting（无 host 即 BKPT
+  halt），RTT 成默认后端后两现役工程退化为"烧过但空捕获→层 2 兜底猜"——
+  招牌诊断在默认路径下缺一半。补:
+  - `templates/hardfault_rtt.c`（新）: naked 入口 EXC_RETURN bit2 甄别
+    MSP/PSP（blink 成熟手法移植非重写）→ `SEGGER_RTT_WriteString` 输出
+    `=== HARDFAULT ===` + `[HF] CFSR/BFAR/PC/LR + 位域解码` 纯整数格式
+    （nano 浮点教训）；只读不清粘滞位（F-109 分工：保位留证据，清位归工具）;
+    `for(;;) nop` 自旋保现场（不复位，OpenOCD 层 2 halt 取同一现场）。
+    `_hardfault_body` 加 `__attribute__((used))`（仅被 naked asm 引用，
+    -O2 会优化丢符号——自查修正）；位域一律 CFSR 绝对位号（MFSR0-7/
+    BFSR8-15/UFSR16-31，自查修正: 早期按字节拆传把 UNALIGNED 位号错位）。
+  - `scripts/verify.py`: 新纯函数 `_hardfault_trigger(text, capture_empty,
+    flash_ran)` → "marker"|"empty_fallback"|None，三处 steps.hardfault
+    dict 落 `trigger` 字段（诊断触发链后端无关，判据零改动；主/兜底路径
+    从此可事后审计，教训 #9 落点）。map 发现 F-005 已 build/优先，零改。
+  - 测试 `tests/test_verify_hardfault_trigger.py` 7 例（标记优先律/兜底/
+    不触发/大小写敏感防误触/病态同帧归因 + 装配点行为钉）。
+- **真机验收（板子在场，mpu6050-oled，全 GCC）**——B1 核心判据达成:
+  ① 故障注入（main 循环 `*(volatile int*)0=1` → 真 BusFault, F-109"伪造
+  被硬件拒须造真故障"照办）: RTT 现场捕获
+  `=== HARDFAULT ===` + `[HF] CFSR=00010400 HFSR=40000000` + PC/LR 行;
+  verify `trigger=marker` → fault_type `BusFault (IMPRECISERR)`、层 2
+  `PC resolved=main+670`、整体 status=hardfault、退出码 1（主路径坐实，
+  不再空捕获兜底）。② 反向: 恢复正式固件后 460~693 行正常 RTT 输出
+  **零 HARDFAULT 字样 + hardfault step 不出现**（handler 不误挂）。
+  ③ F-112 联动: FR-MPU-02 forbidden_patterns 真机每轮 PASS 无误杀。
+  ④ clean rebuild→flash(Verified OK)→capture→verify 全链绿（text 29644B =
+  0.5 基线 28580B + handler 增量 ~1064B；本句原写"与 0.5 基线一致"失实，
+  F-116/M-4 订正——接线是纯增量，"一致"从两个读法都不对）。
+  **教训**: openocd program 路径在
+  Git Bash 下须正斜杠 `D:/...`（`/d/...` 与带反斜杠 `D:\...` 均被 tcl 吞
+  分隔符 → couldn't open，首两次烧录白跑——与仓内既有"bash 命中 WSL stub"
+  同族: 子进程参数经几层 shell 解析要逐层核）。
+- **真机面三条按键期望补验闭合（用户自持采集窗，`verify --no-build
+  --no-flash --timeout 90`）**: **8/8 pass、零 xfail、零 hardfault step**
+  （capture rtt 715 行/90s，FR-KEY-01/02 与 FR-OLED-02 于真实
+  短按/长按/关屏/唤醒序列下全绿；F-112 负断言 FR-MPU-02 同轮 PASS）——
+  B1+F-112+F-113 三单真机收口证据齐。此前多轮 FAIL 根因=回合制指令与
+  用户按键窗口对不齐（非固件/工具缺陷，三轮对照数据已证：无按键时
+  [DIAG] PA0=0 恒定），用户自跑一次即过——**流程教训：真人输入期望的
+  验收窗必须交给用户自持，AI 不得代发"现在开始按"的回合制协调**。
+  （F-115 段初稿"FR-OLED-02 已 waived"为误记，自查更正：waived 五条为
+  DISP-02/OLED-03/KEY-03/PWR-01/02，KEY-01/02/OLED-02 均为在场断言——
+  H-3 计数/记账教训的当日复发当日截获。）
+- 全量套件 **595 passed, 6 skipped, 248 subtests**（含 F-115 +7; collected
+  口径 CI 复跑同步核; F-112 三犯教训: merge 前后分栏不混记）; coverage_lint
+  --strict 静态可达 0 未覆盖保持。F-035: B1 待 fresh-checker 复审后合 master。
+
 ## Unreleased — 2026-09-11（F-114 fresh-checker 复审 F-112/F-113：H×3 全修 + M×2 修 + 挂账登记）
 
 - **复审结论**（对象 fsd-coverage-20260911 分支 `7ef99b0..d3e6720`, 无上下文
