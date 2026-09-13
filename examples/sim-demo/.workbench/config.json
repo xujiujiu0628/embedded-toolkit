@@ -1,0 +1,16 @@
+{
+  "toolkit_min_version": "0.1",
+  "builder": "gcc",
+  "gcc": {
+    "project": "Makefile",
+    "target": "sim-demo",
+    "log_dir": ".workbench\\build"
+  },
+  "capture": {
+    "backend": "sim",
+    "duration_sec": 15,
+    "sim": {
+      "machine": "stm32vldiscovery"
+    }
+  }
+}

@@ -17,6 +17,10 @@
   E10 forbidden_texts/patterns 结构 (非空字符串数组) + 非法正则 (F-112)
   E11 自杀配置: 同串并存于 texts 与 forbidden_texts (永远 FAIL) /
       xfail 条目配负断言 (WARNING, 语义错位疑点) (F-112)
+  E12 record 结构 (非空字符串数组) + 仅与 patterns 搭配 +
+      与 capture_group/min/max 互斥 (全量记录 vs 首匹配定界, 二选一) +
+      引用的命名捕获组须在 patterns[0] 中定义 (F-148)
+  E13 ordered 须为布尔 (F-148)
 
 退出码: 0 = 干净/仅警告, 1 = 存在 error, 2 = 用法/文件不可得
 
@@ -29,11 +33,11 @@ import argparse
 import json
 import math
 import os
-import re
 import sys
 
-from expectations import check_forbidden_fields  # F-112: 负断言判据单一事实源 (F-029)
-from wb_common import find_project_root
+from expectations import (  # F-157 (P2-3): E2~E8/E12/E13 判据单一事实源
+    check_forbidden_fields, item_rule_errors)
+from wb_common import find_project_root, force_utf8_streams
 
 
 def lint_expectations(expectations):
@@ -42,57 +46,32 @@ def lint_expectations(expectations):
     warnings = []
     seen = set()
     if not isinstance(expectations, list) or not expectations:
-        return [f"E1: expectations 须为非空数组"], warnings
+        return ["E1: expectations 须为非空数组"], warnings
     for i, item in enumerate(expectations):
         where = f"expectations[{i}]"
         if not isinstance(item, dict):
             errors.append(f"E2: {where} 须为对象")
             continue
         eid = item.get("id")
-        if not isinstance(eid, str) or not eid.strip():
-            errors.append(f"E2: {where} id 必填且非空")
-            eid = f"<idx {i}>"
-        elif eid in seen:
-            errors.append(f"E2: id 重复: {eid}")
-        seen.add(eid)
-        if not isinstance(item.get("desc"), str) or not item["desc"].strip():
-            errors.append(f"E3: {eid} desc 必填且非空")
-        texts = item.get("texts")
-        pats = item.get("patterns")
-        ok_texts = isinstance(texts, list) and len(texts) > 0 and \
-            all(isinstance(t, str) and t for t in texts)
-        ok_pats = isinstance(pats, list) and len(pats) > 0 and \
-            all(isinstance(p, str) and p for p in pats)
-        if ok_texts == ok_pats:
-            errors.append(f"E4: {eid} texts 与 patterns 须二选一(非空字符串数组)")
-        if ok_pats:
-            for p in pats:
-                try:
-                    re.compile(p)
-                except re.error as e:
-                    errors.append(f"E5: {eid} 非法正则 {p!r}: {e}")
-        if item.get("xfail") and (not isinstance(item.get("xfail_reason"), str)
-                                  or not item["xfail_reason"].strip()):
-            errors.append(f"E6: {eid} xfail=true 时 xfail_reason 必填")
-        cg = item.get("capture_group")
-        if cg is not None and (isinstance(cg, bool) or not isinstance(cg, int)
-                               or cg < 1):
-            errors.append(f"E7: {eid} capture_group 须为正整数")
-        if cg is not None and not ok_pats:
-            errors.append(f"E7: {eid} capture_group 须与 patterns 搭配")
+        label = eid if isinstance(eid, str) and eid.strip() else f"<idx {i}>"
+        # F-157 (P2-3): E2缺失/E3~E8/E13/E12 判据收敛 item_rule_errors
+        # 单一事实源 (loader 同源); E2 id 重复与 E9 结构矛盾仍归 lint 专项
+        for code, core in item_rule_errors(item):
+            errors.append(f"{code}: {label} {core}")
+        if isinstance(eid, str) and eid.strip():
+            if eid in seen:
+                errors.append(f"E2: id 重复: {eid}")
+            seen.add(eid)
+        # E9: min > max — 该条目永远 FAIL (verify 不查, 只有 lint 能提前抓)
         bounds = {}
         for bound in ("min", "max"):
             v = item.get(bound)
-            if v is None:
-                continue
-            if isinstance(v, bool) or not isinstance(v, (int, float)) \
-                    or not math.isfinite(v):
-                errors.append(f"E8: {eid} {bound} 须为有限数值")
-            else:
+            if isinstance(v, (int, float)) and not isinstance(v, bool) \
+                    and math.isfinite(v):
                 bounds[bound] = v
         if "min" in bounds and "max" in bounds and bounds["min"] > bounds["max"]:
             errors.append(
-                f"E9: {eid} min({bounds['min']}) > max({bounds['max']}) — "
+                f"E9: {label} min({bounds['min']}) > max({bounds['max']}) — "
                 "边界矛盾, 该条目永远 FAIL")
         # F-112: 负断言规则 E10 (结构/非法正则) + E11 (自杀配置/与 xfail 并存)
         # F-114/L-1: 码随判据走 (check_forbidden_fields 返回 (code,msg)), 不嗅探文案
@@ -103,6 +82,7 @@ def lint_expectations(expectations):
             warnings.append(
                 f"E11: {eid} xfail 条目配了负断言 — 未实现的功能谈不上"
                 "\"禁止的恢复方式\", 疑为配置错位 (实现落地翻转后再配)")
+        # F-148 E12/E13: 已随 F-157 收敛进 item_rule_errors (循环头部)
     if any(item.get("xfail") for item in expectations if isinstance(item, dict)):
         n = sum(1 for item in expectations
                 if isinstance(item, dict) and item.get("xfail"))
@@ -137,11 +117,7 @@ def lint_file(path):
 def main():
     # F-025: 中文字段与错误报告按 ensure_ascii=False 输出, 必须与调用方环境
     # 无关地落 UTF-8 (Windows 控制台默认 GBK, 父进程/AI 按 utf-8 解码曾崩溃)
-    for stream in (sys.stdout, sys.stderr):
-        try:
-            stream.reconfigure(encoding="utf-8")
-        except Exception:
-            pass
+    force_utf8_streams()   # F-157: UTF-8 咒语收编 wb_common
     ap = argparse.ArgumentParser(
         description="expectations.json 静态 lint (离线, 不触硬件)")
     ap.add_argument("path", nargs="?", default=None,

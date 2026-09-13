@@ -28,6 +28,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(
     os.path.abspath(__file__))), "scripts"))
 
 import verify  # noqa: E402
+import hw_lease  # noqa: E402  (F-131: LEASE_FILE 重定向目标)
 
 CAPTURED_TEXT = "=== adc-oled boot ===\n[init] CLK OK\nADC raw=3961 mv=3192\n"
 
@@ -89,6 +90,12 @@ class VerifyMainSuccessPathTests(unittest.TestCase):
             mock.patch.object(
                 verify, "run_semihosting_session",
                 _slow_mock((CAPTURED_TEXT, ""))),
+            # F-129: 判定后复位是真实 openocd 子进程, 测试一律 mock 防触硬件
+            mock.patch.object(verify, "reset_target",
+                              _slow_mock({"status": "ok"})),
+            # F-131: 租约文件重定向临时目录 (测试零触仓根)
+            mock.patch.object(hw_lease, "DEVICE_LOCK_DIR",
+                              os.path.join(self.ws, "device-locks")),
         ]
         for p in patchers:
             p.start()
@@ -205,6 +212,10 @@ class ExpectationsMigrationWarningTests(unittest.TestCase):
                                               "stdout": ""})), \
                 mock.patch.object(verify, "run_semihosting_session",
                                   _slow_mock(("x\n", ""))), \
+                mock.patch.object(verify, "reset_target",
+                                  mock.Mock(return_value={"status": "ok"})), \
+                mock.patch.object(hw_lease, "DEVICE_LOCK_DIR",
+                                  os.path.join(self.ws, "device-locks")), \
                 mock.patch.object(verify, "record_checkpoint"):
             with redirect_stdout(out), redirect_stderr(err):
                 try:

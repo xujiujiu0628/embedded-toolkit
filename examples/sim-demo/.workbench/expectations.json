@@ -1,0 +1,10 @@
+{
+  "version": "1.0",
+  "expectations": [
+    { "id": "FR-SYS-01", "desc": "启动横幅", "texts": ["=== sim-demo boot ===", "[init] CLK OK"] },
+    { "id": "FR-TGL-01", "desc": "TGL 事件序列", "patterns": ["TGL \\d+"] },
+    { "id": "FR-ADC-01", "desc": "ADC 毫伏值 (record 命名捕获组)", "patterns": ["mv=(?P<mv>\\d+)"], "record": ["mv"] },
+    { "id": "FR-FUTURE-1", "desc": "已知未做，挂起", "texts": ["TODO"],
+      "xfail": true, "xfail_reason": "功能未实现，登记在案" }
+  ]
+}

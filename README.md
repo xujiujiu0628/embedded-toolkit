@@ -52,6 +52,26 @@ ALERT HIGH mv=3190
 
 > 注：本段为 **0.2 时期**的真机实录，`toolkit_version` 字段如实保留当时的 `"0.2"`
 > （不随版本推进改写历史输出）。0.3 的输出字段结构与此一致，仅版本号与哈希值不同。
+>
+> **0.5 起新增顶层 `evidence` 字段**（证据分级，输出契约的一部分；命名对齐
+> agentic-embedded-lab 的 claim+fidelity 五级、裁剪 model_dependent 后四档，
+> F-146 一次性切换不留别名）：本次判定的证据从哪来，与判定 verdict 正交——
+> FAIL 也是真机证据，PASS 也可能是静态证据。
+>
+> | 取值 | 含义 |
+> |---|---|
+> | `"hardware_validated"` | capture 后端（rtt/semihosting）真机实跑采到运行时输出 |
+> | `"simulation_validated"` | sim 后端：qemu 直接加载 elf（`capture.backend: "sim"`，见 `examples/sim-demo`）——与真机平级的判定后端，**不进发布门禁**（G2 只认 hardware_validated） |
+> | `"static"` | 仅构建/lint，或 capture 未跑成——无任何运行时证据 |
+> | `"production_approved"` | 发布后经 `release_audit --approve` 人工批准投产（仅 audit 回填，verify 不产出） |
+>
+> 发布门禁（release.py G2）要求 `evidence == "hardware_validated"`，仿真/静态
+> 证据混入发布需 `--allow-non-hardware-evidence` 显式豁免并留痕；事后审计
+> （release_audit.py R8）复核发布记录该字段，`production_approved` 缺批准
+> 留痕视同篡改。发布记录同时自带 fidelity 契约字段（`fidelity_boundaries`
+> 按证据等级声明"证明了什么/没证明什么"、`limitations` 缺省不虚报、
+> `signature` 留空占位）。上例若在当前版本重跑，顶层会多出
+> `"evidence": "hardware_validated"`——历史实录不加字段，不回放篡改。
 
 ```jsonc
 {
@@ -159,6 +179,9 @@ STM32 工程。以下 `<工程根>` 指你的固件目录，脚本从任意 cwd 
                "sram_base": "0x20000000", "sram_size": 2048,
                "id": "SEGGER RTT", "boot_delay_ms": 300 }
 }
+# 可选: "post_reset": false 加进 capture 段可关闭"判定后自动复位"
+#（默认开——flash 实际发生过的运行在判定结束后执行 init;reset run;shutdown,
+#  板子状态不留给下一次运行; 复位失败只落 post_reset 字段, 不改判定）
 
 # 2. 写下期望清单（【无需硬件】）：
 #    <工程根>/.workbench/expectations.json
@@ -176,6 +199,11 @@ python scripts/expectations_lint.py --project <工程根>
 # 4. 构建 + 烧录 + 采集 + 判定（【需板子】；--json 供 AI 消费）
 python scripts/verify.py --project <工程根> --json
 
+# 4b. 无板闭环（F-150 sim 后端）：qemu 直接加载 elf, 无需任何硬件
+#     现成示例: examples/sim-demo（qemu-system-arm + arm-none-eabi-gcc 即跑）
+python scripts/verify.py --project examples/sim-demo --json
+#     sim 证据恒 evidence="simulation_validated", 不进发布门禁 (G2 只认真机证据)
+
 # 5. 发布演练（【需板子】，dry-run 不打 tag 不落库）
 python scripts/release.py --project <工程根> --tag v1.0.0 --dry-run
 ```
@@ -187,7 +215,7 @@ python scripts/release.py --project <工程根> --tag v1.0.0 --dry-run
 | `scripts/verify.py` | 闭环编排：build→analyze→flash→capture→判定，`--json` 结构化输出 | ✅ |
 | `scripts/gcc_build.py` | GCC/make 构建后端，JSON 契约输出 + 产物登记 | ❌ |
 | `scripts/release.py` | G0→G3 门禁发布：全绿才打 tag，记录含双重哈希锚 | ✅ |
-| `scripts/release_audit.py` | 发布记录事后审计 R1~R7（tag 指向/hex 重算/契约锚） | ❌ |
+| `scripts/release_audit.py` | 发布记录事后审计 R1~R8（tag 指向/hex 重算/契约锚/证据等级） | ❌ |
 | `scripts/expectations_lint.py` | expectations.json 提交前校验 E1~E11（含 F-112 负断言） | ❌ |
 | `scripts/fsd_coverage.py` | FSD 需求 ↔ expectations 断言对账 C1/C2/C3 + 漂移对照表（F-113） | ❌ |
 | `scripts/handoff_guard.py` | 外部智能体代管分支的三级禁线机检 | ❌ |
@@ -195,7 +223,39 @@ python scripts/release.py --project <工程根> --tag v1.0.0 --dry-run
 | `scripts/rm_lookup.py` | STM32F103 55 外设寄存器/位域速查（JSON 知识库） | ❌ |
 | `scripts/gen_periph.py` | 参数 → 寄存器级 C 初始化代码 / 外设文档（时钟经 `--hclk` 参数化，默认 72MHz 按标准 APB 分频推导，非默认值生成物头注回显前提；`--tim-clk` 显式值优先） | ❌ |
 | `scripts/hardfault.py` | HardFault 现场：寄存器 + 符号表定位出错函数 | ✅ |
+| `scripts/capture_sim.py` | sim 采集会话：qemu-system-arm 直接加载 elf（无板闭环，F-150） | ❌ |
 | `scripts/serial_*` / `openocd_*` | 串口与探针底层族（RTT/GDB/telnet） | ✅ |
+| `scripts/mcp_server.py` | MCP 接入：六工具有界包装（见下节），零业务复制 | 视工具 |
+
+## MCP 接入（AI agent 第一接口）
+
+把六个核心工具包装成有界 MCP 工具（stdio transport）：`run_verify` /
+`lint_expectations` / `gen_peripheral` / `rm_lookup` / `diagnose_hardfault`
+（仅解析不触探针）/ `doctor`。安全设计与 agentic-hil 同源：工具=对现有脚本的
+子进程透传（零业务逻辑复制，CLI 仍是唯一事实源）、入参白名单校验、
+**不给 agent 任意 shell**。
+
+```bash
+# MCP SDK 是唯一可选依赖（其余工具零第三方依赖，不受影响）
+pip install -r requirements-mcp.txt
+```
+
+Claude Code 注册：把仓根 `.mcp.json.example` 拷为工程根（或 `~/.claude`）的
+`.mcp.json`（本机文件，不入库），把 `<TOOLKIT_ROOT>` 替换为本仓绝对路径：
+
+```jsonc
+{
+  "mcpServers": {
+    "embedded-toolkit": {
+      "command": "python",
+      "args": ["<TOOLKIT_ROOT>/scripts/mcp_server.py"]
+    }
+  }
+}
+```
+
+`run_verify` 等需要工程的工具要求 `project` 参数指向持有
+`.workbench/config.json` 的固件工程根——不存在或不是工程即拒绝。
 
 ## 工程契约（`.workbench/`）
 
@@ -211,6 +271,14 @@ python scripts/release.py --project <工程根> --tag v1.0.0 --dry-run
   `fsd_coverage.py` 对账 FSD↔断言，xfail（欠条）与 waived（豁免）两级不混用
 - 版本控制建议：`config.json` / `expectations.json` / `releases/` 入库；
   `build/` 与 `state.json`（可再生缓存）忽略
+
+**设备锁（F-145）**：`verify` 的 flash+capture 段与 `openocd_run flash/erase`
+全程持有**机器级设备锁**（`%USERPROFILE%\.embedded-toolkit\device-locks\stlink.lock`，
+Windows `msvcrt.locking` / POSIX `flock` 的 OS 级文件锁）——同一探针/板子
+同时只被一个 agent（或同一台机的另一份 clone）占用；进程崩溃 = OS 自动
+放锁，无 PID 探活、无超期回收。冲突方收到 `resource_busy` + 持有者
+purpose/获取时间，`--lease-wait N` 可有界等待。它与 `.workbench/state.json`
+的写锁（F-127，防数据竞争）是两层，互不替代。
 
 ## 项目结构
 
@@ -258,7 +326,49 @@ embedded-toolkit/
   `HANDOFF-AGENT.md`](#) — 已于 0.4 边界决策迁维护者私有仓
   `<维护者私有仓 embedded-handoff>`，公开工具库不含维护者 ↔ Agent 协作私约
 
+## 生态位
+
+同类项目各有所长：agentic-hil 以有界 MCP 工具 + 硬件租约 + plan 门禁见长，
+agentic-embedded-lab 做仿真控制面（claim + fidelity 证据分级），pytest-embedded /
+Renode 把仿真做成平级判定后端，hardci / jlink-mcp 验证了 MCP 分发路径。
+
+本仓的独特处不在单点能力，而在**完整治理链**——同类项目普遍假设"固件已存在
+只管测"，本仓从需求一路管到事后审计：
+
+1. **四态判定 + XPASS 判红**——期望清单里 `xfail` 欠条落地瞬间判红，杜绝
+   "顺便实现了"静默混入
+2. **FSD 对账**（`fsd_coverage.py`）——需求 ↔ 断言双向对账，xfail（欠条）与
+   waived（豁免）两级不混用
+3. **G0–G3 发布门禁 + R1–R8 事后审计**——全绿才打 tag；证据等级四档
+   （`hardware_validated` / `simulation_validated` / `static` /
+   `production_approved`），仿真/静态证据进不了发布记录，发布后篡改在
+   契约哈希锚（R7）与批准留痕（R8）下现形
+4. **反馈校准**（`feedback_db.py`）——修复事件落账，按流水线长出准确率校准
+5. **寄存器知识库 + 代码生成**（`rm_lookup.py` + `gen_periph.py`）——
+   55 外设参考数据直接生成寄存器级初始化代码，AI 生成物先过五重门控再进编译
+6. **构建错误知识库**——gcc/ARMCC 错误自生长，修复纪律靠回归测试钉住
+
 ## 路线图
+
+### 已落地/立项方向（2026-09-12 同类调研，见 CHANGELOG 工单二系列）
+
+调研来源除上述项目外，另按总工单 v2 D-3 点名登记两条学术引用：闭环评测论文
+与 arXiv:2509.09970（后者内容在本机环境未能独立核实——arxiv.org 网络不可达，
+登记编号从工单原文，采信待读者自查）。
+
+- **MCP 接口**——已落地：`scripts/mcp_server.py` 六工具有界包装（白名单校验、
+  零业务复制、不给 agent 任意 shell）；调研来源 agentic-hil / hardci / jlink-mcp
+- **无板仿真闭环**——已落地：`capture.backend: "sim"`（qemu-system-arm +
+  semihosting，`examples/sim-demo` 即跑）；调研来源 pytest-embedded / Renode；
+  spike 记录 F-149（含 M-profile SYS_EXIT 0x18 不退出的实测坑）
+- **分发形态**（PyPI / uvx / Claude Code 插件，"一行安装"）——**已立项未实施**：
+  风险点在 `data/`、`VERSION`、machine.json 的包数据定位策略，需先做
+  spike 再立项；调研来源 agentic-hil / hardci
+- **真机 CI 冒烟**——已落地（门控形态）：`.github/workflows/hw-smoke.yml`
+  仅在仓库配置了 self-hosted runner（`HW_RUNNER_READY` 变量）时运行；
+  调研来源 jlink-mcp 的真机徽章 + ESP32/树莓派 runner 案例
+
+### 已知遗留
 
 如实列出已编目的已知遗留（对外部审查的尊重：登记在册，不藏）：
 
@@ -270,6 +380,33 @@ embedded-toolkit/
   Linux/macOS-only，Windows 不支持；`which("socat")` 在 `start_mux()` 最前无条件执行，
   无 socat 则整个 mux 起不来。`--no-pty` 解耦列为后续增强，未实现前不按部分功能规划
 - 有意搁置：UART 串口补丁的发布门禁脆弱性（成本/收益不立项）
+- **F-147 遗留（审核 M-4）**：✅ **已闭合（F-162, 2026-09-13；fresh-checker
+  M-1/M-2 残余已勾销）双形态均实证**——CI sim-demo job 的
+  `--junit-xml` 产物已被 `dorny/test-reporter`（SHA 锁定）**实吃成立**：首吃
+  证据 = PR #8 run [34755875069](https://github.com/xujiujiu0628/embedded-toolkit/actions/runs/34755875069)
+  日志中 `Using test report parser 'java-junit'` 解析 + 四态映射逐条正确
+  （0 passed / 1 failed / 4 skipped）——首吃为 v3.0.0 默认**摘要模式**
+  （只写 GITHUB_STEP_SUMMARY，不 `checks.create`），且该销账 run 基于
+  `fail-on-error` 默认 true 的修订前配置。随后 reporter 步骤显式
+  `use-actions-summary: false`（贴 spec "PR 页面出现检查结果" 原意）+
+  `fail-on-error: false`；**check run 形态于终态配置复观成立**：PR #8 run
+  [34762552201](https://github.com/xujiujiu0628/embedded-toolkit/actions/runs/34762552201)
+  （head 20e350d）产出 check run **"Sim Verify Results"（已创建且通过）**
+  （[103737895345](https://github.com/xujiujiu0628/embedded-toolkit/runs/103737895345)），
+  输出摘要 "0 passed, 1 failed and 4 skipped"（失败态产物在摘要模式改关后被
+  消费，`checks.create` 生效）。sim-demo job 本体仍红（预置 ubuntu
+  build_failed 债，见下条），与 reporter 步骤/check run 结论互相独立。
+- **N-3 覆盖洞（审核 L-4）**：✅ **已闭合（F-163, 2026-09-13）**——
+  `verify.step_flash` 接入构造性标记共享件（`openocd_run.ACTION_DONE_CMD` /
+  `marker_present`），rc=0 且串尾标记在场才算烧录成功；真机复验见 CHANGELOG。
+- **F-162 副产物（预置债 D-3 候选）**：sim-demo job 在 CI ubuntu runner 上
+  build_failed（errors=-1，190ms）——该 job 自 F-150 入仓起从未真跑过 CI
+  （push 触发仅 master，0912 为首跑），本地全绿；根因未查，**非 F-162/F-163
+  引入**，登记待下轮工单。
+- **计时脆弱钉（预置债）**：`test_state_write_lock.test_timeout_degrades_honestly`
+  （ubuntu/py3.12）与 `test_runtime_contract` 的 `elapsed_ms>=1000` 钉（windows）
+  在 CI 慢速 runner 上抖动（实测 999<1000）——F-159 加固后的残余边界，
+  下轮以 F-159 同款 AST/注入判据法收口。
 - 方向：多 MCU（ESP32）工具栈评估（暂缓：无目标硬件；技术路线 esptool + probe-rs）。
   F-107 勘误：旧文本"见 docs 档案"是悬空指针（docs/ 已迁出，现仅存
   `hooks-install.md`）。F-108 计数订正：旧文本"verify.py 7 处 / release.py 2 处 /

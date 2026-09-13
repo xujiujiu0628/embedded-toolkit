@@ -5,14 +5,10 @@
 全部纯逻辑或临时文件; 唯一的真实数据读取是 data/stm32f103-ref.json 冒烟
 (只读, 不触硬件)。
 """
-import json
 import os
-import shutil
 import sys
-import tempfile
 import unittest
 import xml.etree.ElementTree as ET
-from unittest import mock
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(
     os.path.abspath(__file__))), "scripts"))
@@ -49,15 +45,23 @@ class PhaseMinusOneTests(unittest.TestCase):
             "UNKNOWN")
 
     def test_pin_conflict_share_and_none(self):
-        conflict = phase_minus_one.check_pin_conflicts(["pc13"], "USART1", MIN_REF)
+        # F-158: 占用表外置 — 第三参从 ref 改为工程 fixed_pins 字典
+        fixed = {"PC13": "LED heartbeat (GPIO Output)"}
+        conflict = phase_minus_one.check_pin_conflicts(["pc13"], "USART1", fixed)
         self.assertEqual(conflict["status"], "CONFLICT")
         self.assertIn("used by", conflict["detail"])
-        share = phase_minus_one.check_pin_conflicts(["PC13"], "GPIO Output", MIN_REF)
+        share = phase_minus_one.check_pin_conflicts(["PC13"], "GPIO Output", fixed)
         self.assertEqual(share["status"], "OK")
-        none = phase_minus_one.check_pin_conflicts(["PA5"], "USART1", MIN_REF)
+        none = phase_minus_one.check_pin_conflicts(["PA5"], "USART1", fixed)
         self.assertEqual(none["status"], "OK")
-        empty = phase_minus_one.check_pin_conflicts([], "USART1", MIN_REF)
+        empty = phase_minus_one.check_pin_conflicts([], "USART1", fixed)
         self.assertEqual(empty["detail"], "No pins specified")
+
+    def test_pin_conflict_skipped_without_fixed_pins(self):
+        # F-158: 工程未配置 fixed_pins.json → 跳过不报错
+        out = phase_minus_one.check_pin_conflicts(["PC13"], "USART1", None)
+        self.assertEqual(out["status"], "OK")
+        self.assertIn("skipped", out["detail"])
 
     def test_known_issues_prefix_match_with_workaround(self):
         issues = {"I2C": {"busy_flag": "I2C2 may stick BUSY",
@@ -87,7 +91,8 @@ class PhaseMinusOneTests(unittest.TestCase):
 
     def test_run_check_smoke_with_real_ref(self):
         # 真档冒烟: data/stm32f103-ref.json 只读加载走通 run_check 全链
-        out = phase_minus_one.run_check("I2C1", ["PC13"], [])
+        # (F-158: features 形参删除, 第三位置参现为 target_desc)
+        out = phase_minus_one.run_check("I2C1", ["PC13"])
         self.assertIn(out["verdict"], ("OK", "OK_WITH_WARNINGS", "BLOCKED"))
         self.assertEqual(set(out["checks"]),
                          {"chip_support", "pin_conflict", "kb_coverage",

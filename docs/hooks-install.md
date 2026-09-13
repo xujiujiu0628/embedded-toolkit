@@ -52,13 +52,14 @@ git config core.hooksPath .githooks
 
 阻断级脚本 exit 2 会让分发器以非零结束 → commit 被拒；提醒级恒 exit 0 不拦截。
 
-## 已知限制（F-096 登记，修复待拍板）
+## staged 内容检测（F-096 已修复，2026-09-09）
 
-**staged 且工作树一致时，三条脚本当前不会检查 staged 内容**（判据用
-`git diff -U0 -- <files>`，比对的是工作树 vs index，pre-commit 时刻该 diff
-通常为空）。行为探针见 `tests/test_hooks_behavior.py` 的
-`CanaryDetectionGapTests`。在缺陷修复前，建议把 hook 挂到
-**pre-commit 之外的场景**（如 CI 上对整个 diff 跑）或修改判据加 `--cached`。
+三条脚本判据已改为 **`git diff --cached -U0` 优先 + working-tree 回落**：
+pre-commit 时刻（工作树与 index 一致）staged 内容真实入检，`--cached` 命中
+即拦、未命中再查工作树。修复前的漏报缺陷（判据用 `git diff -U0 -- <files>`
+比对工作树 vs index，pre-commit 时刻该 diff 通常为空 → 恒放行）由维护者
+拍板选项 A 修复；行为回归见 `tests/test_hooks_behavior.py` 的
+`StagedContentDetectionTests`（原金丝雀组按承诺翻转改名）。
 
 ## 测试
 

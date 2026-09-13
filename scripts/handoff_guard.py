@@ -123,13 +123,13 @@ def guard(repo, branch, base="master"):
     # ---- L2：逐 commit 扫新增行 ----
     log = _git(repo, "log", "%s..%s" % (base, branch), "--reverse",
                "--format=@@COMMIT@@ %H %h", "-p")
-    commit = short = None
+    short = None
     cur_file = None
     commits_scanned = 0
     for line in log.splitlines():
         m = _COMMIT_HDR.match(line)
         if m:
-            commit, short = m.group(1), m.group(2)
+            short = m.group(2)  # 全量 sha 无消费方 (F-126)
             commits_scanned += 1
             cur_file = None
             continue

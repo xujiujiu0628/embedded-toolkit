@@ -21,7 +21,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(
 import serial_hex  # noqa: E402
 import serial_monitor  # noqa: E402
 import serial_scan  # noqa: E402
-import cube_to_keil  # noqa: E402
+import cube_usercode as cube_to_keil  # noqa: E402
 
 
 class SerialHexTests(unittest.TestCase):
@@ -37,13 +37,13 @@ class SerialHexTests(unittest.TestCase):
         self.assertIn("|A.B|", line)   # 不可打印 → '.'; 可打印 → 原字符
 
     def test_emit_chunk_json_mode(self):
-        # serial_hex.output_json 写 sys.stdout.buffer (非 text 层) →
-        # redirect_stdout 不拦截, 须直接替换 sys.stdout 为带 buffer 的假对象
-        buf = io.BytesIO()
-        fake = type("FakeStdout", (), {"buffer": buf})()
+        # F-156: serial_hex.output_json 收编 output_jsonl 后走文本层
+        # (reconfigure 守卫) — StringIO 子类即可拦截
+        fake = io.StringIO()
+        fake.reconfigure = lambda **kw: None
         with mock.patch.object(sys, "stdout", fake):
             serial_hex.emit_chunk(b"\x41\x42", 0, 16, True, use_json=True)
-        doc = json.loads(buf.getvalue().decode("utf-8"))
+        doc = json.loads(fake.getvalue())
         self.assertEqual(doc["hex"], "41 42")
         self.assertEqual(doc["ascii"], "AB")
         self.assertEqual(doc["length"], 2)
@@ -74,7 +74,6 @@ class SerialMonitorFilterTests(unittest.TestCase):
         self.assertFalse(em)
 
     def test_pass_through_prints(self):
-        import re
         buf = io.StringIO()
         with redirect_stdout(buf):
             em = serial_monitor.emit_line("hello", self._cfg(),
@@ -95,19 +94,20 @@ class SerialScanChipMapTests(unittest.TestCase):
                         f"芯片映射缺常见条目: {cm}")
 
     def test_scan_ports_filters_non_serial_errors(self):
-        """枚举失败 (无 pyserial/无端口) 应返回可序列化结构而非抛异常"""
+        """枚举失败 (无 pyserial/无端口) 应返回可序列化结构而非抛异常。
+        F-156: scan_ports 委托 serial_runtime.scan_serial_ports 后, 错误态
+        ports 由 None 收敛为 [] (main 只判 err, 行为不变)。"""
         with mock.patch.dict(sys.modules, {"serial": None}):
             try:
                 ports, error = serial_scan.scan_ports()
             except Exception as e:
                 self.fail(f"scan_ports 应体面处理 pyserial 缺失: {e}")
-            # 二元组契约: (ports list|None, error str|None)
-            self.assertIsNone(ports)
+            self.assertEqual(ports, [])
             self.assertIn("pyserial", error)
 
 
 class CubeToKeilExtractTests(unittest.TestCase):
-    """cube_to_keil: USER CODE 块提取 (纯文本解析)"""
+    """cube_usercode (原 cube_to_keil, F-131): USER CODE 块提取 (纯文本解析)"""
 
     def test_extract_user_code_blocks(self):
         import tempfile

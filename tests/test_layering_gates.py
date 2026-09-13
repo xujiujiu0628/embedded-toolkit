@@ -16,7 +16,6 @@ r"""CONTRIBUTING 分层契约的机检钉 (F-100, WB-C6 / 审计 P1-10)。
   - tests/ 不在扫描范围
 """
 import ast
-import os
 import unittest
 from pathlib import Path
 

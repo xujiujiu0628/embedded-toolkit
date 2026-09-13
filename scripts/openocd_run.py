@@ -8,22 +8,17 @@ import re
 import subprocess
 import sys
 import time
-from pathlib import Path
 
-
-ROOT_DIR = Path(__file__).resolve().parents[2]
-if str(ROOT_DIR) not in sys.path:
-    sys.path.insert(0, str(ROOT_DIR))
+# F-133/h: 旧 ROOT_DIR=parents[2] 无效锚清除 — parents[2] 指向仓外 (D:\ 层),
+# 插进 sys.path 从不命中; 直接脚本运行时 sys.path[0]=scripts/ 已覆盖 import 需求
 
 from openocd_runtime import (  # noqa: E402
     resolve_openocd_params,  # noqa: F401  (F-091 再导出, 调用面不变)
+    build_openocd_cmd,  # noqa: F401  (F-123 再导出; 无端口调用传 gdb_port=None)
     build_artifacts,
     default_config_path,
-    get_state_entry,
     hidden_subprocess_kwargs,
-    is_missing,
     load_json_file,
-    load_local_config,
     load_project_config,
     load_workspace_state,
     make_result,
@@ -34,9 +29,11 @@ from openocd_runtime import (  # noqa: E402
     parameter_context,
     resolve_param,
     save_project_config,
+    state_lookup,
     update_state_entry,
     workspace_root,
 )
+import hw_lease  # noqa: E402  (F-145: flash/erase 动作粒度设备锁)
 
 
 ERROR_PATTERNS = [
@@ -62,34 +59,29 @@ ERROR_PATTERNS = [
 
 ALL_ACTIONS = ["probe", "flash", "erase", "reset", "reset-init", "targets", "flash-banks", "adapter-info", "raw"]
 
+# ── v2 T8 (F-155) N-3: 构造性标记法 ─────────────────────────────────────
+# OpenOCD 克隆适配器偶发打印吓人文案 (Error:/Warn: 行) 但脚本实际完整跑完
+# ——靠"退出码 + 措辞嗅探"判成败两头吃亏: fail-open 误判成功, 措辞过敏误判
+# 失败。改为构造性证据: flash/erase 命令串尾追加 `echo MARK_ACTION_DONE`,
+# 只有脚本真跑到底标记才在场。成功 = exit 0 且标记在场; 措辞行进
+# backend_warnings 留痕, 不改判。
+ACTION_DONE_MARKER = "MARK_ACTION_DONE"
+_ACTION_DONE_CMD = f"echo {ACTION_DONE_MARKER}"
+# F-163 (L-4): 公开别名 + 缺席判定纯函数 — verify.step_flash 与 openocd_run
+# 两条路径消费同一判据 (构造性证据优先于退出码, N-3 立法原意)。
+ACTION_DONE_CMD = _ACTION_DONE_CMD
 
-def build_openocd_cmd(
-    exe: str,
-    board: str = "",
-    interface: str = "",
-    target: str = "",
-    search: str = "",
-    adapter_speed: str = "",
-    transport: str = "",
-    extra_commands: list[str] | None = None,
-) -> list[str]:
-    cmd = [exe]
-    if search:
-        cmd.extend(["-s", search])
-    if board:
-        cmd.extend(["-f", board])
-    else:
-        if interface:
-            cmd.extend(["-f", interface])
-        if target:
-            cmd.extend(["-f", target])
-    if adapter_speed:
-        cmd.extend(["-c", f"adapter speed {adapter_speed}"])
-    if transport:
-        cmd.extend(["-c", f"transport select {transport}"])
-    for command in extra_commands or []:
-        cmd.extend(["-c", command])
-    return cmd
+
+def marker_present(combined_output: str) -> bool:
+    """串尾标记 echo 是否在场 (在场 = 动作脚本真跑到底)。纯函数, import 零 IO。"""
+    return ACTION_DONE_MARKER in combined_output
+
+
+_WARNING_LINE_RE = re.compile(r"\b(Error|Warn(?:ing)?)\s*:", re.I)
+
+# F-123 (工单 P0-7): 本地 build_openocd_cmd 副本已删除, 统一 import
+# openocd_runtime.build_openocd_cmd (无端口调用传 gdb_port=telnet_port=None,
+# 输出与旧副本逐元素一致)。
 
 
 def infer_mass_erase_command(target: str, board: str) -> str:
@@ -238,6 +230,7 @@ def run_openocd(
     bank: str = "",
     erase_mode: str = "auto",
     raw_commands: list[str] | None = None,
+    lease_wait: float = 0.0,
 ) -> dict:
     if not board and not interface and not target:
         return {"status": "error", "action": action, "error": {"code": "missing_config", "message": "必须提供 --board 或 --interface + --target"}}
@@ -264,6 +257,26 @@ def run_openocd(
     if action == "erase" and not any("flash erase_sector" in item or "mass_erase" in item for item in action_commands):
         return {"status": "error", "action": action, "error": {"code": "mass_erase_unsupported", "message": "当前 target/board 未配置 mass erase 命令，请改用 --mode sector 或补充映射"}}
 
+    # F-145 (总工单 v2 B-1): flash/erase 动作粒度设备锁 — 与 verify 的
+    # flash+capture 段互斥, 防两路 agent/两份 clone 同时抢探针。冲突 fail-fast
+    # 返回 resource_busy (error 文本点名持有者); 其余动作 (probe/reset/targets)
+    # 只读, 不抢锁。
+    marker_expected = action in ("flash", "erase")
+    if marker_expected:
+        # v2 T8 (F-155) N-3: 串尾构造性标记 — 只有脚本跑到底才在场
+        action_commands = list(action_commands) + [_ACTION_DONE_CMD]
+    lease = None
+    if action in ("flash", "erase"):
+        lease = hw_lease.acquire(purpose=f"openocd_run {action}",
+                                 wait=lease_wait)
+        if not lease.get("ok"):
+            return {
+                "status": "error",
+                "action": action,
+                "error": {"code": "resource_busy",
+                          "message": lease.get("error", "设备锁被占用")},
+            }
+
     started = time.time()
     try:
         proc = subprocess.run(
@@ -275,6 +288,9 @@ def run_openocd(
                 search=search,
                 adapter_speed=adapter_speed,
                 transport=transport,
+                # F-123: runtime 版收编; run 口径从不带端口行, 显式 None 关闭
+                gdb_port=None,
+                telnet_port=None,
                 extra_commands=action_commands,
             ),
             capture_output=True,
@@ -290,6 +306,10 @@ def run_openocd(
         return {"status": "error", "action": action, "error": {"code": "timeout", "message": "OpenOCD 执行超时(120s)"}}
     except Exception as exc:  # pragma: no cover
         return {"status": "error", "action": action, "error": {"code": "exec_error", "message": str(exc)}}
+    finally:
+        # F-145: 动作粒度设备锁 — OpenOCD 进程一结束就放, 不拖延解析/落账阶段
+        if lease and lease.get("ok"):
+            hw_lease.release(lease)
 
     elapsed_ms = int((time.time() - started) * 1000)
     combined = proc.stderr + "\n" + proc.stdout
@@ -304,6 +324,11 @@ def run_openocd(
 
     details = {"board": board, "interface": interface, "target": target, "elapsed_ms": elapsed_ms, "returncode": proc.returncode}
     details.update({key: value for key, value in parsed.items() if key != "raw"})
+    # N-3: 失败措辞行留痕不改判 — 克隆适配器的吓人文案与真实失败解耦
+    backend_warnings = [ln.strip() for ln in combined.splitlines()
+                        if _WARNING_LINE_RE.search(ln)]
+    if backend_warnings:
+        details["backend_warnings"] = backend_warnings[-10:]
     summary = f"{action} 成功"
     if action == "flash" and parsed.get("speed_kbps"):
         summary = f"flash 成功，{parsed['bytes_written']} bytes @ {parsed['speed_kbps']} KiB/s"
@@ -329,24 +354,23 @@ def run_openocd(
                 "error": {"code": "command_failed", "message": error_lines[-1].strip() if error_lines else f"执行返回非零退出码: {proc.returncode}"},
                 "details": details,
             }
+    elif marker_expected and not marker_present(combined):
+        # N-3: exit 0 但串尾标记缺席 = OpenOCD 提前退出, 脚本没跑完 —
+        # 不许按成功入账 (构造性证据优先于退出码)
+        return {
+            "status": "error",
+            "action": action,
+            "error": {"code": "action_incomplete",
+                      "message": ("构造性标记缺席 — OpenOCD exit 0 但动作脚本未跑完 "
+                                  "(串尾 echo 未出现), 拒绝按成功入账")},
+            "details": details,
+        }
 
     return {"status": status, "action": action, "summary": summary, "details": details}
 
 
-def _state_lookup(state: dict) -> dict:
-    last_build = get_state_entry(state, "last_build")
-    last_flash = get_state_entry(state, "last_flash")
-    last_debug = get_state_entry(state, "last_debug")
-    artifacts = last_build.get("artifacts", {})
-    return {
-        "board": last_debug.get("board") or last_flash.get("board"),
-        "interface": last_debug.get("interface") or last_flash.get("interface"),
-        "target": last_debug.get("target") or last_flash.get("target"),
-        "search": last_debug.get("search"),
-        "adapter_speed": last_debug.get("adapter_speed") or last_flash.get("adapter_speed"),
-        "transport": last_debug.get("transport") or last_flash.get("transport"),
-        "flash_file": last_build.get("flash_file") or artifacts.get("flash_file"),
-    }
+# F-156 (P2-1): _state_lookup 收编 openocd_runtime.state_lookup 超集单实现
+_state_lookup = state_lookup
 
 
 def main() -> None:
@@ -366,6 +390,8 @@ def main() -> None:
     parser.add_argument("--command", nargs="+", default=None, help="raw 模式下执行的 OpenOCD 命令列表")
     parser.add_argument("--config", default=None, help="skill config.json 路径")
     parser.add_argument("--workspace", default=None, help="workspace 根目录，默认当前目录")
+    parser.add_argument("--lease-wait", dest="lease_wait", type=float, default=0.0,
+                        help="F-145: flash/erase 设备锁冲突时有界等待秒数 (默认 0 = fail-fast)")
     parser.add_argument("--json", action="store_true", dest="as_json")
     args = parser.parse_args()
 
@@ -415,7 +441,29 @@ def main() -> None:
             print(f"错误: {exc}", file=sys.stderr)
         sys.exit(1)
 
-    if args.action == "raw" and int(config.get("operation_mode", 1)) >= 3:
+    # F-133/g: operation_mode 非数字 → JSON 错误契约 (旧版裸 ValueError traceback)
+    try:
+        operation_mode = int(config.get("operation_mode", 1))
+    except (TypeError, ValueError):
+        bad_mode = config.get("operation_mode")
+        result = make_result(
+            status="error",
+            action=args.action,
+            summary=f"operation_mode 非数字: {bad_mode!r}",
+            details={},
+            context=parameter_context(provider="openocd", workspace=str(workspace), parameter_sources=parameter_sources, config_path=config_path),
+            error={"code": "invalid_config",
+                   "message": (f"operation_mode 非数字: {bad_mode!r} — "
+                               f"{config_path} 该键须为整数")},
+            timing=make_timing(started_at, (time.time() - started_ts) * 1000),
+        )
+        if args.as_json:
+            output_json(result)
+        else:
+            print(f"错误: {result['error']['message']}", file=sys.stderr)
+        sys.exit(1)
+
+    if args.action == "raw" and operation_mode >= 3:
         message = "operation_mode=3 时禁止直接执行 raw 命令，请先切换模式或显式确认后再执行"
         result = make_result(
             status="error",
@@ -464,6 +512,7 @@ def main() -> None:
         bank=args.bank or "",
         erase_mode=args.mode if args.action == "erase" else "auto",
         raw_commands=args.command,
+        lease_wait=args.lease_wait,
     )
     elapsed_ms = (time.time() - started_ts) * 1000
 
@@ -526,7 +575,9 @@ def main() -> None:
 
     if args.as_json:
         output_json(result)
-        return
+        # F-120 (工单 P0-2): 旧版此处 return → 执行失败也退 0，与本文件
+        # 早段校验 JSON 分支的 exit(1) 自相矛盾。契约统一: status 决定退出码。
+        sys.exit(0 if result["status"] == "ok" else 1)
 
     if result["status"] == "ok":
         print(f"[{args.action}] {result['summary']}")

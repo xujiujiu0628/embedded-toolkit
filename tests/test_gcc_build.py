@@ -61,7 +61,6 @@ class GccSectionLoadTests(unittest.TestCase):
 
     def setUp(self):
         import tempfile
-        from wb_runtime import save_json_file
         self.tmp = tempfile.mkdtemp()
         self.addCleanup(__import__("shutil").rmtree, self.tmp, True)
         os.makedirs(os.path.join(self.tmp, ".workbench"), exist_ok=True)
@@ -81,10 +80,6 @@ class GccSectionLoadTests(unittest.TestCase):
         self.assertEqual(load_project_config(self.tmp).get("gcc", {}), {})
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 class MakeTimingScaleTests(unittest.TestCase):
     """F-099 修复钉: gcc_build 的 timing_ms 必须是毫秒量级 (P2-4: 曾把秒
     直接当毫秒传入 make_timing, elapsed_ms 偏小 1000 倍)。性质断言: 真实
@@ -102,13 +97,36 @@ class MakeTimingScaleTests(unittest.TestCase):
         self.assertLess(timing["elapsed_ms"], 60000)
 
     def test_gcc_build_source_uses_ms_conversion(self):
-        """静态钉: gcc_build.py 的 make_timing 调用必须带 *1000 换算"""
+        """静态钉 (F-159 AST 化): gcc_build.py 的 make_timing 调用必须带
+        *1000 毫秒换算 — 旧文本匹配 "* 1000" 会随换行/空格/写法漂移假红假绿,
+        AST 语义断言抗格式漂移 (行为钉见上例)。"""
+        import ast
         import pathlib
-        src = pathlib.Path(__file__).resolve().parent.parent / \
+        src_path = pathlib.Path(__file__).resolve().parent.parent / \
             "scripts" / "gcc_build.py"
-        found = [l for l in src.read_text(encoding="utf-8").splitlines()
-                 if "make_timing(" in l and "def " not in l]
-        self.assertTrue(found, "make_timing 调用消失?")
-        for line in found:
-            self.assertIn("* 1000", line,
-                          f"make_timing 调用缺毫秒换算: {line.strip()}")
+        tree = ast.parse(src_path.read_text(encoding="utf-8"))
+        calls = [n for n in ast.walk(tree)
+                 if isinstance(n, ast.Call)
+                 and ((isinstance(n.func, ast.Attribute) and n.func.attr == "make_timing")
+                      or (isinstance(n.func, ast.Name) and n.func.id == "make_timing"))]
+        self.assertTrue(calls, "make_timing 调用消失?")
+
+        def _has_ms_scale(node):
+            return (isinstance(node, ast.BinOp)
+                    and isinstance(node.op, ast.Mult)
+                    and isinstance(node.right, ast.Constant)
+                    and node.right.value == 1000)
+
+        for call in calls:
+            scaled = any(_has_ms_scale(node)
+                         for arg in call.args
+                         for node in ast.walk(arg))
+            self.assertTrue(scaled,
+                            "make_timing 调用缺毫秒换算 (*1000): "
+                            f"line {call.lineno}")
+
+
+if __name__ == "__main__":
+    # F-125 (工单 P1-2): unittest.main() 必须在全部类定义之后 —— 旧位置在
+    # MakeTimingScaleTests 之前, 单文件直跑时该类不被收集, F-099 回归钉形同虚设
+    unittest.main()

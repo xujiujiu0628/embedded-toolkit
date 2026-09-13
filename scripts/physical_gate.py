@@ -33,9 +33,16 @@ def step_physical_gate(pg_cfg: dict, timeout: int, workspace=None) -> dict:
     if not pg_cfg.get("enable", False):
         return {"status": "skipped"}
 
+    # F-133/b: expected<=0 前置守卫 — 旧版除以 expected 得 deviation 恒 0
+    # 恒绿 (探测成功假象); 碰子进程前短路, 不启动 OpenOCD
+    expected = float(pg_cfg.get("expected_toggles_per_sec", 4.0))
+    if expected <= 0:
+        return {"status": "probe_error",
+                "error": (f"expected_toggles_per_sec={expected} 非法 (须 > 0) "
+                          "— 探测未启动")}
+
     address = pg_cfg.get("address", "0x4001100C")
     mask = pg_cfg.get("mask", 0x2000)
-    expected = float(pg_cfg.get("expected_toggles_per_sec", 4.0))
     tolerance = float(pg_cfg.get("tolerance", 0.05))
     window_ms = int(pg_cfg.get("measurement_window_ms", 10000))
     interval_ms = int(pg_cfg.get("sample_interval_ms", 100))

@@ -108,9 +108,10 @@ def _save_failure_context(result: dict, max_retries: int, capture_text: str = ""
         }
         ctx["agent_hint"] = (
             "Build failed. Check the build log at .workbench/build/ for "
-            "compiler errors. Common causes: missing include paths, ARMCC V5 "
-            "C90 incompatibility (no C++ comments, no mixed decl+code), "
-            "undefined symbols. Run /review:build if errors are unmatched in KB."
+            "compiler errors. Common causes: missing include paths, GCC "
+            "diagnostics (enable -Wall; check for C23/extension issues under "
+            "-std), undefined symbols, linker script/region overflow. "
+            "Run /review:build if errors are unmatched in KB."
         )
 
     flash_s = result.get("steps", {}).get("flash", {})

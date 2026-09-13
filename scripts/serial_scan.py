@@ -5,7 +5,7 @@ import json
 import sys
 from pathlib import Path
 
-from serial_runtime import get_mux_info
+from serial_runtime import get_mux_info, output_json, scan_serial_ports
 
 COMMON_DEVICES_PATH = Path(__file__).parent.parent / "data" / "common_devices.json"
 
@@ -24,44 +24,11 @@ def load_chip_map():
 
 
 def scan_ports(filter_keyword=None):
-    """扫描系统串口"""
-    try:
-        from serial.tools.list_ports import comports
-    except ImportError:
-        return None, "pyserial 未安装，请执行 pip install pyserial"
-
-    chip_map = load_chip_map()
-    ports = []
-
-    for p in sorted(comports(), key=lambda x: x.device):
-        vid = f"{p.vid:04X}" if p.vid else ""
-        pid = f"{p.pid:04X}" if p.pid else ""
-        chip_name = chip_map.get((vid, pid), "")
-
-        info = {
-            "port": p.device,
-            "description": p.description or "",
-            "vid": vid,
-            "pid": pid,
-            "chip": chip_name,
-            "serial_number": p.serial_number or "",
-            "location": p.location or "",
-        }
-
-        if filter_keyword:
-            text = " ".join(str(v) for v in info.values()).lower()
-            if filter_keyword.lower() not in text:
-                continue
-
-        ports.append(info)
-
-    return ports, None
-
-
-def output_json(result):
-    sys.stdout.buffer.write(json.dumps(result, ensure_ascii=False, indent=2).encode("utf-8"))
-    sys.stdout.buffer.write(b"\n")
-    sys.stdout.buffer.flush()
+    """F-156 (P2-1): 复用 serial_runtime.scan_serial_ports — 本地 40 行
+    逐字副本删除 (含 load_chip_map 重复逻辑; 本函数保留 load_chip_map 供
+    test_zero_cov_finish 钉)。错误态旧版 ports=None, 共享版 [] — main 只判
+    err, 行为不变。"""
+    return scan_serial_ports(filter_keyword)
 
 
 def main():

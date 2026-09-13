@@ -3,7 +3,11 @@
 from __future__ import annotations
 
 import json
+import queue
+import signal
 import subprocess
+import sys
+import threading
 import time
 from pathlib import Path
 from shutil import which
@@ -264,8 +268,33 @@ def resolve_openocd_params(args, project_config: dict, state_lookup: dict) -> di
     }
 
 
+def state_lookup(state: dict) -> dict:
+    """F-156 (P2-1): run/gdb/itm/telnet 四入口共用的 last_* 状态映射 —
+    三份 _state_lookup 逐字拷贝 + telnet 内联第四份收编为超集单实现
+    (gdb 的 gdb_port/telnet_port/elf_file/debug_file + run 的 flash_file
+    并入; 各入口按需取键, 多余键无消费方即无害)。"""
+    last_build = get_state_entry(state, "last_build")
+    last_flash = get_state_entry(state, "last_flash")
+    last_debug = get_state_entry(state, "last_debug")
+    artifacts = last_build.get("artifacts", {})
+    return {
+        "board": last_debug.get("board") or last_flash.get("board"),
+        "interface": last_debug.get("interface") or last_flash.get("interface"),
+        "target": last_debug.get("target") or last_flash.get("target"),
+        "search": last_debug.get("search"),
+        "adapter_speed": last_debug.get("adapter_speed") or last_flash.get("adapter_speed"),
+        "transport": last_debug.get("transport") or last_flash.get("transport"),
+        "flash_file": last_build.get("flash_file") or artifacts.get("flash_file"),
+        "gdb_port": last_debug.get("gdb_port"),
+        "telnet_port": last_debug.get("telnet_port"),
+        "elf_file": last_build.get("debug_file") or last_build.get("elf_file") or artifacts.get("debug_file"),
+        "debug_file": last_build.get("debug_file") or artifacts.get("debug_file"),
+    }
+
+
 def start_openocd_server(cmd: list) -> subprocess.Popen:
-    """启动 OpenOCD 进程（F-091 自 openocd_gdb/openocd_telnet 双副本收敛）"""
+    """启动 OpenOCD 进程（F-091 自 openocd_gdb/openocd_telnet 双副本收敛;
+    F-123 收编 openocd_itm 第三份逐字节副本）"""
     popen_kwargs = hidden_subprocess_kwargs()
     creationflags = subprocess.CREATE_NEW_PROCESS_GROUP if sys.platform == "win32" else 0
     if popen_kwargs.get("creationflags"):
@@ -280,3 +309,249 @@ def start_openocd_server(cmd: list) -> subprocess.Popen:
         creationflags=creationflags,
         startupinfo=popen_kwargs.get("startupinfo"),
     )
+
+
+# ============================================================
+# F-123 (工单 P0-7): build_openocd_cmd / wait_server_ready / cleanup 收编
+# ============================================================
+#
+# 缺陷 (gdb:95/telnet:61/itm:107 三份拷贝同病):
+#   1. proc.stderr.readline() 在"进程存活但沉默"时无限阻塞, 外层
+#      while-timeout 永远检查不到 → timeout 形同虚设;
+#   2. ready 后无人再读 stderr (gdb server 常驻 / itm 主循环只读 trace
+#      socket) → OpenOCD 刷日志填满管道缓冲 (~64KB) 后自身阻塞 → 全链死锁。
+# 正解同 capture_rtt.py F 系列先例: daemon 线程持续排空 stderr 入有界队列,
+# 主循环非阻塞取行, 超时由墙钟判定。有界队列满时丢最旧行 (保排空活性,
+# 长会话内存不增长)。
+
+_OPENOCD_CRITICAL_KEYWORDS = [
+    "open failed",
+    "init mode failed",
+    "no device found",
+    "cannot connect",
+    "error connecting dp",
+    "examination failed",
+    "failed to read memory",
+    "failed to write memory",
+    "cannot read idr",
+    "polling failed",
+]
+
+_ITM_CRITICAL_KEYWORDS = [
+    "error:",
+    "failed to start adapter's trace",
+    "not supported by the device",
+]
+
+_PUMP_EOF = object()  # stderr EOF 哨兵
+
+
+def _start_stderr_pump(proc: subprocess.Popen) -> "queue.Queue":
+    q: queue.Queue = queue.Queue(maxsize=1000)
+
+    def _pump():
+        try:
+            for line in proc.stderr:
+                while True:
+                    try:
+                        q.put_nowait(line)
+                        break
+                    except queue.Full:
+                        try:
+                            q.get_nowait()  # 丢最旧, 保写入端永不阻塞
+                        except queue.Empty:
+                            pass
+        except Exception:
+            pass  # 进程提前死亡等: 排空职责优先于留痕
+        finally:
+            while True:
+                try:
+                    q.put_nowait(_PUMP_EOF)
+                    break
+                except queue.Full:
+                    try:
+                        q.get_nowait()
+                    except queue.Empty:
+                        pass
+
+    threading.Thread(target=_pump, daemon=True).start()
+    return q
+
+
+def wait_server_ready(proc: subprocess.Popen, server_port: int, timeout: int = 15) -> tuple[bool, list[str]]:
+    """等待 OpenOCD "Listening on port ..." 就绪 (gdb/telnet 共用口径)。
+
+    F-123 单实现: 语义与 gdb/telnet 旧拷贝对齐 (Error: 行收集 / critical
+    词表否决 / 进程退出即 False / ready 判定只看该行之前的输出), 但 readline
+    阻塞换成墙钟真超时 + daemon 排空。"""
+    started = time.time()
+    errors: list[str] = []
+    q = _start_stderr_pump(proc)
+
+    while time.time() - started < timeout:
+        if proc.poll() is not None:
+            for line in _drain_queue(q):
+                stripped = line.strip()
+                if stripped and "Error:" in stripped:
+                    errors.append(stripped)
+            return False, errors
+        try:
+            item = q.get(timeout=0.1)
+        except queue.Empty:
+            continue
+        if item is _PUMP_EOF:
+            continue
+        stripped = item.strip()
+        if "Error:" in stripped:
+            errors.append(stripped)
+        if f"Listening on port {server_port}" in stripped or "listening on" in stripped.lower():
+            critical = [e for e in errors
+                        if any(k in e.lower() for k in _OPENOCD_CRITICAL_KEYWORDS)]
+            if critical:
+                return False, critical
+            return True, errors
+
+    return False, errors
+
+
+def wait_itm_ready(proc: subprocess.Popen, trace_port: int, timeout: int = 15) -> tuple[bool, list[str]]:
+    """ITM 口径的就绪等待 (F-123 自 openocd_itm 收编, 行为契约保留):
+    全行收集返回 / critical 词命中即时否决 / trace marker + 1s grace 确认。"""
+    started = time.time()
+    lines: list[str] = []
+    ready = False
+    ready_deadline = 0.0
+    q = _start_stderr_pump(proc)
+
+    while time.time() - started < timeout:
+        if proc.poll() is not None:
+            lines.extend(line.strip() for line in _drain_queue(q))
+            return False, lines
+        try:
+            item = q.get(timeout=0.1)
+        except queue.Empty:
+            if ready and time.time() >= ready_deadline:
+                return True, lines
+            continue
+        if item is _PUMP_EOF:
+            continue
+        stripped = item.strip()
+        lines.append(stripped)
+        lowered = stripped.lower()
+        if any(keyword in lowered for keyword in _ITM_CRITICAL_KEYWORDS):
+            return False, lines
+        if f"port {trace_port}" in lowered or "trace data" in lowered:
+            ready = True
+            ready_deadline = time.time() + 1.0
+
+    return ready, lines
+
+
+def _drain_queue(q: "queue.Queue", eof_wait: float = 2.0) -> list[str]:
+    """排空到 EOF 哨兵 (进程已退/流已关的收尾路径)。
+
+    不等哨兵直接 get_nowait 会与 pump 线程竞态丢行——旧版此处是阻塞的
+    proc.stderr.read() (拿到全部剩余), 收编后必须保持同样完整度。"""
+    out: list[str] = []
+    deadline = time.time() + eof_wait
+    while time.time() < deadline:
+        try:
+            item = q.get(timeout=0.05)
+        except queue.Empty:
+            continue
+        if item is _PUMP_EOF:
+            return out
+        out.append(item)
+    return out
+
+
+def build_openocd_cmd(
+    exe: str,
+    board: str = "",
+    interface: str = "",
+    target: str = "",
+    search: str = "",
+    adapter_speed: str = "",
+    transport: str = "",
+    gdb_port: int | None = 3333,
+    telnet_port: int | None = 4444,
+    extra_commands: list[str] | None = None,
+) -> list[str]:
+    """构建 OpenOCD 命令行 (F-123 自 gdb/telnet/run 三份拷贝收编)。
+
+    gdb/telnet 口径: 带端口两参 (默认 3333/4444)。run 口径: gdb_port=
+    telnet_port=None 关闭端口行、extra_commands 收尾——两条输出与旧本地
+    副本逐元素一致。itm 的 tpiu/trace 扩展版是真分叉 (F-029 裁决), 不强并。"""
+    cmd = [exe]
+    if search:
+        cmd.extend(["-s", search])
+    if board:
+        cmd.extend(["-f", board])
+    else:
+        if interface:
+            cmd.extend(["-f", interface])
+        if target:
+            cmd.extend(["-f", target])
+    if adapter_speed:
+        cmd.extend(["-c", f"adapter speed {adapter_speed}"])
+    if transport:
+        cmd.extend(["-c", f"transport select {transport}"])
+    if gdb_port is not None:
+        cmd.extend(["-c", f"gdb_port {gdb_port}"])
+    if telnet_port is not None:
+        cmd.extend(["-c", f"telnet_port {telnet_port}"])
+    for command in extra_commands or []:
+        cmd.extend(["-c", command])
+    return cmd
+
+
+# ── F-129 (工单二 A-2): 判定后硬件自恢复 ─────────────────────────────────
+# 借鉴 agentic-hil 的失败自恢复: 运行结束后板子状态不留给下一次运行——
+# 超时/卡死场景留下的挂着断点或半初始化外设会污染下一次 verify。
+
+_RESET_CFG_DEFAULT = ["interface/stlink.cfg", "target/stm32f1x.cfg"]  # verify.step_flash 同款
+
+
+def reset_target(exe: str, cfg: list[str] | None = None, *,
+                 timeout: int = 20) -> dict:
+    """复位目标: openocd -f <cfg...> -c "init" -c "reset run" -c "shutdown"。
+
+    verify.py 在 flash 实际发生过的判定结束后调用; cfg 缺省与 step_flash
+    同一套 (stlink + stm32f1x)。exe 由调用方经既有 resolve 链取好传入,
+    本函数不读 machine.json——保持纯函数, 测试无需环境桩。
+    判据沿 swd_probe 内容口径 (克隆适配器偶发非零退出, 关键行才是真相):
+    "shutdown command invoked" 在场且无 init 失败词。失败只返回 status
+    留痕, 调用方绝不因复位失败改判 verdict。"""
+    cmd = [exe]
+    for c in (cfg or _RESET_CFG_DEFAULT):
+        cmd.extend(["-f", c])
+    cmd.extend(["-c", "init", "-c", "reset run", "-c", "shutdown"])
+    try:
+        r = subprocess.run(cmd, capture_output=True, text=True,
+                           encoding="utf-8", errors="replace", timeout=timeout)
+        last = (r.stdout or "") + (r.stderr or "")
+    except subprocess.TimeoutExpired:
+        return {"status": "error", "message": f"reset 超时 ({timeout}s)"}
+    except OSError as e:
+        return {"status": "error", "message": str(e)}
+    if "shutdown command invoked" in last and "init mode failed" not in last:
+        return {"status": "ok", "message": last[-200:]}
+    return {"status": "error",
+            "message": last[-200:] or f"openocd exit {r.returncode}"}
+
+
+def cleanup(proc: subprocess.Popen | None) -> None:
+    """终止 OpenOCD 进程 (F-123 自 gdb/itm cleanup + telnet cleanup_proc
+    三份拷贝收编——旧三副本函数体逐字相同)。"""
+    if proc and proc.poll() is None:
+        try:
+            if sys.platform == "win32":
+                proc.terminate()
+            else:
+                proc.send_signal(signal.SIGTERM)
+            proc.wait(timeout=5)
+        except (subprocess.TimeoutExpired, OSError):
+            proc.kill()
+
+
+cleanup_proc = cleanup  # telnet 入口的既有别名 (调用面/身份钉兼容)

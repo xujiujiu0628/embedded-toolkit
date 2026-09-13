@@ -1,19 +1,12 @@
 r"""hooks/ 三条 C 铁律脚本的行为级探针 (F-093, WB-C3)。
 
-⚠️ 本文件性质 = **行为记录 + 缺陷登记**, 不是回归钉:
-F-093 施工实测发现三条 hook 共用的 diff 判据存在**漏报缺陷**（见
-CanaryDetectionGapTests）——staged 且工作树一致的真实 pre-commit 场景下
-`git diff -U0 -- <files>` (worktree vs index) 输出为空, 全部 hook 恒 exit 0,
-**形同虚设**。hooks/ 是 CONTRIBUTING 禁区（判据变更须 issue 单独论证）,
-故本文件只把现实行为钉住 + 登记缺陷, 修复交维护者拍板。
-
-已登记缺陷（F-096 待拍板）:
-  gap-1 三 hook 的 `git diff -U0 -- $files` 缺 --cached, staged 内容永不入检
-  gap-2 同理 warn-volatile 的第二路也漏; 且 `grep -ql ... $files` 对已删除
-       文件报"文件不存在"
-修复选项（二选一, 维护者拍板）:
-  A. 判据改 `git diff --cached -U0` + 保留 working-tree 回落（最小改动）
-  B. 换 pre-commit framework（重）
+本文件性质 = **行为记录 + 回归钉**:
+F-093 施工实测发现三条 hook 共用的 diff 判据存在漏报缺陷（staged 且工作树
+一致的真实 pre-commit 场景下 `git diff -U0 -- <files>` 输出为空, hook 恒
+exit 0 形同虚设）。维护者 2026-09-09 拍板修复（F-096 选项 A: 判据加
+--cached 优先 + 保留 working-tree 回落, hooks/*.sh 已落地）——原金丝雀组
+已按承诺翻转改名 `StagedContentDetectionTests` 成为回归钉 (F-132 工单
+P2-5 同步本 docstring: 原"修复待拍板/只钉现实"的登记口径已过时)。
 """
 import os
 import shutil
@@ -71,7 +64,7 @@ HOOKS_DIR = os.path.join(os.path.dirname(os.path.dirname(
     os.path.abspath(__file__))), "hooks")
 
 # ⚠️ 必须用绝对路径: subprocess 的 "bash" 会被 CreateProcess 安全搜索命中
-# System32ash.exe (WSL stub, 未装 Linux 子系统 → 输出 UTF-16 错误并 exit 1)。
+# System32\bash.exe (WSL stub, 未装 Linux 子系统 → 输出 UTF-16 错误并 exit 1)。
 # shutil.which 沿 PATH 找到 Git for Windows 的 bash —— 但为了防 CI/其他机器
 # 的 PATH 漂移, 这里同样用 which 结果并断言不是 System32。
 BASH = shutil.which("bash") or ""

@@ -3,7 +3,8 @@
 
 release.py 在发布时保证 G0~G3 全绿 + hex 哈希强制入档; 但 releases/*.json 与
 annotated tag 都是本地 git 操作, 无签名 — 事后可被手工篡改而无人察觉。本工具
-对既有发布做**只读**一致性复核 (不触硬件、不改任何文件、不联网):
+对既有发布做一致性复核 (不触硬件、不联网): **默认只读**; F-146 起新增
+`--approve` 批准回填——唯一写路径, 仅原子改写记录文件的 evidence 契约字段。
 
   R1  记录存在且 JSON 可解析
   R2  tag 存在, 且 tag 指向的 commit == 记录 git_head
@@ -14,11 +15,16 @@ annotated tag 都是本地 git 操作, 无签名 — 事后可被手工篡改而
   R6  记录文件已被 git 提交入库 (未提交 = 警告级)
   R7  契约哈希锚点 (F-018): 记录 contracts 的 expectations/config sha256
       与 git show git_head: 重算一致 (不匹配 = fail; 旧记录缺绑定 = 警告)
+  R8  证据等级一致性 (F-128/F-146, 命名对齐 AEL): 记录 evidence 必须
+      hardware_validated (或缺字段=旧版产物→警告; 非真机证据且无豁免留痕=
+      fail; 豁免留痕在册=警告); production_approved 必须携带
+      production_approved_at 批准留痕, 手工改值视同篡改 (fail)
 
 用法:
   python scripts/release_audit.py --project <工程根> --tag v1.1.0
   python scripts/release_audit.py --project <工程根> --all
   python scripts/release_audit.py --project <工程根> --all --json
+  python scripts/release_audit.py --project <工程根> --approve v1.1.0   # F-146: 批准投产 (唯一写路径)
 
 退出码: 0 = clean/warned, 1 = 存在 fail 项 (证据链断裂或被篡改), 2 = 用法/环境错误
 """
@@ -29,10 +35,15 @@ import os
 import subprocess
 import sys
 
-from wb_common import find_project_root
+from runtime_common import now_iso, save_json_file
+from wb_common import find_project_root, sha256_file
 
 REQUIRED_KEYS = ("tag", "git_head", "timestamp", "build_mode", "artifacts",
                  "results", "xfail_waived", "tools")
+
+# F-146: production_approved 是唯一不由 verify 产出的证据等级 — 只能经
+# 本工具 --approve 在发布后回填, 且必须以 hardware_validated 为底。
+EVIDENCE_APPROVED = "production_approved"
 
 
 def _git(args_, cwd):
@@ -47,12 +58,7 @@ def _git_bytes(args_, cwd):
     return r.returncode, (r.stdout or b""), (r.stderr or b"").decode("utf-8", "replace")
 
 
-def sha256_file(path):
-    h = hashlib.sha256()
-    with open(path, "rb") as f:
-        for chunk in iter(lambda: f.read(65536), b""):
-            h.update(chunk)
-    return h.hexdigest()
+# F-157 (P2-3): 本地 sha256_file 删除, 收编 wb_common 共享版
 
 
 def _check(checks, cid, status, detail):
@@ -189,6 +195,38 @@ def audit_record(ws, tag, rel_path):
         else:
             _check(checks, "R7", "warn", "记录契约哈希均为空 (legacy 无清单?)")
 
+    # R8 证据等级一致性 (F-128 A-1; F-146 T2 命名对齐 AEL): 发布记录必须由
+    # 真机证据支撑 — "仿真通过永不升级为硬件等价声明"。发布时 G2 已拦, 此处
+    # 防篡改/绕过: 记录事后被改成 sim 证据而无留痕即现形;
+    # production_approved 只能经 --approve 产生 (必须携带批准留痕, 手工
+    # 改值无留痕 = fail)。
+    evidence = record.get("evidence")
+    if evidence is None:
+        _check(checks, "R8", "warn",
+               "记录缺 evidence 字段 (R8 之前的旧版 release.py 产物)")
+    elif evidence == "hardware_validated" and record.get("evidence_waiver"):
+        _check(checks, "R8", "warn",
+               "evidence=hardware_validated 但存在豁免留痕 — 字段矛盾, 疑似手工编辑")
+    elif evidence == "production_approved":
+        if record.get("production_approved_at"):
+            _check(checks, "R8", "pass",
+                   f"发布证据等级: {evidence} "
+                   f"(批准于 {record.get('production_approved_at')})")
+        else:
+            _check(checks, "R8", "fail",
+                   "evidence=production_approved 但缺 production_approved_at "
+                   "批准留痕 — 该等级只能经 release_audit --approve 产生, "
+                   "手工改值视同篡改")
+    elif evidence != "hardware_validated" and not record.get("evidence_waiver"):
+        _check(checks, "R8", "fail",
+               f"发布证据等级 {evidence!r} != hardware_validated 且无豁免留痕 — "
+               "仿真/静态证据不得支撑发布记录 (门禁被绕过或记录被篡改)")
+    elif evidence != "hardware_validated":
+        _check(checks, "R8", "warn",
+               f"非真机证据 {evidence!r} 已豁免放行 (evidence_waiver 留痕在册)")
+    else:
+        _check(checks, "R8", "pass", f"发布证据等级: {evidence}")
+
     if any(c["status"] == "fail" for c in checks):
         verdict = "failed"
     elif any(c["status"] == "warn" for c in checks):
@@ -220,23 +258,91 @@ def audit_project(ws, only_tag=None):
     return {"project": ws, "records": records, "verdict": verdict}
 
 
+def approve_record(ws, tag):
+    """F-146 (总工单 v2 T2): 批准投产回填 — production_approved 的唯一产生路径。
+
+    前置 (全部硬性): ① 记录存在且可解析; ② 先跑一遍 R1~R8 审计且无 fail;
+    ③ 现有 evidence == hardware_validated (仿真/静态/已豁免记录不配"投产"
+    两个字)。通过后原子改写: evidence → production_approved + 落
+    production_approved_at 批准留痕 (手工改值缺留痕 = R8 fail, 防伪)。
+    signature 保持留空 — 签名机制登记不实现, 不假装已签。"""
+    rec_p = os.path.join(ws, ".workbench", "releases", f"{tag}.json")
+    try:
+        with open(rec_p, encoding="utf-8") as f:
+            record = json.load(f)
+    except (OSError, json.JSONDecodeError, UnicodeDecodeError) as e:
+        return {"ok": False, "error": f"记录不可解析 ({tag}.json): {e}"}
+
+    audit = audit_record(ws, tag, os.path.join(".workbench", "releases",
+                                               f"{tag}.json"))
+    if audit["verdict"] == "failed":
+        bad = [c for c in audit["checks"] if c["status"] == "fail"]
+        return {"ok": False,
+                "error": ("审计未过, 拒绝批准投产: " +
+                          "; ".join(f"{c['id']} {c['detail']}" for c in bad))}
+
+    evidence = record.get("evidence")
+    if evidence == EVIDENCE_APPROVED:
+        return {"ok": True, "note": f"{tag} 已是 production_approved "
+                f"(批准于 {record.get('production_approved_at')}), 幂等无操作"}
+    if evidence != "hardware_validated":
+        return {"ok": False,
+                "error": (f"拒绝批准: 现有证据等级 {evidence!r} != "
+                          "hardware_validated — 投产批准只能叠加在真机证据上")}
+
+    record["evidence"] = EVIDENCE_APPROVED
+    record["production_approved_at"] = now_iso()
+    boundaries = list(record.get("fidelity_boundaries") or [])
+    approval_note = ("production_approved: 经 release_audit --approve 人工"
+                     "批准投产; 底层证据仍以 hardware_validated 运行为准")
+    if approval_note not in boundaries:
+        boundaries.append(approval_note)
+    record["fidelity_boundaries"] = boundaries
+    save_json_file(rec_p, record)   # F-022 同款原子写 (tmp + os.replace)
+    return {"ok": True, "tag": tag, "evidence": EVIDENCE_APPROVED,
+            "production_approved_at": record["production_approved_at"],
+            "record_path": os.path.relpath(rec_p, ws).replace(os.sep, "/")}
+
+
 def main():
-    ap = argparse.ArgumentParser(description="发布记录事后审计 (只读, 不触硬件)")
+    ap = argparse.ArgumentParser(
+        description="发布记录事后审计 (默认只读; --approve 为唯一写路径)")
     ap.add_argument("--project", default=None, help="工程根目录 (默认 cwd 向上发现)")
     ap.add_argument("--tag", default=None, help="只审计指定 tag (如 v1.1.0)")
     ap.add_argument("--all", dest="all_tags", action="store_true",
                     help="审计 releases/ 下全部记录")
+    ap.add_argument("--approve", metavar="TAG", default=None,
+                    help="F-146: 批准该 tag 投产 (evidence 回填 "
+                         "production_approved + 批准留痕; 仅限 "
+                         "hardware_validated 且审计无 fail 的记录)")
     ap.add_argument("--json", action="store_true", help="JSON 输出")
     args = ap.parse_args()
 
-    if not (args.tag or args.all_tags):
-        print("错误: 需 --tag <X> 或 --all 之一", file=sys.stderr)
-        return 2
     ws = args.project or find_project_root(os.getcwd())
     if not ws or not os.path.isdir(ws):
         print("错误: 未找到工程根 (含 .workbench/config.json)", file=sys.stderr)
         return 2
     ws = os.path.abspath(ws)
+
+    if args.approve:
+        if args.tag or args.all_tags:
+            print("错误: --approve 与 --tag/--all 互斥", file=sys.stderr)
+            return 2
+        result = approve_record(ws, args.approve)
+        if args.json:
+            print(json.dumps(result, ensure_ascii=False, indent=2))
+        elif result.get("ok"):
+            print(f"[OK] {result.get('note') or '已批准投产: ' + args.approve}"
+                  f" (evidence=production_approved, "
+                  f"批准于 {result.get('production_approved_at')}); "
+                  "记录变更请自行 git 提交")
+        else:
+            print(f"错误: {result.get('error')}", file=sys.stderr)
+        return 0 if result.get("ok") else 1
+
+    if not (args.tag or args.all_tags):
+        print("错误: 需 --tag <X> 或 --all 之一", file=sys.stderr)
+        return 2
 
     result = audit_project(ws, only_tag=args.tag)
     if args.json:

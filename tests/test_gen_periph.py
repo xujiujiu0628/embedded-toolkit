@@ -166,7 +166,10 @@ class GenUsartTests(unittest.TestCase):
         self.assertIn("RCC->APB2ENR |= RCC_APB2ENR_USART1EN;", out)
         self.assertIn("* PCLK2=72MHz, BRR=0x0271 (39.1/16)", out)
         self.assertIn("USART1->BRR = 0x0271;", out)   # 39 + 1/16 = 39.0625
-        self.assertIn("int fputc(int ch, FILE *f) {", out)
+        # F-131 (工单 P2-2): Keil Microlib fputc 重定向退役, 改 newlib _write
+        self.assertIn("int _write(int fd, char *buf, int len) {", out)
+        self.assertIn("#include <unistd.h>", out)
+        self.assertNotIn("int fputc", out)
 
     def test_usart2_on_apb1_36mhz_brr_0xea6_at_9600(self):
         out = gen_periph.gen_usart("USART2", 9600, "PA2", "PA3")
@@ -267,6 +270,20 @@ class GenPwmTests(unittest.TestCase):
         out100 = gen_periph.gen_pwm("TIM2", 1, "PA0", 1000, 100)
         self.assertIn("TIM2->CCR1 = 1000;", out100)   # == ARR+1, 全开
 
+    def test_tim1_emits_bdtr_moe_f122(self):
+        """F-122 (工单 P0-5): TIM1 是高级定时器, MOE=0 时输出被硬件强制关闭
+        ——旧版生成全套寄存器唯独缺 BDTR.MOE, 编译通过但永远无波形 (B 类静默)。"""
+        out = gen_periph.gen_pwm("TIM1", 1, "PA8", 1000, 50)
+        self.assertIn("TIM1->BDTR |= (1<<15);", out)   # MOE 主输出使能
+        self.assertIn("MOE", out)                      # 注释必须说明 MOE 语义
+
+    def test_basic_timer_no_bdtr_f122(self):
+        """TIM2~4 无 BDTR/MOE 寄存器——不得误加 (引用即幻影成员, 烟测/真编译双红)。"""
+        for timer in ("TIM2", "TIM3", "TIM4"):
+            with self.subTest(timer=timer):
+                out = gen_periph.gen_pwm(timer, 1, "PA0", 1000, 50)
+                self.assertNotIn("BDTR", out)
+
 
 class GenAdcTests(unittest.TestCase):
 
@@ -305,6 +322,38 @@ class GenAdcTests(unittest.TestCase):
         out = gen_periph.gen_adc("ADC1", 1, "PA1")
         self.assertIn("(3UL << 14)", out)   # 清 14:15 两位掩码 0x3<<14
         self.assertIn("(2UL << 14)", out)   # 置 10b = /6
+
+    # --- F-119 (工单 P0-4): 通道域校验 ---
+
+    def test_channel_out_of_range_reports_error_f119(self):
+        """ch∉[0,17] → 显式 ERROR。ch=20 旧版写 SMPR1 保留位 (静默无效),
+        负数生成负位移 C 代码 (UB)。"""
+        self.assertTrue(gen_periph.gen_adc("ADC1", 20, "PA1").startswith("/* ERROR"))
+        self.assertTrue(gen_periph.gen_adc("ADC1", -1, "PA1").startswith("/* ERROR"))
+
+    def test_boundary_channels_0_and_17_still_generate(self):
+        for ch in (0, 17):
+            with self.subTest(ch=ch):
+                out = gen_periph.gen_adc("ADC1", ch, "PA1")
+                self.assertNotIn("/* ERROR", out)
+
+    def test_external_channel_16_17_note_vrefint_temp_f119(self):
+        """16/17 是 vrefint/temp 内部通道——合法但需提示, 不误伤。"""
+        for ch in (16, 17):
+            with self.subTest(ch=ch):
+                out = gen_periph.gen_adc("ADC1", ch, "PA1")
+                self.assertNotIn("/* ERROR", out)
+                self.assertIn("内部通道", out)
+
+    def test_adc_cli_out_of_range_exits_1_f119(self):
+        """CLI 层: --ch 20 经 _emit 收敛 exit 1 (旧版 adc 分支裸 print 恒 0)。"""
+        with mock.patch.object(sys, "argv",
+                               ["gen_periph.py", "--type", "adc",
+                                "--adc", "ADC1", "--ch", "20", "--pin", "PA1"]):
+            with redirect_stdout(io.StringIO()):
+                with self.assertRaises(SystemExit) as ctx:
+                    gen_periph.main()
+        self.assertEqual(ctx.exception.code, 1)
 
 
 class GenTimerIntTests(unittest.TestCase):

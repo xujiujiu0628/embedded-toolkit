@@ -13,18 +13,8 @@ STM32F103 参考手册快速查询工具
 
 import argparse
 import json
-import os
-import re
-import sys
 
-from wb_common import TOOLKIT_ROOT
-
-REF_PATH = os.path.join(TOOLKIT_ROOT, "data", "stm32f103-ref.json")
-
-
-def load_ref() -> dict:
-    with open(REF_PATH, 'r', encoding='utf-8') as f:
-        return json.load(f)
+from wb_common import load_ref  # F-157: 三份 load_ref 收编
 
 
 def search_peripheral(query: str, ref: dict) -> list[dict]:
@@ -158,8 +148,9 @@ def search_relationships(query: str, ref: dict) -> dict:
         }
 
 
-def format_result(result: dict):
-    """人类可读输出"""
+def format_result(result: dict, ref_data: dict):
+    """人类可读输出。F-133/d: ref_data 显式入参 — 旧版读模块级全局, 库态
+    (未跑 main) 调用即 NameError; 对 peripherals 的裸下标取数同批清除。"""
     query = result["query"]
     periphs = result["peripherals"]
     regs = result["registers"]
@@ -193,7 +184,7 @@ def format_result(result: dict):
                     print(f"    公式: {rdata['formula']}")
                 bits_list = rdata.get("bits", {})
                 if isinstance(bits_list, dict) and bits_list:
-                    print(f"    位域:")
+                    print("    位域:")
                     for pos, info in bits_list.items():
                         if isinstance(info, dict):
                             print(f"      bit {pos}: {info.get('name','')} — {info.get('desc','')}")
@@ -281,7 +272,8 @@ def main():
             if recipes_count:
                 print(f"  配方: {recipes_count} 个")
             print()
-        print(f"共 {len(ref_data['peripherals'])} 个外设, 版本 {ref_data['_meta']['version']}")
+        print(f"共 {len(ref_data.get('peripherals', {}))} 个外设, "
+              f"版本 {ref_data.get('_meta', {}).get('version', '?')}")
         return
 
     if args.recipe:
@@ -289,7 +281,7 @@ def main():
         if args.json:
             print(json.dumps(result, ensure_ascii=False, indent=2))
         else:
-            format_result(result)
+            format_result(result, ref_data)
         return
 
     if args.rel:
@@ -308,7 +300,7 @@ def main():
     if args.json:
         print(json.dumps(result, ensure_ascii=False, indent=2))
     else:
-        format_result(result)
+        format_result(result, ref_data)
 
 
 if __name__ == "__main__":

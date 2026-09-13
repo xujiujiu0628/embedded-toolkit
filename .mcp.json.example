@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "embedded-toolkit": {
+      "command": "python",
+      "args": ["<TOOLKIT_ROOT>/scripts/mcp_server.py"]
+    }
+  }
+}

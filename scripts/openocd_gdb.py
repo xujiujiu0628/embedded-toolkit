@@ -4,29 +4,25 @@ from __future__ import annotations
 
 import argparse
 import os
-import signal
 import subprocess
 import sys
 import time
-from pathlib import Path
 from shutil import which
 
-
-ROOT_DIR = Path(__file__).resolve().parents[2]
-if str(ROOT_DIR) not in sys.path:
-    sys.path.insert(0, str(ROOT_DIR))
+# F-133/h: 旧 ROOT_DIR=parents[2] 无效锚清除 (指向仓外, 插 sys.path 从不
+# 命中); 直接脚本运行时 sys.path[0]=scripts/ 已覆盖 import 需求
 
 from openocd_gdb_common import build_gdb_commands, parse_gdb_output, run_gdb_commands  # noqa: E402
 from openocd_runtime import (  # noqa: E402
     resolve_openocd_params,  # noqa: F401  (F-091 再导出, 调用面不变)
     start_openocd_server,  # noqa: F401  (F-091 再导出, 调用面不变)
+    build_openocd_cmd,  # noqa: F401  (F-123 再导出, 调用面不变)
+    cleanup,  # noqa: F401  (F-123 再导出, 调用面不变)
+    wait_server_ready,  # noqa: F401  (F-123 再导出, 调用面不变)
     build_artifacts,
     default_config_path,
-    get_state_entry,
-    hidden_subprocess_kwargs,
     is_missing,
     load_json_file,
-    load_local_config,
     load_project_config,
     load_workspace_state,
     make_result,
@@ -37,6 +33,7 @@ from openocd_runtime import (  # noqa: E402
     parameter_context,
     resolve_param,
     save_project_config,
+    state_lookup,
     update_state_entry,
     workspace_root,
 )
@@ -62,91 +59,9 @@ GDB_ACTIONS = [
 ]
 
 
-def build_openocd_cmd(
-    exe: str,
-    board: str = "",
-    interface: str = "",
-    target: str = "",
-    search: str = "",
-    adapter_speed: str = "",
-    transport: str = "",
-    gdb_port: int = 3333,
-    telnet_port: int = 4444,
-) -> list[str]:
-    cmd = [exe]
-    if search:
-        cmd.extend(["-s", search])
-    if board:
-        cmd.extend(["-f", board])
-    else:
-        if interface:
-            cmd.extend(["-f", interface])
-        if target:
-            cmd.extend(["-f", target])
-    if adapter_speed:
-        cmd.extend(["-c", f"adapter speed {adapter_speed}"])
-    if transport:
-        cmd.extend(["-c", f"transport select {transport}"])
-    cmd.extend(["-c", f"gdb_port {gdb_port}"])
-    cmd.extend(["-c", f"telnet_port {telnet_port}"])
-    return cmd
-
-
-def wait_server_ready(proc: subprocess.Popen, gdb_port: int, timeout: int = 15) -> tuple[bool, list[str]]:
-    started = time.time()
-    errors: list[str] = []
-    ready = False
-
-    while time.time() - started < timeout:
-        if proc.poll() is not None:
-            remaining = proc.stderr.read()
-            for line in remaining.splitlines():
-                if "Error:" in line:
-                    errors.append(line.strip())
-            return False, errors
-
-        line = proc.stderr.readline()
-        if not line:
-            time.sleep(0.1)
-            continue
-        stripped = line.strip()
-        if "Error:" in stripped:
-            errors.append(stripped)
-        if f"Listening on port {gdb_port}" in stripped or "listening on" in stripped.lower():
-            ready = True
-            break
-
-    if not ready:
-        return False, errors
-
-    critical = [
-        "open failed",
-        "init mode failed",
-        "no device found",
-        "cannot connect",
-        "error connecting dp",
-        "examination failed",
-        "failed to read memory",
-        "failed to write memory",
-        "cannot read idr",
-        "polling failed",
-    ]
-    critical_errors = [item for item in errors if any(keyword in item.lower() for keyword in critical)]
-    if critical_errors:
-        return False, critical_errors
-    return True, errors
-
-
-def cleanup(proc: subprocess.Popen | None) -> None:
-    if proc and proc.poll() is None:
-        try:
-            if sys.platform == "win32":
-                proc.terminate()
-            else:
-                proc.send_signal(signal.SIGTERM)
-            proc.wait(timeout=5)
-        except (subprocess.TimeoutExpired, OSError):
-            proc.kill()
+# F-123 (工单 P0-7): build_openocd_cmd / wait_server_ready / cleanup 三份
+# 本地拷贝已删除, 统一 import openocd_runtime 单实现 (readline 阻塞换
+# daemon 排空线程, timeout 真生效; 常驻会话 stderr 持续排空不再死锁)。
 
 
 def add_common_args(parser: argparse.ArgumentParser) -> None:
@@ -190,23 +105,8 @@ def _legacy_mode() -> bool:
     return not (len(sys.argv) > 1 and sys.argv[1] in GDB_ACTIONS)
 
 
-def _state_lookup(state: dict) -> dict:
-    last_build = get_state_entry(state, "last_build")
-    last_flash = get_state_entry(state, "last_flash")
-    last_debug = get_state_entry(state, "last_debug")
-    artifacts = last_build.get("artifacts", {})
-    return {
-        "board": last_debug.get("board") or last_flash.get("board"),
-        "interface": last_debug.get("interface") or last_flash.get("interface"),
-        "target": last_debug.get("target") or last_flash.get("target"),
-        "search": last_debug.get("search"),
-        "adapter_speed": last_debug.get("adapter_speed") or last_flash.get("adapter_speed"),
-        "transport": last_debug.get("transport") or last_flash.get("transport"),
-        "gdb_port": last_debug.get("gdb_port"),
-        "telnet_port": last_debug.get("telnet_port"),
-        "elf_file": last_build.get("debug_file") or last_build.get("elf_file") or artifacts.get("debug_file"),
-        "debug_file": last_build.get("debug_file") or artifacts.get("debug_file"),
-    }
+# F-156 (P2-1): _state_lookup 收编 openocd_runtime.state_lookup 超集单实现
+_state_lookup = state_lookup
 
 
 def _summary(command: str, parsed: dict) -> str:
@@ -412,6 +312,7 @@ def main() -> None:
     )
 
     proc: subprocess.Popen | None = None
+    server_ready = False  # F-121 (工单 P0-3): 区分"启动失败"与"常驻服务正常退出"
     try:
         proc = start_openocd_server(cmd)
         ready, errors = wait_server_ready(proc, int(gdb_port or 3333))
@@ -431,6 +332,7 @@ def main() -> None:
             else:
                 print(f"[{args.command}] 失败 — {message}", file=sys.stderr)
             sys.exit(1)
+        server_ready = True
 
         if args.command == "server":
             state_info = update_state_entry(
@@ -563,6 +465,9 @@ def main() -> None:
 
         if args.as_json:
             output_json(result)
+            # F-120 (工单 P0-2): JSON 失败出口统一退 1 (旧版落到 if/elif/else
+            # 之后隐式退 0)。finally 的 cleanup 经 SystemExit 照常执行。
+            sys.exit(0 if result["status"] == "ok" else 1)
         elif result["status"] == "ok":
             print(f"[gdb-{args.command}] {result['summary']}")
             output = result.get("details", {}).get("output", "")
@@ -588,7 +493,10 @@ def main() -> None:
             print(f"错误: {message}", file=sys.stderr)
         sys.exit(1)
     finally:
-        if args.command != "server":
+        # F-121 (工单 P0-3): 旧条件 command != "server" 让 server 模式启动
+        # 失败 (ready 未达成) 时进程留存独占 ST-Link。现在只有 ready 成功的
+        # 常驻 server 才跳过 cleanup; 启动失败经 SystemExit 也走到这里被回收。
+        if not (args.command == "server" and server_ready):
             cleanup(proc)
 
 

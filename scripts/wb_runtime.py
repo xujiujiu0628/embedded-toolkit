@@ -12,7 +12,6 @@ scripts/legacy/keil/，本模块从构建后端特异层上提为 GCC/OCD/serial
 
 from __future__ import annotations
 
-import os
 import sys
 from pathlib import Path
 from typing import Any

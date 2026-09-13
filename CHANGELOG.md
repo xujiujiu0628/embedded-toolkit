@@ -3,6 +3,697 @@
 格式约定: 每条含发现编号（代管期 findings 编目）与证据 commit。当前版本以
 `VERSION` 文件为准（`wb_common.toolkit_version()` 读取）。
 
+## Unreleased — zc/hardware（总工单 v2 全量承接: 编号对照 T1~T8=F-145~F-152、T9=F-153, 新任务 F-154 起顺延。号段注记 (审核 L-1): v2 清单曾为 Claude P2 系列预留 F-133~144，实际 Claude 仅消费 F-133 后整批移交本分支, 134~144 空置——非跳号事故, 系分工变更）
+
+- **F-162 (审核遗留 M-4) CI 接线：sim-demo job 产 JUnit + test-reporter 消费，ci+docs，.github/workflows/ci.yml / README / CHANGELOG**:
+  `verify.py --junit-xml` 旗标自 F-147 起仅有单测层可解析性证据，从未被真实
+  GitHub Actions reporter 消费（M-4 指出的"产物无人吃"洞）。本条接线：
+  ① sim-demo verify 步骤加 `--junit-xml build/junit-sim.xml`（`build/` 已被
+  .gitignore 覆盖，产物不入库）；② 新增 `dorny/test-reporter` 消费步骤，
+  **SHA 锁定** `a43b3a5f7366b97d083190328d2c652e1a8b6aa2`（= v3.0.0；解引用
+  核验命令 `gh api repos/dorny/test-reporter/git/tags/<tag-object-sha>`，
+  供应链纪律：升级走 CHANGELOG、只升不降）；③ job 级显式最小权限
+  `contents: read / checks: write / pull-requests: read`。两个决策：
+  `if: always()` 让失败运行的 XML 也被消费（M-4 要验证的正是 reporter
+  吃得下四态混合产物）；`continue-on-error: true` 防 reporter 自身故障把
+  CI 判红掩盖真因。本地钉：qemu 11.1.0 全链 verify exit=0，
+  `build/junit-sim-local.xml` 产出且 `xml.etree.ElementTree.parse` 通过
+  （4 testcase：3 passed + 1 skipped）。销账判定由人盯首个真实 PR 的
+  "Sim Verify Results" 检查（README M-4 条目暂标"闭合中"，PR 复验通过后
+  收尾 commit 改"已闭合"并回填检查名/URL）。
+  - 追加（收尾，2026-09-13）：reporter 步骤显式 `fail-on-error: false`
+    （dorny 默认 true 会把"消费"误升为"门禁"——产物含失败态属预期，
+    门禁由 verify 步骤本身负责）。
+  - 实吃销账记录：PR #8 run 34755875069（https://github.com/xujiujiu0628/
+    embedded-toolkit/actions/runs/34755875069）——**失败态产物消费成功**，
+    日志 `Using test report parser 'java-junit'` + check run "Sim Verify
+    Results" 摘要 "0 passed, 1 failed and 4 skipped"，四态映射逐条正确
+    （FR-SYS-01/FR-TGL-01/FR-ADC-01/FR-FUTURE-1 skipped + preflight
+    failed），`if: always()` 设计在真实数据上得证；M-4 闭合。
+  - 订正（fresh-checker M-1/M-2, 2026-09-13, append-only——上行走措辞失实
+    就地订正如下）：① 上行"check run 'Sim Verify Results'"**不实**——
+    v3.0.0 默认 `use-actions-summary: true` 走摘要模式（只写
+    GITHUB_STEP_SUMMARY，从不 `checks.create`），实证：该 run 远端
+    check-runs 列举 18 条无 Sim Verify。首吃证据成立本体收窄为：run
+    34755875069 日志中 java-junit 解析 + 四态映射（摘要模式）；check run
+    形态待复观。② 本 run 销账所用配置系**修订前配置**（`fail-on-error`
+    当时默认 true，步骤判绿靠 continue-on-error 兜底）；终态配置（新增
+    `use-actions-summary: false` 显式贴 spec "PR 页面出现检查结果" 原意 +
+    `fail-on-error: false`）尚未被远端执行——复观挂终态配置 push 后下轮，
+    M-4 状态相应回退为"闭合中"（README 同步）。
+  - 预置债两笔（同 run 暴露，均非本条引入，登记 README 已知遗留）：
+    ① sim-demo job 在 CI ubuntu runner 上 build_failed（errors=-1，
+    190ms；该 job 自 F-150 入仓从未真跑过 CI，本地全绿，根因待查，
+    D-3 候选）；② 计时脆弱钉抖动——test_state_write_lock 超时降解钉
+    （ubuntu/py3.12）与 test_runtime_contract `elapsed_ms>=1000` 钉
+    （windows，实测 999<1000），F-159 加固残余边界。
+  - 复观记录（2026-09-13, append-only, M-4 终态定稿）：终态配置
+    （`use-actions-summary: false` + `fail-on-error: false`）已获远端执行——
+    PR #8 run 34762552201（head 20e350d）产出 check run "Sim Verify Results"
+    （check 103737895345，https://github.com/xujiujiu0628/embedded-toolkit/
+    runs/103737895345）：已创建且通过，输出摘要 "0 passed, 1 failed and
+    4 skipped"（失败态产物被消费，`checks.create` 生效）。check run 形态成立，
+    与首吃（run 34755875069 日志解析，摘要模式）构成双形态证据；sim-demo job
+    本体仍红属预置 ubuntu build_failed 债（上行 ①），不阻塞本 check 结论。
+    fresh-checker M-1/M-2 残余勾销，README M-4 改"已闭合"。
+
+- **F-163 (总工单遗留 L-4) verify.step_flash 接入 N-3 构造性标记 — rc=0 且标记在场才算烧成，feat+test+docs，openocd_run.py / verify.py / tests/test_openocd_n3_marker.py / tests/test_verify_failure_paths.py / README / CHANGELOG**:
+  L-4 登记的 N-3 覆盖洞闭合（F-155 只覆盖 openocd_run 的 flash/erase，
+  `verify.step_flash` 直连 openocd `program` 的高频真机路径不经该链）。
+  ① **共享件抽取**：`openocd_run.ACTION_DONE_CMD` 公开别名 +
+  `marker_present()` 纯函数（缺席判定单实现，无双漂移）；② **cmd 串尾
+  echo**：`program {hex} verify` 后接 `-c ACTION_DONE_CMD -c exit`——
+  exit 截胡时标记 echo 不会在场，"脚本没跑完"获得构造性证据；reset 不再
+  挂在 program 串内，由主流程 post_reset（F-129）与 capture 会话各自
+  reset halt 起点负责；③ **缺席判定**：rc=0 但 stdout+stderr 无标记 →
+  `action_incomplete` error 拒绝按成功入账（构造性证据优先于退出码，
+  与 openocd_run 同款判据；OpenOCD 日志走 stderr，校验拼接同款第 305 行
+  `combined` 口径）；④ 测试：红基线三例（rc0+标记 ok / rc0 无标记拒 /
+  rc≠0 旧契约不变）转绿，共享件三钉在 test_openocd_n3_marker。真机复验
+  待 Task 5（本条为 host 层证据；`program` 拆序后 halt 态衔接结论回填此条）。
+  - 追加（M-4a, 审核 Minor 即时收口）：`_run_flash_step` attempts 消费端
+    补 message 回退——旧 `flash.get("stderr", get("stdout", ""))` 对
+    message-only 错误 dict（action_incomplete / 无 hex）恒得空串，根因在
+    最终 JSON 隐身；改为 stderr/stdout 缺席时回退读 message，
+    `attempts[].message` 现在能看见 `action_incomplete` 字样
+    （测试钉 FlashAttemptsMessageFallbackTests，fail-closed 行为不变）。
+  - 真机复验 2026-09-13（L-4 销账，Task 5）：adc-oled 在位闭环——
+    flash 带标记 PASS（attempt 1 即成、无 retry，`** Verified OK **` 后
+    `MARK_ACTION_DONE` 在场）、capture rtt 91 行 ok、post_reset=ok、
+    evidence=hardware_validated。反证抽查一次：临时删除 cmd 中
+    `ACTION_DONE_CMD` 段重跑，flash 即报
+    `action_incomplete: 构造性标记缺席`（rc=0 无标记被拒入账），
+    证实标记判定在真机路径生效；`git checkout` 还原后工作树干净，
+    破改态未进任何 commit。ALERT/ADC-02 两项因旋钮未拧满
+    （mv≈105<3000，且低电压 raw 为空格右对齐不匹配 `\d+`）FAIL，
+    属 09-13 已知人工交互缺口非本工单回归（两次运行
+    expectations_sha256 一致，capture/verify 路径 F-163 未触碰）。
+  - 边界说明（fresh-checker L-1, append）：上文"reset 由 post_reset 与
+    capture 起点负责"仅覆盖正常收尾链——capture 失败早退路径
+    （`verify.py` sim/rtt/semihosting 三处失败 `sys.exit(1)` 及
+    `_finish_capture_timeout` 收尸出口，行号锚 917/944/978 系当次快照）
+    不做复位，目标滞留 halt 残留态；下一轮 run 经 capture 起点
+    `reset halt`（或直接烧录）自愈，非累积性状态污染，属已知可接受边界。
+
+- **F-161 (审核退回 M-1/M-2/M-3/M-4/M-5/L-1~L-5) fresh-checker 终审处置，fix+test+docs，hw_lease.py / test_hw_lease.py / CHANGELOG / README**:
+  终审"通过但有保留" (C0 H0 M5 L5)。① **M-1**: `hw_lease.release()` 对
+  "合法 int 但失效 fd"裸抛 OSError 违反恒返回 dict 契约——`_unlock_byte`
+  改返回 bool、release 捕获后报 ok=False 说明"fd 失效→OS 已随 close 放锁、
+  重取无碍"（verify 收尾 8 出口不得 traceback）; ② **M-2**: release 删锁
+  本体文件引入"旧 inode 持锁者+新 inode 获取者"共持窗口 (OS 锁锁 inode
+  不锁路径)——锁本体改为留置不删 (代码注释自证"文件留置无害", 删除操作
+  恰多余), meta 旁车照清; 测试随契约: 新 M-1/M-2 两钉 +
+  `test_winner_holds_lock...` 的"锁文件已清理"断言翻转重取钉。终审 M-2
+  为静态推理未实测复现, 本钉为结构性消除; ③ **M-5**: CHANGELOG 16 处
+  `@ 本条 commit` 占位符按 git 对账回填真实短 hash (F-145=17232a5 …
+  F-160=bbe9295, 顺序以条目内文号为准); ④ **M-3**: README 路线图补
+  D-3 点名的学术引用登记 (arXiv:2509.09970 编号照录, 内容本机网络不可达
+  如实标"未核实"); ⑤ **M-4/L-4**: 已知遗留两条入账 (junit reporter 实吃
+  未验证 / verify.step_flash 不经 N-3 标记链); ⑥ **L-1/L-2/L-3/L-5**:
+  节标题 T9 重复笔误修正 + 号段跳空注记 + lint E2 缺 id 标签
+  `expectations[0]`→`<idx 0>` 漂移登记 (行为等价, 文本无消费方, 不再改
+  回以免牵动逐字钉) + 交接文档"9 例 hooks 失败"与实测 7 例全过的精度差
+  记账。终审全文与复现命令见桌面《Claude审核交接文档》§9 回填。
+
+- **F-154 (T10/P2-6) 红基线 22 钉转绿 — 边角缺陷打包实现，fix+test，serial_monitor / physical_gate / svd_to_json / rm_lookup / duration_profile / openocd_telnet / openocd_run / openocd_gdb / openocd_itm / capture_semihosting / serial_mux / serial_runtime / runtime_common**:
+  F-133 红基线 (tests/test_p2_edge_pack.py, 16 用例 22 断言) 逐条实现:
+  **a** `serial_monitor.emit_line` 过滤器异常 fail-closed + stderr 告警
+  (旧 except pass = 坏过滤器全放行污染监控输出); **b** `physical_gate`
+  expected<=0 前置守卫 — 碰子进程前短路返回 probe_error (旧版除零使
+  deviation 恒 0 恒绿); **c** `svd_to_json` 删 `resolve_derived_from` 死
+  函数 + `merge_into_ref` 不再硬编码覆写 `_meta.version/updated` (ref
+  语义版本与是否跑过 SVD 同步无关); **d** `rm_lookup.format_result` 增
+  显式 ref_data 参数 (库态调用不再 NameError), `--list` 的 peripherals
+  裸下标改 `.get` 链; **e** `duration_profile` 工程根发现收编
+  `wb_common.find_project_root` (本地 while 上溯简版缺双布局兜底);
+  **f** `openocd_telnet`: 新增 `parse_hex_addr` (地址必须 0x 前缀十六
+  进制, 十进制 "134217726" 曾被 int(x,16) 静默误读) + 地址类动作在启动
+  OpenOCD 前显式解析, 非法 → invalid_address 错误契约; **--exe 缺省
+  None 走 resolve_param 链 (cli>config.exe>machine.json>PATH, 旧
+  default="openocd" 使配置永不生效 — 行为变更)** + gdb/telnet 端口缺省
+  None 读工程配置 (openocd 段 gdb_port/telnet_port), 非整数 →
+  invalid_config 契约; **g** `openocd_run` operation_mode 非数字 →
+  invalid_config JSON 错误契约 exit 1 (旧版裸 ValueError traceback;
+  附带 output_json 的 reconfigure 加 StringIO 重定向守卫); **h** 三入口
+  `ROOT_DIR=parents[2]` 无效锚清除 (指向仓外 D:\ 层, 插 sys.path 从不
+  命中); **i** `capture_semihosting`+`serial_mux` Popen 补
+  `hidden_subprocess_kwargs()` (Windows 不弹控制台窗; serial_runtime
+  增补该再导出); **j** `save_json_file` 写失败 finally 清 .tmp 残骸;
+  **k** `get_serial_config` 注解修正 `tuple[dict | None, dict]`。
+  验收 = 22 钉全绿 + 全量回归 (合流时 Claude 复审重点抽查项)。
+  （zc/hardware @ 4e7ccd2，待审）
+- **F-155 (T8v2/N-3) openocd 构造性标记法 — flash/erase 完整性证据，feat+test，openocd_run.py / tests/test_openocd_n3_marker.py (新)**:
+  OpenOCD 克隆适配器偶发打印吓人文案 (Error:/Warn: 行) 但脚本实际完整跑完
+  ——旧"退出码 + 措辞嗅探"两头吃亏。flash/erase 命令串尾追加
+  `echo MARK_ACTION_DONE`, 只有脚本真跑到底标记才在场; **成功 = exit 0
+  且标记在场**, exit 0 但标记缺席 → `action_incomplete` 拒绝按成功入账
+  (构造性证据优先于退出码); 失败措辞行收集进 `details.backend_warnings`
+  (截尾 10 行) **不改判**; probe/targets 只读动作不上标记 — rc!=0 +
+  jtag_tap/core 实证的既有豁免原样保留 (F-090 契约不动)。在 F-154 的
+  f/g/h 改动之上叠加 (同文件, 顺序按任务清单 T8 在 T10 之后)。
+  测试 `tests/test_openocd_n3_marker.py` 5 例 (三条验收 mock 钉: 标记在
+  串尾且成功 / 措辞行留痕不改判 / exit 0 无标记 → action_incomplete;
+  rc!=0 → command_failed 不变; probe 反向钉), test_hw_lease 假 openocd
+  输出补标记 (夹具随契约同步)，先红后绿。
+  （zc/hardware @ c28812c，待审）
+- **F-156 (T9v2/P2-1) serial 族剩余收编 — 规范输出/公共骨架/状态映射/扫描去重，refactor+test，serial_runtime / serial_monitor / serial_hex / serial_send / serial_log / serial_scan / openocd_runtime / openocd_run / openocd_gdb / openocd_itm / openocd_telnet**:
+  ① **output_json 规范版**: serial_runtime 新增 `output_json` (indent=2,
+  原 send/log/scan 本地副本形态) 与 `output_jsonl` (紧凑单行, 原
+  monitor/hex JSON Lines 形态) — 两种字节形态不可互替, 五入口本地副本
+  删除改 import, 身份钉+逐字节钉锁死 (实测 reconfigure+print 与 buffer
+  直写在真实 stdout 字节一致, 取 print 形兼容测试缝; output_json 自
+  runtime_common 再导出列表移除, F811 清零); ② **公共骨架**:
+  `resolve_serial_config` (取配置→失败分流→写回确认配置) +
+  `connect_serial` (开串口+mux 警告) — 四工具 85% 同文块删除, fail 回调
+  注入各家 error_exit 签名差异, mux 警告文案经 mux_warn 参数化
+  (monitor/hex/log 与 send 的文案差异保留); monitor 的正则编译等中间步
+  原顺序保留; ③ **PARITY_MAP ×4 死码删除** (monitor/hex/send/log 模块级
+  定义零引用; open_serial_port 内功能性本地映射保留); ④ **_state_lookup
+  ×3.5 收编 openocd_runtime.state_lookup** — run/gdb/itm 三份逐字拷贝 +
+  telnet 内联第四份合并为超集单实现 (gdb 的 gdb_port/telnet_port/
+  elf_file/debug_file + run 的 flash_file 并入, 各入口按需取键), 四入口
+  `_state_lookup` 改别名 (调用面不变); ⑤ **serial_scan** 本地 40 行扫描
+  副本删除改委托 `serial_runtime.scan_serial_ports` (load_chip_map 保留
+  — test_zero_cov_finish 钉在; 错误态 ports None→[] 收敛, main 只判 err
+  行为不变)。
+  测试: 新 `tests/test_serial_dedup.py` 12 例 (身份钉×2/字节钉×2/死码×1/
+  scan 委托×1/骨架×6) + test_openocd_dedup 补四入口 _state_lookup 身份
+  钉; 共享测试缝迁移: test_serial_log_record 改 patch
+  resolve_serial_config/connect_serial, test_zero_cov_finish 的 scan
+  错误态断言与 hex json-mode 假 stdout 随收编更新 (共享测试文件改动
+  记账); 全量 840 例仅 9 例本机 WSL 环境失败 (CI ubuntu 正常)。
+  （zc/hardware @ 4aead90，待审）
+- **F-157 (T10b/P2-3) 双源收敛 — 判据/时间戳/哈希/原子写/咒语五族归一，refactor+test，expectations.py / expectations_lint.py / wb_common.py / runtime_common.py / verify.py / hardfault.py / feedback_db.py / release.py / release_audit.py / gen_periph.py / phase_minus_one.py / rm_lookup.py / coverage_lint.py / duration_profile.py / fsd_coverage.py**:
+  ① **expectations E2~E8+E12/E13 双写收敛**: 新增
+  `expectations.item_rule_errors(item)` 单一判据源 (check_forbidden_fields
+  同款 (code,core) 模式), loader (首条 raise) 与 lint (全量收集) 双消费方
+  拼接各自的 label 形态 — 消息文本逐字保持; E2 id 重复 (跨条目) 与 E9
+  min>max (结构矛盾) 仍归 lint 专项 (loader 不查的语义分工不变);
+  ② **now_iso 三份收编**: verify/hardfault/feedback_db 的 UTC+8 硬编码
+  本地版删除, 统一 runtime_common 共享版 (`datetime.now().astimezone()`)
+  ——**时区口径变化: UTC+8 固定 → 本机本地时区** (checkpoint_ledger:10-12
+  有账; 本机即 +08:00 零可见变化, 非 +08 时区机器上新台账时间戳随本地
+  时区), CHANGELOG 记账; ③ **sha256_file ×2 收编** wb_common (release/
+  release_audit); ④ **load_ref ×3 收编** wb_common (gen_periph/
+  phase_minus_one/rm_lookup, REF_PATH 同迁); ⑤ **原子写行尾统一**:
+  runtime_common.save_json_file 补 newline="\n" 与
+  wb_common.atomic_write_json LF 口径对齐 (此前 Windows CRLF/LF 两套,
+  注释固化 + 收敛); ⑥ **feedback_db 改 wb_common.atomic_write_json**
+  (save_feedback_db/save_calibration; F-014 .corrupt 兜底保留) +
+  test_writeback_guards 新增 FeedbackDbAtomicWriteGuardTests (损坏读 →
+  .corrupt 现场 → 原子写回 → 零 tmp 残骸); ⑦ **UTF-8 reconfigure 咒语 ×5
+  收编** `wb_common.force_utf8_streams` (coverage_lint/duration_profile/
+  expectations_lint/feedback_db/fsd_coverage; StringIO 无 reconfigure 静默
+  跳过)。
+  测试: test_writeback_guards +1 类 (feedback_db 原子写卫兵) — 其余靠
+  既有 841 例全量回归零语义漂移钉死 (lint E1~E13 消息、loader 报错文案、
+  发布记录字节全部原样)，先红后绿。
+  （zc/hardware @ f382438，待审）
+- **F-158 (T11/P2-4) gen_periph 数据外置 + phase_minus_one 占用表外置，refactor+test，data/stm32f103-gen-maps.json (新) / gen_periph.py / phase_minus_one.py**:
+  ① **gen_periph 数据外置**: GPIO_BASE/GPIO_CLOCK_BIT/GPIO_CR_OFFSET/
+  GPIO_MODE_MAP (CNF:MODE)/TIM_CH_PINS/TIM_CLOCK_BIT/TIM_BUS/
+  TIM_IRQ(函数内 irq_map)/I2C_CLOCK_BIT/SPI_CLOCK_BIT/SPI_BAUD_DIV/
+  I2C_SPEED_MODES 十二张表外置 `data/stm32f103-gen-maps.json` — 生成器
+  纯逻辑, 数据单一事实源; 载入后还原与旧字面量完全相同的内存形态
+  (tuple 键/整型键/元组值: JSON "TIM2:1"→("TIM2",1), "100000"→100000,
+  list→tuple), 全部调用点与 argparse choices 零改动。**硬验收: 黄金母版
+  生成物逐字节不变** — test_gen_periph 黄金钉与语法烟测 67 例原样全绿
+  即证。② **phase_minus_one 占用表外置**: 仓内硬编码 FIXED_PINS (维护者
+  adc-oled 专属引脚占用, 数据走私) 删除, 改读工程
+  `.workbench/fixed_pins.json`; **缺省 (文件不在场) 跳过冲突检查不报错**
+  (check_pin_conflicts 第三参 None → OK+skipped 说明); check_pin_conflicts
+  未用 ref 参清除; run_check 死参 features (解析即弃) 删除, --features
+  CLI 旗标同删 (从未参与判定); run_check 增 workspace 形参 (main 经
+  find_project_root 注入)。测试: test_zero_coverage_pure 的 pin_conflict
+  用例改传占用字典 + 新增 skip 分支钉, run_check 冒烟调用随签名更新
+  (共享测试文件改动记账)。
+  （zc/hardware @ d18cbee，待审）
+- **F-159 (T12/P2-7) 测试套加固 — 三处易碎钉根治，test，test_gcc_build.py / test_verify_failure_paths.py / test_serial_mux_lifecycle.py**:
+  ① `test_gcc_build_source_uses_ms_conversion` 文本钉 ("* 1000" 子串匹配)
+  **AST 化**: 遍历 gcc_build.py 的 make_timing Call 节点, 断言实参子树含
+  Mult×1000 BinOp — 换行/空格/写法漂移不再假红假绿 (行为钉
+  test_timing_ms_is_milliseconds_not_seconds 兜底不变); ②
+  `test_verify_failure_paths` 两处 argv 位置索引 `call_args.args[0][3]`
+  → 按值定位 `cmd[cmd.index("--log") + 1]` — feedback_db 命令行参数顺序
+  调整不再误读; ③ `test_serial_mux_lifecycle` 端口 29876/29877 硬编码 →
+  `serial_mux.find_free_port()` 动态空闲口 + 死亡标记 setUp 先清 +
+  addCleanup 兜底 — 全局 tempdir (tempfile.gettempdir()/serial_mux/) 的
+  跨运行残留不再假绿/假红。
+  （zc/hardware @ 3ec908b，待审）
+- **F-160 (T13/P1-4) verify.py main() 拆分 — 550 行编排分解为九段纯接线，refactor，verify.py**:
+  B-1/N-1/N-2/C-1/N-4/N-3 全部进仓后的行为零变更重构 (机械块级搬移, 零改
+  写): `main()` 瘦身为 parse→doctor 分流→pipeline 三行接线; 新增九段 —
+  `_parse_args` (argparse 装配) / `_run_doctor` (诊断分支) /
+  `_prepare_context` (工程根发现+配置/版本装载) / `_run_build_step`
+  (build+analyze+重试) / `_run_flash_step` (设备锁+flash+重试) /
+  `_run_capture_step` (sim/rtt/semihosting 三后端分派) / `_run_judgement`
+  (HardFault 检测+物理门控+四态判定+顶层 status) / `_finalize_run`
+  (post_reset+租约释放+失败现场+落账+checkpoint+唯一出口) / `_run_pipeline`
+  (编排骨架串接)。早退 sys.exit 语义、exit 0/1/2 契约、_JUNIT_OUT 与
+  WORKSPACE 模块级状态、全部步骤函数调用面原样保留。
+  **硬验收**: ① 全量 842 例零测试文件修改仍全绿 (仅本机 WSL 缺席的 9 例
+  hooks 环境失败, CI ubuntu 正常); ② `--json` 输出逐字段结构一致 —
+  sim-demo 端到端实跑比对拆分前后顶层/steps/capture/verify 键集合与
+  status/evidence/records/post_reset 值完全相同。顺手收 verify.py --doctor
+  帮助文本 "四键→三键" 一行 (F-131 拆挂项; doctor.py 侧 F-131 已改)。
+  （zc/hardware @ bbe9295，待审）
+
+- **F-145 (T1/B-1 v2 修订) 机器级设备锁 — OS 级文件锁 + 用户目录 device-locks，feat+test+docs，hw_lease.py (新) / verify.py / openocd_run.py**:
+  同一探针/板子同时只被一个 agent 占用——这是 P1-3 (F-127 state 写锁) 的
+  功能级答案: state 锁防数据竞争, 设备锁防硬件资源竞争 (两个并发 verify 抢
+  ST-Link, 后者烧到一半被前者复位)。设计按总工单 v2 修订三点: ① 锁本体 =
+  OS 级文件锁 (Windows `msvcrt.locking` / POSIX `fcntl.flock`, 非阻塞独占
+  1 字节), **进程崩溃 = OS 自动释放, 不做 PID 探活 (F-117: Windows os.kill
+  是 TerminateProcess) 不做 mtime 超期回收** (OS 锁无泄漏, 无需兜底);
+  ② 锁位置 = 机器级用户目录 `%USERPROFILE%\.embedded-toolkit\device-locks\
+  <device>.lock` (同一台机两份 clone 互斥), 元数据 acquired_at/pid/token/
+  purpose/workspace 写同名 `.meta.json` 旁车 (崩溃残留由下次成功获取覆写);
+  ③ 冲突 fail-fast → error 含 `resource_busy` 并点名持有者 purpose +
+  acquired_at, `--lease-wait N` (verify/openocd_run 双 CLI + acquire(wait=N))
+  有界等待 (0.2s 轮询)。接入点: verify flash+capture 段全程持有 (胜利方
+  flash 执行瞬间锁在场; 正常出口 / flash_failed / capture 三处失败早退 /
+  HIL 守卫拒绝 / capture 超时 (_finish_capture_timeout 新增 lease kwarg) /
+  HIL capture 守卫拒绝共七类出口全释放), openocd_run flash/erase 动作粒度
+  acquire→subprocess→finally 释放 (probe/reset 只读不抢), 默认设备名
+  "stlink" 两工具同名互斥, `ETK_DEVICE_LOCK_DIR` 支持多环境重定向。
+  hw_lease.py CLI (status/acquire) 供人工排查; release 子命令如实说明
+  "OS 锁只认持锁 fd, 不能跨进程代放"。README 工程契约节补设备锁段。
+  测试 `tests/test_hw_lease.py` 18 例: 验收五条 (获取含旁车字段 / 冲突
+  fail-fast 点名持有者 / 正常释放可重取 / **真实 subprocess 持锁再 kill
+  后立即可重取** / 与 F-127 state 锁共存互不干扰) + 伪造 lease dict 不可
+  释放 / 有界等待成败两侧 / 设备名命名空间 / 环境重定向 / verify 集成
+  四钉 (一成一败, 败方 exit 2 报错可行动) / openocd_run 集成四钉
+  (flash/erase 上锁, probe 零 acquire, resource_busy code)，先红后绿;
+  全量 743 例仅本机 WSL 缺席的 9 例 hooks 环境失败 (CI ubuntu 正常)。
+  （zc/hardware @ 17232a5，合流待协调）
+- **F-146 (T2/A-1 v2 retro-fit) evidence 命名对齐 AEL 四档 + 发布记录 fidelity 契约 + approve 批准回填，feat+test+docs，verify.py / release.py / release_audit.py / README**:
+  F-128 落地的三档证据分级按总工单 v2 修订对齐 agentic-embedded-lab 的
+  claim+fidelity 五级命名 (裁剪 model_dependent): `real-hardware` →
+  `hardware_validated`、`simulator` → `simulation_validated`、`static` 不变,
+  新增第四档 `production_approved`——**一次性切换不留别名** (仓内无外部
+  消费方, 行为变更由本条目与 README 注记说明迁移)。verify.py 新增
+  EVIDENCE_LEVELS 四档元组; production_approved 不由 verify 产出, 是
+  release_audit 新增 `--approve <tag>` 在发布后对 hardware_validated 记录的
+  人工批准回填——record 必须 ① 存在可解析 ② R1~R8 审计无 fail ③ 现有
+  evidence == hardware_validated (仿真/静态/已豁免记录不配"投产"), 通过后
+  原子写 (F-022 同款 tmp+replace): evidence 翻转 + `production_approved_at`
+  批准留痕 + fidelity_boundaries 追加批准声明, signature 保持留空不假装
+  已签; R8 对 production_approved 缺批准留痕 = fail (手工改值视同篡改),
+  带留痕 = pass。release.py: G2 门措辞同步新命名; 发布记录补 fidelity
+  契约字段——`fidelity_boundaries` 按证据等级落"证明了什么/没证明什么"
+  边界声明 (默认值表 _FIDELITY_BOUNDARIES, 显式传入胜出)、`limitations`
+  缺省空列表 (不虚报)、`signature` 留空占位。release_audit 模块定位从
+  "只读"改为"默认只读, --approve 唯一写路径" (模块 docstring 同步)。
+  README 证据分级表改四档 + 迁移说明 + fidelity 字段说明。
+  测试: test_verify_evidence +1 例 (EVIDENCE_LEVELS 四档契约 + verify
+  运行永不产出 approved), test_release +2 例 (fidelity 契约默认/自定义),
+  test_release_audit +6 例 (approved 缺留痕 fail / 带留痕 clean / approve
+  回填主路径含 signature 不动 / 非真机证据拒绝 / 篡改记录拒绝 / 幂等),
+  既有 evidence 字面量全量改名 (9+6+4 处); 全量 752 例仅本机 WSL 缺席的
+  9 例 hooks 环境失败 (CI ubuntu 正常)。
+  （zc/hardware @ 2d3e9b4，合流待协调）
+- **F-147 (T3/N-1) verify --junit-xml JUnit 报告旁路，feat+test+docs，junit_xml.py (新) / verify.py**:
+  CI 测试面板只认 JUnit XML — verify 的四态判定与 preflight 拒绝此前在
+  GitHub Actions test report 里不可见。新增 `scripts/junit_xml.py` (生成
+  逻辑全部住这里, 纯函数可测), verify.py 只做最小接线 (argparse + 唯一
+  出口汇点 _output, 模块级 _JUNIT_OUT 由 main 设置): 映射契约按总工单
+  v2 N-1 全文——expectations 逐条 → testcase; pass → 直认; fail →
+  `<failure type="fail">`; xpass → `<failure type="xpass">` (XPASS 判红,
+  文案提示翻转 xfail); **xfail 未翻转 → `<skipped>`** (欠条不是通过,
+  报告不计失败, 文档明写); lint/preflight 拒绝 (build/flash/capture 失败
+  等没跑到判定的状态) → 期望清单逐条 skipped (ID 从 workspace 的
+  expectations.json 现读) + 一条 preflight `<error>` case 点名 status/error;
+  **只写实测时间** (testsuite time = elapsed_sec 正数才写, testcase 不编造
+  per-case 时长); 父目录自动创建; 写失败不抛 — result 记 `junit_xml_error`
+  且**拉低退出码** (ok 判定 + 报告没落盘 = exit 1, CI 必须知情报告缺失);
+  早退运行同样经 _output 出报告 (preflight 形态)。
+  测试 `tests/test_junit_xml.py` 15 例: 四态映射 / preflight 全 skipped+
+  error / 无期望仍留 error case / XML 可解析+计数正确 (failures=2 含
+  xpass, skipped=1) / 特殊字符 id 转义不破格式 / time 只在实测时写 /
+  父目录自动创建落盘可解析 / 写失败错误信封 / main 端到端 / 写失败拉低
+  退出码; 全量 762 例仅本机 WSL 缺席的 9 例 hooks 环境失败 (CI ubuntu
+  正常)。
+  （zc/hardware @ 0f89c69，合流待协调）
+- **F-148 (T4/N-2) 期望判定三件套 — 行终止符防早判 / ordered 按序 / record 命名捕获组，feat+test+docs，expectations.py / expectations_lint.py / verify.py**:
+  ① **行终止符语义 (防早判)**: "未终止的值超时才判"——判定发生在采集窗
+  超时后, 全文 (含未终止尾行) 参与匹配; 当存在已终止前缀而命中避开它
+  (值只落在未终止尾行) 时, 结果行标注 `unterminated_hit: true` (值可能
+  在窗口关闭瞬间被截断, "mv=319" 实为 3192 前缀, 数值断言消费方谨慎采信),
+  **状态不变零回归** (全文无任何终止行时不标注——半主机收尾常无换行, 无
+  相对信号可归因; 该语义取舍登记, 主控可否决)。② **ordered: true 按序
+  命中**: texts 依次 find(自上一命中末尾)、patterns 依次
+  re.search(output, pos)(自上一 match.end()); 默认 False 既有"任意位置
+  命中"逐字节不变; capture_group 数值断言仍作用于 patterns[0] 首个
+  match。③ **record 命名捕获组**: patterns[0] 全量匹配 (finditer), 每次
+  匹配一行 {组名: 值} — 行级 results[*].records + verify 顶层 `records`
+  平铺数组 ([{id, 组名: 值}, ...]); 与 capture_group/min/max **互斥**
+  (全量记录 vs 首匹配定界, 二选一), loader 四重校验 (非空字符串数组/
+  仅与 patterns 搭配/互斥/命名组须在 patterns[0] 定义) 抛
+  ExpectationError, lint 新增 **E12** (record 同判据) 与 **E13** (ordered
+  须为布尔), 判据单一事实源不另起分叉。
+  测试 `tests/test_expectations_f148.py` 17 例 (独立文件—避免与 P2-3
+  双写收敛的共享测试冲突面): 尾行标注/无终止行不标注/截断值仍按数值边界
+  fail/标注不翻四态 (含 xfail+尾行命中仍 XPASS 红)/ordered 文本与正则
+  顺序成败/无 ordered 键零回归/ordered×capture_group/records 行级+顶层
+  平铺/多命名组/无命中空数组/loader-lint 校验×6 (先红后绿);
+  test_verify_expectations 的 master 基线钉按新增 records 聚合键同步
+  (共享测试文件改动登记)。全量 782 例仅本机 WSL 缺席的 9 例 hooks 环境
+  失败 (CI ubuntu 正常)。
+  （zc/hardware @ 500bbcf，合流待协调）
+- **F-149 (T5/C-1 spike) qemu-system-arm 跑 STM32F103 可行性 — 结论 GO，docs，spikes/c1-qemu-spike/ (新, 可回放现场)**:
+  实测环境 QEMU 11.1.0 (Windows x64, winget `SoftwareFreedomConservancy.QEMU`
+  一键装; **CI 安装路径: ubuntu `apt-get install qemu-system-arm`**) +
+  arm-none-eabi-gcc 10.3.1。机器模型 `-M stm32vldiscovery` (STM32F100,
+  Cortex-M3) 确认在 QEMU 支持列表 (另一 M-profile 选项仅 olimex-stm32-h405,
+  Cortex-M4)。三个实验 (spikes/c1-qemu-spike/ 可回放):
+  ① printf 全文采集 ✓ — semihosting SYS_WRITE0 (`-semihosting-config
+  enable=on,target=native`) 输出走 **stderr** (与 OpenOCD semihosting 采集
+  stdout+stderr 合并的既有口径一致); ② 超时行为 ✓ — 固件自旋时外部 kill,
+  部分输出仍完整可采 (对齐 F-003 归因纪律: 采集超时是工具故障不是程序无
+  输出); **关键发现: M-profile 旧 SYS_EXIT(0x18) 被 qemu 无声忽略, 进程
+  永不退出** — 必须 SYS_EXIT_EXTENDED(0x20) (r1 指向 64 位
+  {ADP_Stopped_ApplicationExit, 0} 内存块) 才干净退出, sim 后端模板与
+  C-1 实现须用 0x20, 自旋固件依赖外部 timeout; ③ 附加: USART1 直写 DR
+  转发到 `-serial stdio` 的 **stdout** (qemu 不 gate RCC 时钟位) — UART
+  备选通道可行。Renode 未测 (本机未装): qemu 通路已证足, 方案定为
+  **qemu-system-arm + semihosting 单一后端** (不引 Renode 双方案)。
+  结论 **GO** → T6 立项: capture_sim.py 驱动 qemu, method="sim",
+  evidence="simulation_validated" (不进发布门禁, F-146 呼应)。
+  （zc/hardware @ 335b57e，合流待协调）
+- **F-150 (T6/C-1) capture.backend: "sim" — 无板全链路闭环，feat+test+docs，capture_sim.py (新) / verify.py / examples/sim-demo (新) / ci.yml / machine.example.json / .gitignore**:
+  基于 F-149 spike GO 结论, qemu-system-arm + semihosting 单一方案 (不引
+  Renode)。新增 `scripts/capture_sim.py`: 命令形态 `-M <machine> -kernel
+  <elf> -semihosting-config enable=on,target=native -nographic -no-reboot`
+  (spike 实证); exe 解析链 config capture.sim.exe > machine.json **qemu_exe
+  (新可选键, 模板已注)** > PATH > 缺省名; 控制流契约与 capture_semihosting
+  同款 (成功返回 (stdout, stderr) / 超时 SimTimeout 携 proc 不收尸 / 异常
+  原样抛), communicate 双管道排空 + stdin DEVNULL (F-123 readline 地雷不在
+  本路径); qemu 缺席的 WinError 2 裸抛改为点名 exe+解析来源的可行动报错。
+  verify.py 分派: backend=sim → flash 步骤 skipped (带 reason), 内核 =
+  config capture.sim.kernel > 构建 details.elf_file (--no-build 走
+  state.json last_build), 缺内核/文件不在场 → capture_failed 早退;
+  capture method="sim"、evidence="simulation_validated" (F-146 四档直接
+  生效); **不持 F-145 设备锁、不跑 F-046 HIL 守卫、不落 HIL 台账** (sim 非
+  硬件步骤, CI 可并行); post_reset 自动 skipped; 判定逻辑零改动——同一份
+  expectations 四态判定, F-148 record 命名捕获组在 sim 下照常提取。
+  _finish_capture_timeout 参数化 method/tool (sim 超时复用 F-003 收尸/
+  归因出口, OpenOCD 口径逐字节不变)。**CI 大奖**: examples/sim-demo
+  (微型 Makefile 工程 + 自带 .workbench 契约, 四态齐备含 F-148 record)
+  + ci.yml 新 `sim-demo` job (apt 装 qemu-system-arm + gcc-arm-none-eabi →
+  写 CI machine.json → 端到端 verify)——"陌生人克隆"路径第一次覆盖
+  build→capture→judge 闭环判定链。施工实录: -O1 下固件 fault 进不完整
+  向量表 (HardFault 向量取到 .text 字节被当指令执行 → qemu 报 Unsupported
+  SemiHosting SWI 0xdeadbeef), 补全向量表 + 模板定 -O0 后端到端绿;
+  .gitignore 为 sim-demo 的 .workbench 契约文件开白名单 (state/build 仍
+  不入库)。README: 5 分钟上手加"无板闭环"路径, 证据表更新, 工具速查补行。
+  验收: 本机 Windows 真跑端到端绿 (build 0.3s → qemu 0.4s → 四态判定
+  status=ok, evidence=simulation_validated, records=[{id: FR-ADC-01,
+  mv: "3192"}]); 真机路径回归零影响 (791 例仅 9 例本机 WSL 环境失败);
+  文档明写 sim 证据不进发布门禁 (README 证据表 + G2 契约)。
+  测试 `tests/test_capture_sim.py` 9 例 (解析链×3/命令形态+stdin DEVNULL/
+  SimTimeout 携 proc/端到端 green 钉 flash-skip+method+evidence+零锁/
+  缺内核 capture_failed/sim-demo 契约 lint+四态齐备)，先红后绿。
+  （zc/hardware @ a6c277f，合流待协调）
+- **F-151 (T7/N-4) evidence_export — verify 结果/发布记录 → GITHUB_STEP_SUMMARY，feat+test+docs，evidence_export.py (新) / ci.yml**:
+  CI 测试页要人话摘要 — verify --json / 发布记录渲染成 Markdown 判定报告
+  (四态表 ✅/❌/⏭/❌ + record 提取值 + F-146 fidelity 字段 + junit 报错
+  留痕 + 采集输出前 500 字符折叠块), 写入 GITHUB_STEP_SUMMARY (追加语义);
+  环境变量不在场/写失败时回落 --out (缺省 job-summary.md)——**if: always()
+  安全**: 输入缺失/非法 JSON 只 exit 2/1 报错不抛 traceback, CI 失败运行
+  的摘要步骤不会把绿变红。脱敏统一走 `redact()`: Windows 盘符路径与
+  POSIX 家目录族 → `<path>` (workspace 根/TOOLKIT_ROOT → `<toolkit>`,
+  长前缀先替换), **machine.json 内容从不被读取** — 摘要可能进公开 CI 页
+  (SENSITIVE_FINDINGS 脱敏口径)。ci.yml sim-demo job 接入实际用法
+  (`tee verify-result.json` + `if: always()` 摘要步骤) 作文档示范。
+  测试 `tests/test_evidence_export.py` 12 例: 渲染×3 (四态标记/record 值/
+  junit 报错/发布记录含批准留痕与签名占位) / 脱敏×3 (双平台路径/长前缀
+  优先/machine.json 键值零进入红线钉) / 降级落盘×3 (无 env 回落/GH 追加
+  语义/GH 写失败回落并留痕) / CLI×3 (端到端脱敏输出/非法 JSON exit 2 无
+  traceback/缺失输入 exit 2)，先红后绿; 全量 803 例仅 9 例本机 WSL 环境
+  失败 (CI ubuntu 正常)。
+  （zc/hardware @ 63dbb78，合流待协调）
+- **F-152 (T8/D-1) 真机 CI 冒烟 workflow — self-hosted runner 门控，feat+test，hw-smoke.yml (新) / tests/test_workflows_valid.py (新)**:
+  新增 `.github/workflows/hw-smoke.yml`: `workflow_dispatch` 手动触发 +
+  `if: vars.HW_RUNNER_READY == 'true'` 仓库变量门控 — **仓库未配置真机
+  runner 时永不运行**, 主 CI (ci.yml) 零影响。内容: self-hosted windows
+  runner 上 doctor 环境矩阵 (含 SWD 连通性) → 仓库变量 `HW_VERIFY_PROJECT`
+  在场时对指定真机工程跑完整闭环 verify (schedule origin, F-046 审计
+  口径; 未设置则仅 doctor 冒烟——真机工程不在仓内, 指向由维护者配置) →
+  F-151 evidence_export 摘要 (if: always())。与主 CI sim-demo job 的分工
+  文档化: sim 无板闭环在主 CI, 真机 hardware_validated 证据走本 workflow。
+  验收: 双 workflow `yaml.safe_load` 本地校验通过 (施工中修掉两处
+  "name/run 值含 ': ' 被 YAML 当映射"错误——一处在本文件, 一处在 F-151
+  的 ci.yml machine.json 步骤); 回归钉 `tests/test_workflows_valid.py`
+  3 例 (双文件可解析 / 门控契约钉含 `on:`→True 的 YAML 1.1 坑 / 主 CI
+  六 job 清单完整; pyyaml 缺席环境自动 skip——CI 各 job 零第三方依赖
+  纪律不破)，先红后绿。
+  （zc/hardware @ 012691b，合流待协调）
+- **F-153 (T9/D-3) README 生态位与路线图更新，docs，README.md**:
+  新增"生态位"短节: 同类一句带过 (agentic-hil 的 MCP+租约+plan 门禁 /
+  AEL 的仿真控制面与 claim+fidelity / pytest-embedded、Renode 的仿真判定
+  后端 / hardci、jlink-mcp 的分发路径), 强调本仓独有链路——需求→判定→
+  发布门禁→事后审计→知识沉淀的完整治理链六点 (四态判定+XPASS 判红 /
+  FSD 对账 / G0-G3+R1-R8 证据四档门禁审计 / feedback 校准 / 寄存器知识库
+  +代码生成 / 构建错误知识库)。路线图重构为两节: "已落地/立项方向"登记
+  MCP 接口 (F-130 落地)、无板仿真闭环 (F-150 落地+spike F-149)、分发形态
+  (PyPI/uvx/插件——**已立项未实施**, 风险点=包数据定位策略)、真机 CI 冒烟
+  (F-152 门控形态), 各带调研来源; "已知遗留"节保持 F-031/F-032 等既有
+  编目不动。措辞逐条对仓内实际能力核对过 (mcp_server.py / capture_sim.py /
+  hw-smoke.yml 均在库), 禁止超前宣传 (F-124 纪律): 分发形态如实标"未实施"。
+  （zc/hardware @ 482ba5d，合流待协调）
+
+## Unreleased — 2026-09-12（F-117~ 第三方审查工单第一批 P0 逐条清账）
+
+- **F-117 处置（工单 P0-1 is_mux_alive Windows 杀进程，fix+test，serial_runtime.py / serial_mux.py）**:
+  `os.kill(pid, 0)` 在 Windows 上非探活——CPython 对非 CTRL 类信号一律
+  `TerminateProcess`，每次开串口（`open_serial_port → get_mux_info → is_mux_alive`）
+  都会无条件杀掉被探测的 mux 进程；PID 不存在时 OpenProcess 失败抛 SystemError
+  穿透 `(ProcessLookupError, PermissionError)` 捕获面。修复: Windows 分支改
+  TCP 连通性探测（`connect_ex(("127.0.0.1", tcp_port)) == 0` 即存活，mux 本就是
+  本机 TCP 服务），POSIX 保留原语义。`serial_mux.py:449-459` 的逐字拷贝删除，
+  改 import 共享实现（收编方向见工单 P2-1，本项完成 is_mux_alive 一半）。
+  当前被 mux 的 socat Linux 门掩蔽、`--no-pty` 落地后即爆，属提前拆弹。
+  测试 `tests/test_mux_alive_probe.py` 6 例: Windows 零 os.kill / 死端口 False /
+  缺 tcp_port False / POSIX 双 pid os.kill / 身份钉 `serial_mux.is_mux_alive IS serial_runtime.is_mux_alive`。
+- **F-118 处置（工单 P0-6 EXC_RETURN 解码索引错误，fix+test，hardfault.py）**:
+  `diagnose` 旧实现 `idx = lr & 0xF` 配 4 项表——合法值 0xFFFFFFF1/F9/FD 分别
+  落 1/9/13，最常见的 0xFFFFFFF9（返回 Thread/MSP）恒落 "unknown"，0xFFFFFFF1
+  被错标。修复: 按 ARMv7-M 语义 bit3(返回模式)/bit2(返回堆栈) 取
+  `idx = (lr>>2)&3` 映射回 F1/F5/F9/FD，文案改为"返回到哪"口径，保留值 F5
+  （M3 上 Handler+PSP 非法组合）显式标注不再静默 unknown。
+  测试 `ExcReturnDecodeTests` 4 例（F1/F9/FD/F5，先红 4 后绿）。
+- **F-119 处置（工单 P0-4 gen_adc 通道域校验，fix+test，gen_periph.py）**:
+  `gen_adc` 对 ch 零校验——`--ch 20` 写 SMPR1 保留位（硬件静默无效），负数
+  生成负位移 C 代码（UB）；且 adc 分支是 `main()` 里唯一裸 `print` 出口
+  （F-103 的 `_emit` ERROR→exit 1 收敛漏网），错误产出恒退 0。修复: 库级
+  `0<=ch<=17` 显式 ERROR（仿 gen_pwm F-103 三连守卫），CLI 改走 `_emit`，
+  16/17 内部通道（vrefint/temp）合法放行并生成"无需外部引脚"注记，
+  `--ch` help 同步 ADC 范围（不设 choices: PWM 1-4 / ADC 0-17 共用参数，
+  choices 取交集会伤另一侧）。测试 `GenAdcTests` +4 例（越界/边界/内部注记/
+  CLI exit 1，先红 4 后绿）+ `test_adc_type_requires_pin` 等既有钉零改动。
+- **F-120 处置（工单 P0-2 JSON 模式失败退出码为 0，fix+test，openocd_run/gdb/telnet + serial_mux）**:
+  执行失败的 JSON 出口只 output_json 不退出（run `return`、gdb/telnet 落
+  if/elif/else 后隐式退 0、mux main 全程无退出码），而同文件早段校验失败
+  JSON 分支是 exit(1)——同一契约自相矛盾，机器消费方按 rc 判成败会漏报。
+  统一为 `output_json(result); sys.exit(0 if status=="ok" else 1)` 覆盖四脚本
+  执行结果出口（telnet 本地 `output_json` 拷贝暂留，收编在工单 P2-1 方向
+  一并处理; 早段校验出口本就正确、零改动）。注: mux `stop` 未运行按既有
+  契约是 error（not_running）→ 现在退 1，属契约统一而非回归; 全仓无
+  subprocess 依赖 mux 退出码, verify.py 不在此列。
+  测试 `tests/test_json_exit_code_contract.py` 8 例: 进程内 mock 驱动 main,
+  error→1 / ok→0 正反各钉（先红 4 后绿），gdb 用假 proc 覆盖"真跑失败"分支。
+- **F-121 处置（工单 P0-3 gdb server 启动失败孤儿进程，fix+test，openocd_gdb.py）**:
+  finally 旧条件 `command != "server"` 不区分"启动失败"与"常驻服务正常退出"
+  ——server 模式 ready 未达成（超时但进程仍活）时 sys.exit(1) 穿过 finally
+  也不 cleanup，OpenOCD 留存独占 ST-Link。修复: `server_ready` 标志区分两态，
+  仅 ready 成功的常驻 server 跳过 cleanup，启动失败经 SystemExit 照常回收。
+  测试 `tests/test_gdb_server_orphan_cleanup.py` 3 例: 启动失败必 cleanup /
+  ready 成功不回归 / 非 server 模式原行为零改动（先红 2 后绿）。
+- **F-122 处置（工单 P0-5 gen_pwm TIM1 缺 BDTR.MOE 永远无输出，fix+test，gen_periph.py）**:
+  TIM1 为高级定时器，MOE=0 时 OC 输出被硬件强制关闭（RM0008 §17.4.23）——
+  旧版生成时钟/GPIO/PSC/ARR/CCR/CCMR/CCER/CR1 全套唯独缺 BDTR.MOE，编译通过
+  但永远无波形（B 类静默缺陷）。TIM1 是合法输入（TIM_BUS F-077 认真处理 APB2、
+  gen_timer_int 处理 TIM1 向量），故按工单推荐方案 a 补齐: timer==TIM1 追加
+  `TIM1->BDTR |= (1<<15)`，TIM2~4 无 BDTR 寄存器不得误加。语法烟测的 stub
+  契约本就含 BDTR 成员，`pwm-tim1-apb2` 用例即覆盖 TIM1 输出。templates/docs
+  无引用（grep 零命中）。测试 `GenPwmTests` +2 例（TIM1 有 MOE / TIM2~4 反向
+  钉无 BDTR，先红 1 后绿）+ 烟测 67 例全绿（本机 arm-none-eabi-gcc 在场实跑）。
+- **F-123 处置（工单 P0-7 wait_server_ready 阻塞 readline 使 timeout 失效 + 长会话不排空 stderr，fix+refactor+test，openocd_runtime/gdb/telnet/itm/run）**:
+  三份拷贝（gdb/telnet/itm 的 wait_server_ready）同病——`proc.stderr.readline()`
+  在"进程存活但沉默"时无限阻塞，外层 while-timeout 永不可达（timeout 形同虚设）;
+  且 gdb server 常驻与 itm 主循环 ready 后无人再读 stderr，OpenOCD 刷日志填满
+  管道缓冲（~64KB）后自身阻塞→全链死锁。收编为 openocd_runtime 单实现（正解
+  同 capture_rtt daemon 排空先例）: `_start_stderr_pump` daemon 线程把 stderr
+  灌入有界队列（满丢最旧保活性），主循环 `q.get(timeout=0.1)` 非阻塞轮询墙钟
+  真超时; `wait_server_ready`（gdb/telnet 口径）与 `wait_itm_ready`（itm 口径:
+  全行收集/critical 即时否决/1s grace——契约原样保留）分立，itm 的 error: 词表
+  与 server 版不同属真分叉不强并。同批收编 `build_openocd_cmd`（gdb/telnet/run
+  三副本→参数化单实现, run 传 gdb_port=telnet_port=None 关端口行输出与旧副本
+  逐元素一致; itm 扩展版 F-029 裁决保留本地）、`cleanup`（gdb/itm 逐字副本 +
+  telnet cleanup_proc→单实现+别名）、itm 的 start_openocd_server 第三份逐字副本。
+  四入口本地定义全删改 import 再导出。测试: 新 `tests/test_openocd_startup_wait.py`
+  10 例（timeout 真生效×2 / server 口径语义×4 / itm 口径×3 / 真子进程 3.2MB 灌
+  stderr 排空不死锁×1——末项即"长会话死锁"的直接回归钉）+ `test_openocd_dedup.py`
+  补三件套身份钉与 itm 入 start_server 钉名单。
+- **F-124 处置（工单 P1-1 CI 增加 Windows 矩阵，change，ci.yml）**:
+  四个 job 全跑 ubuntu-latest，而 README 宣称"Windows 为主要开发/真机平台"
+  与"Win/Linux 全绿"——CI 从未在 Windows 验证过，Windows 专属测试
+  （test_verify_failure_paths 的 CREATE_NEW_PROCESS_GROUP 钉）恒 skip，宣传
+  与事实矛盾。unittest job matrix 扩为 os:[ubuntu, windows]×py[3.10,3.12]
+  （fail-fast:false 已有, 每平台注入 PYTHONIOENCODING/PYTHONUTF8 防中文
+  stderr 在 ANSI 代码页上乱码/报错）。syntax-smoke 暂留 ubuntu（arm-none-eabi
+  安装脚本平台专属, 工单允许后续再扩）。.gitattributes 现仓已有, checkout
+  行尾归一行为两平台一致。**注: 本笔在 Windows runner 上的首跑属"立此存照"
+  ——若暴露存量 Windows-only 失败, 按 F 编号记账修复, 不回头降级矩阵。**
+- **F-125 处置（工单 P1-2 测试类定义在 unittest.main() 之后，fix，test_gcc_build.py）**:
+  `MakeTimingScaleTests`（F-099 回归钉）定义在 :84-85 的 `unittest.main()`
+  之后——单文件直跑时该类不被收集, 钉形同虚设。`__main__` 块挪至文件尾并
+  注记原因。全仓扫描（grep 行号序比对）: 其余文件均无同类问题
+  （test_release.py 无 main 块属 collect 友好而非缺陷）。验收:
+  `python tests/test_gcc_build.py` 实跑 **Ran 9** 且 OK（修复前旧文件实跑
+  Ran 7——两个 F-099 钉缺席）。
+- **F-126 处置（工单 P1-5 CI 引入 ruff lint 门禁，change，ruff.toml / ci.yml / 30 文件清理）**:
+  仓库从未有 lint/类型检查。起步: `ruff.toml` 选默认 E/F、白名单登记四项
+  纯风格存量债（E501 行宽 491 / E741 19 / E701 15 / E402 3——sys.path
+  bootstrap 启动模式属标准用法）；正确性类逐条处置——F541 ×136 安全自动修
+  （`f"{{}}"` → 字面 `{{` 的转义行为经 gen_periph 全套母版钉验证不变）、
+  F401 基线 44 处: 死 import 删除 35 处（capture_rtt.os / verify.hashlib / duration_profile.statistics（P2-6 顺带提前做一条）/ serial_runtime.signal
+  / 四入口冗余再导出 / 六串口工具 Path 等——删前逐一 grep 确认无 mod.X
+  属性面消费方; verify.py F-041/055/058/059 再导出有 test_doctor/test_fixture_doctor/
+  test_checkpoint_ledger 钉消费, 余 9 处补 noqa: F401 声明再导出契约）、
+  F841 ×9 死局部量删除
+  （gen_periph.nss_port / telnet.start_time / serial_runtime.local_cfg /
+  svd_to_json.incr+merged / handoff_guard.commit / verify 测试块 analyze_result）、
+  F811 ×1 test_serial_mux_lifecycle 尾部重复 import 删除。ci.yml 新增 lint job
+  （astral-sh/ruff-action@v3, `ruff check scripts tests`）。验收: 本地 ruff
+  All checks passed + 全量 **653 例零测试文件语义改动仍全绿**（清理纯减法）。
+- **F-127 处置（工单 P1-3 state.json 读改写竞态丢更新，fix+test，runtime_common.py / serial_mux.py / serial_runtime.py）**:
+  F-019 的原子替换只防撕裂不防丢更新——serial_mux start 的"取快照 → 起子进程
+  等数秒 → 旧快照整体覆盖落盘"与 `update_state_entry` 的无锁 RMW 互相静默回滚
+  对方写入（两个工具同时 update 不同 category 同丢）。修复: 新增
+  `runtime_common.state_write_lock`——O_CREAT|O_EXCL lockfile + 超时重试 +
+  finally 删除，进程内 threading 锁与跨进程 lockfile 双层（lockfile 只辨进程
+  不辨线程）; 陈旧锁回收只认超龄（Windows 不做 PID 探活, F-117 教训: os.kill
+  在 Windows 是 TerminateProcess 不是探活; POSIX 用信号 0 真探活）+ holder==本
+  pid 不回收防线程误拆; 等锁超时向 stderr 诚实告警后降级无锁执行（state.json
+  是可再生缓存, 工具卡死比丢一次更新更糟），绝不改判定绝不阻塞。四处 RMW 收编
+  持锁读最新再改: `update_state_entry`、serial_mux start 的僵尸清理与落盘、
+  stop/status 清理路径、`get_mux_info` 探活失败清理。测试
+  `tests/test_state_write_lock.py` 7 例: 双线程交错 update 双存活（写盘窗口
+  拉宽复现旧竞态）/ 锁文件建删 / holder pid / 超龄锁秒抢 / 超时降级 stderr
+  留痕 / mux mutate 不回滚他人条目 / 读改写调用序钉（先红后绿——红灯由
+  no-lock 桩实测双更新必丢其一）。
+- **F-131 处置（工单 P2-2 Keil 退役清扫收尾，fix+test+change，6 文件）**:
+  ① `doctor.py` `_DOCTOR_KEYS` 移除 `uv4_exe`（与 machine.example.json
+  "仓内零 Keil 引用"对齐; `load_machine`/doctor 按下标取键，旧 machine.json
+  残留该键自动容忍——本机 machine.json 实测含 uv4_exe, 行为零变化只是不再
+  进报告），`test_doctor` 三处键集钉同步 + 新增"旧键无害"反向钉；
+  ② `failure_context.py` build_failed agent_hint 的 "ARMCC V5 C90
+  incompatibility" 换 GCC 诊断语境（-Wall/C23/链接脚本越界）；
+  ③ `gen_periph.py` gen_usart printf 重定向从 Keil Microlib
+  `int fputc(int, FILE*)` 改 newlib 系统桩 `int _write(int fd, char*, int)`
+  （fputc 在 GCC/newlib-nano 下 printf 根本不调用——重定向静默失效;
+  `_write` 形态经 arm-none-eabi-gcc -fsyntax-only 四变体实测选定，含
+  `#include <unistd.h>` 落在生成块内/函数体内两态）, 母版钉
+  `test_gen_periph:169` 同步为 `_write` 正钉 + `fputc` 反向钉；
+  ④ `gcc_build.py` artifacts 键表删死键 `axf_file`（Keil 产物, gcc details
+  从不产出, elf_file 才是 GCC 侧主产物）；
+  ⑤ `cube_to_keil.py` 改名 `cube_usercode.py`（git mv, 工具与 Keil 无关——
+  服务 CubeMX 重生成的 USER CODE 保全）: docstring 第 4 步 "Keil 编译验证"
+  改 GCC 验证、PROJECT_ROOT 锚从 `parents[1]` 死锚仓根改
+  `wb_common.find_project_root` 懒解析（import 期零 IO 零 exit, 纯函数
+  `extract_user_code/_dedent` 可安全 import; 命令入口 `_bind_roots()` 发现
+  失败体面 exit 1 + 中文指引），`test_zero_cov_finish`/
+  `test_coverage_lint_reachability` 引用同步（alias import 保留旧符号面）。
+  ⑥ `machine.example.json` _help 与 doctor 实际口径核对后更新（三键预检 +
+  uv4_exe 旧键容忍声明）; doctor.py/verify.py 帮助文本"四键→三键"
+  **拆挂**——verify.py 是并行会话在改文件（F-128~130 工单二），单行文案
+  修复并入 P1-4（verify 重构）一起做，避免搅动他人在制品。
+  测试: 定向 13 模块（doctor/gen_periph/smoke/gcc_build/zero_cov/
+  reachability/failure_hints/hooks/machine_fallback 等）全绿。
+- **F-132 处置（工单 P2-5 文档漂移同步，docs+fix，hooks-install.md / test_hooks_behavior.py）**:
+  ① `docs/hooks-install.md` "已知限制（F-096 登记, 修复待拍板）"节改写为
+  "F-096 已修复"事实态（hooks 三脚本 2026-09-09 已 --cached 优先+工作树
+  回落, 金丝雀组已翻转改名）；② `test_hooks_behavior.py` 模块 docstring
+  从"行为记录+缺陷登记, 不是回归钉"改写为回归钉口径（与 :110 翻转注记
+  对齐）；③ :74 注释 typo "System32\x08sh.exe"（写注释时 `\b` 被转义层吃掉
+  成退格控制符）修为可见文本 `System32\bash.exe`——F-053 同款教训的又一例,
+  docstring/注释含 `\b` 一律用 raw 字符串或双写。
+- **F-133 登记（工单 P2-6 边角缺陷打包，test-only 红基线，实现移交 zc/hardware）**:
+  `tests/test_p2_edge_pack.py` 16 用例 22 钉先红入账覆盖 a~k——a 过滤
+  fail-closed / b 物理门 expected<=0 守卫 / c svd_to_json 死函数+meta 覆写 /
+  d rm_lookup format_result 参数化 / e duration_profile 共享根发现 /
+  f telnet 地址显式解析 / g operation_mode JSON 契约 / h 三入口 ROOT_DIR 死锚 /
+  i Popen 平台守卫 / j save_json_file tmp 残骸 / k serial_runtime 注解。
+  j 项设计注记: 真实落盘 + os.replace 失败制造 tmp（mock write_text 不落盘
+  是假绿陷阱——已修）。基线实跑 **16 例全红（15 failures + 7 errors 含 subTest）**;
+  实现与转绿由 zc/hardware 完成（桌面《zcode 任务清单 v2》T0 项），本条待合流补账。
+
+## Unreleased — 2026-09-12（工单二: GitHub 同类项目借鉴落地）
+
+- **F-128 (工单二 A-1) verify --json 证据分级字段 evidence，feat+test+docs，verify.py / release.py / release_audit.py**:
+  借鉴 agentic-embedded-lab 的 claim+fidelity 概念（"仿真通过永不升级为硬件等价
+  声明"）。verify 结果 JSON 顶层新增 `evidence` 字段，三档取值:
+  `real-hardware`（capture 后端 rtt/semihosting 实跑）/ `simulator`（sim 后端,
+  C-1 预留, 方法映射表落位即生效）/ `static`（仅构建+lint、capture 未跑成——
+  build/flash 失败早退与 capture_failed 一律 static, 不给"差一点就是真机"的
+  模糊地带）。实现取 main() 唯一出口汇点 `_output` 统一落字段（八处出口零
+  逐点改动）, 判据 = steps.capture 实际后端, 判定 verdict 与证据等级正交。
+  release.py: G1 结果透传 evidence 入发布记录; G2 新增证据等级门——非
+  real-hardware 拒绝发布, `--allow-non-hardware-evidence` 显式豁免并以
+  `evidence_waiver: true` 留痕入档（旧版 verify 无 evidence 键按 static 拦）。
+  release_audit.py: 新增 **R8** 证据等级一致性——缺 evidence（R8 之前旧记录）
+  警告; 非 real-hardware 且无豁免留痕 fail（防门禁被绕过/记录被篡改）; 有豁免
+  留痕警告可见; real-hardware 带豁免留痕按字段矛盾警告。README 效果预览的
+  0.2 真机实录按 F-034 诚实化原则不加字段、以加注补当前输出契约（含三档表）。
+  测试 `tests/test_verify_evidence.py` 14 例（三档映射/未知 method 落 static/
+  四态判定×真机与 sim 正交/早退出口不缺键/main() 成功线端到端/--no-flash 不
+  降级）+ test_release 7 例（G2 证据门拦 sim/缺键按 static 拦/豁免旗标留痕/
+  build_record 透传与缺省 static）+ test_release_audit 5 例（R8 四分支+static
+  拦截），先红后绿; 全量 660→686 全绿（仅本机 WSL 缺席的 9 例 hooks 环境失败,
+  CI ubuntu 正常）。
+- **F-129 (工单二 A-2) verify 判定结束后硬件自恢复 post reset，feat+test+docs，openocd_runtime.py / verify.py**:
+  借鉴 agentic-hil 的失败自恢复——"板子状态不留给下一次运行"。旧行为判定后
+  无论红绿都不复位目标, 超时/卡死场景留下挂着断点或半初始化外设的板子污染
+  下一次 verify。新增共享函数 `openocd_runtime.reset_target(exe, cfg)`:
+  `openocd -f <cfg> -c init -c "reset run" -c shutdown` 形态, cfg 缺省与
+  step_flash 同款 stlink+stm32f1x（exe 由调用方经既有 resolve 链取好传入,
+  本函数不读 machine.json 保持纯函数）; 判据沿 swd_probe 内容口径
+  （"shutdown command invoked" 在场且无 "init mode failed"——克隆适配器偶发
+  非零退出不否决）。verify.py 正常路径判定结束后调用: flash 实际发生
+  (steps.flash.status=="ok") 且 capture.post_reset 非 false 才触发, 结果落
+  顶层 `post_reset`: "ok"|"failed"|"skipped"——复位失败仅 stderr 告警, 绝不
+  改判 verdict; --no-flash / flash 未跑成 / 无判定的早退出口 (build/flash/
+  capture_failed) 一律 skipped 不触发。6 处既有 main() 驱动测试补 reset_target
+  mock（本机有真 openocd+ST-Link, 测试零触硬件纪律）。README config 片段补
+  post_reset 键说明。测试 `tests/test_verify_post_reset.py` 13 例
+  （reset_target 内容判据×7 含超时/OSError/非零退出容忍; main 流: FAIL 判决
+  后复位被调 / 绿也复位 / 复位失败 verdict 不变 / --no-flash / post_reset:
+  false / flash 失败早退不复位且无字段），先红后绿。
+- **F-130 (工单二 A-3) MCP server 包装现有工具，feat+test+docs，mcp_server.py (新) / hardfault.py**:
+  借鉴 agentic-hil / hardci / jlink-mcp 的第一接口形态: agent 经有界 MCP 工具
+  使用本工具库, 不再靠 shell 拼装。新增 `scripts/mcp_server.py` (stdio
+  transport) 六工具: run_verify / lint_expectations / gen_peripheral /
+  rm_lookup / diagnose_hardfault / doctor。两条铁律第一版守住 (agentic-hil
+  安全设计): ① 工具 = 对现有脚本的子进程调用透传, 零业务逻辑复制 (CLI 仍是
+  唯一事实源, 注册表单一数据结构, 测试钉"每个工具映射的脚本真实存在"); ②
+  入参白名单校验——未知键拒绝、值以 "-" 开头拒绝 (flag 注入)、整数边界/正则
+  逐项校验、bool 显式类型检查 (True 不得冒充 ch=1)、工程根必须存在
+  .workbench/config.json (不给文件系统探测面), **不给 agent 任意 shell**。
+  架构: plan_tool_call (纯计划层, 校验→argv/stdin/cwd/timeout) + 
+  run_planned_call (子进程透传, F-120 后 returncode 判 ok, JSON 结果与
+  stderr 尾巴透传, 本层不加工语义)。MCP SDK 可选依赖 requirements-mcp.txt
+  单列, 缺失时给可行动报错 (指向安装命令, 注明其余工具零依赖不受影响);
+  仓根 .mcp.json.example 模板入库 (.mcp.json 已在 .gitignore, 照抄
+  machine.json 模板惯例)。hardfault.py 新增 `--no-probe` 仅解析通道
+  (MCP diagnose_hardfault 底座): 跳过 OpenOCD 现场读取, 仅用 --fault-text
+  层 1 [HF] PC=/LR= 行出 fault_site+符号解析, 状态诚实标 parsed_text_only
+  / no_fault_marker, 无 live 寄存器不伪装完整诊断。README 新增"MCP 接入"节
+  (含 Claude Code .mcp.json 配置示例) + 工具速查表补两行。
+  测试 `tests/test_mcp_server.py` 27 例 (注册表完整性/工程守卫×4/参数白名单
+  ×6/分发计划×5/mock 子进程透传与错误透传×4/SDK 缺失文案×2/--no-probe
+  专项×3 含"绝不触 run_openocd_diag"安全钉)，先红后绿。
+
 ## Unreleased — 2026-09-10（F-103~F-107 P3 清账第一轮：边界报错泛化 / 迁移告警 / ID 唯一性 / 过滤收窄 / 文档回填）
 
 - **F-103 处置（审计 P3 数值边界组，fix+test，gen_periph.py）**: 四项

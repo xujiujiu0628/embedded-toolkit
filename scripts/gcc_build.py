@@ -253,7 +253,9 @@ def main() -> None:
 
     # 写 state.json last_build (与 keil_build 同构, 历史, Keil 已退役 F-067b; verify.py --no-build 依赖)
     if args.action in ("build", "rebuild") and status == "ok":
-        artifacts = {k: details[k] for k in ("axf_file", "hex_file", "flash_file",
+        # F-131 (工单 P2-2): axf_file 是 Keil 产物键, gcc details 从不产出它
+        # (elf_file 才是 GCC 侧主产物, 下面显式补) — 死键清除。
+        artifacts = {k: details[k] for k in ("hex_file", "flash_file",
                                              "debug_file", "output_dir", "log_file") if k in details}
         artifacts["elf_file"] = details.get("elf_file")
         artifacts["hex_file"] = details.get("hex_file")
