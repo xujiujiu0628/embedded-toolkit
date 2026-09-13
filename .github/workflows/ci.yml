@@ -10,8 +10,14 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        os: [ubuntu-latest, windows-latest]   # F-124 (工单 P1-1): Windows 是主开发/真机平台, CI 终于同轨
         python-version: ["3.10", "3.12"]
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
+    env:
+      # Windows runner 默认 ANSI 代码页会打乱中文 stderr 甚至诱发编码错误;
+      # 与本地开发约定 (README 工单口径) 对齐, 固定 UTF-8 运行时。
+      PYTHONIOENCODING: utf-8
+      PYTHONUTF8: "1"
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-python@v6
@@ -43,6 +49,16 @@ jobs:
       - name: Coverage floor (ratchet, only goes up)
         run: python -m coverage report --include="scripts/*" --omit="*/legacy/*" --fail-under=38
 
+  # F-126 (工单 P1-5): lint 门禁零起步——ruff E/F 规则集, 正确性类已清零,
+  # 存量风格债白名单见 ruff.toml (登记制, 只降不升)。
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: astral-sh/ruff-action@v3
+        with:
+          args: check scripts tests
+
   # F-100: 覆盖缺口门禁接入 CI (CONTRIBUTING 声明的"可机检"终于有机检)。
   # 覆盖率提升后须同步缩减 scripts/coverage_lint.py 视角的未覆盖清单。
   coverage-lint:
@@ -70,3 +86,55 @@ jobs:
           sudo apt-get install -y gcc-arm-none-eabi
       - name: Run generator syntax smoke tests
         run: python -m unittest tests.test_gen_syntax_smoke -v
+
+  # F-150 (总工单 v2 C-1/T6): sim 后端闭环 — "陌生人克隆"路径第一次覆盖
+  # build → capture → judge 判定链 (无硬件)。qemu 直接加载 elf, 同一份
+  # expectations 四态判定; 证据等级 simulation_validated, 不进发布门禁
+  # (release G2 只认 hardware_validated)。
+  sim-demo:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      checks: write
+      pull-requests: read   # PR 上下文下写注释用
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Install qemu-system-arm + GNU Arm Embedded toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y qemu-system-arm gcc-arm-none-eabi make
+      # sim-demo 要真构建 (gcc_build 预检 machine.json 的 make_exe/gcc_path),
+      # 与 unittest 金丝雀"永不建 machine.json"的刻意设计不冲突
+      - name: Write CI machine.json
+        run: |
+          python -c "import json; json.dump({'gcc_path': '/usr/bin', 'make_exe': '/usr/bin/make', 'openocd_exe': 'openocd'}, open('machine.json', 'w'))"
+      - name: sim-demo end-to-end verify (build → qemu sim → judge)
+        run: |
+          set -o pipefail
+          python scripts/verify.py --project examples/sim-demo --json --junit-xml build/junit-sim.xml --timeout 20 | tee verify-result.json
+      # F-151: 判定结果 → GITHUB_STEP_SUMMARY; if: always() 保证失败运行
+      # 也出摘要 (输入非法时 evidence_export 只 exit 码报错, 不炸步骤)
+      - name: Export evidence summary
+        if: always()
+        run: python scripts/evidence_export.py --verify-file verify-result.json --project examples/sim-demo
+      # F-162 (审核 M-4 销账): 外部 reporter 实吃 --junit-xml 产物。
+      # dorny/test-reporter v3.0.0, SHA 锁定 (供应链纪律: 升级走 CHANGELOG,
+      # 只升不降): a43b3a5f7366b97d083190328d2c652e1a8b6aa2
+      # 解引用核验: gh api repos/dorny/test-reporter/git/tags/<tag-object-sha>
+      - name: Publish test report (dorny/test-reporter@v3.0.0, SHA-pinned)
+        if: always()
+        continue-on-error: true
+        uses: dorny/test-reporter@a43b3a5f7366b97d083190328d2c652e1a8b6aa2
+        with:
+          name: Sim Verify Results
+          path: build/junit-sim.xml
+          reporter: java-junit
+          # F-162 订正 (fresh-checker M-1): v3.0.0 默认摘要模式 (只写
+          # GITHUB_STEP_SUMMARY, 从不 checks.create); 本步显式关闭以贴
+          # spec "PR 页面出现检查结果" 原意 — 真出 check run "Sim Verify Results"
+          use-actions-summary: false
+          # 消费即验证 (M-4 销账语义): 产物含失败态属预期, 门禁由 verify 步骤本身负责
+          fail-on-error: false

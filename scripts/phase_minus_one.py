@@ -18,28 +18,27 @@ phase_minus_one.py — Drafter 前置兼容性检查
 import argparse
 import json
 import os
-import sys
 
-from wb_common import TOOLKIT_ROOT
+from wb_common import TOOLKIT_ROOT, find_project_root, load_ref  # F-157: load_ref 收编
 
-REF_PATH = os.path.join(TOOLKIT_ROOT, "data", "stm32f103-ref.json")
 ISSUES_PATH = os.path.join(TOOLKIT_ROOT, "data", "f103_known_issues.json")
 
-# ── 项目当前固定引脚占用（从 CLAUDE.md 和 main.c 提取）──
-FIXED_PINS = {
-    "PB8": "OLED_SCL (I2C1)",
-    "PB9": "OLED_SDA (I2C1)",
-    "PB10": "MPU6050_SCL (I2C2 / SW I2C)",
-    "PB11": "MPU6050_SDA (I2C2 / SW I2C)",
-    "PA2": "SG90 Servo (TIM2_CH3 PWM)",
-    "PB0": "Button (GPIO Input, pull-up)",
-    "PC13": "LED heartbeat (GPIO Output)",
-}
 
-
-def load_ref():
-    with open(REF_PATH, 'r', encoding='utf-8') as f:
-        return json.load(f)
+def load_fixed_pins(workspace):
+    """F-158 (P2-4): 固定引脚占用表外置到工程 .workbench/fixed_pins.json —
+    仓内硬编码 FIXED_PINS (维护者 adc-oled 专属) 属数据走私, 已删。
+    文件形态: {"PC13": "LED heartbeat (GPIO Output)", ...}。
+    缺省 (文件不在场或无 workspace) 返回 None — 冲突检查跳过不报错。"""
+    if not workspace:
+        return None
+    path = os.path.join(workspace, ".workbench", "fixed_pins.json")
+    if not os.path.isfile(path):
+        return None
+    try:
+        with open(path, encoding="utf-8") as f:
+            return json.load(f)
+    except (json.JSONDecodeError, UnicodeDecodeError, OSError):
+        return None
 
 
 def load_issues():
@@ -63,8 +62,13 @@ def check_chip_support(peripheral, ref):
         return {"status": "UNKNOWN", "detail": f"{peripheral} not in knowledge base — verify F103 datasheet"}
 
 
-def check_pin_conflicts(pins, peripheral, ref):
-    """检查目标引脚是否与现有功能冲突"""
+def check_pin_conflicts(pins, peripheral, fixed_pins):
+    """检查目标引脚是否与现有功能冲突 (F-158: 占用表外置, 第三参为
+    load_fixed_pins() 的结果; None = 工程未配置占用表, 跳过不报错)"""
+    if fixed_pins is None:
+        return {"status": "OK",
+                "detail": ("No fixed-pins map (.workbench/fixed_pins.json) "
+                           "— conflict check skipped")}
     if not pins:
         return {"status": "OK", "detail": "No pins specified"}
 
@@ -73,8 +77,8 @@ def check_pin_conflicts(pins, peripheral, ref):
 
     for pin in pins:
         pin = pin.strip().upper()
-        if pin in FIXED_PINS:
-            existing = FIXED_PINS[pin]
+        if pin in fixed_pins:
+            existing = fixed_pins[pin]
             # 判断是冲突还是共享
             if peripheral.upper() in existing.upper():
                 shares.append(f"{pin}: {existing} (same peripheral — OK to share)")
@@ -162,14 +166,17 @@ def compute_verdict(checks):
     return "OK"
 
 
-def run_check(peripheral, pins, features, target_desc=""):
-    """执行完整检查，返回结构化结果"""
+def run_check(peripheral, pins, target_desc="", workspace=None):
+    """执行完整检查，返回结构化结果。
+    F-158: features 形参删除 (旧版解析即弃, 从未参与判定);
+    workspace 用于加载工程占用表 fixed_pins.json。"""
     ref = load_ref()
     issues = load_issues()
 
     checks = {
         "chip_support": check_chip_support(peripheral, ref),
-        "pin_conflict": check_pin_conflicts(pins, peripheral, ref),
+        "pin_conflict": check_pin_conflicts(
+            pins, peripheral, load_fixed_pins(workspace)),
         "kb_coverage": check_kb_coverage(peripheral, ref),
         "known_issues": check_known_issues(peripheral, issues),
     }
@@ -219,14 +226,13 @@ def cmd_list(ref):
 
     print(f"\nFULL:  {len(periphs)} peripherals (register-level KB)")
     print(f"PARTIAL: {len(rels) - len([k for k in rels if k in periphs])} peripherals (relationship data only)")
-    print(f"Chip: STM32F103C8T6 | Flash: 64KB | SRAM: 20KB\n")
+    print("Chip: STM32F103C8T6 | Flash: 64KB | SRAM: 20KB\n")
 
 
 def main():
     parser = argparse.ArgumentParser(description="Phase -1: Pre-Drafter compatibility check")
     parser.add_argument("--peripheral", "-p", default="", help="Target peripheral (e.g. I2C1, USART2)")
     parser.add_argument("--pins", default="", help="Comma-separated pins (e.g. PB6,PB7)")
-    parser.add_argument("--features", default="", help="Comma-separated features (e.g. DMA,interrupt)")
     parser.add_argument("--target", default="", help="Human-readable task description")
     parser.add_argument("--json", action="store_true", help="JSON output (for Claude consumption)")
     parser.add_argument("--list", action="store_true", help="List all known peripherals and coverage")
@@ -244,8 +250,9 @@ def main():
         return
 
     pins = [p.strip() for p in args.pins.split(",") if p.strip()]
-    features = [f.strip() for f in args.features.split(",") if f.strip()]
-    result = run_check(args.peripheral.upper(), pins, features, args.target)
+    # F-158: features 解析即弃的死代码删除 (旧版 split 后从未参与判定)
+    result = run_check(args.peripheral.upper(), pins, args.target,
+                       workspace=find_project_root(os.getcwd()))
 
     if args.json:
         print(json.dumps(result, ensure_ascii=False, indent=2))

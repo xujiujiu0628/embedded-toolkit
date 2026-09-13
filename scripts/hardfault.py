@@ -28,10 +28,9 @@ import re
 import subprocess
 import sys
 import time
-from collections import namedtuple
-from datetime import datetime, timedelta, timezone
 
 from wb_common import find_project_root, load_machine
+from runtime_common import now_iso  # F-157: UTC+8 本地版收编共享层
 
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -73,10 +72,8 @@ HFSR_BITS = {
 }
 
 
-def now_iso() -> str:
-    tz = timezone(timedelta(hours=8))
-    return datetime.now(tz).isoformat(timespec="seconds")
-
+# F-157: 本地 now_iso (UTC+8 硬编码) 删除, 收编 runtime_common 共享版
+# (astimezone 本地时区) — 时区口径变化见 CHANGELOG。
 
 def run_openocd_diag() -> str:
     """运行 OpenOCD 读取故障寄存器, 返回原始输出文本"""
@@ -448,10 +445,19 @@ def diagnose(regs: dict, symbols: list[dict]) -> str:
     if lr:
         # LR 在异常返回时有一个特殊值 EXC_RETURN
         if lr >= 0xFFFFFFF0:
-            exc_return = ["Handler→Handler (MSP)", "Thread→Handler (MSP)",
-                          "Handler→Thread (MSP)", "Thread→Thread (PSP)"]
-            idx = lr & 0xF
-            desc = exc_return[idx] if idx < len(exc_return) else "unknown"
+            # F-118 (工单 P0-6): 旧实现 idx = lr & 0xF 对合法值 F1/F9/FD 得
+            # 1/9/13, 4 项表 → F9 (最常见, 返回 Thread/MSP) 恒 unknown,
+            # F1 被错标。按 ARMv7-M: EXC_RETURN 描述"返回到哪", 低位语义
+            # bit3=目标模式, bit2=目标堆栈 → 合法值恰为 F1/F5/F9/FD。
+            exc_return = {
+                0x1: "返回 Handler 模式 (MSP)",
+                0x5: "保留/Secure (M3 非法组合: Handler+PSP)",
+                0x9: "返回 Thread 模式 (MSP)",
+                0xD: "返回 Thread 模式 (PSP)",
+            }
+            idx = (lr >> 2) & 3
+            key = 0x1 | (idx << 2)  # idx 0→F1, 1→F5, 2→F9, 3→FD
+            desc = exc_return.get(key, "unknown")
             parts.append(f"LR=0x{lr:08X} (EXC_RETURN: {desc})")
         else:
             lr_sym = resolve_address(lr, symbols)
@@ -466,6 +472,82 @@ def diagnose(regs: dict, symbols: list[dict]) -> str:
             parts.append(f"  [{name}] {desc}")
 
     return "\n".join(parts)
+
+
+def _read_fault_text(spec: str) -> str:
+    """读 --fault-text 指定的捕获文本 ('-' = stdin)。不可读返回空串。"""
+    try:
+        if spec == "-":
+            return sys.stdin.read()
+        with open(spec, encoding="utf-8", errors="replace") as f:
+            return f.read()
+    except OSError as e:
+        print(f"WARNING: --fault-text 不可读: {e}", file=sys.stderr)
+        return ""
+
+
+def _diagnose_from_text(args, started_at, started_ts) -> None:
+    """--no-probe 仅解析通道 (F-130, 工单二 A-3): 不触 OpenOCD。
+
+    MCP diagnose_hardfault 工具的底座: agent 手里已有捕获文本 (run_verify
+    产物), 解析层 1 [HF] PC=/LR= 现场行即可定位故障点, 不必也无权抢探针。
+    无 live 寄存器 → fault_type/CFSR 分析缺席, 诚实标注而非伪装完整诊断。
+    退出码: 解析出诊断 = 0; 文本不可得/无现场行 = 1 (消费方按 rc 分流)。"""
+    if not args.fault_text:
+        result = {"status": "error",
+                  "error": "--no-probe 需要配 --fault-text (无探针即无 live 寄存器, "
+                           "没有文本就没有可解析的现场)"}
+        print(json.dumps(result, ensure_ascii=False, indent=2)
+              if args.json else result["error"])
+        sys.exit(1)
+
+    cap_text = _read_fault_text(args.fault_text)
+    map_path = args.map or _default_map_path()
+    symbols = parse_map_symbols(map_path)
+    note = _map_degradation_note(map_path, symbols)
+    if note:
+        print("WARNING: " + note, file=sys.stderr)
+    site = parse_hf_site(cap_text)
+
+    resolved = {}
+    fault_site = None
+    if site:
+        fault_site = {
+            "pc": f"0x{site['pc']:08X}",
+            "lr": f"0x{site['lr']:08X}",
+            "source": "layer1_stacked_frame",
+        }
+        for key in ("pc", "lr"):
+            if site[key] > 0x08000000:
+                sym = resolve_address(site[key], symbols)
+                if sym:
+                    fault_site[key + "_sym"] = f"{sym['name']}+{sym['offset']}"
+                    resolved[key] = fault_site[key + "_sym"]
+
+    result = {
+        "status": "parsed_text_only" if site else "no_fault_marker",
+        "probe": "skipped (--no-probe, 仅解析不触硬件)",
+        **({"fault_site": fault_site} if fault_site else {}),
+        "resolved": resolved,
+        "diagnosis": (
+            "仅层 1 现场行解析 (--no-probe): 故障点已定位; fault_type/CFSR "
+            "位级归因需 live 探针, 建议接入真机后跑完整 hardfault.py 复核"
+            if site else
+            "捕获文本无 [HF] PC=/LR= 现场行 — 无 HardFault 痕迹或文本不是 "
+            "故障现场 (--no-probe 无 live 寄存器可兜底)"),
+        "symbols_total": len(symbols),
+        "needs_ai_judgement": True,
+        "_meta": {
+            "map_file": map_path,
+            "timestamp": started_at,
+            "elapsed_sec": round(time.time() - started_ts, 1),
+        },
+    }
+    if args.json:
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+    else:
+        print(result["diagnosis"])
+    sys.exit(0 if site else 1)
 
 
 def _default_map_path() -> str:
@@ -497,10 +579,17 @@ def main():
     parser.add_argument("--fault-text", default=None,
                         help="含层 1 [HF] PC=/LR= 行的捕获文本路径, '-'=stdin "
                              "(F-116/H-1: handler 自旋场景下 live PC 非故障现场)")
+    parser.add_argument("--no-probe", action="store_true",
+                        help="只解析不探针 (F-130, MCP 通道底座): 跳过 OpenOCD "
+                             "现场读取, 仅用 --fault-text 的层 1 现场行出诊断")
     args = parser.parse_args()
 
     started_at = now_iso()
     started_ts = time.time()
+
+    if args.no_probe:
+        _diagnose_from_text(args, started_at, started_ts)
+        return
 
     # 1. 运行 OpenOCD 读取寄存器
     raw = run_openocd_diag()
@@ -635,10 +724,10 @@ def _print_readable(r: dict):
     print("  HardFault 诊断报告")
     print("=" * 60)
     print(f"\nFault Type: {r['fault_type']}")
-    print(f"\nRegisters:")
+    print("\nRegisters:")
     for name, val in r["registers"].items():
         print(f"  {name:>5}: {val}")
-    print(f"\nFault Registers:")
+    print("\nFault Registers:")
     fr = r["fault_registers"]
     print(f"  CFSR:  {fr['cfsr']['raw']}  ({len(fr['cfsr']['bits'])} bits active)")
     print(f"  HFSR:  {fr['hfsr']['raw']}  ({len(fr['hfsr']['bits'])} bits active)")
@@ -655,12 +744,12 @@ def _print_readable(r: dict):
         print(f"  {reg.upper()} 粘滞位: {info['before']} → 清后复核 "
               f"{info['after'] or '?'} ({mark})")
     if r["resolved"]:
-        print(f"\nResolved:")
+        print("\nResolved:")
         for k, v in r["resolved"].items():
             print(f"  {k}: {v}")
     fs = r.get("fault_site")
     if fs:
-        print(f"\nFault Site (层 1 压栈帧, F-116/H-1):")
+        print("\nFault Site (层 1 压栈帧, F-116/H-1):")
         print(f"  PC: {fs['pc']}"
               + (f" → {fs['pc_sym']}" if fs.get("pc_sym") else ""))
         print(f"  LR: {fs['lr']}"

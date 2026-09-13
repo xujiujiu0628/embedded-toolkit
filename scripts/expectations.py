@@ -88,6 +88,81 @@ def contract_hashes(workspace: str, has_manifest: bool) -> dict:
     return out
 
 
+def item_rule_errors(item) -> list:
+    """F-157 (P2-3): 单条目规则判据 E2(缺失)/E3~E8/E12/E13 — loader 与
+    lint 的双写判据收敛到单一事实源 (check_forbidden_fields 同款模式)。
+
+    返回 [(code, core)]; core 不含条目标签, 消费方自行拼接:
+      loader (load_expectations): 首条即 raise ExpectationError(f"{label}: {core}")
+      lint  (expectations_lint):  f"{code}: {label} {core}" 全量收集
+    label = 合法 eid, 否则条目位置占位。E2 id 重复 (跨条目) 与 E9
+    min>max (结构矛盾) 不入本函数 — 分别归 loader / lint 专项。"""
+    if not isinstance(item, dict):
+        return [("E2", "须为对象")]
+    errors = []
+    eid = item.get("id")
+    if not isinstance(eid, str) or not eid.strip():
+        errors.append(("E2", "id 必填且非空"))
+    if not isinstance(item.get("desc"), str) or not item["desc"].strip():
+        errors.append(("E3", "desc 必填且非空"))
+    texts = item.get("texts")
+    pats = item.get("patterns")
+    ok_texts = isinstance(texts, list) and len(texts) > 0 and \
+        all(isinstance(t, str) and t for t in texts)
+    ok_pats = isinstance(pats, list) and len(pats) > 0 and \
+        all(isinstance(p, str) and p for p in pats)
+    if ok_texts == ok_pats:  # 并存或皆缺均非法
+        errors.append(("E4", "texts 与 patterns 须二选一(非空字符串数组)"))
+    if ok_pats:
+        for p in pats:
+            try:
+                re.compile(p)
+            except re.error as e:
+                # 惰性编译会把非法正则拖到烧录后才炸 (审计 M1)
+                errors.append(("E5", f"非法正则 {p!r}: {e}"))
+    if item.get("xfail") and (not isinstance(item.get("xfail_reason"), str)
+                              or not item["xfail_reason"].strip()):
+        errors.append(("E6", "xfail=true 时 xfail_reason 必填"))
+    cg = item.get("capture_group")
+    if cg is not None and (isinstance(cg, bool) or not isinstance(cg, int) or cg < 1):
+        errors.append(("E7", "capture_group 须为正整数"))
+    if cg is not None and not ok_pats:
+        # texts+capture_group 组合会在评估期 first=None AttributeError (审计 M1)
+        errors.append(("E7", "capture_group 须与 patterns 搭配"))
+    for bound in ("min", "max"):
+        v = item.get(bound)
+        if v is not None and (isinstance(v, bool) or not isinstance(v, (int, float))
+                              or not math.isfinite(v)):
+            # NaN 会绕过全部边界比较恒 pass (审计 M1)
+            errors.append(("E8", f"{bound} 须为有限数值"))
+    # F-148 ②: ordered (按序命中) — 默认 False 零回归
+    od = item.get("ordered")
+    if od is not None and not isinstance(od, bool):
+        errors.append(("E13", "ordered 须为布尔"))
+    # F-148 ③: record (命名捕获组 → records 数组) — 与 capture_group/min/max
+    # 互斥是工单钉死的语义: 前者全量记录, 后者首匹配定界, 二选一
+    rec = item.get("record")
+    if rec is not None:
+        if (not isinstance(rec, list) or not rec
+                or not all(isinstance(s, str) and s.strip() for s in rec)):
+            errors.append(("E12", "record 须为非空字符串数组 (命名捕获组名)"))
+        elif not ok_pats:
+            errors.append(("E12", "record 须与 patterns 搭配"))
+        elif item.get("capture_group") is not None \
+                or item.get("min") is not None \
+                or item.get("max") is not None:
+            errors.append(("E12", "record 与 capture_group/min/max 互斥 — 记录值用 "
+                           "record 全量落 records 数组, 定界断言用 capture_group, "
+                           "二选一"))
+        else:
+            groups = set(re.compile(pats[0]).groupindex)
+            missing = [n for n in rec if n not in groups]
+            if missing:
+                errors.append(("E12", f"record 引用未定义的命名捕获组: {missing} "
+                               f"(patterns[0] 须写 (?P<{missing[0]}>...) 形态)"))
+    return errors
+
+
 def load_expectations(workspace):
     """加载 .workbench/expectations.json (spec 2026-08-26 §3)。
 
@@ -113,43 +188,16 @@ def load_expectations(workspace):
         if not isinstance(item, dict):
             raise ExpectationError(f"{where}: 须为对象")
         eid = item.get("id")
-        if not isinstance(eid, str) or not eid.strip():
-            raise ExpectationError(f"{where}: id 必填且非空")
-        if eid in seen:
-            raise ExpectationError(f"id 重复: {eid}")
-        seen.add(eid)
-        if not isinstance(item.get("desc"), str) or not item["desc"].strip():
-            raise ExpectationError(f"{eid}: desc 必填且非空")
-        texts = item.get("texts")
-        pats = item.get("patterns")
-        ok_texts = isinstance(texts, list) and len(texts) > 0 and \
-            all(isinstance(t, str) and t for t in texts)
-        ok_pats = isinstance(pats, list) and len(pats) > 0 and \
-            all(isinstance(p, str) and p for p in pats)
-        if ok_texts == ok_pats:  # 并存或皆缺均非法
-            raise ExpectationError(f"{eid}: texts 与 patterns 须二选一(非空字符串数组)")
-        if ok_pats:
-            for p in pats:
-                try:
-                    re.compile(p)
-                except re.error as e:
-                    # 惰性编译会把非法正则拖到烧录后才炸 (审计 M1)
-                    raise ExpectationError(f"{eid}: 非法正则 {p!r}: {e}") from e
-        if item.get("xfail") and (not isinstance(item.get("xfail_reason"), str)
-                                  or not item["xfail_reason"].strip()):
-            raise ExpectationError(f"{eid}: xfail=true 时 xfail_reason 必填")
-        cg = item.get("capture_group")
-        if cg is not None and (isinstance(cg, bool) or not isinstance(cg, int) or cg < 1):
-            raise ExpectationError(f"{eid}: capture_group 须为正整数")
-        if cg is not None and not ok_pats:
-            # texts+capture_group 组合会在评估期 first=None AttributeError (审计 M1)
-            raise ExpectationError(f"{eid}: capture_group 须与 patterns 搭配")
-        for bound in ("min", "max"):
-            v = item.get(bound)
-            if v is not None and (isinstance(v, bool) or not isinstance(v, (int, float))
-                                  or not math.isfinite(v)):
-                # NaN 会绕过全部边界比较恒 pass (审计 M1)
-                raise ExpectationError(f"{eid}: {bound} 须为有限数值")
+        if isinstance(eid, str) and eid.strip():
+            if eid in seen:
+                raise ExpectationError(f"id 重复: {eid}")
+            seen.add(eid)
+        # F-157: E2缺失/E3~E8/E13/E12 判据走 item_rule_errors 单一事实源
+        errs = item_rule_errors(item)
+        if errs:
+            code, core = errs[0]
+            label = eid if isinstance(eid, str) and eid.strip() else where
+            raise ExpectationError(f"{label}: {core}")
         fb_errs = check_forbidden_fields(item)     # F-112: 结构+自杀配置, 与 lint E10/E11 同源
         if fb_errs:
             raise ExpectationError(fb_errs[0][1])  # (code,msg) 元组, 取 msg
@@ -175,17 +223,42 @@ def _forbidden_hit(item, output):
 def _expect_matched(item, output):
     """单条期望匹配判定 (spec §3): texts 全命中 且 patterns 全命中;
     capture_group/min/max 数值断言作用于 patterns[0] 首个 match。
-    返回 (matched, 失败细节)。"""
-    missing = [t for t in item.get("texts", []) if t not in output]
-    if missing:
-        return False, f"missing texts: {missing}"
+    返回 (matched, 失败细节)。
+
+    F-148 ②: 条目带 ordered=true 时按序命中 — texts 依次 find(从上一命中
+    之后), patterns 依次 search(从上一 match.end() 之后); 默认 False,
+    既有"任意位置命中"语义零改动。"""
+    ordered = bool(item.get("ordered"))
+    texts = item.get("texts", [])
+    if ordered and texts:
+        pos = 0
+        for t in texts:
+            i = output.find(t, pos)
+            if i < 0:
+                return False, f"ordered: {t!r} 未在位置 {pos} 之后按序命中"
+            pos = i + len(t)
+    else:
+        missing = [t for t in texts if t not in output]
+        if missing:
+            return False, f"missing texts: {missing}"
     first = None
-    for j, pat in enumerate(item.get("patterns", [])):
-        m = re.search(pat, output)
-        if not m:
-            return False, f"pattern 未命中: {pat!r}"
-        if j == 0:
-            first = m
+    if ordered and item.get("patterns"):
+        pos = 0
+        for j, pat in enumerate(item.get("patterns", [])):
+            m = re.compile(pat).search(output, pos)
+            if not m:
+                return False, (f"ordered: pattern {pat!r} 未在位置 {pos} 之后"
+                               "按序命中")
+            if j == 0:
+                first = m
+            pos = m.end()
+    else:
+        for j, pat in enumerate(item.get("patterns", [])):
+            m = re.search(pat, output)
+            if not m:
+                return False, f"pattern 未命中: {pat!r}"
+            if j == 0:
+                first = m
     cg = item.get("capture_group")
     if cg is not None:
         try:
@@ -201,6 +274,16 @@ def _expect_matched(item, output):
     return True, ""
 
 
+def _extract_records(item, output):
+    """F-148 ③: record 命名捕获组 — patterns[0] 全量匹配, 每次匹配一行
+    {组名: 值} 记录 (字符串原样, 不做数值整形)。无 record 键返回 None。"""
+    names = item.get("record")
+    if not names:
+        return None
+    return [{n: m.group(n) for n in names}
+            for m in re.finditer(item["patterns"][0], output)]
+
+
 def evaluate_expectations(output, expectations):
     """四态判定纯函数 (spec §4): PASS=匹配&非xfail; XFAIL=未匹配&xfail;
     XPASS=匹配&xfail(严格红); FAIL=未匹配&非xfail。
@@ -209,14 +292,34 @@ def evaluate_expectations(output, expectations):
     F-112 负断言优先律: forbidden 命中 → 无条件 FAIL (先于正向求值,
     亦先于 XPASS/XFAIL——禁止后果出现时, 无论该条目是否实现/是否欠条,
     都不存在"符合预期"的解释空间)。
+
+    F-148 ① 行终止符语义 (防早判): 判定发生在采集窗超时后, 全文 (含
+    未终止尾行) 都参与匹配——"未终止的值超时才判"。命中若仅存在于未终止
+    尾行 (存在已终止前缀而命中避开它), 结果行标注 `unterminated_hit:
+    true`: 值可能在窗口关闭瞬间被截断 (如 "mv=319" 实为 3192 的前缀),
+    消费方 (CI/agent) 对数值断言应谨慎采信; 判定状态不变, 既有清单零
+    回归。全文无任何终止行时不标注 (无相对信号可归因)。要消除标注,
+    让固件输出行终止符 (printf 带 \\n)。
+
+    F-148 ③: 带 record 的条目, 结果行附 `records` 数组 (patterns[0] 每次
+    匹配一行 {组名: 值}); 返回值聚合 `records` = [{id, 组名: 值}, ...] 平铺。
     """
     results = []
+    records = []
+    committed = output[:output.rfind("\n") + 1]   # 已终止前缀 (含末 \\n)
     for item in expectations:
         hit = _forbidden_hit(item, output)
         if hit is not None:
             results.append({"id": item["id"], "status": "fail", "detail": hit})
             continue
         ok, detail = _expect_matched(item, output)
+        # F-148 ①: 存在已终止前缀、而命中避开了它 = 值落在未终止尾行。
+        # 全文无任何终止行时不标注 — 相对信号才有截断归因力 (半主机收尾
+        # 本就常无换行), 也让既有清单零回归。
+        unterminated = False
+        if ok and committed:
+            ok_committed, _ = _expect_matched(item, committed)
+            unterminated = not ok_committed
         xfail = bool(item.get("xfail"))
         if ok and not xfail:
             status = "pass"
@@ -229,7 +332,14 @@ def evaluate_expectations(output, expectations):
         r = {"id": item["id"], "status": status}
         if detail and status in ("fail", "xpass"):
             r["detail"] = detail
+        if unterminated:
+            r["unterminated_hit"] = True
+        entries = _extract_records(item, output)
+        if entries is not None:
+            r["records"] = entries
+            records.extend({"id": item["id"], **e} for e in entries)
         results.append(r)
     verdict = "ok" if all(r["status"] in ("pass", "xfail") for r in results) else "fail"
     return {"results": results, "verdict": verdict,
-            "xpass_ids": [r["id"] for r in results if r["status"] == "xpass"]}
+            "xpass_ids": [r["id"] for r in results if r["status"] == "xpass"],
+            "records": records}

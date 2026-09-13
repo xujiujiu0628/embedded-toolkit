@@ -1,10 +1,10 @@
 r"""serial_log 主记录循环的行为测试 (F-102 补充)。
 
 覆盖: 三种格式 (text/csv/jsonl) 的落盘正确性 + duration 停止条件 +
-timestamp 前缀。串口打开由 mock open_serial_port 供给假端口
-(readline 返回预置字节流), 不碰真机。
+timestamp 前缀。串口打开由 mock connect_serial 供给假端口
+(readline 返回预置字节流), 不碰真机 (F-156: 公共骨架接线后 mock 缝
+随之迁到 resolve_serial_config / connect_serial)。
 """
-import io
 import json
 import os
 import sys
@@ -52,18 +52,15 @@ class SerialLogRecordTests(unittest.TestCase):
                 "--format", fmt, "--duration", str(duration),
                 "--direct", "--json"] + (["--timestamp"] if timestamp else [])
         with mock.patch.object(serial_log.sys, "argv", argv), \
-             mock.patch.object(serial_log, "get_serial_config",
-                               return_value=({"port": "COMX",
-                                              "baudrate": 115200,
-                                              "bytesize": 8, "parity": "none",
-                                              "stopbits": 1,
-                                              "encoding": "utf-8",
-                                              "log_dir": self.tmp,
-                                              "timeout": 1.0},
-                                             {"port": "cli"})), \
-             mock.patch.object(serial_log, "save_project_config",
-                               lambda **kw: None), \
-             mock.patch.object(serial_log, "open_serial_port",
+             mock.patch.object(serial_log, "resolve_serial_config",
+                               return_value={"port": "COMX",
+                                             "baudrate": 115200,
+                                             "bytesize": 8, "parity": "none",
+                                             "stopbits": 1,
+                                             "encoding": "utf-8",
+                                             "log_dir": self.tmp,
+                                             "timeout": 1.0}), \
+             mock.patch.object(serial_log, "connect_serial",
                                return_value=fake):
             code = serial_log.main()
         # main() 成功路径无显式 return → None (非 0)

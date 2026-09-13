@@ -162,7 +162,9 @@ class FeedbackLoggingTests(unittest.TestCase):
         state = verify._log_feedback_event(self._result(), gate_run=False)
         self.assertTrue(state["logged"])
         self.assertEqual(state["event_id"], "bf_1")
-        event = json.loads(m_run.call_args.args[0][3])
+        # F-159: argv 位置索引 [0][3] → 按值定位 (--log 后随事件 JSON)
+        cmd = m_run.call_args.args[0]
+        event = json.loads(cmd[cmd.index("--log") + 1])
         self.assertEqual(event["pipeline"], "build_fix")
         self.assertEqual(event["outcome"], "fixed")     # ok 且无 hardfault
         self.assertEqual(event["verify_result"], "pass")
@@ -177,7 +179,9 @@ class FeedbackLoggingTests(unittest.TestCase):
         r["steps"]["hardfault"] = {"fault_type": "BusFault"}
         state = verify._log_feedback_event(r, gate_run=False)
         self.assertTrue(state["logged"])
-        event = json.loads(m_run.call_args.args[0][3])
+        # F-159: 按值定位 (同上)
+        cmd = m_run.call_args.args[0]
+        event = json.loads(cmd[cmd.index("--log") + 1])
         self.assertEqual(event["pipeline"], "hardfault")
         self.assertEqual(event["outcome"], "still_broken")
         self.assertEqual(event["fault_type"], "BusFault")
@@ -225,6 +229,114 @@ class StepFlashNoArtifactTests(unittest.TestCase):
         r = verify.step_flash("no/such/file.hex")
         self.assertEqual(r["status"], "error")
         self.assertIn("no/such/file.hex", r["message"])
+
+
+class StepFlashN3MarkerTests(unittest.TestCase):
+    """F-163 (L-4): step_flash 高频真机路径接 N-3 构造性标记 —
+    rc=0 只是必要条件; 串尾标记缺席 = OpenOCD 提前退出, 拒绝按成功入账。"""
+
+    def setUp(self):
+        old = verify.WORKSPACE
+        verify.WORKSPACE = tempfile.mkdtemp()
+        self.addCleanup(setattr, verify, "WORKSPACE", old)
+        self.addCleanup(shutil.rmtree, verify.WORKSPACE, ignore_errors=True)
+        os.makedirs(os.path.join(verify.WORKSPACE, "obj"), exist_ok=True)
+        self.hex_rel = "obj/app.hex"
+        with open(os.path.join(verify.WORKSPACE, self.hex_rel), "w") as f:
+            f.write(":00000001FF\n")
+
+    @mock.patch.object(verify, "run_cmd")
+    @mock.patch.object(verify, "_openocd_exe", return_value="openocd")
+    def _flash(self, m_exe, m_run, returncode=0, stdout_tail="", stderr_tail=""):
+        m_run.return_value = {"status": "ok" if returncode == 0 else "error",
+                              "returncode": returncode,
+                              "stdout": stdout_tail, "stderr": stderr_tail}
+        return verify.step_flash(self.hex_rel), m_run
+
+    def test_rc0_with_marker_ok_and_cmd_carries_echo(self):
+        r, m_run = self._flash(stdout_tail="Mark: MARK_ACTION_DONE")
+        self.assertEqual(r["status"], "ok")
+        cmd = m_run.call_args[0][0]
+        self.assertIn("echo MARK_ACTION_DONE", " ".join(cmd))
+
+    def test_rc0_without_marker_rejected(self):
+        r, _ = self._flash(stdout_tail="Info : everything looks fine (truncated)")
+        self.assertEqual(r["status"], "error")
+        self.assertIn("action_incomplete", r["message"])
+
+    def test_nonzero_rc_keeps_legacy_error_path(self):
+        r, _ = self._flash(returncode=1, stdout_tail="MARK_ACTION_DONE")
+        self.assertEqual(r["status"], "error")
+        self.assertNotIn("action_incomplete", r.get("message", ""))
+
+    def test_marker_on_stderr_only_still_ok(self):
+        """fresh-checker M-4 钉①: 真实 OpenOCD 日志走 stderr（F-090），
+        标记在场判定必须吃 stdout+stderr 拼接——若将来有人把判据改成
+        只查 stdout，本钉必须红。"""
+        r, _ = self._flash(stdout_tail="", stderr_tail="Info : Wrote ... "
+                           "MARK_ACTION_DONE")
+        self.assertEqual(r["status"], "ok")
+
+    def test_cmd_ordering_marker_echo_before_exit_and_program_clean(self):
+        """fresh-checker M-4 钉②: 拆序语义形态锁——串尾 echo 必在 exit 之前
+        （exit 截胡时标记不会在场，这是构造性证据方向成立的前提），
+        且 program 段字符串不含 reset（reset 移交 post_reset/capture 起点）。"""
+        _, m_run = self._flash(stdout_tail="MARK_ACTION_DONE")
+        cmd = m_run.call_args[0][0]
+        idx_echo = next(i for i, v in enumerate(cmd)
+                        if "echo MARK_ACTION_DONE" in v)
+        idx_exit = cmd.index("exit")
+        self.assertLess(idx_echo, idx_exit)
+        program = next(v for v in cmd if v.startswith("program "))
+        self.assertNotIn("reset", program)
+        self.assertIn("verify", program)
+
+
+class FlashAttemptsMessageFallbackTests(unittest.TestCase):
+    """F-163 审核 Minor (M-4a): _run_flash_step 消费端必须回退读 message。
+
+    step_flash 的 message-only 错误 dict (action_incomplete / 无 hex) 不带
+    stderr/stdout 键, 旧消费端 `flash.get("stderr", flash.get("stdout", ""))`
+    恒得空串 → attempts[].message 隐身根因, 最终 JSON 看不出为什么失败。
+    本钉走真实 step_flash (mock run_cmd rc=0 无标记) → _run_flash_step,
+    断言 action_incomplete 根因字符串出现在 attempts[].message。
+    """
+
+    def setUp(self):
+        old = verify.WORKSPACE
+        verify.WORKSPACE = tempfile.mkdtemp()
+        self.addCleanup(setattr, verify, "WORKSPACE", old)
+        self.addCleanup(shutil.rmtree, verify.WORKSPACE, ignore_errors=True)
+        os.makedirs(os.path.join(verify.WORKSPACE, "obj"), exist_ok=True)
+        self.hex_rel = "obj/app.hex"
+        with open(os.path.join(verify.WORKSPACE, self.hex_rel), "w") as f:
+            f.write(":00000001FF\n")
+
+    def test_message_only_error_surfaces_in_attempts(self):
+        result = {"steps": {}}
+        args = mock.Mock(no_flash=False, lease_wait=0.0, json=False,
+                         task_origin="manual",
+                         require_schedule_origin=False)
+        with mock.patch.object(verify, "run_cmd") as m_run, \
+             mock.patch.object(verify, "_openocd_exe",
+                               return_value="openocd"), \
+             mock.patch.object(verify, "hw_lease") as m_lease, \
+             mock.patch.object(verify, "_output"), \
+             mock.patch.object(verify, "_record_checkpoint_early_exit"):
+            # rc=0 但串尾标记缺席 → step_flash 返回 message-only error
+            m_run.return_value = {"status": "ok", "returncode": 0,
+                                  "stdout": "Info : all fine (no marker)",
+                                  "stderr": ""}
+            m_lease.acquire.return_value = {"ok": True}
+            with self.assertRaises(SystemExit) as ctx:
+                verify._run_flash_step(args, {}, result, self.hex_rel,
+                                       sim_mode=False, max_retries=0,
+                                       retry_delay=0)
+            self.assertEqual(ctx.exception.code, 1)   # fail-closed 不变
+        attempts = result["steps"]["flash"]["attempts"]
+        self.assertEqual(len(attempts), 1)
+        self.assertEqual(attempts[0]["status"], "error")
+        self.assertIn("action_incomplete", attempts[0]["message"])
 
 
 class RttSpawnFlagsPlatformTests(unittest.TestCase):

@@ -6,11 +6,8 @@ halt / resume / step / reg / read-mem / write-mem / bp / rbp / run-to
 
 import argparse
 import json
-import os
 import re
-import signal
 import socket
-import subprocess
 import sys
 import time
 from pathlib import Path
@@ -23,90 +20,36 @@ if str(SCRIPT_DIR) not in sys.path:
 from openocd_runtime import (
     resolve_openocd_params,  # noqa: F401  (F-091 再导出, 调用面不变)
     start_openocd_server,  # noqa: F401  (F-091 再导出, 调用面不变)
-    hidden_subprocess_kwargs,
+    build_openocd_cmd,  # noqa: F401  (F-123 再导出, 调用面不变)
+    cleanup_proc,  # noqa: F401  (F-123 再导出=runtime cleanup 别名, 调用面不变)
+    wait_server_ready,  # noqa: F401  (F-123 再导出, 调用面不变)
     load_project_config,
     save_project_config,
     load_workspace_state,
-    get_state_entry,
+    resolve_param,
+    state_lookup as build_state_lookup,   # F-156 (P2-1): 内联第四份收编
     workspace_root,
-    is_missing,
 )
 
 
-# ── OpenOCD 服务器启动（复用 openocd_gdb.py 模式） ──────────────────
+def parse_hex_addr(text: str) -> int:
+    """F-133/f: 地址必须显式 0x 十六进制 — 旧 execute_action 把裸串直接
+    拼进 telnet 命令, 十进制 "134217726" 曾被 int(x,16) 静默误读; 非法
+    输入 (空/无前缀/坏字符) 一律 ValueError, 由调用方转 JSON 错误契约。"""
+    if not isinstance(text, str) or not text.startswith(("0x", "0X")):
+        raise ValueError(f"地址须为 0x 前缀十六进制: {text!r}")
+    body = text[2:]
+    if not body or not all(c in "0123456789abcdefABCDEF" for c in body):
+        raise ValueError(f"地址须为 0x 前缀十六进制: {text!r}")
+    return int(body, 16)
 
-def build_openocd_cmd(exe: str, board: str = "", interface: str = "", target: str = "",
-                      search: str = "", adapter_speed: str = "", transport: str = "",
-                      gdb_port: int = 3333, telnet_port: int = 4444) -> list:
-    """构建 OpenOCD 命令行"""
-    cmd = [exe]
-    if search:
-        cmd.extend(["-s", search])
-    if board:
-        cmd.extend(["-f", board])
-    else:
-        if interface:
-            cmd.extend(["-f", interface])
-        if target:
-            cmd.extend(["-f", target])
-    if adapter_speed:
-        cmd.extend(["-c", f"adapter speed {adapter_speed}"])
-    if transport:
-        cmd.extend(["-c", f"transport select {transport}"])
-    cmd.extend(["-c", f"gdb_port {gdb_port}"])
-    cmd.extend(["-c", f"telnet_port {telnet_port}"])
-    return cmd
+# F-123 (工单 P0-7): 本地 build_openocd_cmd / wait_server_ready /
+# cleanup_proc 三份拷贝已删除, 统一用 openocd_runtime 单实现
+# (readline 阻塞换 daemon 排空线程, timeout 真生效)。
 
-
-def wait_server_ready(proc: subprocess.Popen, telnet_port: int, timeout: int = 15) -> tuple:
-    """等待 OpenOCD 就绪，返回 (ready, errors)"""
-    start = time.time()
-    errors = []
-    ready = False
-    while time.time() - start < timeout:
-        if proc.poll() is not None:
-            remaining = proc.stderr.read()
-            for line in remaining.splitlines():
-                if "Error:" in line:
-                    errors.append(line.strip())
-            return False, errors
-        line = proc.stderr.readline()
-        if not line:
-            time.sleep(0.1)
-            continue
-        line = line.strip()
-        if "Error:" in line:
-            errors.append(line)
-        if f"Listening on port {telnet_port}" in line or "listening on" in line.lower():
-            ready = True
-            break
-
-    if not ready:
-        return False, errors
-
-    critical_keywords = [
-        "open failed", "init mode failed", "no device found",
-        "cannot connect", "error connecting dp", "examination failed",
-        "failed to read memory", "failed to write memory",
-        "cannot read idr", "polling failed",
-    ]
-    critical_errors = [e for e in errors if any(k in e.lower() for k in critical_keywords)]
-    if critical_errors:
-        return False, critical_errors
-    return True, errors
-
-
-def cleanup_proc(proc: subprocess.Popen):
-    """清理 OpenOCD 进程"""
-    if proc and proc.poll() is None:
-        try:
-            if sys.platform == "win32":
-                proc.terminate()
-            else:
-                proc.send_signal(signal.SIGTERM)
-            proc.wait(timeout=5)
-        except (subprocess.TimeoutExpired, OSError):
-            proc.kill()
+# F-156 (P2-1): _state_lookup 别名 — 内联第四份 last_* 映射收编
+# openocd_runtime.state_lookup 超集单实现
+_state_lookup = build_state_lookup
 
 
 # ── Telnet 连接层 ──────────────────────────────────────────────
@@ -278,15 +221,18 @@ ALL_ACTIONS = ["halt", "resume", "step", "reg", "read-mem", "write-mem", "bp", "
 def main():
     parser = argparse.ArgumentParser(description="OpenOCD Telnet 调试命令")
     parser.add_argument("action", choices=ALL_ACTIONS)
-    parser.add_argument("--exe", default="openocd", help="openocd 路径")
+    # F-133/f: --exe 缺省 None 走 resolve_param 链 (cli > config.exe >
+    # machine.json openocd_exe > PATH); 旧 default="openocd" 使配置永不生效
+    parser.add_argument("--exe", default=None, help="openocd 路径")
     parser.add_argument("--board", default=None, help="board 配置文件")
     parser.add_argument("--interface", default=None, help="interface 配置文件")
     parser.add_argument("--target", default=None, help="target 配置文件")
     parser.add_argument("--search", default="", help="额外配置脚本搜索目录")
     parser.add_argument("--adapter-speed", default=None, help="调试速率 kHz")
     parser.add_argument("--transport", default=None, choices=["", "swd", "jtag"], help="传输协议")
-    parser.add_argument("--gdb-port", type=int, default=3333, help="GDB 端口")
-    parser.add_argument("--telnet-port", type=int, default=4444, help="Telnet 端口")
+    # F-133/f: 端口缺省 None 读工程配置 (openocd 段 gdb_port/telnet_port)
+    parser.add_argument("--gdb-port", type=int, default=None, help="GDB 端口 (默认 3333, 可经工程配置)")
+    parser.add_argument("--telnet-port", type=int, default=None, help="Telnet 端口 (默认 4444, 可经工程配置)")
     parser.add_argument("--address", default="", help="地址（read-mem/write-mem/bp/rbp/run-to 用）")
     parser.add_argument("--length", type=int, default=16, help="读取长度（read-mem 用，单位为 width 数量）")
     parser.add_argument("--value", default="", help="写入值（write-mem 用）")
@@ -303,13 +249,8 @@ def main():
     workspace = workspace_root(args.workspace)
     project_config = load_project_config(str(workspace))
     state = load_workspace_state(str(workspace))
-    state_lookup = {
-        "board": get_state_entry(state, "last_debug").get("board") or get_state_entry(state, "last_flash").get("board"),
-        "interface": get_state_entry(state, "last_debug").get("interface") or get_state_entry(state, "last_flash").get("interface"),
-        "target": get_state_entry(state, "last_debug").get("target") or get_state_entry(state, "last_flash").get("target"),
-        "adapter_speed": get_state_entry(state, "last_debug").get("adapter_speed") or get_state_entry(state, "last_flash").get("adapter_speed"),
-        "transport": get_state_entry(state, "last_debug").get("transport") or get_state_entry(state, "last_flash").get("transport"),
-    }
+    # F-156 (P2-1): last_* 状态映射收编 openocd_runtime 超集单实现
+    state_lookup = build_state_lookup(state)
     oc_params = resolve_openocd_params(args, project_config, state_lookup)
 
     # 使用解析后的参数
@@ -318,6 +259,28 @@ def main():
     target = oc_params["target"]
     adapter_speed = oc_params["adapter_speed"]
     transport = oc_params["transport"]
+
+    # F-133/f: exe/端口走解析链 (cli > 工程配置 > 既有缺省)
+    exe, _exe_source = resolve_param("exe", args.exe, config=project_config,
+                                     config_keys=["exe"])
+    try:
+        telnet_port = int(args.telnet_port
+                          if args.telnet_port is not None
+                          else project_config.get("telnet_port", 4444))
+        gdb_port = int(args.gdb_port
+                       if args.gdb_port is not None
+                       else project_config.get("gdb_port", 3333))
+    except (TypeError, ValueError) as e:
+        result = {
+            "status": "error", "action": args.action,
+            "error": {"code": "invalid_config",
+                      "message": f"gdb_port/telnet_port 须为整数: {e}"},
+        }
+        if args.as_json:
+            output_json(result)
+        else:
+            print(f"错误: {result['error']['message']}", file=sys.stderr, flush=True)
+        sys.exit(1)
 
     # 参数校验
     if not board and not interface and not target:
@@ -353,18 +316,33 @@ def main():
             print(f"错误: {result['error']['message']}", file=sys.stderr, flush=True)
         sys.exit(1)
 
+    # F-133/f: 地址显式 0x 解析 — 非法地址在启动 OpenOCD 前拒 (错误契约)
+    if args.action in ("read-mem", "write-mem", "bp", "rbp", "run-to"):
+        try:
+            parse_hex_addr(args.address)
+        except ValueError as e:
+            result = {
+                "status": "error", "action": args.action,
+                "error": {"code": "invalid_address", "message": str(e)},
+            }
+            if args.as_json:
+                output_json(result)
+            else:
+                print(f"错误: {result['error']['message']}", file=sys.stderr, flush=True)
+            sys.exit(1)
+
     # 构建 OpenOCD 命令并启动
     cmd = build_openocd_cmd(
-        exe=args.exe, board=board or "", interface=interface or "", target=target or "",
+        exe=exe, board=board or "", interface=interface or "", target=target or "",
         search=args.search, adapter_speed=adapter_speed or "", transport=transport or "",
-        gdb_port=args.gdb_port, telnet_port=args.telnet_port,
+        gdb_port=gdb_port, telnet_port=telnet_port,
     )
 
     proc = None
     telnet = None
     try:
         proc = start_openocd_server(cmd)
-        ready, errors = wait_server_ready(proc, args.telnet_port)
+        ready, errors = wait_server_ready(proc, telnet_port)
 
         if not ready:
             error_msg = "; ".join(errors) if errors else "OpenOCD 启动失败或超时"
@@ -379,7 +357,7 @@ def main():
             sys.exit(1)
 
         # 连接 Telnet
-        telnet = TelnetConnection(port=args.telnet_port)
+        telnet = TelnetConnection(port=telnet_port)
         telnet.connect()
 
         # 执行调试命令
@@ -397,13 +375,16 @@ def main():
 
         if args.as_json:
             output_json(result)
+            # F-120 (工单 P0-2): 旧版 error 时 JSON 分支不退出 (print_result
+            # 的 exit(1) 只在非 JSON 分支生效)。finally 清理照常执行。
+            sys.exit(0 if result.get("status") == "ok" else 1)
         else:
             print_result(result, args.action)
 
     except FileNotFoundError:
         result = {
             "status": "error", "action": args.action,
-            "error": {"code": "exe_not_found", "message": f"openocd 不存在或不在 PATH 中: {args.exe}"},
+            "error": {"code": "exe_not_found", "message": f"openocd 不存在或不在 PATH 中: {exe}"},
         }
         if args.as_json:
             output_json(result)
@@ -430,7 +411,6 @@ def main():
 def execute_action(telnet: TelnetConnection, args) -> dict:
     """根据 action 执行 Telnet 调试命令"""
     action = args.action
-    start_time = time.time()
 
     if action == "halt":
         halt_raw = telnet.send("halt")

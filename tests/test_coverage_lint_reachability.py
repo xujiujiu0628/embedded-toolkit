@@ -132,7 +132,8 @@ class RepoRegressionTests(unittest.TestCase):
         # serial 族 + cube_to_keil 经 F-097/F-102), 反向钉按 P2-12
         # "覆盖提升即移钉"纪律全部移除, 未覆盖清单 12 → 0。
         self.assertNotIn("serial_mux.py", uncovered)
-        self.assertNotIn("cube_to_keil.py", uncovered)
+        # F-131: 改名 cube_usercode.py (原 cube_to_keil.py)
+        self.assertNotIn("cube_usercode.py", uncovered)
         self.assertNotIn("serial_send.py", uncovered)
 
 

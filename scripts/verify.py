@@ -26,14 +26,12 @@ archive 路径, 唤起 keil_build / keil_analyze 需手动 cp 副本到仓内。
 """
 
 import argparse
-import hashlib
 import json
 import os
 import re
 import subprocess
 import sys
 import time
-from datetime import datetime, timezone, timedelta
 
 
 WORKSPACE = None  # 工程根, main() 中 --project 或 cwd 向上发现后设置
@@ -49,21 +47,30 @@ def _openocd_exe() -> str:
     惰性化后 import 卫生由 test_import_hygiene 钉死。"""
     return load_machine()["openocd_exe"]
 
-from runtime_common import output_json  # noqa: E402  (F-041: doctor --json 复用共享层)
-from openocd_runtime import swd_probe  # noqa: E402  (F-041: SWD 探测与 release G0.5 同源)
-from expectations import (ExpectationError, contract_hashes,  # noqa: E402  (F-055: 拆分件再导出, verify.X 调用面不变)
+from runtime_common import now_iso, output_json  # noqa: E402  (F-041: doctor --json 复用共享层; F-157: now_iso 收编)
+from openocd_runtime import reset_target, swd_probe  # noqa: E402,F401  (F-041: SWD 探测与 release G0.5 同源; F-129: 判定后复位)
+from openocd_run import ACTION_DONE_CMD, marker_present  # noqa: E402  (F-163: N-3 标记共享件)
+import hw_lease  # noqa: E402  (F-145: flash+capture 段机器级设备锁)
+import junit_xml  # noqa: E402  (F-147: --junit-xml 报告, 生成逻辑在模块内)
+
+# F-147: --junit-xml 的输出路径, main() 设置; _output 是唯一出口汇点,
+# 报告在出口统一落盘 (含 preflight 拒绝的早退运行)。
+_JUNIT_OUT: str | None = None
+from expectations import (ExpectationError, contract_hashes,  # noqa: E402,F401  (F-055: 拆分件再导出, verify.X 调用面不变)
                           evaluate_expectations, load_expectations,
                           _expect_matched, check_forbidden_fields, _forbidden_hit)
 from capture_rtt import step_capture_rtt as _step_capture_rtt  # noqa: E402  (F-056: 拆分件再导出, 旧私有名保持——3 处测试钉兼容)
 from physical_gate import step_physical_gate  # noqa: E402  (F-057: 拆分件再导出, 同名同签名)
-from doctor import (doctor_report, fixture_health,  # noqa: E402  (F-058: 拆分件再导出, 调用面不变)
+from doctor import (doctor_report, fixture_health,  # noqa: E402,F401  (F-058: 拆分件再导出, 调用面不变)
                     _print_doctor, _detect_default_branch, _fixture_main_sha)
-from checkpoint_ledger import (CHECKPOINT_STATUSES, _git_head,  # noqa: E402  (F-059: 拆分件再导出, 调用面不变)
+from checkpoint_ledger import (CHECKPOINT_STATUSES, _git_head,  # noqa: E402,F401  (F-059: 拆分件再导出, 调用面不变)
                                record_checkpoint)
 from failure_context import (_filter_capture_lines,  # noqa: E402  (F-060: 拆分件再导出, 调用面不变)
                               resolve_capture_timeout, _save_failure_context)
 from capture_semihosting import (run_semihosting_session,  # noqa: E402  (F-061: 拆分件再导出)
                                  SemihostingTimeout)
+from capture_sim import (DEFAULT_MACHINE, SimTimeout,  # noqa: E402  (F-150: sim 后端)
+                         resolve_qemu, run_sim_session)
 
 GCC_BUILD = os.path.join(TOOLKIT_ROOT, "scripts", "gcc_build.py")         # 默认后端 (builder=gcc)
 # Keil 退役桥 (2026-09-05 F-067b 拆 archive): 仓内不再保留 keil_*.py,
@@ -102,9 +109,8 @@ def _keil_bridge_paths():
             f"请核对 archive 副本完整性。")
     return build, analyze
 
-def now_iso() -> str:
-    tz = timezone(timedelta(hours=8))
-    return datetime.now(tz).isoformat(timespec="seconds")
+# F-157: 本地 now_iso (UTC+8 硬编码) 删除, 收编 runtime_common 共享版
+# (astimezone 本地时区) — 时区口径变化见 CHANGELOG。
 
 
 def load_config(project_root: str) -> dict:
@@ -223,9 +229,23 @@ def step_flash(hex_file: str) -> dict:
         _openocd_exe(),
         "-f", "interface/stlink.cfg",
         "-f", "target/stm32f1x.cfg",
-        "-c", f"program {{{hex_abs}}} verify reset exit"
+        # F-163 (L-4): program 串拆序 — verify 不带 reset, 串尾 echo 构造性标记
+        # 先于 exit (exit 截胡时标记 echo 不会在场, 这正是"脚本没跑完"的构造性
+        # 证据方向); reset 由主流程 post_reset (F-129) 与 capture 会话各自的
+        # reset halt 起点负责, 真机复验结论回填见 CHANGELOG F-163
+        "-c", f"program {{{hex_abs}}} verify",
+        "-c", ACTION_DONE_CMD,
+        "-c", "exit",
     ]
-    return run_cmd(cmd, timeout=30)
+    result = run_cmd(cmd, timeout=30)
+    if result["status"] == "ok" and not marker_present(
+            result.get("stdout", "") + result.get("stderr", "")):
+        # F-163 (N-3): exit 0 但串尾标记缺席 = OpenOCD 提前退出, 脚本没跑完 —
+        # 不许按成功入账 (构造性证据优先于退出码)
+        return {"status": "error",
+                "message": ("action_incomplete: 构造性标记缺席 — OpenOCD exit 0 "
+                            "但 program 串未跑完 (串尾 echo 未出现), 拒绝按成功入账")}
+    return result
 
 
 class ConfigError(ValueError):
@@ -284,6 +304,17 @@ def append_audit_entry(workspace: str, origin: str, step: str,
     except OSError:
         # 台账是审计而非门禁: 落盘失败不阻断主流程, stderr 告警即可
         print(f"[warn] audit 落盘失败: {audit_path}", file=sys.stderr)
+
+
+def _release_hw_lease(lease) -> None:
+    """F-145: 释放设备锁 (best-effort——释放失败只告警, 不影响本次结果;
+    进程退出时 OS 自动放锁兜底)。"""
+    if not lease or not lease.get("ok"):
+        return
+    rs = hw_lease.release(lease)
+    if not rs.get("ok"):
+        print(f"[warn] 设备锁释放失败: {rs.get('error', '')} "
+              f"(进程退出时 OS 自动放锁, 不影响本次结果)", file=sys.stderr)
 
 
 def _hardfault_trigger(captured_text, capture_empty, flash_ran):
@@ -396,13 +427,16 @@ def verify(output: str, expect: list[str], description: str = "", expect_pattern
 
 
 def _finish_capture_timeout(proc, result: dict, capture_timeout: int,
-                            max_retries: int, as_json: bool):
+                            max_retries: int, as_json: bool, lease=None,
+                            method: str = "semihosting",
+                            tool: str = "OpenOCD"):
     """F-003: OpenOCD 卡死超时 — 回收部分输出并诚实判 capture_failed。
 
     旧行为丢弃已收输出并按 capture ok(lines=0) 入账, 把"采集工具超时"
     伪装成"程序无输出"归因。正常路径 OpenOCD 必然经 sleep+halt+shutdown
     退出, 超时只发生在工具自身卡死 — 输出不可信但部分留证仍有价值。
-    待真机终判: 修复前后需各跑一次真机确认归因链。"""
+    待真机终判: 修复前后需各跑一次真机确认归因链。
+    F-150: method/tool 参数化 — sim 后端 (qemu) 复用同一收尸/归因出口。"""
     proc.kill()
     try:
         stdout, stderr = proc.communicate(timeout=5)
@@ -410,21 +444,23 @@ def _finish_capture_timeout(proc, result: dict, capture_timeout: int,
         stdout, stderr = "", ""
     partial = _filter_capture_lines((stdout or "") + (stderr or ""))
     result["steps"]["capture"] = {
-        "status": "error", "method": "semihosting",
+        "status": "error", "method": method,
         "timeout_sec": capture_timeout,
         "lines": len(partial),
         "partial_output": _sanitize_text("\n".join(partial))[:2000],
-        "error": (f"OpenOCD 未在 {capture_timeout + 30}s 内退出 — 采集超时"
+        "error": (f"{tool} 未在 {capture_timeout + 30}s 内退出 — 采集超时"
                   "是工具故障, 非'程序无输出' (F-003)"),
     }
     result["status"] = "capture_failed"
     result["error"] = "capture 超时: OpenOCD 卡死, 部分输出已存失败现场"
+    _release_hw_lease(lease)   # F-131: 超时出口也必须放掉硬件租约
     _save_failure_context(result, max_retries, capture_text="\n".join(partial), workspace=WORKSPACE)
     _output(result, as_json)
     sys.exit(1)
 
 
-def main():
+def _parse_args(argv=None):
+    """F-160 (P1-4 拆分): argparse 装配独立函数 — main() 纯接线。"""
     parser = argparse.ArgumentParser(
         description="闭环验证 — Build → Analyze → Flash → Capture → Verify",
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -455,7 +491,7 @@ def main():
     parser.add_argument("--gate-run", dest="gate_run", action="store_true",
                         help="发布门禁发起的运行: 跳过 feedback_db 落账")
     parser.add_argument("--doctor", action="store_true",
-                        help="环境预检: 打印 toolkit/Python/machine.json 四键/gcc/openocd/"
+                        help="环境预检: 打印 toolkit/Python/machine.json 三键/gcc/openocd/"
                              "make/SWD 连通性矩阵后退出 (诊断报告, 不做门禁判定, 退出码恒 0)")
     parser.add_argument("--task-origin", dest="task_origin",
                         choices=list(HIL_ORIGINS), default="manual",
@@ -465,16 +501,31 @@ def main():
                         dest="require_schedule_origin", action="store_true",
                         help="F-046 硬卡旗标: 开启后拒绝 task_origin=manual, "
                              "CI / release 门禁脚本默认加这个旗标")
-    args = parser.parse_args()
+    parser.add_argument("--lease-wait", dest="lease_wait", type=float,
+                        default=0.0,
+                        help="F-145: 设备锁冲突时有界等待秒数 (默认 0 = "
+                             "fail-fast; 等 span 含 flash+capture 全程)")
+    parser.add_argument("--junit-xml", dest="junit_xml", default=None,
+                        metavar="PATH",
+                        help="F-147: 另写 JUnit XML 报告到 PATH (CI 测试面板"
+                             "用; preflight 拒绝 = 期望全 skipped + 一条 "
+                             "preflight error; 写失败记 junit_xml_error "
+                             "并拉低退出码)")
 
-    if args.doctor:
-        # F-041: 诊断分支先于工程发现 —— doctor 不依赖 .workbench 工程
-        report = doctor_report()
-        if args.json:
-            output_json(report)
-        else:
-            _print_doctor(report)
-        return
+    return parser.parse_args(argv)
+
+
+def _run_doctor(args) -> None:
+    """F-041: 诊断分支先于工程发现 —— doctor 不依赖 .workbench 工程。"""
+    report = doctor_report()
+    if args.json:
+        output_json(report)
+    else:
+        _print_doctor(report)
+
+
+def _prepare_context(args):
+    """F-160 (P1-4 拆分): 工程根发现 + 配置/版本装载。"""
 
     # 工程根: --project > cwd 向上发现
     global WORKSPACE
@@ -496,6 +547,29 @@ def main():
     if cfg_min and not version_ok(toolkit_version(), cfg_min):
         print(f"错误: 工具库版本 {toolkit_version()} 低于工程要求 {cfg_min}", file=sys.stderr)
         sys.exit(1)
+
+    return config, builder
+
+
+def main():
+    args = _parse_args()
+
+    global _JUNIT_OUT
+    _JUNIT_OUT = args.junit_xml
+
+    if args.doctor:
+        _run_doctor(args)
+        return
+
+    _run_pipeline(args)
+
+
+def _run_pipeline(args):
+    """F-160 (P1-4 拆分): 编排骨架 — 各段实现见 _prepare_context/
+    _run_build_step/_run_flash_step/_run_capture_step/_run_judgement/
+    _finalize_run; 行为零变更搬移 (硬验收: 全量测试零修改全绿 +
+    --json 输出逐字段结构一致)。"""
+    config, builder = _prepare_context(args)
 
     # Clamp retry
     max_retries = max(0, min(args.retry, 3))
@@ -541,12 +615,38 @@ def main():
         "steps": {}
     }
 
+    hex_file, elf_file = _run_build_step(
+        args, config, builder, result, max_retries, retry_delay)
+
+    # F-150: sim 后端在 Step 1 前就由 config 决定 — 全程无烧录无探针
+    cap_backend = (config.get("capture", {}) or {}).get("backend", "semihosting")
+    sim_cfg = (config.get("capture", {}) or {}).get("sim", {}) or {}
+    sim_mode = (cap_backend == "sim")
+
+    lease = _run_flash_step(args, config, result, hex_file, sim_mode,
+                            max_retries, retry_delay)
+
+    captured_text, captured_lines, capture_timeout = _run_capture_step(
+        args, config, result, lease, sim_mode, cap_backend, sim_cfg,
+        max_retries, elf_file)
+
+    _run_judgement(args, config, result, captured_text, captured_lines,
+                   capture_timeout, expect, description, expectations,
+                   expect_mode, started_ts)
+
+    _finalize_run(args, config, result, lease, max_retries, captured_text)
+
+
+def _run_build_step(args, config, builder, result, max_retries, retry_delay):
+    """Step 1-2: Build + Analyze (with retry) — 失败早退 (sys.exit) 原样保留。"""
+
     # ---- Step 1-2: Build + Analyze (with retry) ----
     if not args.no_build:
         build_t0 = time.time()  # F-050: step-level timing, 给 duration_profile 用
         build_attempts = []
         build_ok = False
         analyze = None   # F-008: build 循环内的分析结果, 循环后复用不再双跑
+        elf_file = ""    # F-150: sim 后端内核 (gcc details.elf_file)
         for attempt in range(max_retries + 1):
             build = step_build(config, builder, rebuild=args.rebuild)
             build_info = {
@@ -560,6 +660,7 @@ def main():
             if build.get("status") == "ok":
                 log_file = build.get("details", {}).get("log_file", "")
                 hex_file = build.get("details", {}).get("hex_file", "")
+                elf_file = build.get("details", {}).get("elf_file", "")  # F-150: sim 内核
 
                 if log_file or builder == "gcc":
                     analyze = step_analyze(log_file, builder, build.get("metrics"))
@@ -651,35 +752,70 @@ def main():
         # 从 state.json 读取上次构建产物 (gcc/keil 后端 build 时写入)
         # F-007: 无产物走 step_flash 的明确报错, 不再回落 blink 退役残留路径
         hex_file = ""
+        elf_file = ""
         try:
             state_path = os.path.join(WORKSPACE, ".workbench", "state.json")
             if os.path.exists(state_path):
                 with open(state_path, 'r', encoding='utf-8') as f:
                     state = json.load(f)
                 hex_file = state.get("last_build", {}).get("hex_file", "")
+                # F-150: sim 后端的内核 = 上次构建 elf 产物
+                elf_file = (state.get("last_build", {}).get("elf_file", "")
+                            or state.get("last_build", {}).get("artifacts", {})
+                            .get("elf_file", ""))
         except (json.JSONDecodeError, UnicodeDecodeError, OSError):
             hex_file = ""   # state.json 损坏不再裸 traceback, 走无产物报错
         result["steps"]["build"] = {"status": "skipped"}
         result["steps"]["analyze"] = {"status": "skipped"}
 
+    return hex_file, elf_file
+
+
+def _run_flash_step(args, config, result, hex_file, sim_mode, max_retries,
+                    retry_delay):
+    """Step 3: Flash (with retry) + 设备锁获取 — 返回 lease (sim 模式为 None)。"""
+
     # ---- Step 3: Flash (with retry) ----
     # F-046: HIL 入口守卫 — 拒 manual 时给友好提示, exit 2 (区别于 0=成功/1=失败)
-    if not args.no_flash:
+    # F-145: 机器级设备锁 — flash+capture 段全程持有, 同一探针/板子同时只被
+    # 一个 verify (或 openocd_run flash/erase) 占用; 冲突方拿 resource_busy +
+    # 持有者信息 fail-fast (exit 2), --lease-wait 可有界等待。
+    # F-150: sim 后端不触探针 → 不持锁 (CI 可并行)。
+    lease = None
+    if not sim_mode:
+        lease = hw_lease.acquire(
+            purpose=f"verify flash+capture ({os.path.basename(WORKSPACE)})",
+            workspace=WORKSPACE,
+            wait=getattr(args, "lease_wait", 0.0))
+        if not lease.get("ok"):
+            print(f"错误: {lease.get('error', '设备锁获取失败')}", file=sys.stderr)
+            sys.exit(2)
+    if sim_mode:
+        result["steps"]["flash"] = {
+            "status": "skipped",
+            "reason": "F-150 sim 后端: qemu 直接加载 elf, 无烧录步骤",
+        }
+    elif not args.no_flash:
         flash_t0 = time.time()  # F-050: step-level timing
         # F-046 守卫 (F-050 自审发现: 此前曾误写两行同参数调用, 已删冗余)
         allowed, deny_reason = enforce_hil_origin(
             args.task_origin, args.require_schedule_origin)
         if not allowed:
+            _release_hw_lease(lease)
             print(f"错误: {deny_reason}", file=sys.stderr)
             sys.exit(2)
         flash_attempts = []
         flash_ok = False
         for attempt in range(max_retries + 1):
             flash = step_flash(hex_file)
+            # F-163 审核 Minor: message-only 错误 dict (无 hex / action_incomplete)
+            # 不带 stderr/stdout——消费端必须回退读 message, 否则根因在 JSON 里隐身
+            _flash_msg = (flash.get("stderr") or flash.get("stdout")
+                          or flash.get("message", ""))
             flash_info = {
                 "attempt": attempt + 1,
                 "status": flash.get("status", "error"),
-                "message": flash.get("stderr", flash.get("stdout", ""))[-200:],
+                "message": _flash_msg[-200:],
             }
             flash_attempts.append(flash_info)
             if flash.get("status") == "ok":
@@ -696,6 +832,7 @@ def main():
             }
             result["status"] = "flash_failed"
             result["error"] = f"Flash failed after {len(flash_attempts)} attempt(s)"
+            _release_hw_lease(lease)
             _save_failure_context(result, max_retries, workspace=WORKSPACE)
             _output(result, args.json)
             # F-047 自审 Finding 2: 早退路径也必须落 checkpoint
@@ -716,25 +853,82 @@ def main():
     else:
         result["steps"]["flash"] = {"status": "skipped"}
 
-    # ---- Step 4: Capture (semihosting 默认 | capture.backend=rtt) ----
+    return lease
+
+
+def _run_capture_step(args, config, result, lease, sim_mode, cap_backend,
+                      sim_cfg, max_retries, elf_file):
+    """Step 4: Capture (semihosting 默认 | rtt | sim) — 返回 (captured_text,
+    captured_lines, capture_timeout)。"""
+
+    # ---- Step 4: Capture (semihosting 默认 | rtt | F-150 sim) ----
     # 共同原则: reset halt 确定性起点 (2026-08-16 教训), 行过滤后进 verify()
     # F-046: capture 也是 HIL 步骤 — 守卫幂等, 第二次调用也是放行结果
+    # F-150: sim 后端非硬件步骤 — 不跑 HIL 守卫 (CI 免 manual 限制),
+    # 不落 F-046 台账, 不持设备锁 (见 Step 3)。
     capture_t0 = time.time()  # F-050: step-level timing
-    allowed_capture, deny_reason_capture = enforce_hil_origin(
-        args.task_origin, args.require_schedule_origin)
-    if not allowed_capture:
-        print(f"错误: {deny_reason_capture}", file=sys.stderr)
-        sys.exit(2)
+    if not sim_mode:
+        allowed_capture, deny_reason_capture = enforce_hil_origin(
+            args.task_origin, args.require_schedule_origin)
+        if not allowed_capture:
+            _release_hw_lease(lease)
+            print(f"错误: {deny_reason_capture}", file=sys.stderr)
+            sys.exit(2)
     capture_started = time.time()
     capture_timeout = resolve_capture_timeout(args.timeout, config.get("capture", {}))
     # F-016: 预告窗口 (stderr, 不污染 --json 的 stdout); 人工输入期望需知何时按键
     print("[capture] 采集窗 %ds 自烧录/复位起开启 — 含人工输入期望请全程按键"
           % capture_timeout, file=sys.stderr)
-    cap_backend = (config.get("capture", {}) or {}).get("backend", "semihosting")
     captured_lines = []
     captured_text = ""
 
-    if cap_backend == "rtt":
+    if sim_mode:
+        # ---- F-150: sim 后端 — qemu 直接加载 elf, 判定逻辑零改动 ----
+        try:
+            qemu_exe, qemu_source = resolve_qemu(sim_cfg)
+            kernel = sim_cfg.get("kernel", "") or elf_file
+            if not kernel:
+                raise RuntimeError(
+                    "sim 后端缺 elf 内核: 构建 details.elf_file 与 "
+                    "config capture.sim.kernel 均不可得 (先完整构建一次)")
+            if not os.path.isabs(kernel):
+                kernel = os.path.join(WORKSPACE, kernel)
+            if not os.path.isfile(kernel):
+                raise RuntimeError(f"sim 内核不存在: {kernel}")
+            stdout_sim, stderr_sim = run_sim_session(
+                capture_timeout, sim_cfg.get("machine", DEFAULT_MACHINE),
+                kernel, qemu_exe=qemu_exe, sim_cfg=sim_cfg,
+                workspace=WORKSPACE)
+        except SimTimeout as _to:
+            _finish_capture_timeout(_to.proc, result, capture_timeout,
+                                    max_retries, args.json, lease=lease,
+                                    method="sim", tool="qemu")
+        except Exception as e:
+            result["steps"]["capture"] = {
+                "status": "error", "method": "sim", "error": str(e)
+            }
+            result["status"] = "capture_failed"
+            result["error"] = str(e)
+            _release_hw_lease(lease)
+            _save_failure_context(result, max_retries, workspace=WORKSPACE)
+            _output(result, args.json)
+            # F-047 自审 Finding 2: 早退路径也必须落 checkpoint
+            _record_checkpoint_early_exit(result, args)
+            sys.exit(1)   # 失败早退必须非零 (审计: 原先恒 0 误导脚本化调用方)
+        captured_lines = _filter_capture_lines(stdout_sim + stderr_sim)
+        captured_text = "\n".join(captured_lines)
+        result["steps"]["capture"] = {
+            "status": "ok",
+            "method": "sim",
+            "machine": sim_cfg.get("machine", DEFAULT_MACHINE),
+            "kernel": os.path.relpath(kernel, WORKSPACE).replace(os.sep, "/"),
+            "qemu_source": qemu_source,
+            "timeout_sec": capture_timeout,
+            "lines": len(captured_lines),
+            "duration_sec": round(time.time() - capture_t0, 1),
+            "origin": args.task_origin,   # 溯源一致; sim 非 HIL 不落台账
+        }
+    elif cap_backend == "rtt":
         cap = _step_capture_rtt(capture_timeout, config.get("capture", {}), WORKSPACE)
         if cap.get("status") != "ok":
             result["steps"]["capture"] = {
@@ -742,6 +936,7 @@ def main():
             }
             result["status"] = "capture_failed"
             result["error"] = cap.get("error", "rtt capture failed")
+            _release_hw_lease(lease)
             _save_failure_context(result, max_retries, workspace=WORKSPACE)
             _output(result, args.json)
             # F-047 自审 Finding 2: 早退路径也必须落 checkpoint
@@ -768,13 +963,14 @@ def main():
 
         except SemihostingTimeout as _to:
             _finish_capture_timeout(_to.proc, result, capture_timeout,
-                                    max_retries, args.json)
+                                    max_retries, args.json, lease=lease)
         except Exception as e:
             result["steps"]["capture"] = {
                 "status": "error", "method": "semihosting", "error": str(e)
             }
             result["status"] = "capture_failed"
             result["error"] = str(e)
+            _release_hw_lease(lease)
             _save_failure_context(result, max_retries, workspace=WORKSPACE)
             _output(result, args.json)
             # F-047 自审 Finding 2: 早退路径也必须落 checkpoint
@@ -798,6 +994,15 @@ def main():
         # F-046: 台账落盘 (semihosting 后端, 同上)
         append_audit_entry(WORKSPACE, args.task_origin, "capture", "ok",
                            " ".join(sys.argv))
+
+    return captured_text, captured_lines, capture_timeout
+
+
+def _run_judgement(args, config, result, captured_text, captured_lines,
+                   capture_timeout, expect, description, expectations,
+                   expect_mode, started_ts):
+    """Step 4b/4c/5: HardFault 检测 + 物理门控 + 四态判定 + 顶层 status。"""
+    verify_cfg = config.get("verify", {})
 
     # ---- Step 4b: HardFault 自动检测 ----
     # 触发条件 (修复 2026-08-12):
@@ -907,6 +1112,9 @@ def main():
             "description": description,
             "needs_ai_judgement": True,
         }
+        # F-148 ③: record 命名捕获组的提取值 — 顶层 records 数组
+        # ([{id, 组名: 值}, ...] 平铺; 行级明细在 steps.verify.results[*].records)
+        result["records"] = ev["records"]
         # capture 空兜底 (与 legacy 同款归因)
         if capture_empty and flash_ran:
             verification_result["description"] = (
@@ -944,6 +1152,30 @@ def main():
         result["status"] = verification_result["status"]
     result["elapsed_sec"] = round(time.time() - started_ts, 1)
 
+
+
+def _finalize_run(args, config, result, lease, max_retries, captured_text):
+    """Step 6 + 落账 + 唯一出口 (F-128 evidence/F-147 junit 在 _output 汇聚)。"""
+
+    # ---- Step 6: 判定后硬件自恢复 (F-129, 工单二 A-2) ----
+    # flash 实际发生过的运行结束后复位目标——超时/卡死场景留下的挂着断点
+    # 或半初始化外设不留给下一次运行 (借鉴 agentic-hil)。复位失败只记录
+    # (post_reset: ok|failed|skipped), 绝不改判 verdict; capture.post_reset:
+    # false 显式关闭; --no-flash / flash 未跑成的运行不触发 (无判定即无复位,
+    # 早退出口也不复位——OpenOCD 卡死场景下复位大概率同样卡死)。
+    flash_ok = result.get("steps", {}).get("flash", {}).get("status") == "ok"
+    if flash_ok and (config.get("capture", {}) or {}).get("post_reset", True):
+        rs = reset_target(_openocd_exe())
+        result["post_reset"] = "ok" if rs.get("status") == "ok" else "failed"
+        if rs.get("status") != "ok":
+            print(f"[warn] 判定后复位失败 (不影响 verdict): {rs.get('message', '')}",
+                  file=sys.stderr)
+    else:
+        result["post_reset"] = "skipped"
+
+    # F-131: flash+capture 段结束 (含 post_reset 的 OpenOCD 复用) — 释放租约
+    _release_hw_lease(lease)
+
     # 验证失败 (fail/timing_fail) 时保存失败现场供 Agent 分析
     if result["status"] in ("fail", "timing_fail"):
         _save_failure_context(result, max_retries, capture_text=captured_text, workspace=WORKSPACE)
@@ -972,8 +1204,14 @@ def main():
     )
 
     _output(result, args.json)
-    # 退出码契约: ok=0, 其余(fail/timing_fail/hardfault 等)=1
-    sys.exit(0 if result.get("status") == "ok" else 1)
+    # 退出码契约: ok=0, 其余(fail/timing_fail/hardfault 等)=1;
+    # F-147: junit 报告写失败 → 拉低为 1 (CI 必须知道报告没落盘)
+    failed = (result.get("status") != "ok"
+              or bool(result.get("junit_xml_error")))
+    sys.exit(1 if failed else 0)
+
+
+
 
 
 def _log_feedback_event(result: dict, gate_run: bool) -> dict:
@@ -1030,7 +1268,48 @@ def _sanitize_text(text: str) -> str:
     return ''.join(c for c in text if c.isprintable() or c in '\n\r\t')
 
 
+# ── 证据分级 (F-128 A-1; F-146 T2 retro-fit 对齐 AEL 命名) ─────────────────
+# 借鉴 agentic-embedded-lab 的 claim + fidelity 概念: "仿真通过永不升级为
+# 硬件等价声明"。顶层 evidence 字段让消费方机检区分证据等级; 发布门禁
+# (release.py G2) 与事后审计 (release_audit.py R8) 据此拒绝非真机证据入档。
+# F-146 迁移 (一次性切换, 不留别名, 仓内无外部消费方):
+#   real-hardware → hardware_validated, simulator → simulation_validated;
+#   第四档 production_approved 不由 verify 产出 — 是 release_audit --approve
+#   在发布后对 hardware_validated 记录的人工批准回填 (见 release_audit)。
+EVIDENCE_REAL = "hardware_validated"    # capture 后端 rtt/semihosting 实跑
+EVIDENCE_SIM = "simulation_validated"   # sim 后端 (仿真器加载执行, 无真机在场)
+EVIDENCE_STATIC = "static"              # 仅构建/lint, 或 capture 未跑成 — 无运行时证据
+EVIDENCE_LEVELS = (EVIDENCE_STATIC, EVIDENCE_SIM, EVIDENCE_REAL,
+                   "production_approved")
+_METHOD_EVIDENCE = {
+    "rtt": EVIDENCE_REAL,
+    "semihosting": EVIDENCE_REAL,
+    "sim": EVIDENCE_SIM,   # C-1 capture_sim.py 落地即生效, 本表无需再改
+}
+
+
+def _evidence_level(result: dict) -> str:
+    """从 result.steps.capture 推导本次运行的证据等级 (三档)。
+
+    判据 = capture 步骤实际使用的后端; capture 未跑成 (build/flash 失败
+    早退、capture_failed) 一律 static — 没采到运行时输出就是静态证据,
+    不给"差一点就是真机"的模糊地带。判定 verdict 与证据等级正交:
+    FAIL 也是真机证据, PASS 也可能是静态证据。"""
+    cap = (result.get("steps") or {}).get("capture") or {}
+    if cap.get("status") == "ok":
+        return _METHOD_EVIDENCE.get(cap.get("method"), EVIDENCE_STATIC)
+    return EVIDENCE_STATIC
+
+
 def _output(result: dict, as_json: bool):
+    # F-128: evidence 统一在唯一出口落字段 — main() 的失败早退 (build/
+    # flash/capture 失败) 也汇到这里, 消费方无需对任何 status 特判缺键
+    result["evidence"] = _evidence_level(result)
+    # F-147: JUnit 报告旁路 — 写失败不炸主流程, 记 junit_xml_error 拉低退出码
+    if _JUNIT_OUT:
+        jr = junit_xml.write_junit_report(result, _JUNIT_OUT, workspace=WORKSPACE)
+        if not jr.get("ok"):
+            result["junit_xml_error"] = jr.get("error", "junit write failed")
     if as_json:
         # Force UTF-8 stdout for JSON output (Windows console uses GBK by default)
         try:

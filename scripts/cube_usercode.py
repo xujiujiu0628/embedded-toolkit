@@ -1,14 +1,16 @@
 #!/usr/bin/env python3
 """
-cube_to_keil.py — 从 CubeMX 生成的文件中提取/恢复应用代码
+cube_usercode.py — 从 CubeMX 生成的文件中提取/恢复应用代码
+(F-131 工单 P2-2: 原 cube_to_keil.py 改名——本工具与 Keil 无关, 服务的是
+ CubeMX 重生成时的 USER CODE 保全, 主链是 GCC; 引用方见 CHANGELOG F-131)
 
 工作流：
-  1. (可选) 修改前先跑: python cube_to_keil.py --backup
+  1. (可选) 修改前先跑: python cube_usercode.py --backup
      → 把当前所有 Core 文件备份到 .cube_backup/
   2. CubeMX 打开 test.ioc → 修改配置 → Generate Code
-  3. 跑: python cube_to_keil.py --restore
+  3. 跑: python cube_usercode.py --restore
      → 从备份中提取应用代码 → 注入到 CubeMX 新生成的文件中
-  4. Keil 编译验证
+  4. GCC 编译验证 (verify.py / gcc_build.py)
 
 原理：
   CubeMX 生成的文件中，只有 USER CODE BEGIN/END 之间的区域是安全的。
@@ -22,10 +24,35 @@ import shutil
 import argparse
 from pathlib import Path
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
-CORE_SRC = PROJECT_ROOT / "Core" / "Src"
-CORE_INC = PROJECT_ROOT / "Core" / "Inc"
-BACKUP_DIR = PROJECT_ROOT / ".cube_backup"
+# F-131: 工程根不再锚死"脚本在仓内"的 parents[1]——按 .workbench 标记从
+# cwd 向上发现 (wb_common.find_project_root), 工具库/工程薄配置分离下依然可用。
+# 懒解析 (import 期不 exit): extract_user_code/_dedent 等纯函数可被测试安全 import。
+SCRIPT_DIR = Path(__file__).resolve().parent
+if str(SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPT_DIR))
+from wb_common import find_project_root
+
+
+def _project_root() -> Path:
+    root = find_project_root(os.getcwd())
+    if root is None:
+        print("[!] 未找到工程根 (需含 .workbench/config.json) — 请在工程目录内运行本工具",
+              file=sys.stderr)
+        sys.exit(1)
+    return Path(root)
+
+
+PROJECT_ROOT = None  # 命令入口 (main/cmd_*) 首次调用时填充
+CORE_SRC = CORE_INC = BACKUP_DIR = None
+
+
+def _bind_roots() -> None:
+    global PROJECT_ROOT, CORE_SRC, CORE_INC, BACKUP_DIR
+    if PROJECT_ROOT is None:
+        PROJECT_ROOT = _project_root()
+        CORE_SRC = PROJECT_ROOT / "Core" / "Src"
+        CORE_INC = PROJECT_ROOT / "Core" / "Inc"
+        BACKUP_DIR = PROJECT_ROOT / ".cube_backup"
 
 # ── 已知的 CubeMX 生成文件 ──
 CUBEMX_FILES = [
@@ -53,6 +80,7 @@ USER_CODE_RE = re.compile(
 
 def find_cubemx_files():
     """扫描 Core/Inc 和 Core/Src 中存在的 CubeMX 文件"""
+    _bind_roots()
     found = []
     for fname in CUBEMX_FILES:
         for base in [CORE_SRC, CORE_INC]:
@@ -171,6 +199,7 @@ def _dedent(text):
 
 def cmd_backup():
     """备份当前 CubeMX 生成文件到 .cube_backup/"""
+    _bind_roots()
     files = find_cubemx_files()
     if not files:
         print("[!] 没有找到 CubeMX 生成的文件（Core/Src, Core/Inc）")
@@ -199,6 +228,7 @@ def cmd_backup():
 
 def cmd_restore():
     """从备份恢复应用代码到 CubeMX 新生成的文件中"""
+    _bind_roots()
     if not BACKUP_DIR.exists():
         print("[!] 没有找到备份目录。请先运行 --backup")
         return 1
@@ -297,6 +327,7 @@ def cmd_restore():
 
 def cmd_diff():
     """对比备份和当前文件的差异"""
+    _bind_roots()
     if not BACKUP_DIR.exists():
         print("[!] 没有找到备份目录")
         return 1
@@ -317,20 +348,21 @@ def cmd_diff():
             if old_code != new_code:
                 print(f"  [CHANGED] {rel} -> USER CODE {name}")
                 if new_code and not old_code:
-                    print(f"    → CubeMX 新增了内容")
+                    print("    → CubeMX 新增了内容")
                 elif old_code and not new_code:
-                    print(f"    → CubeMX 清空了此区块!")
+                    print("    → CubeMX 清空了此区块!")
 
     return 0
 
 
 def main():
-    parser = argparse.ArgumentParser(description="CubeMX → Keil 代码迁移工具")
+    parser = argparse.ArgumentParser(description="CubeMX USER CODE 迁移工具 (GCC 主链)")
     parser.add_argument('action', nargs='?', default='restore',
                         choices=['backup', 'restore', 'diff'],
                         help='backup: 备份当前代码 | restore: 恢复应用代码 | diff: 对比差异')
     args = parser.parse_args()
 
+    _bind_roots()  # F-131: 先解析工程根 (发现失败体面 exit 1), 再切 cwd
     os.chdir(PROJECT_ROOT)
 
     if args.action == 'backup':

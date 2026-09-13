@@ -13,7 +13,6 @@
   python release.py --tag v1.0.0 [--project DIR] [--dry-run] [--allow-xfail]
 """
 import argparse
-import hashlib
 import json
 import os
 import subprocess
@@ -22,7 +21,7 @@ from datetime import datetime
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from wb_common import (TOOLKIT_ROOT, atomic_write_json, find_project_root,  # noqa: E402
-                       load_machine, toolkit_version)
+                       load_machine, sha256_file, toolkit_version)
 from openocd_runtime import swd_probe  # noqa: E402  (F-041: 下沉共享层, doctor 与 G0.5 同源)
 
 VERIFY = os.path.join(TOOLKIT_ROOT, "scripts", "verify.py")
@@ -81,12 +80,7 @@ def gate1(ws, timeout):
         return {"status": "error", "error": f"verify 输出不可解析: {tail}"}
 
 
-def sha256_file(path):
-    h = hashlib.sha256()
-    with open(path, "rb") as f:
-        for chunk in iter(lambda: f.read(65536), b""):
-            h.update(chunk)
-    return h.hexdigest()
+# F-157 (P2-3): 本地 sha256_file 删除, 收编 wb_common 共享版
 
 
 def _gcc_version():
@@ -103,8 +97,10 @@ def _gcc_version():
         return "unknown"
 
 
-def run_gates(ws, tag, allow_xfail, timeout, openocd_exe):
-    """跑 G0~G2。返回 (ok, 人读消息, ctx)；ctx 含 verify 结果/results/waived。"""
+def run_gates(ws, tag, allow_xfail, timeout, openocd_exe,
+              allow_non_hw_evidence=False):
+    """跑 G0~G2。返回 (ok, 人读消息, ctx)；ctx 含 verify 结果/results/waived/
+    evidence。"""
     errs = g0_checks(ws, tag)
     if errs:
         return False, "G0 失败:\n  " + "\n  ".join(errs), {}
@@ -126,11 +122,42 @@ def run_gates(ws, tag, allow_xfail, timeout, openocd_exe):
         return False, ("G2 存在未翻转 xfail: " + ", ".join(xfailed) +
                        "\n  实现并翻转后重试; 或 --allow-xfail 显式豁免 (留痕入档)"), {}
     waived = list(xfailed)
+    # F-128 (工单二 A-1) / F-146 (T2 命名对齐 AEL): G2 证据等级门 — 仿真/
+    # 静态证据不得支撑发布 ("仿真通过永不升级为硬件等价声明")。
+    # 旧版 verify 无 evidence 键按 static 处理, 同样拦 (升 toolkit 后重发)。
+    evidence = res.get("evidence", "static")
+    if evidence != "hardware_validated" and not allow_non_hw_evidence:
+        return False, (f"G2 证据等级 {evidence!r} != hardware_validated — "
+                       "非真机证据不得进发布门禁\n"
+                       "  或 --allow-non-hardware-evidence 显式豁免"
+                       " (evidence_waiver 留痕入档, 审计 R8 可见)"), {}
     return True, "G0~G2 全过", {"verify_result": res, "results": results,
-                                "waived": waived}
+                                "waived": waived, "evidence": evidence,
+                                "evidence_waiver": bool(
+                                    evidence != "hardware_validated")}
 
 
-def build_record(ws, tag, results, waived, contracts=None):
+# F-146: 各证据等级的 fidelity 边界声明 (AEL claim+fidelity 的落档形态) —
+# 发布记录必须自带"这证据证明了什么/没证明什么", 不许只落一个裸等级值。
+_FIDELITY_BOUNDARIES = {
+    "hardware_validated":
+        "真机 capture 输出匹配判定; 不构成产品级/认证级/长期可靠性声明",
+    "simulation_validated":
+        "仿真后端通过; 不升级为硬件等价声明 (仿真与真机是平级判定后端, 各证各的)",
+    "static":
+        "仅构建/静态证据; 无任何运行时行为判定",
+    "production_approved":
+        "hardware_validated 基础上经 release_audit --approve 人工批准投产",
+}
+
+
+def build_record(ws, tag, results, waived, contracts=None, evidence="static",
+                 evidence_waiver=False, fidelity_boundaries=None,
+                 limitations=None):
+    """构建发布记录。evidence 为 F-128/F-146 证据分级透传 (G1 verify 输出);
+    evidence_waiver 仅在 G2 证据门被显式豁免时为 True (留痕, 审计 R8 可见);
+    fidelity_boundaries 默认按证据等级落边界声明, limitations 默认空列表
+    (不虚报), signature 留空占位 (签名机制登记不实现)。"""
     artifacts = {}
     state_p = os.path.join(ws, ".workbench", "state.json")
     arts = {}
@@ -160,6 +187,15 @@ def build_record(ws, tag, results, waived, contracts=None):
         "contracts": contracts or {},
         "results": results,
         "xfail_waived": waived,
+        "evidence": evidence,   # F-146: hardware_validated | simulation_validated | static | production_approved
+        # F-146: fidelity 契约 — 记录自带"证据证明了什么/没证明什么"
+        "fidelity_boundaries": (list(fidelity_boundaries)
+                                if fidelity_boundaries is not None
+                                else [_FIDELITY_BOUNDARIES.get(
+                                    evidence, f"未知证据等级 {evidence!r}")]),
+        "limitations": list(limitations) if limitations is not None else [],
+        "signature": "",   # 留空占位: 签名机制登记不实现 (总工单 v2 A-1)
+        **({"evidence_waiver": True} if evidence_waiver else {}),
         "tools": {"toolkit": toolkit_version(),
                   "python": sys.version.split()[0],
                   "gcc": _gcc_version()},
@@ -215,6 +251,10 @@ def main():
                     help="只跑 G0~G2, 不落记录不打 tag")
     ap.add_argument("--allow-xfail", action="store_true",
                     help="豁免未翻转 xfail (ID 记入发布档案)")
+    ap.add_argument("--allow-non-hardware-evidence",
+                    dest="allow_non_hw_evidence", action="store_true",
+                    help="豁免 G2 证据等级门 (F-128: 仿真/静态证据) — "
+                         "evidence_waiver 留痕入档, 审计 R8 降级警告")
     ap.add_argument("--timeout", type=int, default=10, help="采集超时秒数")
     args = ap.parse_args()
 
@@ -229,14 +269,17 @@ def main():
     openocd_exe = load_machine()["openocd_exe"]
 
     ok, msg, ctx = run_gates(ws, args.tag, args.allow_xfail,
-                             args.timeout, openocd_exe)
+                             args.timeout, openocd_exe,
+                             allow_non_hw_evidence=args.allow_non_hw_evidence)
     print(msg)
     if not ok:
         sys.exit(1)
 
     record = build_record(
         ws, args.tag, ctx["results"], ctx["waived"],
-        contracts=(ctx.get("verify_result") or {}).get("contract_hashes"))
+        contracts=(ctx.get("verify_result") or {}).get("contract_hashes"),
+        evidence=ctx.get("evidence", "static"),
+        evidence_waiver=bool(ctx.get("evidence_waiver")))
     # 审计 M2: hex 哈希是"烧的字节→验的字节→入档字节"互锁的锚,
     # state.json 读不到 artifacts 时静默落档会让证据链无声断裂 → 强制中止
     if "hex" not in record["artifacts"]:
@@ -247,7 +290,9 @@ def main():
         print(f"[dry-run] 将写 .workbench/releases/{args.tag}.json 并打 tag "
               f"{args.tag}; results={len(record['results'])} 条, "
               f"xfail_waived={record['xfail_waived']}, "
-              f"artifacts={list(record['artifacts'])}")
+              f"evidence={record['evidence']}"
+              + (", evidence_waiver=True" if record.get("evidence_waiver") else "")
+              + f", artifacts={list(record['artifacts'])}")
         sys.exit(0)
 
     if not finalize(ws, args.tag, record):

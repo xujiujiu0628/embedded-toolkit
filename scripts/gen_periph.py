@@ -18,59 +18,50 @@ import json
 import os
 import sys
 
-from wb_common import TOOLKIT_ROOT, find_project_root
+from wb_common import TOOLKIT_ROOT, find_project_root, load_ref  # F-157: 三份 load_ref 收编
 
-REF_PATH = os.path.join(TOOLKIT_ROOT, "data", "stm32f103-ref.json")
-
-
-def load_ref():
-    with open(REF_PATH, 'r', encoding='utf-8') as f:
-        return json.load(f)
-
+# F-158 (P2-4): 引脚/时钟/中断映射数据外置 data/stm32f103-gen-maps.json —
+# 生成器纯逻辑, 数据单一事实源; 载入后还原为与旧字面量完全相同的内存形态
+# (tuple 键/整型键/元组值), 生成物逐字节不变。
+_GEN_MAPS = json.load(open(os.path.join(TOOLKIT_ROOT, "data",
+                                        "stm32f103-gen-maps.json"),
+                           encoding="utf-8"))
 
 # ---- GPIO 引脚地址映射 ----
-GPIO_BASE = {"A": "GPIOA", "B": "GPIOB", "C": "GPIOC"}
-GPIO_CLOCK_BIT = {"A": "IOPAEN", "B": "IOPBEN", "C": "IOPCEN"}
-GPIO_CR_OFFSET = {"0-7": "CRL", "8-15": "CRH"}
+GPIO_BASE = _GEN_MAPS["gpio_base"]
+GPIO_CLOCK_BIT = _GEN_MAPS["gpio_clock_bit"]
+GPIO_CR_OFFSET = _GEN_MAPS["gpio_cr_offset"]
 
-# ---- TIM 通道 → 引脚映射 (默认复用映射) ----
+# ---- TIM 通道 → 引脚映射 (默认复用映射; JSON 键 "TIM2:1" 还原 tuple) ----
 TIM_CH_PINS = {
-    ("TIM2", 1): "PA0", ("TIM2", 2): "PA1", ("TIM2", 3): "PA2", ("TIM2", 4): "PA3",
-    ("TIM3", 1): "PA6", ("TIM3", 2): "PA7", ("TIM3", 3): "PB0", ("TIM3", 4): "PB1",
-    ("TIM4", 1): "PB6", ("TIM4", 2): "PB7", ("TIM4", 3): "PB8", ("TIM4", 4): "PB9",
+    (t, int(c)): v
+    for k, v in _GEN_MAPS["tim_ch_pins"].items()
+    for t, c in [k.split(":")]
 }
 
 # ---- TIM 基址和时钟映射 ----
-TIM_CLOCK_BIT = {"TIM2": "TIM2EN", "TIM3": "TIM3EN", "TIM4": "TIM4EN"}
+TIM_CLOCK_BIT = _GEN_MAPS["tim_clock_bit"]
 
 # ---- TIM 总线映射 (F-077, RM0008: TIM1 高级定时器挂 APB2, TIM2~7 挂 APB1) ----
 # 旧版两个 TIM 生成器硬编码 APB1ENR, TIM1 会产出 RCC_APB1ENR_TIM1EN —
 # 该宏在 CMSIS 头文件不存在 (TIM1EN 在 APB2ENR bit 0), 编译即失败;
 # 更隐蔽的变体是 AI 顺手"修"成使能别的位 → 定时器时钟从未开启。
-TIM_BUS = {"TIM1": "APB2"}
+TIM_BUS = _GEN_MAPS["tim_bus"]
 
 # ---- I2C 时钟映射 ----
-I2C_CLOCK_BIT = {
-    "I2C1": ("APB1ENR", "I2C1EN", 21),
-    "I2C2": ("APB1ENR", "I2C2EN", 22),
-}
+I2C_CLOCK_BIT = {k: tuple(v) for k, v in _GEN_MAPS["i2c_clock_bit"].items()}
 
 # ---- SPI 时钟映射 ----
 # F-110: 第 4 项从 pclk 字面量 (72/36) 改为总线归属——时钟走 apb_clock_mhz
 # 统一推导, 表不再各自携带频率常数。
-SPI_CLOCK_BIT = {
-    "SPI1": ("APB2ENR", "SPI1EN", 12, "APB2"),  # bus_reg, bit_name, bit_num, bus
-    "SPI2": ("APB1ENR", "SPI2EN", 14, "APB1"),
-}
+SPI_CLOCK_BIT = {k: tuple(v) for k, v in _GEN_MAPS["spi_clock_bit"].items()}
 
 # ---- SPI 分频表 (BR[2:0]) ----
-SPI_BAUD_DIV = {2: 0, 4: 1, 8: 2, 16: 3, 32: 4, 64: 5, 128: 6, 256: 7}
+SPI_BAUD_DIV = {int(k): v for k, v in _GEN_MAPS["spi_baud_div"].items()}
 
 # ---- I2C 速度模式 ----
-I2C_SPEED_MODES = {
-    100000: ("standard", False, False),   # SM, DUTY=0, F/S=0
-    400000: ("fast", True, False),         # FM, DUTY=0, F/S=1
-}
+I2C_SPEED_MODES = {int(k): tuple(v)
+                   for k, v in _GEN_MAPS["i2c_speed_modes"].items()}
 
 # ---- F-110: 时钟树推导 (单一事实源) ----
 HCLK_MIN, HCLK_MAX = 2, 72  # 2 起: pclk1=HCLK//2 须 ≥1; 72 = F103 规格上限
@@ -133,17 +124,8 @@ def pin_cr_reg(pin: str) -> str:
 # ============================================================
 
 # F-103: mode_map 提为模块级并单一事实源 (argparse choices 与 gen_gpio 共用,
-# 两处判据永不漂移)。
-GPIO_MODE_MAP = {
-    "out-pp-50mhz":  ("0x3", "通用推挽输出 50MHz"),
-    "out-pp-2mhz":   ("0x2", "通用推挽输出 2MHz"),
-    "out-od-50mhz":  ("0x7", "通用开漏输出 50MHz"),
-    "af-pp-50mhz":   ("0xB", "复用推挽输出 50MHz (UART TX / PWM)"),
-    "af-od-50mhz":   ("0xF", "复用开漏输出 50MHz (I2C)"),
-    "in-floating":   ("0x4", "浮空输入"),
-    "in-pullup":     ("0x8", "上拉输入"),
-    "in-analog":     ("0x0", "模拟输入 (ADC)"),
-}
+# 两处判据永不漂移)。F-158: 数据外置 gen-maps.json。
+GPIO_MODE_MAP = {k: tuple(v) for k, v in _GEN_MAPS["gpio_mode_map"].items()}
 
 
 def gen_gpio(pin: str, mode: str) -> str:
@@ -165,7 +147,7 @@ def gen_gpio(pin: str, mode: str) -> str:
     lines = []
     lines.append(f"/* {pin} — {mode_desc} */")
     lines.append(f"RCC->APB2ENR |= RCC_APB2ENR_{clock_bit};")
-    lines.append(f"__DSB();")
+    lines.append("__DSB();")
     lines.append(f"{port_base}->{cr_reg} &= ~(0xFUL << {shift});")
     lines.append(f"{port_base}->{cr_reg} |=  ({mode_val}UL << {shift});")
     # F-087: CNF=10/MODE=00 (输入模式 0x8) 的上下拉方向由 ODR 决定, 复位
@@ -203,25 +185,25 @@ def gen_systick(freq_hz: int, hclk_mhz: int = 72) -> str:
     lines.append(f"/* SysTick — {freq_hz}Hz ({period_us}us interval), {hclk_mhz}MHz core clock */")
     lines.extend(_hclk_precondition_note(hclk_mhz))
     lines.append(f"SysTick->LOAD = {load};         // {hclk_mhz}MHz/{freq_hz} - 1")
-    lines.append(f"SysTick->VAL  = 0;")
-    lines.append(f"SysTick->CTRL = SysTick_CTRL_ENABLE | SysTick_CTRL_TICKINT | SysTick_CTRL_CLKSOURCE;")
-    lines.append(f"")
+    lines.append("SysTick->VAL  = 0;")
+    lines.append("SysTick->CTRL = SysTick_CTRL_ENABLE | SysTick_CTRL_TICKINT | SysTick_CTRL_CLKSOURCE;")
+    lines.append("")
     # F-087: tick_ms 声明必须在 Handler 之前 (生成物是可独立编译的片段,
     # 先用后声明编译即失败); Handler 必须递增 tick_ms, 否则 delay_ms 永久挂死
     # (F-080 同族不变量)。
-    lines.append(f"/* 基于 SysTick 的延时计数 */")
-    lines.append(f"static volatile uint32_t tick_ms;")
-    lines.append(f"")
-    lines.append(f"/* SysTick ISR */")
-    lines.append(f"void SysTick_Handler(void) {{")
-    lines.append(f"    tick_ms++;                  // F-087: 必须递增, 否则 delay_ms 永久挂死")
+    lines.append("/* 基于 SysTick 的延时计数 */")
+    lines.append("static volatile uint32_t tick_ms;")
+    lines.append("")
+    lines.append("/* SysTick ISR */")
+    lines.append("void SysTick_Handler(void) {")
+    lines.append("    tick_ms++;                  // F-087: 必须递增, 否则 delay_ms 永久挂死")
     lines.append(f"    // called every {period_us}us — 用户代码加在这里")
-    lines.append(f"}}")
-    lines.append(f"")
-    lines.append(f"void delay_ms(uint32_t ms) {{")
-    lines.append(f"    uint32_t start = tick_ms;")
-    lines.append(f"    while ((tick_ms - start) < ms) {{ __WFI(); }}")
-    lines.append(f"}}")
+    lines.append("}")
+    lines.append("")
+    lines.append("void delay_ms(uint32_t ms) {")
+    lines.append("    uint32_t start = tick_ms;")
+    lines.append("    while ((tick_ms - start) < ms) { __WFI(); }")
+    lines.append("}")
     return "\n".join(lines)
 
 
@@ -264,19 +246,19 @@ def gen_usart(usart: str, baud: int, tx: str, rx: str,
     rx_shift = pin_cr_shift(rx)
 
     lines = []
-    lines.append(f"/* ========================================================================")
+    lines.append("/* ========================================================================")
     lines.append(f" * {usart} — {baud} baud, 8N1, TX={tx} RX={rx}")
     lines.extend(_hclk_precondition_note(hclk_mhz))
     lines.append(f" * PCLK{bus[-1].lower()}={pclk_mhz}MHz, BRR=0x{brr:04X} ({mantissa}.{fraction}/16)")
-    lines.append(f" * ======================================================================== */")
-    lines.append(f"")
-    lines.append(f"/* 1. 时钟使能 */")
+    lines.append(" * ======================================================================== */")
+    lines.append("")
+    lines.append("/* 1. 时钟使能 */")
     lines.append(f"RCC->APB{bus[-1]}ENR |= RCC_APB{bus[-1]}ENR_{usart}EN;")
     for port in sorted(set([tx_port, rx_port])):
         lines.append(f"RCC->APB2ENR |= RCC_APB2ENR_IOP{port}EN;")
-    lines.append(f"__DSB();")
-    lines.append(f"")
-    lines.append(f"/* 2. GPIO 配置 */")
+    lines.append("__DSB();")
+    lines.append("")
+    lines.append("/* 2. GPIO 配置 */")
     # F-075: CRL/CRH 按引脚号选择 (pin<8 → CRL, >=8 → CRH) — 旧版硬编码 CRH,
     # 低引脚会把位移落在 CRH 的错误字段上 (PA2 的位移 8 实际改写 PA10),
     # 外设脚保持浮空 → 生成物编译通过但外设无输出 (B 类静默缺陷)。
@@ -287,28 +269,34 @@ def gen_usart(usart: str, baud: int, tx: str, rx: str,
     lines.append(f"// {rx} = {usart}_RX (浮空输入)")
     lines.append(f"GPIO{rx_port}->{pin_cr_reg(rx)} &= ~(0xFUL << {rx_shift});")
     lines.append(f"GPIO{rx_port}->{pin_cr_reg(rx)} |=  (0x4UL << {rx_shift});")
-    lines.append(f"")
-    lines.append(f"/* 3. USART 配置 */")
+    lines.append("")
+    lines.append("/* 3. USART 配置 */")
     lines.append(f"{usart}->BRR = 0x{brr:04X};")
     lines.append(f"{usart}->CR1 = USART_CR1_TE | USART_CR1_RE;")
     lines.append(f"{usart}->CR1 |= USART_CR1_UE;")
-    lines.append(f"")
-    lines.append(f"/* 4. printf 重定向 (Microlib fputc) */")
-    lines.append(f"int fputc(int ch, FILE *f) {{")
-    lines.append(f"    while (!({usart}->SR & (1UL<<7)));  // wait TXE")
-    lines.append(f"    {usart}->DR = (uint8_t)ch;")
-    lines.append(f"    return ch;")
-    lines.append(f"}}")
-    lines.append(f"")
-    lines.append(f"/* 5. 轮询读写 */")
-    lines.append(f"static void uart_putc(uint8_t byte) {{")
+    lines.append("")
+    # F-131 (工单 P2-2): Keil Microlib 的 int fputc(int, FILE*) 在 GCC/newlib-nano
+    # 下 printf 根本不调用它——重定向静默失效 (旧产物来自 Keil 时代, 退役后成
+    # 死代码)。改 newlib 系统桩 _write: printf/puts 最终都走 write(fd,buf,len)。
+    lines.append("/* 4. printf 重定向 (GCC/newlib-nano 系统桩 _write; Keil Microlib 的 fputc 在此链不生效) */")
+    lines.append("#include <unistd.h>")
+    lines.append("int _write(int fd, char *buf, int len) {")
+    lines.append("    for (int i = 0; i < len; i++) {")
+    lines.append(f"        while (!({usart}->SR & (1UL<<7)));  // wait TXE")
+    lines.append(f"        {usart}->DR = (uint8_t)buf[i];")
+    lines.append("    }")
+    lines.append("    return len;")
+    lines.append("}")
+    lines.append("")
+    lines.append("/* 5. 轮询读写 */")
+    lines.append("static void uart_putc(uint8_t byte) {")
     lines.append(f"    while (!({usart}->SR & (1UL<<7)));")
     lines.append(f"    {usart}->DR = byte;")
-    lines.append(f"}}")
-    lines.append(f"static uint8_t uart_getc(void) {{")
+    lines.append("}")
+    lines.append("static uint8_t uart_getc(void) {")
     lines.append(f"    while (!({usart}->SR & (1UL<<5)));  // wait RXNE")
     lines.append(f"    return {usart}->DR;")
-    lines.append(f"}}")
+    lines.append("}")
     return "\n".join(lines)
 
 
@@ -376,23 +364,23 @@ def gen_pwm(timer: str, ch: int, pin: str, freq: int, duty: int,
     port_clock = GPIO_CLOCK_BIT.get(port, f"IOP{port}EN")
 
     lines = []
-    lines.append(f"/* ========================================================================")
+    lines.append("/* ========================================================================")
     lines.append(f" * {timer} CH{ch} PWM — {pin}, {freq}Hz, {duty}% duty")
     lines.extend(_hclk_precondition_note(hclk_mhz))
     lines.append(f" * TIM_CLK={tim_clk_mhz}MHz, PSC={best_psc}, ARR={best_arr}, CCR{ch}={ccr} {freq_note}")
-    lines.append(f" * ======================================================================== */")
-    lines.append(f"")
-    lines.append(f"/* 1. 时钟使能 */")
+    lines.append(" * ======================================================================== */")
+    lines.append("")
+    lines.append("/* 1. 时钟使能 */")
     tim_bus = TIM_BUS.get(timer, "APB1")   # F-077: TIM1 → APB2, 其余 APB1
     lines.append(f"RCC->{tim_bus}ENR |= RCC_{tim_bus}ENR_{tim_clock};")
     lines.append(f"RCC->APB2ENR |= RCC_APB2ENR_{port_clock};")
-    lines.append(f"__DSB();")
-    lines.append(f"")
+    lines.append("__DSB();")
+    lines.append("")
     lines.append(f"/* 2. GPIO — {pin} 复用推挽 50MHz */")
     lines.append(f"GPIO{port}->{pin_cr_reg(pin)} &= ~(0xFUL << {shift});")
     lines.append(f"GPIO{port}->{pin_cr_reg(pin)} |=  (0xBUL << {shift});")
-    lines.append(f"")
-    lines.append(f"/* 3. Timer 配置 */")
+    lines.append("")
+    lines.append("/* 3. Timer 配置 */")
     lines.append(f"{timer}->PSC = {best_psc};            // {tim_clk_mhz}MHz/({best_psc}+1) = {tim_clk_mhz*1000000//(best_psc+1)}Hz")
     lines.append(f"{timer}->ARR = {best_arr};           // → {freq}Hz")
     lines.append(f"{timer}->CCR{ch} = {ccr};            // {duty}% duty")
@@ -408,6 +396,10 @@ def gen_pwm(timer: str, ch: int, pin: str, freq: int, duty: int,
     lines.append(f"{timer}->{ccmr} = (6<<{ocxm_shift}) | (1<<{ocxpe_shift});  // CH{ch}: PWM mode 1, preload")
     lines.append(f"{timer}->CCER  |= (1<<{(ch-1)*4});           // CH{ch} output enable")
     lines.append(f"{timer}->CR1 = (1<<7) | 1;        // ARPE + enable")
+    # F-122 (工单 P0-5): 高级定时器 MOE 缺位是 B 类静默缺陷——编译通过、
+    # 运行永远无波形 (RM0008 §17.4.23 BDTR.MOE=0 强制关闭全部 OC 输出)。
+    if timer == "TIM1":
+        lines.append(f"{timer}->BDTR |= (1<<15);        // MOE: 主输出使能（高级定时器必需）")
     return "\n".join(lines)
 
 
@@ -416,6 +408,12 @@ def gen_adc(adc: str, ch: int, pin: str, hclk_mhz: int = 72) -> str:
     err = _hclk_error(hclk_mhz)  # F-111 (M-3): 库级域校验
     if err:
         return err
+    # F-119 (工单 P0-4): 通道域校验 (仿 gen_pwm F-103 三连守卫)。F103 ADC
+    # 合法通道 0~17; 旧版 ch=20 写 SMPR1 保留位 (硬件静默无效), 负数生成
+    # 负位移 C 代码 (UB)。
+    if ch < 0 or ch > 17:
+        return (f"/* ERROR: ADC 通道 {ch} 越界 — F103 合法通道 0~17 "
+                f"(0~15 外部引脚, 16/17 为 vrefint/temp 内部通道)。*/")
     port = pin_port(pin)
     shift = pin_cr_shift(pin)
 
@@ -437,46 +435,50 @@ def gen_adc(adc: str, ch: int, pin: str, hclk_mhz: int = 72) -> str:
         adc_clk_s = f"{pclk2 / div:.2f}"       # 非整除: 真值如实 (F-111 H-1)
 
     lines = []
-    lines.append(f"/* ========================================================================")
+    lines.append("/* ========================================================================")
     lines.append(f" * {adc} CH{ch} — {pin} (single conversion, 12-bit)")
     lines.extend(_hclk_precondition_note(hclk_mhz))
-    lines.append(f" * ======================================================================== */")
-    lines.append(f"")
-    lines.append(f"/* 1. 时钟使能 */")
+    lines.append(" * ======================================================================== */")
+    lines.append("")
+    lines.append("/* 1. 时钟使能 */")
     lines.append(f"RCC->APB2ENR |= RCC_APB2ENR_{adc}EN | RCC_APB2ENR_IOP{port}EN;")
-    lines.append(f"__DSB();")
-    lines.append(f"")
+    lines.append("__DSB();")
+    lines.append("")
     # F-087: 默认 ADCPRE=/2 → PCLK2/2 = 36MHz, 超出 ADC 14MHz 上限
     # (data/f103_known_issues.json "ADC.max_clock")。先清后置 CFGR 位 15:14
     # = 10b → ADCPRE=/6 = 12MHz; 用 |= 保留 CFGR 其他位。
     lines.append(f"/* 1b. ADC 时钟分频 — ADCPRE=/{div} ({adc_clk_s}MHz @ PCLK2={pclk2}MHz, ≤14MHz 上限) */")
-    lines.append(f"RCC->CFGR &= ~(3UL << 14);         // 清 ADCPRE[1:0]")
+    lines.append("RCC->CFGR &= ~(3UL << 14);         // 清 ADCPRE[1:0]")
     lines.append(f"RCC->CFGR |=  ({bits}UL << 14);         // ADCPRE={bits:02b}b → PCLK2/{div}")
-    lines.append(f"")
+    lines.append("")
     lines.append(f"/* 2. GPIO — {pin} 模拟输入 */")
     lines.append(f"GPIO{port}->{pin_cr_reg(pin)} &= ~(0xFUL << {shift});")
-    lines.append(f"// CNF=00 MODE=00 → 模拟输入")
-    lines.append(f"")
-    lines.append(f"/* 3. ADC 配置 (单次转换, 软件触发) */")
-    lines.append(f"// 采样时间: 55.5 cycles (推荐用于 12-bit 精度)")
+    lines.append("// CNF=00 MODE=00 → 模拟输入")
+    lines.append("")
+    lines.append("/* 3. ADC 配置 (单次转换, 软件触发) */")
+    lines.append("// 采样时间: 55.5 cycles (推荐用于 12-bit 精度)")
+    if ch >= 16:
+        # F-119: 16=内部 vrefint, 17=内部 temp sensor — 不接外部引脚,
+        # 上面的 GPIO 模拟输入步骤对内部通道无意义 (RM0008 §11.5)
+        lines.append(f"// CH{ch} 为内部通道 ({'vrefint' if ch == 16 else '温度传感器'}) — 无需外部引脚")
     if ch <= 9:
         lines.append(f"{adc}->SMPR2 |= (5UL << {(ch)*3});  // CH{ch}: 55.5 cycles")
     else:
         lines.append(f"{adc}->SMPR1 |= (5UL << {(ch-10)*3});  // CH{ch}: 55.5 cycles")
     lines.append(f"{adc}->SQR3 = {ch};                 // 转换序列: 1 个通道 = CH{ch}")
     lines.append(f"{adc}->CR2 = 1;                    // ADON 上电")
-    lines.append(f"")
-    lines.append(f"/* 4. 单次转换 */")
+    lines.append("")
+    lines.append("/* 4. 单次转换 */")
     lines.append(f"static uint16_t adc_read_ch{ch}(void) {{")
     lines.append(f"    {adc}->CR2 |= (1UL << 22);    // SWSTART")
     lines.append(f"    while (!({adc}->SR & 2));    // 等待 EOC")
     lines.append(f"    return {adc}->DR & 0xFFF;     // 12-bit result")
-    lines.append(f"}}")
-    lines.append(f"")
-    lines.append(f"/* 5. 电压换算 (Vref=3.3V) */")
-    lines.append(f"static uint32_t adc_to_mv(uint16_t val) {{")
-    lines.append(f"    return (uint32_t)val * 3300 / 4096;")
-    lines.append(f"}}")
+    lines.append("}")
+    lines.append("")
+    lines.append("/* 5. 电压换算 (Vref=3.3V) */")
+    lines.append("static uint32_t adc_to_mv(uint16_t val) {")
+    lines.append("    return (uint32_t)val * 3300 / 4096;")
+    lines.append("}")
     return "\n".join(lines)
 
 
@@ -510,7 +512,7 @@ def gen_timer_int(timer: str, period_ms: int,
         return f"/* ERROR: period {period_ms}ms 非法 — 必须为正整数。*/"
 
     # IRQ 号
-    irq_map = {"TIM1": 25, "TIM2": 28, "TIM3": 29, "TIM4": 30}
+    irq_map = _GEN_MAPS["tim_irq"]   # F-158: 数据外置
     irq = irq_map.get(timer, 28)
 
     # 计算 PSC/ARR
@@ -539,31 +541,31 @@ def gen_timer_int(timer: str, period_ms: int,
                    else f"{timer}_IRQHandler")
 
     lines = []
-    lines.append(f"/* ========================================================================")
+    lines.append("/* ========================================================================")
     lines.append(f" * {timer} 定时中断 — 每 {period_ms}ms 触发一次")
     lines.extend(_hclk_precondition_note(hclk_mhz))
     lines.append(f" * TIM_CLK={tim_clk_mhz}MHz, PSC={best_psc}, ARR={best_arr}")
-    lines.append(f" * ======================================================================== */")
-    lines.append(f"")
-    lines.append(f"/* 1. 时钟 + NVIC */")
+    lines.append(" * ======================================================================== */")
+    lines.append("")
+    lines.append("/* 1. 时钟 + NVIC */")
     tim_bus = TIM_BUS.get(timer, "APB1")   # F-077: TIM1 → APB2, 其余 APB1
     lines.append(f"RCC->{tim_bus}ENR |= RCC_{tim_bus}ENR_{tim_clock};")
-    lines.append(f"__DSB();")
+    lines.append("__DSB();")
     lines.append(f"NVIC->ISER[{irq//32}] = (1UL << {irq%32});  // {vec_irq} = {irq}")
-    lines.append(f"")
-    lines.append(f"/* 2. Timer 配置 */")
+    lines.append("")
+    lines.append("/* 2. Timer 配置 */")
     lines.append(f"{timer}->PSC = {best_psc};            // {tim_clk_mhz}MHz/({best_psc}+1) = {tim_clk_mhz*1000000//(best_psc+1)}Hz")
     lines.append(f"{timer}->ARR = {best_arr};           // → {1000//period_ms}Hz ({period_ms}ms)")
     lines.append(f"{timer}->DIER = 1;                  // 更新中断使能")
     lines.append(f"{timer}->CR1 = 1;                   // 使能")
-    lines.append(f"")
-    lines.append(f"/* 3. ISR */")
+    lines.append("")
+    lines.append("/* 3. ISR */")
     lines.append(f"void {vec_handler}(void) {{")
     lines.append(f"    if ({timer}->SR & 1) {{          // 更新标志")
     lines.append(f"        {timer}->SR &= ~1;           // 清除标志")
     lines.append(f"        // TODO: 每 {period_ms}ms 执行的代码")
-    lines.append(f"    }}")
-    lines.append(f"}}")
+    lines.append("    }")
+    lines.append("}")
     return "\n".join(lines)
 
 
@@ -619,65 +621,65 @@ def gen_i2c(i2c_periph: str, speed_hz: int, scl: str, sda: str,
     fs_bit = " | (1<<15)" if is_fast else ""
 
     lines = []
-    lines.append(f"/* ========================================================================")
+    lines.append("/* ========================================================================")
     lines.append(f" * {i2c_periph} — {speed_hz//1000}kHz {mode_name} mode, SCL={scl} SDA={sda}")
     lines.extend(_hclk_precondition_note(hclk_mhz))
     lines.append(f" * CCR=0x{ccr_val:03X} ({ccr_val}), TRISE=0x{trise_val:02X} ({trise_val})")
-    lines.append(f" * WARNING: STM32F103 I2C has known errata. Consider software I2C for")
-    lines.append(f" *          production use. See f103_known_issues.json.")
-    lines.append(f" * ======================================================================== */")
-    lines.append(f"")
-    lines.append(f"/* 1. Clock enable */")
+    lines.append(" * WARNING: STM32F103 I2C has known errata. Consider software I2C for")
+    lines.append(" *          production use. See f103_known_issues.json.")
+    lines.append(" * ======================================================================== */")
+    lines.append("")
+    lines.append("/* 1. Clock enable */")
     lines.append(f"RCC->{bus_reg} |= RCC_{bus_reg}_{bit_name};")
     lines.append(f"RCC->APB2ENR |= RCC_APB2ENR_IOP{scl_port}EN | RCC_APB2ENR_IOP{sda_port}EN;")
-    lines.append(f"__DSB();")
-    lines.append(f"")
+    lines.append("__DSB();")
+    lines.append("")
     lines.append(f"/* 2. GPIO — SCL={scl} AF-OD, SDA={sda} AF-OD */")
     lines.append(f"GPIO{scl_port}->{pin_cr_reg(scl)} &= ~(0xFUL << {scl_shift});")
     lines.append(f"GPIO{scl_port}->{pin_cr_reg(scl)} |=  (0xFUL << {scl_shift});")
     lines.append(f"GPIO{sda_port}->{pin_cr_reg(sda)} &= ~(0xFUL << {sda_shift});")
     lines.append(f"GPIO{sda_port}->{pin_cr_reg(sda)} |=  (0xFUL << {sda_shift});")
-    lines.append(f"")
+    lines.append("")
     lines.append(f"/* 3. {i2c_periph} config */")
     lines.append(f"{i2c_periph}->CR2 = {pclk1_mhz};               // FREQ = PCLK1 MHz")
     lines.append(f"{i2c_periph}->CCR = 0x{ccr_val:03X}{fs_bit};       // {speed_hz//1000}kHz, CCR={ccr_val}")
     lines.append(f"{i2c_periph}->TRISE = {trise_val};                // max rise time = {trise_val}")
     lines.append(f"{i2c_periph}->CR1 = 1;                  // PE=1, enable")
-    lines.append(f"")
-    lines.append(f"/* 4. Poll write helper */")
+    lines.append("")
+    lines.append("/* 4. Poll write helper */")
     lines.append(f"static error_chain_t i2c{i2c_n}_write(uint8_t dev_addr, uint8_t reg, uint8_t data) {{")
-    lines.append(f"    uint32_t timeout = 100000;")
+    lines.append("    uint32_t timeout = 100000;")
     lines.append(f"    while ({i2c_periph}->SR2 & (1<<1)) {{        // wait BUSY=0")
-    lines.append(f"        if (--timeout == 0) return ERR_PLAIN(0xE001, \"I2C BUSY timeout\");")
-    lines.append(f"    }}")
+    lines.append("        if (--timeout == 0) return ERR_PLAIN(0xE001, \"I2C BUSY timeout\");")
+    lines.append("    }")
     lines.append(f"    {i2c_periph}->CR1 |= (1<<8);                 // START")
-    lines.append(f"    timeout = 100000;")
+    lines.append("    timeout = 100000;")
     lines.append(f"    while (!({i2c_periph}->SR1 & 1)) {{           // wait SB")
-    lines.append(f"        if (--timeout == 0) return ERR_PLAIN(0xE002, \"I2C START timeout\");")
-    lines.append(f"    }}")
+    lines.append("        if (--timeout == 0) return ERR_PLAIN(0xE002, \"I2C START timeout\");")
+    lines.append("    }")
     lines.append(f"    {i2c_periph}->DR = (dev_addr << 1);          // ADDR + W")
-    lines.append(f"    timeout = 100000;")
+    lines.append("    timeout = 100000;")
     lines.append(f"    while (!({i2c_periph}->SR1 & (1<<1))) {{       // wait ADDR")
-    lines.append(f"        if (--timeout == 0) return ERR_PLAIN(0xE003, \"I2C ADDR timeout\");")
-    lines.append(f"    }}")
+    lines.append("        if (--timeout == 0) return ERR_PLAIN(0xE003, \"I2C ADDR timeout\");")
+    lines.append("    }")
     lines.append(f"    (void){i2c_periph}->SR2;                       // clear ADDR")
     lines.append(f"    {i2c_periph}->DR = reg;                       // send register")
-    lines.append(f"    timeout = 100000;")
+    lines.append("    timeout = 100000;")
     lines.append(f"    while (!({i2c_periph}->SR1 & (1<<7))) {{       // wait TXE")
-    lines.append(f"        if (--timeout == 0) return ERR_PLAIN(0xE004, \"I2C TXE timeout\");")
-    lines.append(f"    }}")
+    lines.append("        if (--timeout == 0) return ERR_PLAIN(0xE004, \"I2C TXE timeout\");")
+    lines.append("    }")
     lines.append(f"    {i2c_periph}->DR = data;                      // send data")
-    lines.append(f"    timeout = 100000;")
+    lines.append("    timeout = 100000;")
     lines.append(f"    while (!({i2c_periph}->SR1 & (1<<7))) {{")
-    lines.append(f"        if (--timeout == 0) return ERR_PLAIN(0xE004, \"I2C TXE timeout\");")
-    lines.append(f"    }}")
-    lines.append(f"    timeout = 100000;")
+    lines.append("        if (--timeout == 0) return ERR_PLAIN(0xE004, \"I2C TXE timeout\");")
+    lines.append("    }")
+    lines.append("    timeout = 100000;")
     lines.append(f"    while (!({i2c_periph}->SR1 & (1<<2))) {{       // wait BTF")
-    lines.append(f"        if (--timeout == 0) return ERR_PLAIN(0xE005, \"I2C BTF timeout\");")
-    lines.append(f"    }}")
+    lines.append("        if (--timeout == 0) return ERR_PLAIN(0xE005, \"I2C BTF timeout\");")
+    lines.append("    }")
     lines.append(f"    {i2c_periph}->CR1 |= (1<<9);                  // STOP")
-    lines.append(f"    return ERR_OK;")
-    lines.append(f"}}")
+    lines.append("    return ERR_OK;")
+    lines.append("}")
     return "\n".join(lines)
 
 
@@ -712,7 +714,6 @@ def gen_spi(spi_periph: str, mode: int, nss: str, sck: str,
     spi_freq_hz = pclk_mhz * 1000000 // actual_div
 
     # GPIO config
-    nss_port = pin_port(nss)
     scl_shift = pin_cr_shift(sck)
     miso_shift = pin_cr_shift(miso)
     mosi_shift = pin_cr_shift(mosi)
@@ -722,22 +723,22 @@ def gen_spi(spi_periph: str, mode: int, nss: str, sck: str,
     cr1 = (br_val << 3) | (cpol << 1) | (cpha << 0) | (1 << 2)  # MSTR=1
 
     lines = []
-    lines.append(f"/* ========================================================================")
+    lines.append("/* ========================================================================")
     lines.append(f" * {spi_periph} — Mode {mode} ({mode_names.get(mode, '?')}), {spi_freq_hz//1000}kHz")
     lines.append(f" * SCK={sck} MISO={miso} MOSI={mosi} NSS={nss} (software CS)")
     lines.extend(_hclk_precondition_note(hclk_mhz))
     lines.append(f" * PCLK={pclk_mhz}MHz, BR[2:0]={br_val} (/ {actual_div})")
-    lines.append(f" * ======================================================================== */")
-    lines.append(f"")
-    lines.append(f"/* 1. Clock enable */")
+    lines.append(" * ======================================================================== */")
+    lines.append("")
+    lines.append("/* 1. Clock enable */")
     lines.append(f"RCC->{bus_reg} |= RCC_{bus_reg}_{bit_name};")
     # Collect unique ports for clock enable
     ports = sorted(set([pin_port(sck), pin_port(miso), pin_port(mosi), pin_port(nss)]))
     for port in ports:
         lines.append(f"RCC->APB2ENR |= RCC_APB2ENR_IOP{port}EN;")
-    lines.append(f"__DSB();")
-    lines.append(f"")
-    lines.append(f"/* 2. GPIO config */")
+    lines.append("__DSB();")
+    lines.append("")
+    lines.append("/* 2. GPIO config */")
     lines.append(f"// SCK={sck} — AF push-pull 50MHz")
     lines.append(f"GPIO{pin_port(sck)}->{pin_cr_reg(sck)} &= ~(0xFUL << {scl_shift});")
     lines.append(f"GPIO{pin_port(sck)}->{pin_cr_reg(sck)} |=  (0xBUL << {scl_shift});")
@@ -751,35 +752,35 @@ def gen_spi(spi_periph: str, mode: int, nss: str, sck: str,
     lines.append(f"GPIO{pin_port(nss)}->{pin_cr_reg(nss)} &= ~(0xFUL << {nss_shift});")
     lines.append(f"GPIO{pin_port(nss)}->{pin_cr_reg(nss)} |=  (0x3UL << {nss_shift});")
     lines.append(f"GPIO{pin_port(nss)}->BSRR = (1UL << {pin_num(nss)});  // CS=HIGH (inactive)")
-    lines.append(f"")
+    lines.append("")
     lines.append(f"/* 3. {spi_periph} config */")
     lines.append(f"// CR1: BR[2:0]={br_val} CPOL={cpol} CPHA={cpha} MSTR=1 SSM=1 SSI=1")
     lines.append(f"{spi_periph}->CR1 = 0x{cr1:04X} | (1<<9) | (1<<8);  // SSM+SSI (software NSS)")
-    lines.append(f"// CR2: SSOE=0 (output disabled, manual CS)")
+    lines.append("// CR2: SSOE=0 (output disabled, manual CS)")
     lines.append(f"{spi_periph}->CR1 |= (1<<6);                        // SPE=1, enable")
-    lines.append(f"")
-    lines.append(f"/* 4. CS control macros */")
+    lines.append("")
+    lines.append("/* 4. CS control macros */")
     lines.append(f"#define SPI{spi_n}_CS_LOW()  GPIO{pin_port(nss)}->BRR = (1UL << {pin_num(nss)})")
     lines.append(f"#define SPI{spi_n}_CS_HIGH() GPIO{pin_port(nss)}->BSRR = (1UL << {pin_num(nss)})")
-    lines.append(f"")
-    lines.append(f"/* 5. Poll transfer */")
+    lines.append("")
+    lines.append("/* 5. Poll transfer */")
     lines.append(f"static uint8_t spi{spi_n}_transfer(uint8_t tx_byte) {{")
     lines.append(f"    while (!({spi_periph}->SR & (1<<1)));  // wait TXE")
     lines.append(f"    {spi_periph}->DR = tx_byte;")
     lines.append(f"    while (!({spi_periph}->SR & (1<<0)));  // wait RXNE")
     lines.append(f"    return {spi_periph}->DR;")
-    lines.append(f"}}")
-    lines.append(f"")
-    lines.append(f"/* 6. Burst write example */")
+    lines.append("}")
+    lines.append("")
+    lines.append("/* 6. Burst write example */")
     lines.append(f"static void spi{spi_n}_write_burst(uint8_t *buf, int len) {{")
     lines.append(f"    SPI{spi_n}_CS_LOW();")
-    lines.append(f"    for (int i = 0; i < len; i++) {{")
+    lines.append("    for (int i = 0; i < len; i++) {")
     lines.append(f"        while (!({spi_periph}->SR & (1<<1)));")
     lines.append(f"        {spi_periph}->DR = buf[i];")
-    lines.append(f"    }}")
+    lines.append("    }")
     lines.append(f"    while ({spi_periph}->SR & (1<<7));  // wait BSY=0")
     lines.append(f"    SPI{spi_n}_CS_HIGH();")
-    lines.append(f"}}")
+    lines.append("}")
     return "\n".join(lines)
 
 
@@ -871,7 +872,7 @@ def gen_doc(periph_name: str, out_dir: str = "") -> str:
     md += f"- **Description**: {desc}\n\n"
     md += f"## Registers\n\n{reg_table}\n\n"
     if deps:
-        md += f"## Dependencies\n\n" + "\n".join(deps) + "\n\n"
+        md += "## Dependencies\n\n" + "\n".join(deps) + "\n\n"
     if recipes:
         md += f"## Code Recipes ({len(recipes)})\n\n"
         for i, r in enumerate(recipes, 1):
@@ -949,7 +950,7 @@ GPIO 模式 (F-103: 由 --mode choices 强制, 未知模式报错):
     parser.add_argument("--rx", default="PA10", help="RX 引脚")
     # pwm
     parser.add_argument("--timer", default="TIM2", help="定时器: TIM2/3/4")
-    parser.add_argument("--ch", type=int, default=1, help="通道: 1-4")
+    parser.add_argument("--ch", type=int, default=1, help="通道: PWM 1-4 / ADC 0-17 (16/17 内部通道)")
     parser.add_argument("--freq", type=int, default=1000, help="PWM 频率 Hz")
     parser.add_argument("--duty", type=int, default=50, help="占空比 %% (0-100)")
     # F-110: --hclk 单一入口 (标准 APB 分频假设 HPRE=1/PPRE2=1/PPRE1=2,
@@ -1012,7 +1013,9 @@ GPIO 模式 (F-103: 由 --mode choices 强制, 未知模式报错):
         if not args.pin:
             print("Error: --pin required for ADC", file=sys.stderr)
             sys.exit(1)
-        print(gen_adc(args.adc, args.ch, args.pin, args.hclk))
+        # F-119 (工单 P0-4): 旧版此处裸 print — ERROR 也恒 exit 0。
+        # 改走 _emit 统一 ERROR→exit 1 纪律 (F-103 收敛遗漏的一半)。
+        _emit(gen_adc(args.adc, args.ch, args.pin, args.hclk))
 
     elif args.type == "systick":
         _emit(gen_systick(args.freq, args.hclk))

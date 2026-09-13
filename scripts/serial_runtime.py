@@ -4,17 +4,21 @@ from __future__ import annotations
 
 import json
 import os
-import signal
+import socket
+import sys
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 from runtime_common import (  # noqa: F401  (再导出: 保持 mod.X 调用面, F-029)
     # normalize_path 不并入: serial 自带独立契约 (可带 base、相对输入不 resolve), 见 F-029 T3 裁决
+    # output_json 不并入: F-156 起 serial 族用本模块 buffer 直写规范版 (字节契约锁死)
     JSONCorruptError, _first_resolved, _serialize_state_value, is_missing,
+    hidden_subprocess_kwargs,  # F-133/i: serial_mux Popen 控制台窗抑制
     load_json_file, load_json_strict, load_skill_section, load_workspace_state,
-    load_workspace_state_for_update, now_iso, output_json,
+    load_workspace_state_for_update, now_iso,
     project_config_file, save_json_file, save_skill_section,
+    state_write_lock,  # F-127 (工单 P1-3): serial_mux 读改写锁
     workspace_root,
 )
 from runtime_common import make_result as _common_make_result  # F-029 T3: serial 适配器转调目标
@@ -209,12 +213,12 @@ def get_serial_config(
     cli_encoding: str | None = None,
     cli_timeout: float | None = None,
     workspace: str | None = None,
-) -> tuple[dict, dict]:
+) -> tuple[dict | None, dict]:
     """
     获取串口配置，按优先级解析参数。
-    返回 (config_dict, sources_dict)
+    返回 (config_dict, sources_dict)；config_dict 可为 None (F-133/k:
+    resolve_param 对全缺参数返回 None — 旧注解 tuple[dict, dict] 撒谎)。
     """
-    local_cfg = load_local_config()
     proj_cfg = load_project_config(workspace)
     state = load_workspace_state(workspace)
 
@@ -312,7 +316,24 @@ def get_serial_config(
 
 
 def is_mux_alive(mux_info: dict) -> bool:
-    """检查 mux 进程是否存活"""
+    """检查 mux 进程是否存活
+
+    F-117 (工单 P0-1): Windows 上 os.kill(pid, 0) 不是探活——CPython 对非
+    CTRL 类信号一律 TerminateProcess，会无条件杀掉被探测进程（PID 复用时
+    还可能误杀无关进程）。改为 TCP 连通性探测：mux 本就是 127.0.0.1 上的
+    TCP 服务，connect_ex 返回 0 即存活。POSIX 保留 os.kill(pid, 0)。
+    两份拷贝中的 serial_mux 版本已删除，统一 import 本实现。
+    """
+    if os.name == "nt":
+        tcp_port = mux_info.get("tcp_port", 0)
+        if not tcp_port:
+            return False
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                s.settimeout(1.0)
+                return s.connect_ex(("127.0.0.1", int(tcp_port))) == 0
+        except OSError:
+            return False
     for pid_key in ("tcp_pid", "pty_pid"):
         pid = mux_info.get(pid_key, 0)
         if not pid:
@@ -331,8 +352,12 @@ def get_mux_info(workspace: str | None = None) -> dict | None:
     if not mux_info:
         return None
     if not is_mux_alive(mux_info):
-        state.pop("serial_mux", None)
-        save_workspace_state(state, workspace)
+        # F-127 (工单 P1-3): 持锁读最新再改——旧版拿上面的快照直接 pop+覆盖,
+        # 会回滚探测窗口内其他工具的写入
+        with state_write_lock(workspace):
+            state = load_workspace_state_for_update(workspace)
+            state.pop("serial_mux", None)
+            save_workspace_state(state, workspace)
         return None
     return mux_info
 
@@ -402,3 +427,72 @@ def open_serial_port(config: dict, use_mux: bool = True):
         stopbits=config["stopbits"],
         timeout=config["timeout_sec"],
     )
+
+
+# ── F-156 (P2-1): serial 族公共输出/骨架 — 五入口本地副本收编 ─────────────
+
+def output_json(obj: dict) -> None:
+    """serial 族 JSON 规范输出 (F-156, P2-1 收编; indent=2 + 尾随换行)。
+
+    原 serial_send / serial_log / serial_scan 本地副本的字节契约: 实测
+    buffer 直写与 reconfigure+print 在真实 stdout 上逐字节一致 — 取后者
+    (兼容 StringIO 重定向的测试缝; reconfigure 尽力而为不炸假流)。"""
+    try:
+        sys.stdout.reconfigure(encoding="utf-8")
+    except (AttributeError, ValueError):
+        pass
+    print(json.dumps(obj, ensure_ascii=False, indent=2), flush=True)
+
+
+def output_jsonl(obj: dict) -> None:
+    """JSON Lines 紧凑单行 (monitor/hex 流式契约) — 与 output_json 的
+    indent=2 字节不同, 不可互替。"""
+    try:
+        sys.stdout.reconfigure(encoding="utf-8")
+    except (AttributeError, ValueError):
+        pass
+    print(json.dumps(obj, ensure_ascii=False), flush=True)
+
+
+def resolve_serial_config(args, *, fail):
+    """公共骨架 ① (F-156, P2-1): 取配置 → 失败分流 → 写回确认配置。
+
+    四串口工具 85% 同文的"取配置+写回"段; fail(code, message) 由各工具
+    注入 (error_exit 签名各家不同, action 名等差异留在调用方)。"""
+    cfg, sources = get_serial_config(
+        cli_port=getattr(args, "port", None),
+        cli_baudrate=getattr(args, "baudrate", None),
+        cli_bytesize=getattr(args, "bytesize", None),
+        cli_parity=getattr(args, "parity", None),
+        cli_stopbits=getattr(args, "stopbits", None),
+        cli_encoding=getattr(args, "encoding", None),
+    )
+    if cfg is None:
+        if sources.get("need_selection"):
+            fail("multiple_candidates", f"{sources['error']}，请用 --port 指定")
+        else:
+            fail("config_error", sources.get("error", "配置错误"))
+        return None   # fail 不抛的实现 (测试桩) 走到这里; 工具内 error_exit 必 SystemExit
+    save_project_config(values={
+        "port": cfg["port"],
+        "baudrate": cfg["baudrate"],
+        "bytesize": cfg["bytesize"],
+        "parity": cfg["parity"],
+        "stopbits": cfg["stopbits"],
+        "encoding": cfg["encoding"],
+    })
+    return cfg
+
+
+def connect_serial(cfg, args, *, mux_warn: str, fail):
+    """公共骨架 ② (F-156, P2-1): 开串口 (use_mux = not args.direct) +
+    mux 在用警告 — 各家警告文案经 mux_warn 参数化, 差异不丢。"""
+    ser = None
+    try:
+        use_mux = not getattr(args, "direct", False)
+        ser = open_serial_port(cfg, use_mux=use_mux)
+        if getattr(ser, "_serial_skill_using_mux", False):
+            print(mux_warn, file=sys.stderr)
+    except Exception as e:
+        fail("connect_failed", str(e))
+    return ser
