@@ -49,6 +49,7 @@ def _openocd_exe() -> str:
 
 from runtime_common import now_iso, output_json  # noqa: E402  (F-041: doctor --json 复用共享层; F-157: now_iso 收编)
 from openocd_runtime import reset_target, swd_probe  # noqa: E402,F401  (F-041: SWD 探测与 release G0.5 同源; F-129: 判定后复位)
+from openocd_run import ACTION_DONE_CMD, marker_present  # noqa: E402  (F-163: N-3 标记共享件)
 import hw_lease  # noqa: E402  (F-145: flash+capture 段机器级设备锁)
 import junit_xml  # noqa: E402  (F-147: --junit-xml 报告, 生成逻辑在模块内)
 
@@ -228,9 +229,23 @@ def step_flash(hex_file: str) -> dict:
         _openocd_exe(),
         "-f", "interface/stlink.cfg",
         "-f", "target/stm32f1x.cfg",
-        "-c", f"program {{{hex_abs}}} verify reset exit"
+        # F-163 (L-4): program 串拆序 — verify 不带 reset, 串尾 echo 构造性标记
+        # 先于 exit (exit 截胡时标记 echo 不会在场, 这正是"脚本没跑完"的构造性
+        # 证据方向); reset 由主流程 post_reset (F-129) 与 capture 会话各自的
+        # reset halt 起点负责, 真机复验结论回填见 CHANGELOG F-163
+        "-c", f"program {{{hex_abs}}} verify",
+        "-c", ACTION_DONE_CMD,
+        "-c", "exit",
     ]
-    return run_cmd(cmd, timeout=30)
+    result = run_cmd(cmd, timeout=30)
+    if result["status"] == "ok" and not marker_present(
+            result.get("stdout", "") + result.get("stderr", "")):
+        # F-163 (N-3): exit 0 但串尾标记缺席 = OpenOCD 提前退出, 脚本没跑完 —
+        # 不许按成功入账 (构造性证据优先于退出码)
+        return {"status": "error",
+                "message": ("action_incomplete: 构造性标记缺席 — OpenOCD exit 0 "
+                            "但 program 串未跑完 (串尾 echo 未出现), 拒绝按成功入账")}
+    return result
 
 
 class ConfigError(ValueError):

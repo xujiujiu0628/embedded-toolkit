@@ -5,6 +5,21 @@
 
 ## Unreleased — zc/hardware（总工单 v2 全量承接: 编号对照 T1~T8=F-145~F-152、T9=F-153, 新任务 F-154 起顺延。号段注记 (审核 L-1): v2 清单曾为 Claude P2 系列预留 F-133~144，实际 Claude 仅消费 F-133 后整批移交本分支, 134~144 空置——非跳号事故, 系分工变更）
 
+- **F-163 (总工单遗留 L-4) verify.step_flash 接入 N-3 构造性标记 — rc=0 且标记在场才算烧成，feat+test+docs，openocd_run.py / verify.py / tests/test_openocd_n3_marker.py / tests/test_verify_failure_paths.py / README / CHANGELOG**:
+  L-4 登记的 N-3 覆盖洞闭合（F-155 只覆盖 openocd_run 的 flash/erase，
+  `verify.step_flash` 直连 openocd `program` 的高频真机路径不经该链）。
+  ① **共享件抽取**：`openocd_run.ACTION_DONE_CMD` 公开别名 +
+  `marker_present()` 纯函数（缺席判定单实现，无双漂移）；② **cmd 串尾
+  echo**：`program {hex} verify` 后接 `-c ACTION_DONE_CMD -c exit`——
+  exit 截胡时标记 echo 不会在场，"脚本没跑完"获得构造性证据；reset 不再
+  挂在 program 串内，由主流程 post_reset（F-129）与 capture 会话各自
+  reset halt 起点负责；③ **缺席判定**：rc=0 但 stdout+stderr 无标记 →
+  `action_incomplete` error 拒绝按成功入账（构造性证据优先于退出码，
+  与 openocd_run 同款判据；OpenOCD 日志走 stderr，校验拼接同款第 305 行
+  `combined` 口径）；④ 测试：红基线三例（rc0+标记 ok / rc0 无标记拒 /
+  rc≠0 旧契约不变）转绿，共享件三钉在 test_openocd_n3_marker。真机复验
+  待 Task 5（本条为 host 层证据；`program` 拆序后 halt 态衔接结论回填此条）。
+
 - **F-161 (审核退回 M-1/M-2/M-3/M-4/M-5/L-1~L-5) fresh-checker 终审处置，fix+test+docs，hw_lease.py / test_hw_lease.py / CHANGELOG / README**:
   终审"通过但有保留" (C0 H0 M5 L5)。① **M-1**: `hw_lease.release()` 对
   "合法 int 但失效 fd"裸抛 OSError 违反恒返回 dict 契约——`_unlock_byte`
