@@ -67,6 +67,16 @@ ALL_ACTIONS = ["probe", "flash", "erase", "reset", "reset-init", "targets", "fla
 # backend_warnings 留痕, 不改判。
 ACTION_DONE_MARKER = "MARK_ACTION_DONE"
 _ACTION_DONE_CMD = f"echo {ACTION_DONE_MARKER}"
+# F-163 (L-4): 公开别名 + 缺席判定纯函数 — verify.step_flash 与 openocd_run
+# 两条路径消费同一判据 (构造性证据优先于退出码, N-3 立法原意)。
+ACTION_DONE_CMD = _ACTION_DONE_CMD
+
+
+def marker_present(combined_output: str) -> bool:
+    """串尾标记 echo 是否在场 (在场 = 动作脚本真跑到底)。纯函数, import 零 IO。"""
+    return ACTION_DONE_MARKER in combined_output
+
+
 _WARNING_LINE_RE = re.compile(r"\b(Error|Warn(?:ing)?)\s*:", re.I)
 
 # F-123 (工单 P0-7): 本地 build_openocd_cmd 副本已删除, 统一 import

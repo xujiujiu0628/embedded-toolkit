@@ -93,5 +93,24 @@ class MarkerContractTests(unittest.TestCase):
                             "action_incomplete")
 
 
+class N3SharedContractTests(unittest.TestCase):
+    """F-163 (L-4): 标记常量与缺席判定抽为公开共享件 —
+    openocd_run 自身与 verify.step_flash 消费同一判据，无双实现漂移。"""
+
+    def test_public_cmd_alias_same_value(self):
+        self.assertEqual(openocd_run.ACTION_DONE_CMD, openocd_run._ACTION_DONE_CMD)
+        self.assertEqual(openocd_run.ACTION_DONE_CMD,
+                         f"echo {openocd_run.ACTION_DONE_MARKER}")
+
+    def test_marker_present_true_only_when_marker_in_output(self):
+        self.assertTrue(openocd_run.marker_present(
+            "Info : Programming... / Mark action done: MARK_ACTION_DONE"))
+        self.assertFalse(openocd_run.marker_present(
+            "Info : Programming started but OpenOCD exited early"))
+
+    def test_marker_present_empty_output_false(self):
+        self.assertFalse(openocd_run.marker_present(""))
+
+
 if __name__ == "__main__":
     unittest.main()
