@@ -42,6 +42,17 @@
     最终 JSON 隐身；改为 stderr/stdout 缺席时回退读 message，
     `attempts[].message` 现在能看见 `action_incomplete` 字样
     （测试钉 FlashAttemptsMessageFallbackTests，fail-closed 行为不变）。
+  - 真机复验 2026-09-13（L-4 销账，Task 5）：adc-oled 在位闭环——
+    flash 带标记 PASS（attempt 1 即成、无 retry，`** Verified OK **` 后
+    `MARK_ACTION_DONE` 在场）、capture rtt 91 行 ok、post_reset=ok、
+    evidence=hardware_validated。反证抽查一次：临时删除 cmd 中
+    `ACTION_DONE_CMD` 段重跑，flash 即报
+    `action_incomplete: 构造性标记缺席`（rc=0 无标记被拒入账），
+    证实标记判定在真机路径生效；`git checkout` 还原后工作树干净，
+    破改态未进任何 commit。ALERT/ADC-02 两项因旋钮未拧满
+    （mv≈105<3000，且低电压 raw 为空格右对齐不匹配 `\d+`）FAIL，
+    属 09-13 已知人工交互缺口非本工单回归（两次运行
+    expectations_sha256 一致，capture/verify 路径 F-163 未触碰）。
 
 - **F-161 (审核退回 M-1/M-2/M-3/M-4/M-5/L-1~L-5) fresh-checker 终审处置，fix+test+docs，hw_lease.py / test_hw_lease.py / CHANGELOG / README**:
   终审"通过但有保留" (C0 H0 M5 L5)。① **M-1**: `hw_lease.release()` 对
