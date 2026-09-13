@@ -19,6 +19,12 @@
   `combined` 口径）；④ 测试：红基线三例（rc0+标记 ok / rc0 无标记拒 /
   rc≠0 旧契约不变）转绿，共享件三钉在 test_openocd_n3_marker。真机复验
   待 Task 5（本条为 host 层证据；`program` 拆序后 halt 态衔接结论回填此条）。
+  - 追加（M-4a, 审核 Minor 即时收口）：`_run_flash_step` attempts 消费端
+    补 message 回退——旧 `flash.get("stderr", get("stdout", ""))` 对
+    message-only 错误 dict（action_incomplete / 无 hex）恒得空串，根因在
+    最终 JSON 隐身；改为 stderr/stdout 缺席时回退读 message，
+    `attempts[].message` 现在能看见 `action_incomplete` 字样
+    （测试钉 FlashAttemptsMessageFallbackTests，fail-closed 行为不变）。
 
 - **F-161 (审核退回 M-1/M-2/M-3/M-4/M-5/L-1~L-5) fresh-checker 终审处置，fix+test+docs，hw_lease.py / test_hw_lease.py / CHANGELOG / README**:
   终审"通过但有保留" (C0 H0 M5 L5)。① **M-1**: `hw_lease.release()` 对

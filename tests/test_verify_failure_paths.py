@@ -270,6 +270,53 @@ class StepFlashN3MarkerTests(unittest.TestCase):
         self.assertNotIn("action_incomplete", r.get("message", ""))
 
 
+class FlashAttemptsMessageFallbackTests(unittest.TestCase):
+    """F-163 审核 Minor (M-4a): _run_flash_step 消费端必须回退读 message。
+
+    step_flash 的 message-only 错误 dict (action_incomplete / 无 hex) 不带
+    stderr/stdout 键, 旧消费端 `flash.get("stderr", flash.get("stdout", ""))`
+    恒得空串 → attempts[].message 隐身根因, 最终 JSON 看不出为什么失败。
+    本钉走真实 step_flash (mock run_cmd rc=0 无标记) → _run_flash_step,
+    断言 action_incomplete 根因字符串出现在 attempts[].message。
+    """
+
+    def setUp(self):
+        old = verify.WORKSPACE
+        verify.WORKSPACE = tempfile.mkdtemp()
+        self.addCleanup(setattr, verify, "WORKSPACE", old)
+        self.addCleanup(shutil.rmtree, verify.WORKSPACE, ignore_errors=True)
+        os.makedirs(os.path.join(verify.WORKSPACE, "obj"), exist_ok=True)
+        self.hex_rel = "obj/app.hex"
+        with open(os.path.join(verify.WORKSPACE, self.hex_rel), "w") as f:
+            f.write(":00000001FF\n")
+
+    def test_message_only_error_surfaces_in_attempts(self):
+        result = {"steps": {}}
+        args = mock.Mock(no_flash=False, lease_wait=0.0, json=False,
+                         task_origin="manual",
+                         require_schedule_origin=False)
+        with mock.patch.object(verify, "run_cmd") as m_run, \
+             mock.patch.object(verify, "_openocd_exe",
+                               return_value="openocd"), \
+             mock.patch.object(verify, "hw_lease") as m_lease, \
+             mock.patch.object(verify, "_output"), \
+             mock.patch.object(verify, "_record_checkpoint_early_exit"):
+            # rc=0 但串尾标记缺席 → step_flash 返回 message-only error
+            m_run.return_value = {"status": "ok", "returncode": 0,
+                                  "stdout": "Info : all fine (no marker)",
+                                  "stderr": ""}
+            m_lease.acquire.return_value = {"ok": True}
+            with self.assertRaises(SystemExit) as ctx:
+                verify._run_flash_step(args, {}, result, self.hex_rel,
+                                       sim_mode=False, max_retries=0,
+                                       retry_delay=0)
+            self.assertEqual(ctx.exception.code, 1)   # fail-closed 不变
+        attempts = result["steps"]["flash"]["attempts"]
+        self.assertEqual(len(attempts), 1)
+        self.assertEqual(attempts[0]["status"], "error")
+        self.assertIn("action_incomplete", attempts[0]["message"])
+
+
 class RttSpawnFlagsPlatformTests(unittest.TestCase):
     """F-031 (F-027 的运行时姊妹钉): _step_capture_rtt 的 spawn 旗标必须随平台适配。
 

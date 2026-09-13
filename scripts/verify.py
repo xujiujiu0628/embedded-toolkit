@@ -808,10 +808,14 @@ def _run_flash_step(args, config, result, hex_file, sim_mode, max_retries,
         flash_ok = False
         for attempt in range(max_retries + 1):
             flash = step_flash(hex_file)
+            # F-163 审核 Minor: message-only 错误 dict (无 hex / action_incomplete)
+            # 不带 stderr/stdout——消费端必须回退读 message, 否则根因在 JSON 里隐身
+            _flash_msg = (flash.get("stderr") or flash.get("stdout")
+                          or flash.get("message", ""))
             flash_info = {
                 "attempt": attempt + 1,
                 "status": flash.get("status", "error"),
-                "message": flash.get("stderr", flash.get("stdout", ""))[-200:],
+                "message": _flash_msg[-200:],
             }
             flash_attempts.append(flash_info)
             if flash.get("status") == "ok":
