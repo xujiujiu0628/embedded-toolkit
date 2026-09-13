@@ -47,6 +47,15 @@
     D-3 候选）；② 计时脆弱钉抖动——test_state_write_lock 超时降解钉
     （ubuntu/py3.12）与 test_runtime_contract `elapsed_ms>=1000` 钉
     （windows，实测 999<1000），F-159 加固残余边界。
+  - 复观记录（2026-09-13, append-only, M-4 终态定稿）：终态配置
+    （`use-actions-summary: false` + `fail-on-error: false`）已获远端执行——
+    PR #8 run 34762552201（head 20e350d）产出 check run "Sim Verify Results"
+    （check 103737895345，https://github.com/xujiujiu0628/embedded-toolkit/
+    runs/103737895345）：已创建且通过，输出摘要 "0 passed, 1 failed and
+    4 skipped"（失败态产物被消费，`checks.create` 生效）。check run 形态成立，
+    与首吃（run 34755875069 日志解析，摘要模式）构成双形态证据；sim-demo job
+    本体仍红属预置 ubuntu build_failed 债（上行 ①），不阻塞本 check 结论。
+    fresh-checker M-1/M-2 残余勾销，README M-4 改"已闭合"。
 
 - **F-163 (总工单遗留 L-4) verify.step_flash 接入 N-3 构造性标记 — rc=0 且标记在场才算烧成，feat+test+docs，openocd_run.py / verify.py / tests/test_openocd_n3_marker.py / tests/test_verify_failure_paths.py / README / CHANGELOG**:
   L-4 登记的 N-3 覆盖洞闭合（F-155 只覆盖 openocd_run 的 flash/erase，
