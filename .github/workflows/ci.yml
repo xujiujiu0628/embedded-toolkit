@@ -93,6 +93,10 @@ jobs:
   # (release G2 只认 hardware_validated)。
   sim-demo:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      checks: write
+      pull-requests: read   # PR 上下文下写注释用
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-python@v6
@@ -110,9 +114,21 @@ jobs:
       - name: sim-demo end-to-end verify (build → qemu sim → judge)
         run: |
           set -o pipefail
-          python scripts/verify.py --project examples/sim-demo --json --timeout 20 | tee verify-result.json
+          python scripts/verify.py --project examples/sim-demo --json --junit-xml build/junit-sim.xml --timeout 20 | tee verify-result.json
       # F-151: 判定结果 → GITHUB_STEP_SUMMARY; if: always() 保证失败运行
       # 也出摘要 (输入非法时 evidence_export 只 exit 码报错, 不炸步骤)
       - name: Export evidence summary
         if: always()
         run: python scripts/evidence_export.py --verify-file verify-result.json --project examples/sim-demo
+      # F-162 (审核 M-4 销账): 外部 reporter 实吃 --junit-xml 产物。
+      # dorny/test-reporter v3.0.0, SHA 锁定 (供应链纪律: 升级走 CHANGELOG,
+      # 只升不降): a43b3a5f7366b97d083190328d2c652e1a8b6aa2
+      # 解引用核验: gh api repos/dorny/test-reporter/git/tags/<tag-object-sha>
+      - name: Publish test report (dorny/test-reporter@v3.0.0, SHA-pinned)
+        if: always()
+        continue-on-error: true
+        uses: dorny/test-reporter@a43b3a5f7366b97d083190328d2c652e1a8b6aa2
+        with:
+          name: Sim Verify Results
+          path: build/junit-sim.xml
+          reporter: java-junit

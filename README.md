@@ -380,9 +380,9 @@ Renode 把仿真做成平级判定后端，hardci / jlink-mcp 验证了 MCP 分�
   Linux/macOS-only，Windows 不支持；`which("socat")` 在 `start_mux()` 最前无条件执行，
   无 socat 则整个 mux 起不来。`--no-pty` 解耦列为后续增强，未实现前不按部分功能规划
 - 有意搁置：UART 串口补丁的发布门禁脆弱性（成本/收益不立项）
-- **F-147 遗留（审核 M-4）**：`--junit-xml` 产物的 GitHub Actions test
-  reporter 实吃验证未做（CI 无消费步骤）；单测层 XML 可解析性已过。
-  欠账待首个 reporter 消费验证后销账
+- **F-147 遗留（审核 M-4）**：✅ **闭合中（F-162, 2026-09-13）**——CI sim-demo
+  job 已加 `--junit-xml` 产物 + `dorny/test-reporter`（SHA 锁定）消费步骤；
+  销账以首个真实 PR 的 reporter 检查结果为凭（见 CHANGELOG F-162 复验记录）。
 - **N-3 覆盖洞（审核 L-4）**：✅ **已闭合（F-163, 2026-09-13）**——
   `verify.step_flash` 接入构造性标记共享件（`openocd_run.ACTION_DONE_CMD` /
   `marker_present`），rc=0 且串尾标记在场才算烧录成功；真机复验见 CHANGELOG。
