@@ -30,6 +30,17 @@
     Results" 摘要 "0 passed, 1 failed and 4 skipped"，四态映射逐条正确
     （FR-SYS-01/FR-TGL-01/FR-ADC-01/FR-FUTURE-1 skipped + preflight
     failed），`if: always()` 设计在真实数据上得证；M-4 闭合。
+  - 订正（fresh-checker M-1/M-2, 2026-09-13, append-only——上行走措辞失实
+    就地订正如下）：① 上行"check run 'Sim Verify Results'"**不实**——
+    v3.0.0 默认 `use-actions-summary: true` 走摘要模式（只写
+    GITHUB_STEP_SUMMARY，从不 `checks.create`），实证：该 run 远端
+    check-runs 列举 18 条无 Sim Verify。首吃证据成立本体收窄为：run
+    34755875069 日志中 java-junit 解析 + 四态映射（摘要模式）；check run
+    形态待复观。② 本 run 销账所用配置系**修订前配置**（`fail-on-error`
+    当时默认 true，步骤判绿靠 continue-on-error 兜底）；终态配置（新增
+    `use-actions-summary: false` 显式贴 spec "PR 页面出现检查结果" 原意 +
+    `fail-on-error: false`）尚未被远端执行——复观挂终态配置 push 后下轮，
+    M-4 状态相应回退为"闭合中"（README 同步）。
   - 预置债两笔（同 run 暴露，均非本条引入，登记 README 已知遗留）：
     ① sim-demo job 在 CI ubuntu runner 上 build_failed（errors=-1，
     190ms；该 job 自 F-150 入仓从未真跑过 CI，本地全绿，根因待查，
