@@ -79,6 +79,12 @@
     （mv≈105<3000，且低电压 raw 为空格右对齐不匹配 `\d+`）FAIL，
     属 09-13 已知人工交互缺口非本工单回归（两次运行
     expectations_sha256 一致，capture/verify 路径 F-163 未触碰）。
+  - 边界说明（fresh-checker L-1, append）：上文"reset 由 post_reset 与
+    capture 起点负责"仅覆盖正常收尾链——capture 失败早退路径
+    （`verify.py` sim/rtt/semihosting 三处失败 `sys.exit(1)` 及
+    `_finish_capture_timeout` 收尸出口，行号锚 917/944/978 系当次快照）
+    不做复位，目标滞留 halt 残留态；下一轮 run 经 capture 起点
+    `reset halt`（或直接烧录）自愈，非累积性状态污染，属已知可接受边界。
 
 - **F-161 (审核退回 M-1/M-2/M-3/M-4/M-5/L-1~L-5) fresh-checker 终审处置，fix+test+docs，hw_lease.py / test_hw_lease.py / CHANGELOG / README**:
   终审"通过但有保留" (C0 H0 M5 L5)。① **M-1**: `hw_lease.release()` 对

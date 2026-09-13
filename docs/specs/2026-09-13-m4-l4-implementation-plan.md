@@ -33,7 +33,7 @@
 - Consumes: 既有常量 `ACTION_DONE_MARKER = "MARK_ACTION_DONE"`、`_ACTION_DONE_CMD = f"echo {ACTION_DONE_MARKER}"`（`openocd_run.py:68-69`）。
 - Produces: `openocd_run.ACTION_DONE_CMD: str`（公开别名，值同 `_ACTION_DONE_CMD`）、`openocd_run.marker_present(combined_output: str) -> bool`。Task 3 消费这两个符号。
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 在 `tests/test_openocd_n3_marker.py` 末尾追加（沿用该文件既有 import 与风格；先读文件头确认它如何 import openocd_run——通常是 `sys.path.insert` 后 `import openocd_run`）：
 
@@ -57,12 +57,12 @@ class N3SharedContractTests(unittest.TestCase):
         self.assertFalse(openocd_run.marker_present(""))
 ```
 
-- [ ] **Step 2: 跑测试确认失败**
+- [x] **Step 2: 跑测试确认失败**
 
 Run: `python -m unittest tests.test_openocd_n3_marker -v`
 Expected: FAIL — `AttributeError: module 'openocd_run' has no attribute 'ACTION_DONE_CMD'`
 
-- [ ] **Step 3: 最小实现**
+- [x] **Step 3: 最小实现**
 
 `scripts/openocd_run.py` 第 68-70 行常量区，在 `_ACTION_DONE_CMD` 定义之后、`_WARNING_LINE_RE` 之前插入：
 
@@ -79,17 +79,17 @@ def marker_present(combined_output: str) -> bool:
 
 注意：`ACTION_DONE_CMD` 若模块顶部有 `__all__` 需同步加入（先检查，无 `__all__` 则不动）。
 
-- [ ] **Step 4: 跑测试确认通过**
+- [x] **Step 4: 跑测试确认通过**
 
 Run: `python -m unittest tests.test_openocd_n3_marker -v`
 Expected: PASS（新 3 例 + 该文件既有全绿——既有 N-3 行为钉不许动）
 
-- [ ] **Step 5: 全量回归（行为零变更声明的证据）**
+- [x] **Step 5: 全量回归（行为零变更声明的证据）**
 
 Run: `python -m unittest discover -s tests`
 Expected: 全绿（844+3 例）
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add scripts/openocd_run.py tests/test_openocd_n3_marker.py
@@ -107,7 +107,7 @@ git commit -m "refactor(F-163-pre): N-3 标记常量/缺席判定抽公开共享
 - Consumes: `verify.step_flash(hex_file)`（`verify.py:216`）、`verify.run_cmd(cmd, timeout)`（`verify.py:151`，返回 dict 含 `status/returncode/stdout/stderr`）、Task 1 的 `openocd_run.ACTION_DONE_MARKER`。
 - Produces: 三个失败钉（rc=0+标记在场→ok；rc=0+标记缺席→error action_incomplete；rc≠0→旧 error 路径），Task 3 转绿。
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 `tests/test_verify_failure_paths.py` 中 `StepFlashNoArtifactTests` 类之后新增（文件头已有 `mock`、`tempfile`、`shutil`、`verify` 导入，先读文件头确认可用名，缺什么补什么）：
 
@@ -153,12 +153,12 @@ class StepFlashN3MarkerTests(unittest.TestCase):
 
 实施者注意：`_flash` 的装饰器顺序——被装饰函数收到的 mock 参数按**从下到上**对应装饰器行；若运行发现 `m_exe/m_run` 错位，以实际 unittest 行为为准修正参数名（这是本文件既有测试用 `@mock.patch.object` 时的同款坑，见 `test_hil_origin_guard.py` 用法）。
 
-- [ ] **Step 2: 跑测试确认失败**
+- [x] **Step 2: 跑测试确认失败**
 
 Run: `python -m unittest tests.test_verify_failure_paths.StepFlashN3MarkerTests -v`
 Expected: 三例中至少两例 FAIL（无标记例现状是 rc=0→ok 放行；cmd 无 echo）。若 `test_rc0_with_marker_ok` 也失败于 mock 签名，先修测试脚手架再确认红在实现上。
 
-- [ ] **Step 3: Commit（红基线入档，本仓纪律：钉先于实现单独可见）**
+- [x] **Step 3: Commit（红基线入档，本仓纪律：钉先于实现单独可见）**
 
 ```bash
 git add tests/test_verify_failure_paths.py
@@ -179,7 +179,7 @@ git commit -m "test(F-163): step_flash N-3 标记三态红基线 — rc=0 无标
 - Consumes: Task 1 的 `openocd_run.ACTION_DONE_CMD`、`openocd_run.marker_present`；Task 2 的三例测试。
 - Produces: `step_flash` 终态行为——成功判定 = rc==0 且标记在场；标记缺席 error 文本含 `action_incomplete`。
 
-- [ ] **Step 1: 实现**
+- [x] **Step 1: 实现**
 
 `scripts/verify.py`：
 
@@ -223,18 +223,18 @@ from openocd_run import ACTION_DONE_CMD, marker_present  # noqa: E402  (F-163: N
 
 （OpenOCD 日志实际走 stderr——`run_cmd` 里 F-090 注释可证——所以校验拼 stdout+stderr，与 openocd_run.py 第 305 行 `combined = proc.stderr + "\n" + proc.stdout` 同款。）
 
-- [ ] **Step 2: 跑测试转绿**
+- [x] **Step 2: 跑测试转绿**
 
 Run: `python -m unittest tests.test_verify_failure_paths -v`
 Expected: 全绿（新三例 + StepFlashNoArtifactTests 两例旧钉不动）
 
-- [ ] **Step 3: 全量 + lint**
+- [x] **Step 3: 全量 + lint**
 
 Run: `python -m unittest discover -s tests` → 全绿
 Run: `python -m ruff check scripts tests` → 零违规
 （其他 mock `run_cmd`/`step_flash` 的测试若因 cmd 结构断言失败——如 `test_junit_xml.py:169`、`test_hw_lease.py:289`——它们是 mock 层不真跑 cmd，通读报错确认属 mock 兼容问题再最小修 mock，**不许**反向放宽新测试断言。）
 
-- [ ] **Step 4: 文档账目**
+- [x] **Step 4: 文档账目**
 
 1. `README.md:386-389` L-4 条目改为（保留条目位置，措辞对齐上方 M-4 条目改写先例风格，M-4 由 Task 4 改）：
 
@@ -246,7 +246,7 @@ Run: `python -m ruff check scripts tests` → 零违规
 
 2. `CHANGELOG.md` 顶部（F-161 条目上方）新增 F-163 条目，格式对齐既有条目：类型 `feat+test+docs`，文件清单 `openocd_run.py / verify.py / tests/test_openocd_n3_marker.py / tests/test_verify_failure_paths.py / README / CHANGELOG`，明细行记：共享件抽取、cmd 串尾 echo、缺席判定、（Task 5 完成后回填真机结论）。
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add scripts/verify.py README.md CHANGELOG.md tests/test_verify_failure_paths.py
@@ -266,7 +266,7 @@ git commit -m "feat+test+docs(F-163): step_flash 接入 N-3 构造性标记 — 
 - Consumes: `verify.py --junit-xml <path>` 旗标（`verify.py:493`，F-147 既有，零代码改动）；`dorny/test-reporter@v3.0.0` = commit `a43b3a5f7366b97d083190328d2c652e1a8b6aa2`（2026-09-13 经 `gh api repos/dorny/test-reporter/git/tags/a6ddd83...` 解 annotated tag 实证）。
 - Produces: CI 产物 `build/junit-sim.xml` + PR 检查 "Sim Verify Results"。
 
-- [ ] **Step 1: 改 sim-demo job**
+- [x] **Step 1: 改 sim-demo job**
 
 sim-demo job 顶部（`runs-on: ubuntu-latest` 之后）加权限声明（dorny/test-reporter 要写 check run；仓若无全局 restrictive permissions 也应显式最小化）：
 
@@ -305,13 +305,13 @@ sim-demo job 顶部（`runs-on: ubuntu-latest` 之后）加权限声明（dorny/
 
 说明（写进 commit body 即可，yaml 注释已够）：`if: always()` 让失败运行的 XML 也被消费（M-4 要验证的就是 reporter 吃得下四态混合的产物）；`continue-on-error: true` 防 reporter 自身故障把 CI 判红掩盖真因——**销账判定由人盯 PR 页**（Task 6）。
 
-- [ ] **Step 2: 本地验证 XML 产物可产出**
+- [x] **Step 2: 本地验证 XML 产物可产出**
 
 Run: `python scripts/verify.py --project examples/sim-demo --json --junit-xml build/junit-sim-local.xml --timeout 20`
 Expected: 退出码按 verify 四态判定（本机 QEMU 11.1.0 已装，09-13 环境事实）；`build/junit-sim-local.xml` 存在且 `python -c "import xml.etree.ElementTree as ET; ET.parse('build/junit-sim-local.xml')"` 零输出。
 （`build/` 若被 .gitignore 覆盖正好——产物本就不入库；确认 `git status` 不出现该文件。）
 
-- [ ] **Step 3: 文档账目**
+- [x] **Step 3: 文档账目**
 
 1. `README.md:383-385` M-4 条目改为：
 
@@ -325,12 +325,12 @@ Expected: 退出码按 verify 四态判定（本机 QEMU 11.1.0 已装，09-13 �
 
 2. `CHANGELOG.md` 顶部新增 F-162 条目：类型 `ci+docs`，文件 `ci.yml / README / CHANGELOG`，明细记 SHA 锁定值、解引用核验命令、`if: always()` + `continue-on-error` 两个决策的理由。
 
-- [ ] **Step 4: YAML 静态自检**
+- [x] **Step 4: YAML 静态自检**
 
 Run: `python -c "import yaml,sys; yaml.safe_load(open('.github/workflows/ci.yml', encoding='utf-8')); print('yaml ok')"`（若本机无 pyyaml，用 `python -m unittest tests.test_ci_config 2>/dev/null || true` 先查仓内是否已有 CI 配置解析测试——grep `ci.yml` 于 tests/，有则跑它。）
 Expected: `yaml ok` 或既有配置测试绿。
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add .github/workflows/ci.yml README.md CHANGELOG.md
@@ -349,19 +349,19 @@ git commit -m "ci+docs(F-162): sim-demo 产 --junit-xml + test-reporter(SHA锁�
 - Consumes: Task 3 的 step_flash 终态；adc-oled 工程（`<d-claude-root>\stm32f103-adc-oled`，`machine.json` 路径源）；ST-Link 在位。
 - Produces: 真机证据——flash 带标记 PASS、`evidence=hardware_validated`、post_reset=ok。
 
-- [ ] **Step 1: 真机跑闭环**
+- [x] **Step 1: 真机跑闭环**
 
 Run: `python scripts/verify.py --project <d-claude-root>\stm32f103-adc-oled --json --timeout 60`（`<d-claude-root>` 即本机 `D:\` 工作区根，执行时替换）
 Expected: status=ok、flash 步骤成功且无 action_incomplete、`evidence=hardware_validated`、post_reset=ok（对齐 09-13 已知基线：自动项 4/4，ALERT 捕获依赖旋钮状态）。
 **注意**：09-13 记录显示"首跑自动项 3/3，ALERT 需人工拧满旋钮到阈值上（mv≈3300）"——若 ALERT 项 FAIL 而 flash/capture 链全绿，属已知人工交互缺口，不是本工单回归；判定只看 flash 路径带标记是否畅通。
 **克隆 ST-Link 纪律**（[[stlink-clone-intermittent]]）：SWD 连不上先问用户"是不是你拔了"，不猜软件。
 
-- [ ] **Step 2: 反证抽查（构造性证据的存在意义）**
+- [x] **Step 2: 反证抽查（构造性证据的存在意义）**
 
 真机 PASS 后，一次性手改 `step_flash`  cmd 把 `ACTION_DONE_CMD` 段删掉跑同一条命令——预期 flash 报 `action_incomplete` rc=0 拒绝入账。**立刻还原**（`git checkout scripts/verify.py` 或反向手改），此步不进任何 commit。
 （无板可用时的降级口径：mock 三态钉即验收证据，本步标 "skipped: no hardware" 记入 CHANGELOG——但当前板在位，默认必须跑。）
 
-- [ ] **Step 3: CHANGELOG 回填 + Commit**
+- [x] **Step 3: CHANGELOG 回填 + Commit**
 
 F-163 条目追加一行明细：`真机复验 2026-09-13: adc-oled verify ok, flash 带标记 PASS (action_incomplete 路径人工反证一次); post_reset=ok, evidence=hardware_validated`（按实测措辞）。
 
@@ -383,11 +383,11 @@ git commit -m "docs(F-163): adc-oled 真机复验回填 — L-4 销账证据"
 - Consumes: Task 4 的 CI 改动经**一次 push** 才可见——⚠️ 本工单唯一需要用户拍板的例外：0912 惯例不 push，但 reporter 实吃必须发生在 GitHub 远端 PR 上。执行到本步时**停下请示**，由维护者决定 push 方式（直推 0912 触发分支 CI 不行——test-reporter 的 PR 评论模式需要 PR 上下文；可行路径是 push 0912 后开 PR 到 master，或维护者本地 `gh workflow run`——`on: push/PR` 事件下 push 触发的 run 里 test-reporter 也能以 `github-check` 检查形式出结果）。
 - Produces: 销账凭据（PR 检查 "Sim Verify Results" 截图级文字记录进 CHANGELOG）。
 
-- [ ] **Step 1: 请示 push 授权**（本计划唯一人工门）
+- [x] **Step 1: 请示 push 授权**（本计划唯一人工门）
 
 向维护者报告：代码全部就绪、本地验收全绿，M-4 销账需要一次 push + PR/分支 run 观察。等待指示后再继续。
 
-- [ ] **Step 2: 观察 reporter 消费结果**
+- [x] **Step 2: 观察 reporter 消费结果**
 
 push 后 `gh run watch` 或 `gh run list --workflow CI` → sim-demo job 的 "Publish test report" 步骤绿；PR/run 页面出现 "Sim Verify Results" 检查、annotated 测试摘要（四态用例列表）= **首个外部 reporter 实吃**成立。
 若 reporter 报解析错（java-junit 格式不认某边界）：抓 `junit-sim.xml` 实际内容与 dorny 格式期望比对，修 `junit_xml.py` 的生成侧（那是真缺陷销账副产品，加回归钉），重跑。
@@ -409,6 +409,8 @@ git commit -m "docs(F-162/F-163): 销账 — M-4 reporter 实吃成立 + L-4 真
 - [ ] **Step 4: fresh-checker 终审（本仓收官惯例）**
 
 调用 `fresh-checker` skill 对两笔闭合做无上下文终审；C/H 级发现回 Task 修，M/L 级视措辞决定修或登记。终审结论追加 CHANGELOG。
+
+> 注（fresh-checker 修复波, 2026-09-13）：Step 3/4 未全勾——终审已发生（C0 H0 M4 L3），但 Step 3 销账三件套经 M-1 订正回退为"闭合中"；check run 复观待终态配置 push 后下轮。
 
 ---
 

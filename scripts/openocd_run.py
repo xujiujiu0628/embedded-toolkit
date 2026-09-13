@@ -354,7 +354,7 @@ def run_openocd(
                 "error": {"code": "command_failed", "message": error_lines[-1].strip() if error_lines else f"执行返回非零退出码: {proc.returncode}"},
                 "details": details,
             }
-    elif marker_expected and ACTION_DONE_MARKER not in combined:
+    elif marker_expected and not marker_present(combined):
         # N-3: exit 0 但串尾标记缺席 = OpenOCD 提前退出, 脚本没跑完 —
         # 不许按成功入账 (构造性证据优先于退出码)
         return {
