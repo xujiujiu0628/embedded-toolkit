@@ -380,12 +380,23 @@ Renode 把仿真做成平级判定后端，hardci / jlink-mcp 验证了 MCP 分�
   Linux/macOS-only，Windows 不支持；`which("socat")` 在 `start_mux()` 最前无条件执行，
   无 socat 则整个 mux 起不来。`--no-pty` 解耦列为后续增强，未实现前不按部分功能规划
 - 有意搁置：UART 串口补丁的发布门禁脆弱性（成本/收益不立项）
-- **F-147 遗留（审核 M-4）**：✅ **闭合中（F-162, 2026-09-13）**——CI sim-demo
-  job 已加 `--junit-xml` 产物 + `dorny/test-reporter`（SHA 锁定）消费步骤；
-  销账以首个真实 PR 的 reporter 检查结果为凭（见 CHANGELOG F-162 复验记录）。
+- **F-147 遗留（审核 M-4）**：✅ **已闭合（F-162, 2026-09-13）**——CI sim-demo
+  job 的 `--junit-xml` 产物已被 `dorny/test-reporter`（SHA 锁定）**实吃成立**：
+  PR #8 run [34755875069](https://github.com/xujiujiu0628/embedded-toolkit/actions/runs/34755875069)
+  在失败态产物上四态映射逐条正确（0 passed / 1 failed / 4 skipped，check run
+  "Sim Verify Results"）；reporter 步骤已显式 `fail-on-error: false`（消费即
+  验证，不做门禁）。
 - **N-3 覆盖洞（审核 L-4）**：✅ **已闭合（F-163, 2026-09-13）**——
   `verify.step_flash` 接入构造性标记共享件（`openocd_run.ACTION_DONE_CMD` /
   `marker_present`），rc=0 且串尾标记在场才算烧录成功；真机复验见 CHANGELOG。
+- **F-162 副产物（预置债 D-3 候选）**：sim-demo job 在 CI ubuntu runner 上
+  build_failed（errors=-1，190ms）——该 job 自 F-150 入仓起从未真跑过 CI
+  （push 触发仅 master，0912 为首跑），本地全绿；根因未查，**非 F-162/F-163
+  引入**，登记待下轮工单。
+- **计时脆弱钉（预置债）**：`test_state_write_lock.test_timeout_degrades_honestly`
+  （ubuntu/py3.12）与 `test_runtime_contract` 的 `elapsed_ms>=1000` 钉（windows）
+  在 CI 慢速 runner 上抖动（实测 999<1000）——F-159 加固后的残余边界，
+  下轮以 F-159 同款 AST/注入判据法收口。
 - 方向：多 MCU（ESP32）工具栈评估（暂缓：无目标硬件；技术路线 esptool + probe-rs）。
   F-107 勘误：旧文本"见 docs 档案"是悬空指针（docs/ 已迁出，现仅存
   `hooks-install.md`）。F-108 计数订正：旧文本"verify.py 7 处 / release.py 2 处 /

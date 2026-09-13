@@ -132,3 +132,5 @@ jobs:
           name: Sim Verify Results
           path: build/junit-sim.xml
           reporter: java-junit
+          # 消费即验证 (M-4 销账语义): 产物含失败态属预期, 门禁由 verify 步骤本身负责
+          fail-on-error: false
