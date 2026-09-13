@@ -351,7 +351,7 @@ git commit -m "ci+docs(F-162): sim-demo 产 --junit-xml + test-reporter(SHA锁�
 
 - [ ] **Step 1: 真机跑闭环**
 
-Run: `python scripts/verify.py --project <d-claude-root>\stm32f103-adc-oled --json --timeout 60`
+Run: `python scripts/verify.py --project <d-claude-root>\stm32f103-adc-oled --json --timeout 60`（`<d-claude-root>` 即本机 `D:\` 工作区根，执行时替换）
 Expected: status=ok、flash 步骤成功且无 action_incomplete、`evidence=hardware_validated`、post_reset=ok（对齐 09-13 已知基线：自动项 4/4，ALERT 捕获依赖旋钮状态）。
 **注意**：09-13 记录显示"首跑自动项 3/3，ALERT 需人工拧满旋钮到阈值上（mv≈3300）"——若 ALERT 项 FAIL 而 flash/capture 链全绿，属已知人工交互缺口，不是本工单回归；判定只看 flash 路径带标记是否畅通。
 **克隆 ST-Link 纪律**（[[stlink-clone-intermittent]]）：SWD 连不上先问用户"是不是你拔了"，不猜软件。
