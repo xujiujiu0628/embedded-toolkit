@@ -92,6 +92,38 @@ class HwLeaseCoreTests(unittest.TestCase):
         self.assertTrue(rs2["ok"], rs2)
         hw_lease.release(rs2)
 
+    # --- F-161 (审核退回 M-1/M-2) ---
+
+    def test_m1_release_after_fd_prematurely_closed_returns_error_dict(self):
+        """M-1 回归钉: 上游提前 close fd (双释放/误关路径) 时 release 不得
+        裸抛 OSError——release 的契约是恒返回 dict, verify 收尾出口依赖它。
+        语义: fd 已失效 = 锁随 fd 关闭已被 OS 释放, 如实报 ok=False,
+        但不崩——且重取必须可用。"""
+        leased = hw_lease.acquire(purpose="owner")
+        os.close(leased["_fd"])          # 模拟上游提前关闭
+        rs = hw_lease.release(leased)    # 旧版此处 OSError traceback
+        self.assertFalse(rs["ok"])
+        self.assertIn("fd", rs["error"], "报错需自解释 (fd 无效/提前关闭)")
+        rs2 = hw_lease.acquire(purpose="next")
+        self.assertTrue(rs2["ok"], "fd 关闭后 OS 已放锁, 重取必须成功")
+        hw_lease.release(rs2)
+
+    def test_m2_release_keeps_lock_file_no_inode_swap_window(self):
+        """M-2 回归钉: release 不得删除锁本体文件。删除会引入
+        "A 解锁→B 锁住旧 inode→A remove→C 建新 inode 也成功" 的共持窗口
+        (OS 锁锁 inode 不锁路径); 锁信号在字节锁不在文件存在性, 留置无害。
+        meta 旁车随 release 清理。"""
+        leased = hw_lease.acquire(purpose="owner")
+        lock_file, meta_file = leased["lock_file"], leased["meta_file"]
+        hw_lease.release(leased)
+        self.assertTrue(os.path.isfile(lock_file),
+                        "锁本体必须留置 (消除换 inode 共持窗口)")
+        self.assertFalse(os.path.isfile(meta_file),
+                         "meta 旁车应随 release 清理")
+        rs2 = hw_lease.acquire(purpose="second")
+        self.assertTrue(rs2["ok"], rs2)
+        hw_lease.release(rs2)
+
     def test_release_rejects_foreign_lease_dict(self):
         self.assertTrue(hw_lease.acquire(purpose="real holder")["ok"])
         # 伪造的 lease dict (没有本进程的 _fd) 不可释放
@@ -272,9 +304,16 @@ class VerifyLeaseIntegrationTests(unittest.TestCase):
         code, _out, _err, during = self._run_main()
         self.assertEqual(code, 0)
         self.assertEqual(during, [True], "flash 执行瞬间设备锁必须在场")
-        lock_file, _meta = hw_lease.lock_paths("stlink")
-        self.assertFalse(os.path.exists(lock_file),
-                         "verify 结束后锁文件已清理 (锁信号在 OS 字节锁)")
+        # F-161 (M-2) 契约随改: 锁本体文件留置不删 (消除换 inode 共持窗口),
+        # "已释放"由 meta 清理 + 立即可重取验证——文件存在性不是锁信号
+        lock_file, meta_file = hw_lease.lock_paths("stlink")
+        self.assertTrue(os.path.isfile(lock_file),
+                        "锁本体留置 (F-161 M-2: 不删, 防 inode 共持窗口)")
+        self.assertFalse(os.path.exists(meta_file),
+                         "verify 结束后 meta 旁车已清")
+        rs = hw_lease.acquire(purpose="after verify")
+        self.assertTrue(rs["ok"], "verify 结束后锁必须可重取")
+        hw_lease.release(rs)
 
     def test_flash_failure_releases_lock(self):
         code, out, _err, _during = self._run_main(

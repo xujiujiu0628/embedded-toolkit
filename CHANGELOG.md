@@ -3,7 +3,27 @@
 格式约定: 每条含发现编号（代管期 findings 编目）与证据 commit。当前版本以
 `VERSION` 文件为准（`wb_common.toolkit_version()` 读取）。
 
-## Unreleased — zc/hardware（总工单 v2 全量承接: 编号对照 T1~T9=F-145~F-152/T9=F-153, 新任务 F-154 起顺延）
+## Unreleased — zc/hardware（总工单 v2 全量承接: 编号对照 T1~T8=F-145~F-152、T9=F-153, 新任务 F-154 起顺延。号段注记 (审核 L-1): v2 清单曾为 Claude P2 系列预留 F-133~144，实际 Claude 仅消费 F-133 后整批移交本分支, 134~144 空置——非跳号事故, 系分工变更）
+
+- **F-161 (审核退回 M-1/M-2/M-3/M-4/M-5/L-1~L-5) fresh-checker 终审处置，fix+test+docs，hw_lease.py / test_hw_lease.py / CHANGELOG / README**:
+  终审"通过但有保留" (C0 H0 M5 L5)。① **M-1**: `hw_lease.release()` 对
+  "合法 int 但失效 fd"裸抛 OSError 违反恒返回 dict 契约——`_unlock_byte`
+  改返回 bool、release 捕获后报 ok=False 说明"fd 失效→OS 已随 close 放锁、
+  重取无碍"（verify 收尾 8 出口不得 traceback）; ② **M-2**: release 删锁
+  本体文件引入"旧 inode 持锁者+新 inode 获取者"共持窗口 (OS 锁锁 inode
+  不锁路径)——锁本体改为留置不删 (代码注释自证"文件留置无害", 删除操作
+  恰多余), meta 旁车照清; 测试随契约: 新 M-1/M-2 两钉 +
+  `test_winner_holds_lock...` 的"锁文件已清理"断言翻转重取钉。终审 M-2
+  为静态推理未实测复现, 本钉为结构性消除; ③ **M-5**: CHANGELOG 16 处
+  `@ 本条 commit` 占位符按 git 对账回填真实短 hash (F-145=17232a5 …
+  F-160=bbe9295, 顺序以条目内文号为准); ④ **M-3**: README 路线图补
+  D-3 点名的学术引用登记 (arXiv:2509.09970 编号照录, 内容本机网络不可达
+  如实标"未核实"); ⑤ **M-4/L-4**: 已知遗留两条入账 (junit reporter 实吃
+  未验证 / verify.step_flash 不经 N-3 标记链); ⑥ **L-1/L-2/L-3/L-5**:
+  节标题 T9 重复笔误修正 + 号段跳空注记 + lint E2 缺 id 标签
+  `expectations[0]`→`<idx 0>` 漂移登记 (行为等价, 文本无消费方, 不再改
+  回以免牵动逐字钉) + 交接文档"9 例 hooks 失败"与实测 7 例全过的精度差
+  记账。终审全文与复现命令见桌面《Claude审核交接文档》§9 回填。
 
 - **F-154 (T10/P2-6) 红基线 22 钉转绿 — 边角缺陷打包实现，fix+test，serial_monitor / physical_gate / svd_to_json / rm_lookup / duration_profile / openocd_telnet / openocd_run / openocd_gdb / openocd_itm / capture_semihosting / serial_mux / serial_runtime / runtime_common**:
   F-133 红基线 (tests/test_p2_edge_pack.py, 16 用例 22 断言) 逐条实现:
@@ -31,7 +51,7 @@
   增补该再导出); **j** `save_json_file` 写失败 finally 清 .tmp 残骸;
   **k** `get_serial_config` 注解修正 `tuple[dict | None, dict]`。
   验收 = 22 钉全绿 + 全量回归 (合流时 Claude 复审重点抽查项)。
-  （zc/hardware @ 本条 commit，待审）
+  （zc/hardware @ 4e7ccd2，待审）
 - **F-155 (T8v2/N-3) openocd 构造性标记法 — flash/erase 完整性证据，feat+test，openocd_run.py / tests/test_openocd_n3_marker.py (新)**:
   OpenOCD 克隆适配器偶发打印吓人文案 (Error:/Warn: 行) 但脚本实际完整跑完
   ——旧"退出码 + 措辞嗅探"两头吃亏。flash/erase 命令串尾追加
@@ -45,7 +65,7 @@
   串尾且成功 / 措辞行留痕不改判 / exit 0 无标记 → action_incomplete;
   rc!=0 → command_failed 不变; probe 反向钉), test_hw_lease 假 openocd
   输出补标记 (夹具随契约同步)，先红后绿。
-  （zc/hardware @ 本条 commit，待审）
+  （zc/hardware @ c28812c，待审）
 - **F-156 (T9v2/P2-1) serial 族剩余收编 — 规范输出/公共骨架/状态映射/扫描去重，refactor+test，serial_runtime / serial_monitor / serial_hex / serial_send / serial_log / serial_scan / openocd_runtime / openocd_run / openocd_gdb / openocd_itm / openocd_telnet**:
   ① **output_json 规范版**: serial_runtime 新增 `output_json` (indent=2,
   原 send/log/scan 本地副本形态) 与 `output_jsonl` (紧凑单行, 原
@@ -72,7 +92,7 @@
   resolve_serial_config/connect_serial, test_zero_cov_finish 的 scan
   错误态断言与 hex json-mode 假 stdout 随收编更新 (共享测试文件改动
   记账); 全量 840 例仅 9 例本机 WSL 环境失败 (CI ubuntu 正常)。
-  （zc/hardware @ 本条 commit，待审）
+  （zc/hardware @ 4aead90，待审）
 - **F-157 (T10b/P2-3) 双源收敛 — 判据/时间戳/哈希/原子写/咒语五族归一，refactor+test，expectations.py / expectations_lint.py / wb_common.py / runtime_common.py / verify.py / hardfault.py / feedback_db.py / release.py / release_audit.py / gen_periph.py / phase_minus_one.py / rm_lookup.py / coverage_lint.py / duration_profile.py / fsd_coverage.py**:
   ① **expectations E2~E8+E12/E13 双写收敛**: 新增
   `expectations.item_rule_errors(item)` 单一判据源 (check_forbidden_fields
@@ -98,7 +118,7 @@
   测试: test_writeback_guards +1 类 (feedback_db 原子写卫兵) — 其余靠
   既有 841 例全量回归零语义漂移钉死 (lint E1~E13 消息、loader 报错文案、
   发布记录字节全部原样)，先红后绿。
-  （zc/hardware @ 本条 commit，待审）
+  （zc/hardware @ f382438，待审）
 - **F-158 (T11/P2-4) gen_periph 数据外置 + phase_minus_one 占用表外置，refactor+test，data/stm32f103-gen-maps.json (新) / gen_periph.py / phase_minus_one.py**:
   ① **gen_periph 数据外置**: GPIO_BASE/GPIO_CLOCK_BIT/GPIO_CR_OFFSET/
   GPIO_MODE_MAP (CNF:MODE)/TIM_CH_PINS/TIM_CLOCK_BIT/TIM_BUS/
@@ -117,7 +137,7 @@
   find_project_root 注入)。测试: test_zero_coverage_pure 的 pin_conflict
   用例改传占用字典 + 新增 skip 分支钉, run_check 冒烟调用随签名更新
   (共享测试文件改动记账)。
-  （zc/hardware @ 本条 commit，待审）
+  （zc/hardware @ d18cbee，待审）
 - **F-159 (T12/P2-7) 测试套加固 — 三处易碎钉根治，test，test_gcc_build.py / test_verify_failure_paths.py / test_serial_mux_lifecycle.py**:
   ① `test_gcc_build_source_uses_ms_conversion` 文本钉 ("* 1000" 子串匹配)
   **AST 化**: 遍历 gcc_build.py 的 make_timing Call 节点, 断言实参子树含
@@ -129,7 +149,7 @@
   `serial_mux.find_free_port()` 动态空闲口 + 死亡标记 setUp 先清 +
   addCleanup 兜底 — 全局 tempdir (tempfile.gettempdir()/serial_mux/) 的
   跨运行残留不再假绿/假红。
-  （zc/hardware @ 本条 commit，待审）
+  （zc/hardware @ 3ec908b，待审）
 - **F-160 (T13/P1-4) verify.py main() 拆分 — 550 行编排分解为九段纯接线，refactor，verify.py**:
   B-1/N-1/N-2/C-1/N-4/N-3 全部进仓后的行为零变更重构 (机械块级搬移, 零改
   写): `main()` 瘦身为 parse→doctor 分流→pipeline 三行接线; 新增九段 —
@@ -146,7 +166,7 @@
   sim-demo 端到端实跑比对拆分前后顶层/steps/capture/verify 键集合与
   status/evidence/records/post_reset 值完全相同。顺手收 verify.py --doctor
   帮助文本 "四键→三键" 一行 (F-131 拆挂项; doctor.py 侧 F-131 已改)。
-  （zc/hardware @ 本条 commit，待审）
+  （zc/hardware @ bbe9295，待审）
 
 - **F-145 (T1/B-1 v2 修订) 机器级设备锁 — OS 级文件锁 + 用户目录 device-locks，feat+test+docs，hw_lease.py (新) / verify.py / openocd_run.py**:
   同一探针/板子同时只被一个 agent 占用——这是 P1-3 (F-127 state 写锁) 的
@@ -175,7 +195,7 @@
   四钉 (一成一败, 败方 exit 2 报错可行动) / openocd_run 集成四钉
   (flash/erase 上锁, probe 零 acquire, resource_busy code)，先红后绿;
   全量 743 例仅本机 WSL 缺席的 9 例 hooks 环境失败 (CI ubuntu 正常)。
-  （zc/hardware @ 本条 commit，合流待协调）
+  （zc/hardware @ 17232a5，合流待协调）
 - **F-146 (T2/A-1 v2 retro-fit) evidence 命名对齐 AEL 四档 + 发布记录 fidelity 契约 + approve 批准回填，feat+test+docs，verify.py / release.py / release_audit.py / README**:
   F-128 落地的三档证据分级按总工单 v2 修订对齐 agentic-embedded-lab 的
   claim+fidelity 五级命名 (裁剪 model_dependent): `real-hardware` →
@@ -201,7 +221,7 @@
   回填主路径含 signature 不动 / 非真机证据拒绝 / 篡改记录拒绝 / 幂等),
   既有 evidence 字面量全量改名 (9+6+4 处); 全量 752 例仅本机 WSL 缺席的
   9 例 hooks 环境失败 (CI ubuntu 正常)。
-  （zc/hardware @ 本条 commit，合流待协调）
+  （zc/hardware @ 2d3e9b4，合流待协调）
 - **F-147 (T3/N-1) verify --junit-xml JUnit 报告旁路，feat+test+docs，junit_xml.py (新) / verify.py**:
   CI 测试面板只认 JUnit XML — verify 的四态判定与 preflight 拒绝此前在
   GitHub Actions test report 里不可见。新增 `scripts/junit_xml.py` (生成
@@ -223,7 +243,7 @@
   父目录自动创建落盘可解析 / 写失败错误信封 / main 端到端 / 写失败拉低
   退出码; 全量 762 例仅本机 WSL 缺席的 9 例 hooks 环境失败 (CI ubuntu
   正常)。
-  （zc/hardware @ 本条 commit，合流待协调）
+  （zc/hardware @ 0f89c69，合流待协调）
 - **F-148 (T4/N-2) 期望判定三件套 — 行终止符防早判 / ordered 按序 / record 命名捕获组，feat+test+docs，expectations.py / expectations_lint.py / verify.py**:
   ① **行终止符语义 (防早判)**: "未终止的值超时才判"——判定发生在采集窗
   超时后, 全文 (含未终止尾行) 参与匹配; 当存在已终止前缀而命中避开它
@@ -249,7 +269,7 @@
   test_verify_expectations 的 master 基线钉按新增 records 聚合键同步
   (共享测试文件改动登记)。全量 782 例仅本机 WSL 缺席的 9 例 hooks 环境
   失败 (CI ubuntu 正常)。
-  （zc/hardware @ 本条 commit，合流待协调）
+  （zc/hardware @ 500bbcf，合流待协调）
 - **F-149 (T5/C-1 spike) qemu-system-arm 跑 STM32F103 可行性 — 结论 GO，docs，spikes/c1-qemu-spike/ (新, 可回放现场)**:
   实测环境 QEMU 11.1.0 (Windows x64, winget `SoftwareFreedomConservancy.QEMU`
   一键装; **CI 安装路径: ubuntu `apt-get install qemu-system-arm`**) +
@@ -269,7 +289,7 @@
   **qemu-system-arm + semihosting 单一后端** (不引 Renode 双方案)。
   结论 **GO** → T6 立项: capture_sim.py 驱动 qemu, method="sim",
   evidence="simulation_validated" (不进发布门禁, F-146 呼应)。
-  （zc/hardware @ 本条 commit，合流待协调）
+  （zc/hardware @ 335b57e，合流待协调）
 - **F-150 (T6/C-1) capture.backend: "sim" — 无板全链路闭环，feat+test+docs，capture_sim.py (新) / verify.py / examples/sim-demo (新) / ci.yml / machine.example.json / .gitignore**:
   基于 F-149 spike GO 结论, qemu-system-arm + semihosting 单一方案 (不引
   Renode)。新增 `scripts/capture_sim.py`: 命令形态 `-M <machine> -kernel
@@ -303,7 +323,7 @@
   测试 `tests/test_capture_sim.py` 9 例 (解析链×3/命令形态+stdin DEVNULL/
   SimTimeout 携 proc/端到端 green 钉 flash-skip+method+evidence+零锁/
   缺内核 capture_failed/sim-demo 契约 lint+四态齐备)，先红后绿。
-  （zc/hardware @ 本条 commit，合流待协调）
+  （zc/hardware @ a6c277f，合流待协调）
 - **F-151 (T7/N-4) evidence_export — verify 结果/发布记录 → GITHUB_STEP_SUMMARY，feat+test+docs，evidence_export.py (新) / ci.yml**:
   CI 测试页要人话摘要 — verify --json / 发布记录渲染成 Markdown 判定报告
   (四态表 ✅/❌/⏭/❌ + record 提取值 + F-146 fidelity 字段 + junit 报错
@@ -321,7 +341,7 @@
   语义/GH 写失败回落并留痕) / CLI×3 (端到端脱敏输出/非法 JSON exit 2 无
   traceback/缺失输入 exit 2)，先红后绿; 全量 803 例仅 9 例本机 WSL 环境
   失败 (CI ubuntu 正常)。
-  （zc/hardware @ 本条 commit，合流待协调）
+  （zc/hardware @ 63dbb78，合流待协调）
 - **F-152 (T8/D-1) 真机 CI 冒烟 workflow — self-hosted runner 门控，feat+test，hw-smoke.yml (新) / tests/test_workflows_valid.py (新)**:
   新增 `.github/workflows/hw-smoke.yml`: `workflow_dispatch` 手动触发 +
   `if: vars.HW_RUNNER_READY == 'true'` 仓库变量门控 — **仓库未配置真机
@@ -337,7 +357,7 @@
   3 例 (双文件可解析 / 门控契约钉含 `on:`→True 的 YAML 1.1 坑 / 主 CI
   六 job 清单完整; pyyaml 缺席环境自动 skip——CI 各 job 零第三方依赖
   纪律不破)，先红后绿。
-  （zc/hardware @ 本条 commit，合流待协调）
+  （zc/hardware @ 012691b，合流待协调）
 - **F-153 (T9/D-3) README 生态位与路线图更新，docs，README.md**:
   新增"生态位"短节: 同类一句带过 (agentic-hil 的 MCP+租约+plan 门禁 /
   AEL 的仿真控制面与 claim+fidelity / pytest-embedded、Renode 的仿真判定
@@ -350,7 +370,7 @@
   (F-152 门控形态), 各带调研来源; "已知遗留"节保持 F-031/F-032 等既有
   编目不动。措辞逐条对仓内实际能力核对过 (mcp_server.py / capture_sim.py /
   hw-smoke.yml 均在库), 禁止超前宣传 (F-124 纪律): 分发形态如实标"未实施"。
-  （zc/hardware @ 本条 commit，合流待协调）
+  （zc/hardware @ 482ba5d，合流待协调）
 
 ## Unreleased — 2026-09-12（F-117~ 第三方审查工单第一批 P0 逐条清账）
 

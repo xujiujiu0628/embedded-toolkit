@@ -63,15 +63,19 @@ def _lock_byte(fd: int) -> None:
         fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
 
 
-def _unlock_byte(fd: int) -> None:
-    if os.name == "nt":
-        os.lseek(fd, 0, os.SEEK_SET)
-        try:
+def _unlock_byte(fd: int) -> bool:
+    """解锁 1 字节; 返回是否成功。fd 失效 (提前 close/双释放) 不崩——
+    如实报 False 由调用方定夺 (F-161 审核退回 M-1: release 契约是恒返回
+    dict, verify 收尾 8 处出口依赖它不得 traceback)。"""
+    try:
+        if os.name == "nt":
+            os.lseek(fd, 0, os.SEEK_SET)
             msvcrt.locking(fd, msvcrt.LK_UNLCK, 1)
-        except OSError:
-            pass   # 解锁失败不阻断关闭 (进程退出 OS 兜底)
-    else:
-        fcntl.flock(fd, fcntl.LOCK_UN)
+        else:
+            fcntl.flock(fd, fcntl.LOCK_UN)
+        return True
+    except OSError:
+        return False
 
 
 def _read_meta(meta_file: str) -> dict | None:
@@ -151,7 +155,14 @@ def acquire(device: str = DEFAULT_DEVICE, *, purpose: str = "",
 
 def release(lease: dict | None) -> dict:
     """释放设备锁: 解锁 → 关 fd → 清旁车。只接受 acquire 的原返回值
-    (OS 锁只能由持锁 fd 解——别的进程想放也放不掉, 天然防误删)。"""
+    (OS 锁只能由持锁 fd 解——别的进程想放也放不掉, 天然防误删)。
+
+    F-161 审核退回:
+      M-1: 恒返回 dict 不裸抛——fd 失效 (提前 close/双释放) 走 ok=False,
+           锁随 fd 关闭已被 OS 释放, 重取不受影响;
+      M-2: 锁本体文件留置不删——删除引入 "A 解锁→B 锁住旧 inode→A remove
+           →C 建新 inode" 的共持窗口 (OS 锁锁 inode 不锁路径)。锁信号在
+           字节锁不在文件存在性, 空文件留置无害; 只清 meta 旁车。"""
     if not lease or not lease.get("ok"):
         return {"ok": True, "note": "无锁可放 (acquire 未成功)"}
     fd = lease.get("_fd")
@@ -160,16 +171,19 @@ def release(lease: dict | None) -> dict:
     if not isinstance(fd, int) or not lock_file:
         return {"ok": False,
                 "error": "lease dict 缺 _fd/lock_file — 必须传 acquire 的原返回值"}
-    _unlock_byte(fd)
+    unlocked = _unlock_byte(fd)
     try:
         os.close(fd)
     except OSError:
-        pass
-    for path in (meta_file, lock_file):
-        try:
-            os.remove(path)
-        except OSError:
-            pass   # 文件留置无害: 锁信号在 OS 字节锁, 不在文件存在性
+        pass   # fd 可能已随失效路径关闭
+    try:
+        os.remove(meta_file)
+    except OSError:
+        pass   # meta 留置无害 (下次 acquire 覆写)
+    if not unlocked:
+        return {"ok": False,
+                "error": f"解锁失败: fd {fd} 无效 (已被提前 close/双释放); "
+                         f"锁已随 fd 关闭由 OS 释放, 重取不受影响"}
     return {"ok": True}
 
 

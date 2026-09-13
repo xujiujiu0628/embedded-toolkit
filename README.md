@@ -352,6 +352,10 @@ Renode 把仿真做成平级判定后端，hardci / jlink-mcp 验证了 MCP 分�
 
 ### 已落地/立项方向（2026-09-12 同类调研，见 CHANGELOG 工单二系列）
 
+调研来源除上述项目外，另按总工单 v2 D-3 点名登记两条学术引用：闭环评测论文
+与 arXiv:2509.09970（后者内容在本机环境未能独立核实——arxiv.org 网络不可达，
+登记编号从工单原文，采信待读者自查）。
+
 - **MCP 接口**——已落地：`scripts/mcp_server.py` 六工具有界包装（白名单校验、
   零业务复制、不给 agent 任意 shell）；调研来源 agentic-hil / hardci / jlink-mcp
 - **无板仿真闭环**——已落地：`capture.backend: "sim"`（qemu-system-arm +
@@ -376,6 +380,13 @@ Renode 把仿真做成平级判定后端，hardci / jlink-mcp 验证了 MCP 分�
   Linux/macOS-only，Windows 不支持；`which("socat")` 在 `start_mux()` 最前无条件执行，
   无 socat 则整个 mux 起不来。`--no-pty` 解耦列为后续增强，未实现前不按部分功能规划
 - 有意搁置：UART 串口补丁的发布门禁脆弱性（成本/收益不立项）
+- **F-147 遗留（审核 M-4）**：`--junit-xml` 产物的 GitHub Actions test
+  reporter 实吃验证未做（CI 无消费步骤）；单测层 XML 可解析性已过。
+  欠账待首个 reporter 消费验证后销账
+- **N-3 覆盖洞（审核 L-4）**：构造性标记法覆盖 openocd_run 的 flash/erase；
+  `verify.step_flash` 直连 openocd `program` 的高频真机路径不经该链、
+  不产生标记——不违规格（工单点名范围如此），但"构造性证据优先于退出码"
+  在此缺位，登记待下一轮工单评估
 - 方向：多 MCU（ESP32）工具栈评估（暂缓：无目标硬件；技术路线 esptool + probe-rs）。
   F-107 勘误：旧文本"见 docs 档案"是悬空指针（docs/ 已迁出，现仅存
   `hooks-install.md`）。F-108 计数订正：旧文本"verify.py 7 处 / release.py 2 处 /
