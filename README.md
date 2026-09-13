@@ -383,10 +383,9 @@ Renode 把仿真做成平级判定后端，hardci / jlink-mcp 验证了 MCP 分�
 - **F-147 遗留（审核 M-4）**：`--junit-xml` 产物的 GitHub Actions test
   reporter 实吃验证未做（CI 无消费步骤）；单测层 XML 可解析性已过。
   欠账待首个 reporter 消费验证后销账
-- **N-3 覆盖洞（审核 L-4）**：构造性标记法覆盖 openocd_run 的 flash/erase；
-  `verify.step_flash` 直连 openocd `program` 的高频真机路径不经该链、
-  不产生标记——不违规格（工单点名范围如此），但"构造性证据优先于退出码"
-  在此缺位，登记待下一轮工单评估
+- **N-3 覆盖洞（审核 L-4）**：✅ **已闭合（F-163, 2026-09-13）**——
+  `verify.step_flash` 接入构造性标记共享件（`openocd_run.ACTION_DONE_CMD` /
+  `marker_present`），rc=0 且串尾标记在场才算烧录成功；真机复验见 CHANGELOG。
 - 方向：多 MCU（ESP32）工具栈评估（暂缓：无目标硬件；技术路线 esptool + probe-rs）。
   F-107 勘误：旧文本"见 docs 档案"是悬空指针（docs/ 已迁出，现仅存
   `hooks-install.md`）。F-108 计数订正：旧文本"verify.py 7 处 / release.py 2 处 /
