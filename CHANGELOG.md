@@ -5,6 +5,23 @@
 
 ## Unreleased — zc/hardware（总工单 v2 全量承接: 编号对照 T1~T8=F-145~F-152、T9=F-153, 新任务 F-154 起顺延。号段注记 (审核 L-1): v2 清单曾为 Claude P2 系列预留 F-133~144，实际 Claude 仅消费 F-133 后整批移交本分支, 134~144 空置——非跳号事故, 系分工变更）
 
+- **F-162 (审核遗留 M-4) CI 接线：sim-demo job 产 JUnit + test-reporter 消费，ci+docs，.github/workflows/ci.yml / README / CHANGELOG**:
+  `verify.py --junit-xml` 旗标自 F-147 起仅有单测层可解析性证据，从未被真实
+  GitHub Actions reporter 消费（M-4 指出的"产物无人吃"洞）。本条接线：
+  ① sim-demo verify 步骤加 `--junit-xml build/junit-sim.xml`（`build/` 已被
+  .gitignore 覆盖，产物不入库）；② 新增 `dorny/test-reporter` 消费步骤，
+  **SHA 锁定** `a43b3a5f7366b97d083190328d2c652e1a8b6aa2`（= v3.0.0；解引用
+  核验命令 `gh api repos/dorny/test-reporter/git/tags/<tag-object-sha>`，
+  供应链纪律：升级走 CHANGELOG、只升不降）；③ job 级显式最小权限
+  `contents: read / checks: write / pull-requests: read`。两个决策：
+  `if: always()` 让失败运行的 XML 也被消费（M-4 要验证的正是 reporter
+  吃得下四态混合产物）；`continue-on-error: true` 防 reporter 自身故障把
+  CI 判红掩盖真因。本地钉：qemu 11.1.0 全链 verify exit=0，
+  `build/junit-sim-local.xml` 产出且 `xml.etree.ElementTree.parse` 通过
+  （4 testcase：3 passed + 1 skipped）。销账判定由人盯首个真实 PR 的
+  "Sim Verify Results" 检查（README M-4 条目暂标"闭合中"，PR 复验通过后
+  收尾 commit 改"已闭合"并回填检查名/URL）。
+
 - **F-163 (总工单遗留 L-4) verify.step_flash 接入 N-3 构造性标记 — rc=0 且标记在场才算烧成，feat+test+docs，openocd_run.py / verify.py / tests/test_openocd_n3_marker.py / tests/test_verify_failure_paths.py / README / CHANGELOG**:
   L-4 登记的 N-3 覆盖洞闭合（F-155 只覆盖 openocd_run 的 flash/erase，
   `verify.step_flash` 直连 openocd `program` 的高频真机路径不经该链）。
