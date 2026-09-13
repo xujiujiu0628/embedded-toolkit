@@ -231,6 +231,45 @@ class StepFlashNoArtifactTests(unittest.TestCase):
         self.assertIn("no/such/file.hex", r["message"])
 
 
+class StepFlashN3MarkerTests(unittest.TestCase):
+    """F-163 (L-4): step_flash 高频真机路径接 N-3 构造性标记 —
+    rc=0 只是必要条件; 串尾标记缺席 = OpenOCD 提前退出, 拒绝按成功入账。"""
+
+    def setUp(self):
+        old = verify.WORKSPACE
+        verify.WORKSPACE = tempfile.mkdtemp()
+        self.addCleanup(setattr, verify, "WORKSPACE", old)
+        self.addCleanup(shutil.rmtree, verify.WORKSPACE, ignore_errors=True)
+        os.makedirs(os.path.join(verify.WORKSPACE, "obj"), exist_ok=True)
+        self.hex_rel = "obj/app.hex"
+        with open(os.path.join(verify.WORKSPACE, self.hex_rel), "w") as f:
+            f.write(":00000001FF\n")
+
+    @mock.patch.object(verify, "run_cmd")
+    @mock.patch.object(verify, "_openocd_exe", return_value="openocd")
+    def _flash(self, m_exe, m_run, returncode=0, stdout_tail=""):
+        m_run.return_value = {"status": "ok" if returncode == 0 else "error",
+                              "returncode": returncode,
+                              "stdout": stdout_tail, "stderr": ""}
+        return verify.step_flash(self.hex_rel), m_run
+
+    def test_rc0_with_marker_ok_and_cmd_carries_echo(self):
+        r, m_run = self._flash(stdout_tail="Mark: MARK_ACTION_DONE")
+        self.assertEqual(r["status"], "ok")
+        cmd = m_run.call_args[0][0]
+        self.assertIn("echo MARK_ACTION_DONE", " ".join(cmd))
+
+    def test_rc0_without_marker_rejected(self):
+        r, _ = self._flash(stdout_tail="Info : everything looks fine (truncated)")
+        self.assertEqual(r["status"], "error")
+        self.assertIn("action_incomplete", r["message"])
+
+    def test_nonzero_rc_keeps_legacy_error_path(self):
+        r, _ = self._flash(returncode=1, stdout_tail="MARK_ACTION_DONE")
+        self.assertEqual(r["status"], "error")
+        self.assertNotIn("action_incomplete", r.get("message", ""))
+
+
 class RttSpawnFlagsPlatformTests(unittest.TestCase):
     """F-031 (F-027 的运行时姊妹钉): _step_capture_rtt 的 spawn 旗标必须随平台适配。
 
