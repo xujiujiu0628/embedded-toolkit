@@ -21,6 +21,21 @@
   （4 testcase：3 passed + 1 skipped）。销账判定由人盯首个真实 PR 的
   "Sim Verify Results" 检查（README M-4 条目暂标"闭合中"，PR 复验通过后
   收尾 commit 改"已闭合"并回填检查名/URL）。
+  - 追加（收尾，2026-09-13）：reporter 步骤显式 `fail-on-error: false`
+    （dorny 默认 true 会把"消费"误升为"门禁"——产物含失败态属预期，
+    门禁由 verify 步骤本身负责）。
+  - 实吃销账记录：PR #8 run 34755875069（https://github.com/xujiujiu0628/
+    embedded-toolkit/actions/runs/34755875069）——**失败态产物消费成功**，
+    日志 `Using test report parser 'java-junit'` + check run "Sim Verify
+    Results" 摘要 "0 passed, 1 failed and 4 skipped"，四态映射逐条正确
+    （FR-SYS-01/FR-TGL-01/FR-ADC-01/FR-FUTURE-1 skipped + preflight
+    failed），`if: always()` 设计在真实数据上得证；M-4 闭合。
+  - 预置债两笔（同 run 暴露，均非本条引入，登记 README 已知遗留）：
+    ① sim-demo job 在 CI ubuntu runner 上 build_failed（errors=-1，
+    190ms；该 job 自 F-150 入仓从未真跑过 CI，本地全绿，根因待查，
+    D-3 候选）；② 计时脆弱钉抖动——test_state_write_lock 超时降解钉
+    （ubuntu/py3.12）与 test_runtime_contract `elapsed_ms>=1000` 钉
+    （windows，实测 999<1000），F-159 加固残余边界。
 
 - **F-163 (总工单遗留 L-4) verify.step_flash 接入 N-3 构造性标记 — rc=0 且标记在场才算烧成，feat+test+docs，openocd_run.py / verify.py / tests/test_openocd_n3_marker.py / tests/test_verify_failure_paths.py / README / CHANGELOG**:
   L-4 登记的 N-3 覆盖洞闭合（F-155 只覆盖 openocd_run 的 flash/erase，
