@@ -380,12 +380,19 @@ Renode 把仿真做成平级判定后端，hardci / jlink-mcp 验证了 MCP 分�
   Linux/macOS-only，Windows 不支持；`which("socat")` 在 `start_mux()` 最前无条件执行，
   无 socat 则整个 mux 起不来。`--no-pty` 解耦列为后续增强，未实现前不按部分功能规划
 - 有意搁置：UART 串口补丁的发布门禁脆弱性（成本/收益不立项）
-- **F-147 遗留（审核 M-4）**：✅ **已闭合（F-162, 2026-09-13）**——CI sim-demo
-  job 的 `--junit-xml` 产物已被 `dorny/test-reporter`（SHA 锁定）**实吃成立**：
-  PR #8 run [34755875069](https://github.com/xujiujiu0628/embedded-toolkit/actions/runs/34755875069)
-  在失败态产物上四态映射逐条正确（0 passed / 1 failed / 4 skipped，check run
-  "Sim Verify Results"）；reporter 步骤已显式 `fail-on-error: false`（消费即
-  验证，不做门禁）。
+- **F-147 遗留（审核 M-4）**：🔶 **闭合中（F-162, 2026-09-13；fresh-checker
+  M-1 订正措辞）首吃已证，check run 形态待复观**——CI sim-demo job 的
+  `--junit-xml` 产物已被 `dorny/test-reporter`（SHA 锁定）**实吃成立**：首吃
+  证据 = PR #8 run [34755875069](https://github.com/xujiujiu0628/embedded-toolkit/actions/runs/34755875069)
+  日志中 `Using test report parser 'java-junit'` 解析 + 四态映射逐条正确
+  （0 passed / 1 failed / 4 skipped）——该 run 走 v3.0.0 默认**摘要模式**
+  （只写 GITHUB_STEP_SUMMARY，从不 `checks.create`），远端 check-runs 列举
+  无 "Sim Verify"，**"check run" 形态从未实证**。且销账 run 基于
+  `fail-on-error` 默认 true 的修订前配置（步骤判绿靠 continue-on-error
+  兜底）。已修正：reporter 步骤显式 `use-actions-summary: false`（贴 spec
+  "PR 页面出现检查结果" 原意，真出 check run）；终态配置（含该旗标与
+  `fail-on-error: false`）尚未被远端执行，check run 形态复观挂下轮
+  push 后的 run 观察。
 - **N-3 覆盖洞（审核 L-4）**：✅ **已闭合（F-163, 2026-09-13）**——
   `verify.step_flash` 接入构造性标记共享件（`openocd_run.ACTION_DONE_CMD` /
   `marker_present`），rc=0 且串尾标记在场才算烧录成功；真机复验见 CHANGELOG。

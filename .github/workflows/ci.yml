@@ -132,5 +132,9 @@ jobs:
           name: Sim Verify Results
           path: build/junit-sim.xml
           reporter: java-junit
+          # F-162 订正 (fresh-checker M-1): v3.0.0 默认摘要模式 (只写
+          # GITHUB_STEP_SUMMARY, 从不 checks.create); 本步显式关闭以贴
+          # spec "PR 页面出现检查结果" 原意 — 真出 check run "Sim Verify Results"
+          use-actions-summary: false
           # 消费即验证 (M-4 销账语义): 产物含失败态属预期, 门禁由 verify 步骤本身负责
           fail-on-error: false
