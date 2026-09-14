@@ -4,9 +4,14 @@
 作为脚本运行正常, 但任何未来调用方 import gcc_build 再调 main() 即 NameError
 (verify.py 走 subprocess 故未触发, 属埋雷)。
 """
+import contextlib
+import io
+import json
 import os
 import sys
+import tempfile
 import unittest
+from unittest import mock
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(
     os.path.abspath(__file__))), "scripts"))
@@ -124,6 +129,84 @@ class MakeTimingScaleTests(unittest.TestCase):
             self.assertTrue(scaled,
                             "make_timing 调用缺毫秒换算 (*1000): "
                             f"line {call.lineno}")
+
+
+class PrecheckPlatformPortableTests(unittest.TestCase):
+    """F-164: 预检去 .exe 硬编码 —— ubuntu runner 上 arm-none-eabi-gcc 无后缀,
+    旧判定 (Path(gcc_path)/"arm-none-eabi-gcc.exe").exists() 必败, sim-demo job
+    速败 errors=-1。新判定统一 shutil.which。"""
+
+    def _run_main(self, machine, which_sideeffects):
+        """驱动 main() 到预检出口, 返回解析后的 JSON 信封。
+        which_sideeffects: 传给 mock.patch 的 side_effect/return_value 字典。"""
+        tmp = tempfile.mkdtemp()
+        self.addCleanup(__import__("shutil").rmtree, tmp, True)
+        mk = os.path.join(tmp, "Makefile")
+        with open(mk, "w") as f:
+            f.write("TARGET = t\n")
+        argv = ["gcc_build", "build", "--project", mk, "--json"]
+        buf = io.StringIO()
+        with mock.patch.object(gcc_build, "load_machine", return_value=machine), \
+             mock.patch.object(gcc_build.sys, "argv", argv), \
+             mock.patch.object(gcc_build.shutil, "which", **which_sideeffects), \
+             contextlib.redirect_stdout(buf):
+            gcc_build.main()
+        return json.loads(buf.getvalue())
+
+    def _machine(self):
+        return {"gcc_path": "/usr/bin", "make_exe": "/usr/bin/make",
+                "openocd_exe": "openocd"}
+
+    def test_gcc_not_found_reports_gcc_path_invalid(self):
+        env = self._run_main(self._machine(),
+                             {"side_effect": lambda *a, **k: None})
+        self.assertEqual(env["error"]["code"], "precheck")
+        self.assertIn("gcc_path invalid", env["error"]["message"])
+
+    def test_make_not_found_reports_make_exe_invalid(self):
+        # gcc 查得到、make 查不到 → 只报 make_exe
+        env = self._run_main(
+            self._machine(),
+            {"side_effect": lambda name, *a, **k:
+             "/usr/bin/arm-none-eabi-gcc" if "gcc" in str(name) else None})
+        self.assertEqual(env["error"]["code"], "precheck")
+        self.assertIn("make_exe invalid", env["error"]["message"])
+        self.assertNotIn("gcc_path invalid", env["error"]["message"])
+
+    def test_both_found_passes_precheck(self):
+        # 双命中 → 不再报 precheck（会走 _run_make, mock 掉防真跑）
+        env_side = {"return_value": "/usr/bin/arm-none-eabi-gcc"}
+        tmp = tempfile.mkdtemp()
+        self.addCleanup(__import__("shutil").rmtree, tmp, True)
+        mk = os.path.join(tmp, "Makefile")
+        with open(mk, "w") as f:
+            f.write("TARGET = t\n")
+        buf = io.StringIO()
+        import subprocess as sp
+        with mock.patch.object(gcc_build, "load_machine",
+                               return_value=self._machine()), \
+             mock.patch.object(gcc_build.sys, "argv",
+                               ["gcc_build", "build", "--project", mk, "--json"]), \
+             mock.patch.object(gcc_build.shutil, "which", **env_side), \
+             mock.patch.object(gcc_build, "_run_make",
+                               return_value=sp.CompletedProcess([], 0)), \
+             contextlib.redirect_stdout(buf):
+            gcc_build.main()
+        env = json.loads(buf.getvalue())
+        self.assertNotEqual(env.get("error", {}).get("code"), "precheck")
+
+    def test_no_bare_exe_literal_in_precheck(self):
+        # F-159 AST 形态钉: main() 源码不再含 "arm-none-eabi-gcc.exe" 字面量
+        import ast
+        import pathlib
+        src = pathlib.Path(gcc_build.__file__).read_text(encoding="utf-8")
+        tree = ast.parse(src)
+        main_fn = next(n for n in ast.walk(tree)
+                       if isinstance(n, ast.FunctionDef) and n.name == "main")
+        literals = [node.value for node in ast.walk(main_fn)
+                    if isinstance(node, ast.Constant) and isinstance(node.value, str)]
+        self.assertFalse([s for s in literals if ".exe" in s],
+                         "main() 预检段仍有 .exe 字面量 — F-164 回潮")
 
 
 if __name__ == "__main__":
