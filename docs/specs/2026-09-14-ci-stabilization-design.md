@@ -79,3 +79,14 @@ make_ok = bool(shutil.which(machine.get("make_exe") or ""))
 ## 判据回顾（与债务登记行逐字对齐）
 
 README 登记原文（2026-09-13，F-162 副产物条 + 计时脆钉条）要求修复的正是：sim-demo ubuntu `build_failed（errors=-1, 190ms）` 与 `elapsed_ms 999<1000` 型抖动。本设计两节与之一一对应，无扩项。
+
+## 事后注记（终审缓办尾，2026-09-14 补）
+
+- **which() cwd 兜底疑虑：实证不成立**。全分支终审曾提"shutil.which 带空/无效
+  path 时理论会搜 cwd 假 PASS"——探针实测（Windows/py3.14）
+  `shutil.which("arm-none-eabi-gcc", path="") → None`，不搜 cwd；且生产判定
+  `not machine.get("gcc_path") or not gcc_ok`（gcc_build.py:214/217）空配置
+  短路在前，which 结果根本不参与判定。缓办项就此勾销，无后续动作。
+- 同轮另两笔（AST 钉仅守 main()/形态钉只匹配 `.exe` 子串）维持缓办：与 F-164
+  实际改动面一致，扩面属过度设计。
+
