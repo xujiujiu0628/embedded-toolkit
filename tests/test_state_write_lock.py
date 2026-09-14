@@ -13,6 +13,7 @@ update_state_entry 本身同为无锁 RMW。
   3. serial_mux 三处 (start 落盘 / stop 清理 / status 清理) 改走
      _mutate_mux_state (持锁读最新再改), 旧"快照整体覆盖"路径消失。
 """
+import io
 import os
 import sys
 import tempfile
@@ -96,27 +97,51 @@ class StateLockMechanismTests(unittest.TestCase):
         self.assertLess(time.time() - t0, 1.5)
 
     def test_timeout_degrades_honestly(self):
-        """新鲜他人锁 → 等满 timeout 后降级放行且 stderr 留痕"""
+        """F-165: 新鲜他人锁 → 虚拟时钟下等满 timeout 降级放行且 stderr 留痕。
+        旧版真 sleep(0.05)+真 0.5s + elapsed>=0.4 墙钟下界 = CI 抖动源
+        (ubuntu 实测翻车)。注入假 time: 轮询次数与降解时点全确定。"""
         ws = _fresh_ws()
         lock = os.path.join(ws, ".workbench", "state.json.lock")
         with open(lock, "w") as f:
             f.write("999999" if os.name == "nt" else str(os.getpid() + 1000))
-        # POSIX 路径: 伪造一个"存在但不属于我们、也杀不掉"的判活会走
-        # PermissionError=False——统一用超龄=False 的新鲜锁即可: 锁文件
-        # mtime=now → 不陈旧 → 只能等超时
+        clock = {"t": 1000.0}
+        sleeps = []
+
+        def fake_time():
+            return clock["t"]
+
+        def fake_sleep(s):
+            sleeps.append(s)
+            clock["t"] += s
+
         real_stderr = sys.stderr
-        import io
         sys.stderr = io.StringIO()
         try:
-            t0 = time.time()
-            with runtime_common.state_write_lock(ws, timeout=0.5):
-                pass
-            elapsed = time.time() - t0
+            with mock.patch.object(runtime_common, "time") as m_t, \
+                 mock.patch.object(runtime_common, "_state_lock_is_stale",
+                                   return_value=False):
+                m_t.time.side_effect = fake_time
+                m_t.sleep.side_effect = fake_sleep
+                t_entered = []
+                with runtime_common.state_write_lock(ws, timeout=0.5):
+                    t_entered.append(True)
             msg = sys.stderr.getvalue()
         finally:
             sys.stderr = real_stderr
-        self.assertGreaterEqual(elapsed, 0.4, "未等满 timeout")
-        self.assertIn("降级", msg, "降级必须向 stderr 诚实告警")
+        self.assertEqual(t_entered, [True], "降解后上下文必须正常放行恰好一次")
+        self.assertIn("降级", msg)
+        # deadline=1000+0.5=1000.5, 每跳 0.05: deadline 判定先于 sleep, 且浮点
+        # 累加使 10 跳后 t=1000.4999999999995 差 5e-13 未及线 → 恰 11 跳越线
+        # break (节拍语义不变: 轮询直到虚拟 deadline; 计数与 0.5/0.05=10 差 1
+        # 系 IEEE754 累加实锤, 全平台确定可逐字钉死)
+        self.assertEqual(sleeps, [0.05] * 11, "假时钟下轮询节拍必须精确")
+        self.assertEqual(clock["t"], 1000.5499999999995)
+        # 降解路径不删他人锁 (finally 仅在 acquired=True 时 unlink,
+        # runtime_common.py:201-206)
+        self.assertTrue(os.path.exists(lock), "外来锁不得被降解路径删除")
+        with open(lock) as f:
+            self.assertIn("999999" if os.name == "nt" else str(os.getpid() + 1000),
+                          f.read())
 
 
 class MuxStateMutationTests(unittest.TestCase):

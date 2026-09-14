@@ -321,8 +321,9 @@ def start_openocd_server(cmd: list) -> subprocess.Popen:
 #   2. ready 后无人再读 stderr (gdb server 常驻 / itm 主循环只读 trace
 #      socket) → OpenOCD 刷日志填满管道缓冲 (~64KB) 后自身阻塞 → 全链死锁。
 # 正解同 capture_rtt.py F 系列先例: daemon 线程持续排空 stderr 入有界队列,
-# 主循环非阻塞取行, 超时由墙钟判定。有界队列满时丢最旧行 (保排空活性,
-# 长会话内存不增长)。
+# 主循环非阻塞取行, 超时由墙钟判定。有界队列满时丢最新行 (保排空活性,
+# 长会话内存不增长)——F-166: 旧策略"丢最旧"在启动即爆发刷日志时把队头
+# Listening 就绪行逐出, wait 永远等不到就绪 (真缺陷, 非测试抖动)。
 
 _OPENOCD_CRITICAL_KEYWORDS = [
     "open failed",
@@ -352,15 +353,15 @@ def _start_stderr_pump(proc: subprocess.Popen) -> "queue.Queue":
     def _pump():
         try:
             for line in proc.stderr:
+                # F-166: 满队列丢"最新"而非"最旧"——就绪/Error 行全在流头部,
+                # 丢最旧会在启动爆发 (首批 >maxsize 行) 时恰好逐出这些早期行;
+                # 丢最新只截断洪水的后段, 排空活性与内存上界不变 (泵仍即时回收)。
                 while True:
                     try:
                         q.put_nowait(line)
                         break
                     except queue.Full:
-                        try:
-                            q.get_nowait()  # 丢最旧, 保写入端永不阻塞
-                        except queue.Empty:
-                            pass
+                        break
         except Exception:
             pass  # 进程提前死亡等: 排空职责优先于留痕
         finally:
@@ -370,7 +371,7 @@ def _start_stderr_pump(proc: subprocess.Popen) -> "queue.Queue":
                     break
                 except queue.Full:
                     try:
-                        q.get_nowait()
+                        q.get_nowait()  # 腾位保 EOF 送达 (收尾路径, 无早期行风险)
                     except queue.Empty:
                         pass
 
