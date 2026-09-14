@@ -16,6 +16,9 @@
   前导空格（`ADC raw= 105`）, 原 pattern `raw=\d+` 隐含 raw≥1000 才命中
   (Task 5 真机复验发现)。改 `raw=\s*\d+`, 六形态正则实测全对 (含低值/零值/
   高值/两类坏行反例)。**生效验证挂下次真机 run** (本笔为静态对齐)。
+  → **同日销**: ST-Link 重连后真机 verify, FR-ADC-02 于旋钮低位
+  (raw= 105 前导空格形态) **首次命中 pass** (evidence=hardware_validated);
+  工程仓 commit 19f9a21。ALERT-01 判 fail 属旋钮未拧过阈预期语义 (min=3000)。
   ③ **FSD 退役残项勾销**（记录性, 改动在已退役 blink 归档之外无代码触点）:
   blink 时代 5 项账面——FR-TGL-07 计数回绕 / FR-IMU-04 yaw 漂移 (两项 host
   pending) + FR-UI-04 渲染周期 / FR-SRV-03 PWM 实测 / FR-OLED-04 全屏刷新
