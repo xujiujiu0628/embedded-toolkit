@@ -123,7 +123,7 @@ class WireContractTests(unittest.TestCase):
         # (旧注保留意: pre-epoch 边界曾撞 Windows astimezone() OSError,
         # 本假时钟 t0 取固定 epoch 高位, 天然远离该边界)
         import datetime as _dt
-        t0 = 1_800_000_000.0  # 2026-09 附近的固定 epoch, 远离 pre-epoch 边界
+        t0 = 1_800_000_000.0  # 未来固定 epoch, 远离 pre-epoch 边界
         class _FakeDT:
             @staticmethod
             def now():

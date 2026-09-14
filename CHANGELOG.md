@@ -5,6 +5,62 @@
 
 ## Unreleased — zc/hardware（总工单 v2 全量承接: 编号对照 T1~T8=F-145~F-152、T9=F-153, 新任务 F-154 起顺延。号段注记 (审核 L-1): v2 清单曾为 Claude P2 系列预留 F-133~144，实际 Claude 仅消费 F-133 后整批移交本分支, 134~144 空置——非跳号事故, 系分工变更）
 
+- **F-165 (预置债销账) CI 计时脆弱钉去墙钟化——两枚钉改注入假时钟，零真实等待，test+docs，tests/test_runtime_contract.py / tests/test_state_write_lock.py / README / CHANGELOG**:
+  F-162 副产物登记的计时脆弱钉（ubuntu 降解钉翻车 + windows 实测
+  999<1000）两枚一并收口（(a) 段先行落 431b37c，本条记账覆盖 (a)+(b)）。
+  ① **(a) test_runtime_contract ser 版耗时钉**：旧版喂 `time.time()-1.0`
+  再赌 `elapsed_ms>=1000`——墙钟下界断言，CI NTP 微调回拨即 999；改注入
+  假 `datetime`（未来固定 epoch），耗时逐字 `==1000` 零容差，墙钟回潮即红。
+  ② **(b) test_state_write_lock 降解钉**：旧版真 `sleep(0.05)`+真 0.5s
+  超时+`elapsed>=0.4` 墙钟下界 = ubuntu/py3.12 抖动源；改 patch
+  `runtime_common.time`（模块级 `import time`，`time.time()`/`time.sleep()`
+  均经模块属性调用可注入）+ `_state_lock_is_stale=False`，零真实等待。
+  节拍钉实测 **11 跳**非简报预估的 10 跳：deadline 判定先于 sleep 且
+  IEEE754 累加使 10 跳后 t=1000.4999999999995 差 5e-13 未及线，第 11 跳
+  越线 break——节拍语义不变（轮询直到虚拟 deadline），全平台确定可逐字
+  钉死。降解路径三重行为钉：放行恰好一次 / stderr"降级"留痕 / 外来锁
+  **不被删除**（finally 仅 acquired=True 时 unlink，runtime_common.py:201-206）。
+  `_STATE_LOCK_THREADS.acquire(timeout)` 走真 C 层 threading 不经假 time，
+  单线程测试无竞争瞬拿，不受影响。
+  ③ **偷取钉在场确认**：`test_stale_lock_is_stolen`（超龄锁 unlink 重取）
+  在场且不受本改造影响（降解钉的 `_state_lock_is_stale=False` patch 为
+  with 域内局部，不泄漏）——未补新钉，总数 857 不变。
+  ④ **验证**：聚焦 7 例绿；全量 857 OK (skipped=6)；ruff 通过。
+  - 终判边界：本条为 host 层证据（Windows），远端复绿（ubuntu/py3.12
+    降解钉 + windows 耗时钉在新 CI 上连续绿）以 F-164/F-165 合并 PR 的
+    CI 全绿为终判（挂本计划 Task 5）。
+  - 顺路收尾（前序任务审查裁定）：F-164 条目搬 Unreleased 堆绝对顶部
+    （latest-on-top，位置搬迁非文本重写）并在卫生自纠子条归因处补
+    "（95d66de 引入）"；(a) 段 t0 注释订正——1.8e9 实为 2027-01，旧注
+    "2026-09 附近"失实，改"未来固定 epoch, 远离 pre-epoch 边界"。
+
+- **F-164 (预置债 D-3 候选闭合) gcc_build 预检平台化 shutil.which — 去 .exe 硬编码，ubuntu sim-demo 速败根因闭合，fix+test+docs，gcc_build.py / tests/test_gcc_build.py / README / CHANGELOG**:
+  F-162 副产物登记的 sim-demo job ubuntu `build_failed`（errors=-1，190ms
+  速败；该 job 自 F-150 入仓起从未真跑过 CI，本地全绿，登记时根因未查、
+  非 F-162/F-163 引入——此处照录原登记以保留追溯）根因查明并闭合。
+  ① **根因**：`gcc_build.py` main() 预检写死 `arm-none-eabi-gcc.exe` 字面量
+  ——ubuntu runner 上二进制无 `.exe` 后缀必败，预检报 `gcc_path invalid`
+  速败（errors=-1 即未经 make 的预检出口）；② **替换判定**：两条路径检查
+  统一 `shutil.which`（gcc 查裸名 `arm-none-eabi-gcc` +
+  `path=machine["gcc_path"]`；make 查 `machine["make_exe"]` 全路径/裸名）
+  ——nt 下 which 自动试 PATHEXT（.exe）与旧判定等价，POSIX 查存在+可执行位；
+  `not machine.get(...)` 空值短路措辞原样保留（空配置仍直接判 invalid，
+  不进 which，语义不漂移）；③ **4 枚钉**（PrecheckPlatformPortableTests）：
+  三枚行为 mock 钉（gcc 查无→报 gcc_path invalid / gcc 有 make 查无→只报
+  make_exe invalid / 双命中→不再报 precheck）+ 一枚 F-159 同款 AST 形态钉
+  （main() 源码不得再含 `.exe` 字符串字面量，防回潮）；红基线 4 例全红转绿
+  （先死于 `module 'gcc_build' has no attribute 'shutil'`——恰证旧码无 which
+  路径），本文件全量 13 例 OK；④ **Windows 等价活证据**：
+  `python scripts/gcc_build.py build --project examples/sim-demo --json`
+  实测 `"status": "ok"`、`metrics` 0 errors 0 warnings，PATHEXT 等价性在
+  真机跑通；全量套 857 OK (skipped=6)；⑤ **README 销账**：F-162 副产物
+  （预置债 D-3 候选）条目改写为"已闭合（F-164, 2026-09-14）"。
+  - 追加（F-089 卫生自纠，commit 0352665）：本单计划文档（随 95d66de 入库）
+    自指行含裸机器路径字面量（95d66de 引入），违反其自身宣布的 F-089 规约，被
+    `test_source_hygiene_paths` 扫描钉拦截判红；实现者按最小措辞修复合规入账。
+  - 终判边界：本条为 host 层（Windows 活证据 + 行为/形态钉）证据，ubuntu
+    远端复绿以 F-164/F-165 合并 PR 的 CI 全绿为终判（挂本计划 Task 5）。
+
 - **F-162 (审核遗留 M-4) CI 接线：sim-demo job 产 JUnit + test-reporter 消费，ci+docs，.github/workflows/ci.yml / README / CHANGELOG**:
   `verify.py --junit-xml` 旗标自 F-147 起仅有单测层可解析性证据，从未被真实
   GitHub Actions reporter 消费（M-4 指出的"产物无人吃"洞）。本条接线：
@@ -56,33 +112,6 @@
     与首吃（run 34755875069 日志解析，摘要模式）构成双形态证据；sim-demo job
     本体仍红属预置 ubuntu build_failed 债（上行 ①），不阻塞本 check 结论。
     fresh-checker M-1/M-2 残余勾销，README M-4 改"已闭合"。
-
-- **F-164 (预置债 D-3 候选闭合) gcc_build 预检平台化 shutil.which — 去 .exe 硬编码，ubuntu sim-demo 速败根因闭合，fix+test+docs，gcc_build.py / tests/test_gcc_build.py / README / CHANGELOG**:
-  F-162 副产物登记的 sim-demo job ubuntu `build_failed`（errors=-1，190ms
-  速败；该 job 自 F-150 入仓起从未真跑过 CI，本地全绿，登记时根因未查、
-  非 F-162/F-163 引入——此处照录原登记以保留追溯）根因查明并闭合。
-  ① **根因**：`gcc_build.py` main() 预检写死 `arm-none-eabi-gcc.exe` 字面量
-  ——ubuntu runner 上二进制无 `.exe` 后缀必败，预检报 `gcc_path invalid`
-  速败（errors=-1 即未经 make 的预检出口）；② **替换判定**：两条路径检查
-  统一 `shutil.which`（gcc 查裸名 `arm-none-eabi-gcc` +
-  `path=machine["gcc_path"]`；make 查 `machine["make_exe"]` 全路径/裸名）
-  ——nt 下 which 自动试 PATHEXT（.exe）与旧判定等价，POSIX 查存在+可执行位；
-  `not machine.get(...)` 空值短路措辞原样保留（空配置仍直接判 invalid，
-  不进 which，语义不漂移）；③ **4 枚钉**（PrecheckPlatformPortableTests）：
-  三枚行为 mock 钉（gcc 查无→报 gcc_path invalid / gcc 有 make 查无→只报
-  make_exe invalid / 双命中→不再报 precheck）+ 一枚 F-159 同款 AST 形态钉
-  （main() 源码不得再含 `.exe` 字符串字面量，防回潮）；红基线 4 例全红转绿
-  （先死于 `module 'gcc_build' has no attribute 'shutil'`——恰证旧码无 which
-  路径），本文件全量 13 例 OK；④ **Windows 等价活证据**：
-  `python scripts/gcc_build.py build --project examples/sim-demo --json`
-  实测 `"status": "ok"`、`metrics` 0 errors 0 warnings，PATHEXT 等价性在
-  真机跑通；全量套 857 OK (skipped=6)；⑤ **README 销账**：F-162 副产物
-  （预置债 D-3 候选）条目改写为"已闭合（F-164, 2026-09-14）"。
-  - 追加（F-089 卫生自纠，commit 0352665）：本单计划文档（随 95d66de 入库）
-    自指行含裸机器路径字面量，违反其自身宣布的 F-089 规约，被
-    `test_source_hygiene_paths` 扫描钉拦截判红；实现者按最小措辞修复合规入账。
-  - 终判边界：本条为 host 层（Windows 活证据 + 行为/形态钉）证据，ubuntu
-    远端复绿以 F-164/F-165 合并 PR 的 CI 全绿为终判（挂本计划 Task 5）。
 
 - **F-163 (总工单遗留 L-4) verify.step_flash 接入 N-3 构造性标记 — rc=0 且标记在场才算烧成，feat+test+docs，openocd_run.py / verify.py / tests/test_openocd_n3_marker.py / tests/test_verify_failure_paths.py / README / CHANGELOG**:
   L-4 登记的 N-3 覆盖洞闭合（F-155 只覆盖 openocd_run 的 flash/erase，
