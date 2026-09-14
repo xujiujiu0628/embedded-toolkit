@@ -28,6 +28,9 @@
   python scripts/expectations_lint.py <expectations.json 路径>
   python scripts/expectations_lint.py --project <工程根>
   python scripts/expectations_lint.py --project . --json
+
+退出码语义 (F-170 裁决, 勿与 fsd_coverage 改齐): 无 expectations.json =
+工程配置错误 -> 红 + exit 1 (HANDOFF §6 第 3 步判据依赖此行为)。
 """
 import argparse
 import json
