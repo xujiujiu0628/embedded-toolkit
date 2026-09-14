@@ -120,8 +120,10 @@ ALERT HIGH mv=3190
 | OpenOCD | 烧录/RTT/semihosting 采集 | 推荐 xPack 发行版 |
 | ST-Link + STM32F103 板 | 仅真机步骤 | 无板也能跑测试、lint、审计、代码生成 |
 
-平台现状：**Windows 为主要开发/真机平台**（工具链预检按 `.exe` 探测）；
-Linux/macOS 上测试套与离线工具全量可跑（CI 即证），真机构建路径未验证、欢迎报告。
+平台现状：**Windows 为主要开发/真机平台**；工具链预检自 F-164 起统一
+`shutil.which` 平台判定（nt 按 PATHEXT 试 `.exe`，POSIX 查可执行位），
+Linux 上测试套、离线工具与无板仿真链（sim-demo 端到端）全量可跑（CI 即证）；
+Linux **真机烧录**路径未验证（F-031），欢迎报告。
 
 ## 安装
 
@@ -150,11 +152,13 @@ Warning: session_fix_cache.json , ԭļ: ...: Expecting property name enclosed in
 
 **这是终端编码问题，不是工具失败**——测试仍会输出 `OK (skipped=1)`。成因：
 
-- 工具链的反馈库（`error_db_grow.py` / `feedback_db.py`）发现缓存文件损坏时，**主动**把损坏文件隔离为 `.corrupt` 并重建——这是 F-020 的诚实化设计（绝不裸 traceback）
+- 工具链的反馈库（`feedback_db.py` / `runtime_common.py` 状态加载）发现缓存
+  文件损坏时，**主动**把损坏文件隔离为 `.corrupt` 并重建——这是 F-020 的
+  诚实化设计（绝不裸 traceback）
 - 它向 stderr 写的中文警告，Linux 终端能正常显示；Windows PowerShell 默认 GBK 解码
 - 整个流程是"预期告警 + 正确恢复"，不是 bug
 
-判定方法：忽略 stderr 的 Warning 行，看最后一行 `OK (skipped=1)` / `FAILED` 即为测试结果。CI 跑在 ubuntu（CONTRIBUTING 平台现状节），看不到这些告警。
+判定方法：忽略 stderr 的 Warning 行，看最后一行 `OK (skipped=1)` / `FAILED` 即为测试结果。CI 的 ubuntu/Windows 双腿矩阵强制 UTF-8 运行时（`PYTHONIOENCODING` / `PYTHONUTF8`），看不到这些告警；另注意 hooks 行为测试在本机 Windows 上请用 Git Bash 跑（PowerShell 全局 autocrlf 会造成行尾漂移假红，见 CONTRIBUTING）。
 
 如果乱码让你无法读测试结果，可以强制 Python 用 UTF-8：
 
@@ -284,7 +288,7 @@ purpose/获取时间，`--lease-wait N` 可有界等待。它与 `.workbench/sta
 
 ```text
 embedded-toolkit/
-├── scripts/            # ~38 个 .py（入口 verify.py；共享层 wb_common + runtime_common
+├── scripts/            # 40+ 个 .py（入口 verify.py；共享层 wb_common + runtime_common
 │                       #   单一事实源 + wb/openocd/serial 三 runtime，F-029；
 │                       #   legacy/ 空目录占位，Keil 退役区已拆 archive，F-067b）
 ├── tests/              # unittest 回归套件（纯 mock，Win/Linux 全绿）
@@ -301,7 +305,12 @@ embedded-toolkit/
 ## 质量与验证
 
 - 回归套件：`python -m unittest discover -s tests` 全绿为准（例数随修复增长，
-  以实跑为准）；CI 在 ubuntu × Python 3.10/3.12 上每 push 必跑
+  以实跑为准）；CI 每 push 必跑六 job：unittest（ubuntu×windows × Python
+  3.10/3.12 矩阵）、coverage-gate（棘轮下限，只升不降）、lint（ruff E/F）、
+  coverage-lint（零覆盖清单 --strict）、syntax-smoke（ubuntu 真实 arm-gcc
+  编译生成物）、sim-demo（ubuntu qemu 无板端到端闭环 + test-reporter 出
+  check run）；真机冒烟另有 `hw-smoke.yml` 门控形态（self-hosted runner
+  就绪才跑）
 - 修复纪律：**修 bug 必带回归测试**；写回型工具的默认参数路径必须有测试
 - 治理机制：外部异构智能体代管两轮——机制本身（分支起点核查、guard 禁线、
   换回五步、fresh-check 外审）持续演进；完整对账链在维护者私有仓

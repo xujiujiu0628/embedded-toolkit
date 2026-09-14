@@ -12,15 +12,24 @@
 
 ## 平台支持现状
 
-- **Windows 为主要开发/真机平台**（gcc_build 预检按 `arm-none-eabi-gcc.exe`
-  探测；控制台 GBK 编码有专门处理）
-- ubuntu 上回归套件与离线工具全量可跑（CI 即证）；Linux 真机构建路径未验证，
-  欢迎带报告的 PR 补这一格
+- **Windows 为主要开发/真机平台**（控制台 GBK 编码有专门处理；hooks 行为测试
+  请走 Git Bash——PowerShell 侧全局 autocrlf 会造成行尾漂移假红）
+- CI 为 **ubuntu × windows 双腿矩阵（Python 3.10/3.12）+ 独立门禁 job**，
+  回归套件与离线工具两平台全量可跑；ubuntu 上 gcc_build 预检走
+  `shutil.which` 平台判定（F-164，不再写死 `.exe`），sim-demo job 实证
+  qemu 无板端到端闭环
+- **Linux 真机烧录/采集路径未验证**（F-031 盲区：进程终止/信号/创建标志类
+  平台差异），欢迎带报告的 PR 补这一格
 
 ## 测试与 PR 纪律
 
 - 提交前：`python -m unittest discover -s tests` 全绿（例数以实跑为准，勿在
   文档写死数字）
+- lint：`ruff check scripts tests`（E/F 规则集；存量风格债白名单见
+  `ruff.toml`——登记制、**只许减不许加**，新代码不得以加白名单过门）
+- 覆盖门禁两条棘轮（CI 强制）：coverage-gate 下限**只升不降**（提升覆盖率
+  须同步上调 CI 值并入 CHANGELOG）；`python scripts/coverage_lint.py --strict`
+  零覆盖清单**只缩不扩**
 - **修 bug 必带回归测试**——本仓传统：没有复现测试的修复不算修完
   （两轮外部审查反复兑现了这条）
 - **没见过红的测试不算测试**（先红后绿，建仓 fix commit 一贯执行，F-035 成文）：
@@ -121,9 +130,10 @@ F-034 的教训：同一事实存在两个权威副本必然漂移。规则：
 
 **PR 在合并前必须经 fresh-checker 复审**——派无上下文审计 agent
 （`~/.claude/skills/fresh-checker/SKILL.md` 模板）跑实测取证 + 分级发现。
-本仓 F-035 流程门禁**只靠人守、无代码卡**（branch protection 未开），
-PR 模板的"fresh-checker 复审门禁"段是最低成本的可见卡口——**不勾等于
-无声破例**。
+**该复审由维护者执行**——外部贡献者无需自备审计 agent，正常提 PR 即可，
+复审结论会以 review 评论形式反馈。本仓 F-035 流程门禁**只靠人守、无代码卡**
+（branch protection 未开），PR 模板的"fresh-checker 复审门禁"段是最低成本的
+可见卡口——**不勾等于无声破例**。
 
 ### 例外清单（需 PR 模板勾选「维护者直合豁免」+ 在「例外理由」段说明）
 
