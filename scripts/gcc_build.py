@@ -16,6 +16,7 @@ from __future__ import annotations
 import argparse
 import os
 import re
+import shutil
 import subprocess
 import sys
 import time
@@ -206,9 +207,15 @@ def main() -> None:
     errors: list[str] = []
     if not makefile.is_file():
         errors.append(f"Makefile not found: {makefile}")
-    if not machine.get("gcc_path") or not (Path(machine["gcc_path"]) / "arm-none-eabi-gcc.exe").exists():
+    # F-164: 预检平台化 —— 旧判定写死 "arm-none-eabi-gcc.exe", ubuntu runner
+    # 上二进制无后缀必败 (sim-demo job 速败 errors=-1)。统一 shutil.which:
+    # nt 下自动试 PATHEXT(.exe); POSIX 查存在+可执行位; 裸名查 PATH, 带目录查该路径。
+    gcc_ok = shutil.which("arm-none-eabi-gcc",
+                          path=machine.get("gcc_path") or "")
+    make_ok = shutil.which(machine.get("make_exe") or "")
+    if not machine.get("gcc_path") or not gcc_ok:
         errors.append(f"gcc_path invalid in machine.json: {machine.get('gcc_path')}")
-    if not machine.get("make_exe") or not Path(machine["make_exe"]).exists():
+    if not machine.get("make_exe") or not make_ok:
         errors.append(f"make_exe invalid in machine.json: {machine.get('make_exe')}")
     if errors:
         output_json({
