@@ -57,6 +57,33 @@
     本体仍红属预置 ubuntu build_failed 债（上行 ①），不阻塞本 check 结论。
     fresh-checker M-1/M-2 残余勾销，README M-4 改"已闭合"。
 
+- **F-164 (预置债 D-3 候选闭合) gcc_build 预检平台化 shutil.which — 去 .exe 硬编码，ubuntu sim-demo 速败根因闭合，fix+test+docs，gcc_build.py / tests/test_gcc_build.py / README / CHANGELOG**:
+  F-162 副产物登记的 sim-demo job ubuntu `build_failed`（errors=-1，190ms
+  速败；该 job 自 F-150 入仓起从未真跑过 CI，本地全绿，登记时根因未查、
+  非 F-162/F-163 引入——此处照录原登记以保留追溯）根因查明并闭合。
+  ① **根因**：`gcc_build.py` main() 预检写死 `arm-none-eabi-gcc.exe` 字面量
+  ——ubuntu runner 上二进制无 `.exe` 后缀必败，预检报 `gcc_path invalid`
+  速败（errors=-1 即未经 make 的预检出口）；② **替换判定**：两条路径检查
+  统一 `shutil.which`（gcc 查裸名 `arm-none-eabi-gcc` +
+  `path=machine["gcc_path"]`；make 查 `machine["make_exe"]` 全路径/裸名）
+  ——nt 下 which 自动试 PATHEXT（.exe）与旧判定等价，POSIX 查存在+可执行位；
+  `not machine.get(...)` 空值短路措辞原样保留（空配置仍直接判 invalid，
+  不进 which，语义不漂移）；③ **4 枚钉**（PrecheckPlatformPortableTests）：
+  三枚行为 mock 钉（gcc 查无→报 gcc_path invalid / gcc 有 make 查无→只报
+  make_exe invalid / 双命中→不再报 precheck）+ 一枚 F-159 同款 AST 形态钉
+  （main() 源码不得再含 `.exe` 字符串字面量，防回潮）；红基线 4 例全红转绿
+  （先死于 `module 'gcc_build' has no attribute 'shutil'`——恰证旧码无 which
+  路径），本文件全量 13 例 OK；④ **Windows 等价活证据**：
+  `python scripts/gcc_build.py build --project examples/sim-demo --json`
+  实测 `"status": "ok"`、`metrics` 0 errors 0 warnings，PATHEXT 等价性在
+  真机跑通；全量套 857 OK (skipped=6)；⑤ **README 销账**：F-162 副产物
+  （预置债 D-3 候选）条目改写为"已闭合（F-164, 2026-09-14）"。
+  - 追加（F-089 卫生自纠，commit 0352665）：本单计划文档（随 95d66de 入库）
+    自指行含裸机器路径字面量，违反其自身宣布的 F-089 规约，被
+    `test_source_hygiene_paths` 扫描钉拦截判红；实现者按最小措辞修复合规入账。
+  - 终判边界：本条为 host 层（Windows 活证据 + 行为/形态钉）证据，ubuntu
+    远端复绿以 F-164/F-165 合并 PR 的 CI 全绿为终判（挂本计划 Task 5）。
+
 - **F-163 (总工单遗留 L-4) verify.step_flash 接入 N-3 构造性标记 — rc=0 且标记在场才算烧成，feat+test+docs，openocd_run.py / verify.py / tests/test_openocd_n3_marker.py / tests/test_verify_failure_paths.py / README / CHANGELOG**:
   L-4 登记的 N-3 覆盖洞闭合（F-155 只覆盖 openocd_run 的 flash/erase，
   `verify.step_flash` 直连 openocd `program` 的高频真机路径不经该链）。
