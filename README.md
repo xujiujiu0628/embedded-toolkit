@@ -399,10 +399,10 @@ Renode 把仿真做成平级判定后端，hardci / jlink-mcp 验证了 MCP 分�
 - **N-3 覆盖洞（审核 L-4）**：✅ **已闭合（F-163, 2026-09-13）**——
   `verify.step_flash` 接入构造性标记共享件（`openocd_run.ACTION_DONE_CMD` /
   `marker_present`），rc=0 且串尾标记在场才算烧录成功；真机复验见 CHANGELOG。
-- **F-162 副产物（预置债 D-3 候选）**：sim-demo job 在 CI ubuntu runner 上
-  build_failed（errors=-1，190ms）——该 job 自 F-150 入仓起从未真跑过 CI
-  （push 触发仅 master，0912 为首跑），本地全绿；根因未查，**非 F-162/F-163
-  引入**，登记待下轮工单。
+- **F-162 副产物（预置债 D-3 候选）**：✅ **已闭合（F-164, 2026-09-14）**——根因
+  = `gcc_build.py` 预检写死 `arm-none-eabi-gcc.exe`（ubuntu 无后缀必败, errors=-1
+  速败）；已改 `shutil.which` 平台判定（nt 走 PATHEXT 等价, 本机回归绿 + 4 枚
+  mock/AST 钉）。**远端复绿以 F-164/F-165 合并 PR 的 CI 全绿为终判**（挂本单 Task 5）。
 - **计时脆弱钉（预置债）**：`test_state_write_lock.test_timeout_degrades_honestly`
   （ubuntu/py3.12）与 `test_runtime_contract` 的 `elapsed_ms>=1000` 钉（windows）
   在 CI 慢速 runner 上抖动（实测 999<1000）——F-159 加固后的残余边界，
