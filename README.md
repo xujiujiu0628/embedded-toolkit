@@ -429,12 +429,14 @@ Renode 把仿真做成平级判定后端，hardci / jlink-mcp 验证了 MCP 分�
   冲突）；该记录后续审计预期 FAILED 勿当新伤，其他记录不受影响。
 - 方向：多 MCU（ESP32）工具栈评估（暂缓：无目标硬件；技术路线 esptool + probe-rs）。
   F-107 勘误：旧文本"见 docs 档案"是悬空指针（docs/ 已迁出，现仅存
-  `hooks-install.md`）。F-108 计数订正：旧文本"verify.py 7 处 / release.py 2 处 /
-  hardfault.py 2 处"源于 F-034 时代快照，release 的 cfg 已随 F-041 下沉
-  `openocd_runtime`；实测现状为 6 个脚本各硬编码 `interface/stlink.cfg` +
-  `target/stm32f1x.cfg` 一对（verify / hardfault / capture_rtt /
-  capture_semihosting / physical_gate / openocd_runtime）。前置项不变：把
-  这两类 cfg 路径收进 `config.json`
+  `hooks-install.md`）。
+  F-108 计数订正：旧文本"verify.py 7 处 / release.py 2 处 / hardfault.py 2 处"
+  源于 F-034 时代快照，release 的 cfg 已随 F-041 下沉 `openocd_runtime`；实测
+  现状为 6 个脚本各硬编码 `interface/stlink.cfg` + `target/stm32f1x.cfg` 一对
+  （verify / hardfault / capture_rtt / capture_semihosting / physical_gate /
+  openocd_runtime）。**收口改暂缓（F-170）**：唤起条件 = 接入第二板型
+  （F4/F0 等）或 F-031 Linux 真机验证窗口；届时落工程
+  `.workbench/config.json`（如 `openocd.cfg_files` 键，缺省 = 现值零行为变化）。
 
 > **F-021~F-030 已在本轮收口**（原子写收口包 / R7 双布局认路 / RTT 平台守卫 /
 > 孤儿链删除 / 三 runtime 契约统一 / 头图刷新），逐条处置记录与证据 commit 见
