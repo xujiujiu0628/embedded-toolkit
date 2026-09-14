@@ -362,9 +362,11 @@ Renode 把仿真做成平级判定后端，hardci / jlink-mcp 验证了 MCP 分�
 - **无板仿真闭环**——已落地：`capture.backend: "sim"`（qemu-system-arm +
   semihosting，`examples/sim-demo` 即跑）；调研来源 pytest-embedded / Renode；
   spike 记录 F-149（含 M-profile SYS_EXIT 0x18 不退出的实测坑）
-- **分发形态**（PyPI / uvx / Claude Code 插件，"一行安装"）——**已立项未实施**：
-  风险点在 `data/`、`VERSION`、machine.json 的包数据定位策略，需先做
-  spike 再立项；调研来源 agentic-hil / hardci
+- **分发形态**（PyPI / uvx / Claude Code 插件，"一行安装"）——**暂缓（2026-09-14）**：
+  曾立项待做 spike（风险点在 `data/`、`VERSION`、machine.json 的包数据定位
+  策略），经评估当前无外部用户、git clone 自用形态够用，且其服务对象"开源
+  推广"本身是待评估期权——降级为暂缓，**唤起条件 = 决定对外推广 toolkit 的
+  那天**，届时先做 spike 再立项；调研来源 agentic-hil / hardci
 - **真机 CI 冒烟**——已落地（门控形态）：`.github/workflows/hw-smoke.yml`
   仅在仓库配置了 self-hosted runner（`HW_RUNNER_READY` 变量）时运行；
   调研来源 jlink-mcp 的真机徽章 + ESP32/树莓派 runner 案例
