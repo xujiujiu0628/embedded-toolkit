@@ -17,6 +17,15 @@
   预期 R7 FAILED=登记语义（HANDOFF §6-2.5 同口径, 勿当新伤）; 工程记录本体
   零改动。
 
+- **F-169b (联动销账) 三工程 CMSIS 浅裁施工 + RTT e2e 复验全绿**: 用户拍板浅裁
+  三在役树（删 Lib/DSP/NN/RTOS*/Core_A/Core/docs, Makefile 引用面零触达, 各
+  工程浅裁 commit 799b7ee/7e5052b/6954775）; 门禁=clean rebuild 0W0E ×3 +
+  size 三元组逐字节一致 + adc-oled 真机链复验: 首跑 build/flash/capture 全 ok
+  (evidence=hardware_validated, FR-ALERT-01 缺属旋钮未过阈如实判定), 拧满复跑
+  **4/4 全 pass**（raw=4095 mv=3300, bf_20260914_223109 落账）。vendor\n  stm32f103-cmsis-seed（18M）建立防胖拷贝复发, 顶层 README 登记。教训:
+  ST-Link Unknown 枚举态先想"是不是该拔插"再查软件面（克隆片老毛病, 本笔连中
+  两次）。回收 ~150M; 工程仓已推 origin（adc-oled/button-toggle）。深度记忆
+  见 [[cmsis-drivers-slimming]] 已执行态。
 - **F-168 (清尾) D-2 分发形态立项状态改暂缓，docs（README 生态位节）**:
   总工单 v2 收官后唯一剩余工单级欠账 D-2（PyPI/uvx/插件分发形态 spike）经
   维护者评估降级: 当前无外部用户、git clone 自用形态满足全部在役工作流,
