@@ -29,6 +29,21 @@
   面一问（与既有 stlink-clone-intermittent 记忆同款纪律）。回收 ~150M;
   工程仓已推 origin（adc-oled/button-toggle）。深度记忆见
   [[cmsis-drivers-slimming]] 已执行态。
+- **F-170 (挂账裁决单) L-2/L-6 结案 + L-4/cfg 收口改暂缓，docs（零行为改动，
+  spec: embedded-handoff `docs/superpowers/specs/2026-09-14-f170-ledger-
+  adjudication-design.md` 2026-09-14 批准; F-035 复审按 F-167/168/169 先例豁免）**:
+  ① **L-2 结案（不修）**: OpenOCD 无时间戳前缀形态（14 条噪声正则全部实机
+  照抄, F-106 测试 9 形态钉在场）——推测项判死; 正文行首恰撞锚定词=可预期
+  误滤（概率≈0, 未来真出现按新事故立项）, 裁决入 failure_context.py 头注。
+  ② **L-6 结案（不改）**: lint 无清单=配置错误 exit 1 / coverage 无 FSD=合法
+  存量 SKIPPED exit 0——**不对称恰是正确建模**, HANDOFF §6 第 3 步判据依赖
+  它, 改齐即塌方; 退出码语义分工入两脚本 docstring。③ **L-4 改暂缓**:
+  今日消费方扫描（evidence_export/junit_xml/release/release_audit/tests 全量
+  grep）零引用实证, 仅 verify 早退路径内部消费 legacy `missing: expect`
+  （合法）。唤起条件 = 下一次契约整理工单顺路（回显置空+契约钉翻转+CHANGELOG
+  契约变更段, 一个 commit 级）。④ **cfg 收口改暂缓**: 唤起条件 = 第二板型
+  接入或 F-031 窗口（README 同步改口径）。验收: 全量 unittest 复跑零红
+  （防注释措辞被测试内文断言引用——F-108 教训面）; push 后 CI 绿。
 - **F-168 (清尾) D-2 分发形态立项状态改暂缓，docs（README 生态位节）**:
   总工单 v2 收官后唯一剩余工单级欠账 D-2（PyPI/uvx/插件分发形态 spike）经
   维护者评估降级: 当前无外部用户、git clone 自用形态满足全部在役工作流,
