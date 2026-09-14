@@ -16,7 +16,7 @@
 - F 号：**F-164 = gcc_build 预检平台化，F-165 = 计时钉**；CHANGELOG 两条目分记，格式仿 F-162/F-163 近例。
 - 测试框架 `python -m unittest`；跑单文件 `python -m unittest tests.test_xxx -v`；全量 `python -m unittest discover -s tests`（当前基线 853 例 OK, skipped=6）。
 - lint：`python -m ruff check scripts tests` 零违规。
-- F-089 卫生钉：任何 tracked .py/.md 改动行不得含裸 `<d-claude-root>`/`<d-claude-root>` 形态（用 `<d-claude-root>` 占位）。
+- F-089 卫生钉：任何 tracked .py/.md 改动行不得含裸工作区根路径的两种分隔符形态（用 `<d-claude-root>` 占位；本行自指故不写示例字面量）。
 - 中文注释风格与仓内一致；commit message `type(F-16x): 摘要`。
 - 不放宽既有断言语义；生产代码最小改动（F-165 原则上只动测试文件）。
 - 验收终判在远端 CI（Task 5），本地全绿只是前置。
