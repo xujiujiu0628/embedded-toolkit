@@ -13,6 +13,7 @@ timeout 形同虚设; 且 server/itm 常驻会话 ready 后无人再读 stderr, 
 """
 import itertools
 import os
+import queue
 import subprocess
 import sys
 import threading
@@ -146,8 +147,40 @@ class ItmVariantSemanticsTests(unittest.TestCase):
         self.assertTrue(ready)
 
 
+class _FirehoseProc:
+    """启动爆发刷行的内存等价物 (真子进程管道预满态): Listening 首行 + N 行
+    噪声, 灌完后流永久沉默——与真 OpenOCD gdb server 启动后状态同形 (先刷一
+    波日志再挂起等连接)。pump 线程可在一个 GIL 时间片内灌入远超 maxsize(1000)
+    行: F-166 前的"丢最旧"逐出策略恰好逐出队头就绪行, wait 永远等不到 ready
+    (ubuntu-3.10 CI 确定性红的根因)。
+    沉默尾巴是刻意的: 立即 EOF 的有限迭代器会走 pump 收尾"腾位保 EOF"路径,
+    满队列时同样逐出一行行首——那是"进程已死"形态, 不是本钉要钉的存活服务
+    稳态。drained 事件 = 全部爆发行已入队, 消费前等它即可零睡眠去抖。"""
+
+    def __init__(self, n):
+        lines = ["Listening on port 3333 for gdb connections\n"]
+        lines += ["drain line %d %s\n" % (i, "x" * 80) for i in range(n)]
+        self._it = iter(lines)
+        self.stderr = self
+        self.drained = threading.Event()
+
+    def __iter__(self):
+        return self
+
+    def __next__(self):
+        line = next(self._it, None)
+        if line is not None:
+            return line
+        self.drained.set()
+        threading.Event().wait()  # 永久沉默: 不 StopIteration (不触发 EOF 腾位)
+
+    def poll(self):
+        return None  # 永不退出: 只钉队列逐出策略, 不涉进程生命周期
+
+
 class StderrPumpDrainTests(unittest.TestCase):
-    """排空钉: 真子进程持续向 stderr 灌大量行, ready 后主线程不再读也不死锁"""
+    """排空钉: 真子进程持续向 stderr 灌大量行, ready 后主线程不再读也不死锁。
+    F-166 增补: 启动爆发 >maxsize 行时就绪行存活钉 (逐出策略根因)。"""
 
     CODE = (
         "import sys, time\n"
@@ -183,6 +216,37 @@ class StderrPumpDrainTests(unittest.TestCase):
                 proc.stderr.close()
             if proc.stdout:
                 proc.stdout.close()
+
+    def test_startup_firehose_keeps_ready_line_alive(self):
+        """F-166 根因钉: 启动爆发 (3x maxsize) 先于任何消费者时, 就绪行必须存活。
+        旧"丢最旧"逐出策略在首批 >1000 行入队时把队头 Listening 行逐出,
+        wait_server_ready 永远等不到就绪 (ubuntu-3.10 test_pump_drains 15s
+        确定性超时红的根因) —— 回退为丢最旧本钉必红 (flip 红证见 CHANGELOG
+        F-166)。钉两层: ①队列层 = 逐出策略本体 (确定性判别器, 无竞态:
+        爆发全部入队后消费者才出现); ②端到端 = wait_server_ready 真调用。
+        有界性同钉: 修复不得以牺牲 maxsize 上界为代价 ("长会话内存不增长")。"""
+        # ① 队列层: pump 先于消费者灌满 3001 行 —— 保住的必须是流头部一段
+        proc = _FirehoseProc(3000)
+        q = openocd_runtime._start_stderr_pump(proc)
+        self.assertTrue(proc.drained.wait(5), "pump 未排空启动爆发")
+        head = q.get(timeout=1)
+        self.assertEqual(head, "Listening on port 3333 for gdb connections\n")
+        self.assertTrue(q.get(timeout=1).startswith("drain line 0 "),
+                        "保留的应是爆发前段 (丢最新) 而非后段 (丢最旧=已回退)")
+        kept = 2
+        while True:
+            try:
+                q.get_nowait()
+            except queue.Empty:
+                break
+            kept += 1
+        self.assertEqual(kept, q.maxsize,
+                         "满队列应恰好保留 maxsize 行——有界内存契约不破")
+        # ② 端到端: 同一形态直接喂真 wait 函数, ready 必须为 True
+        ready, _ = openocd_runtime.wait_server_ready(
+            _FirehoseProc(3000), 3333, timeout=3)
+        self.assertTrue(ready,
+                        "启动爆发后就绪行已死 —— 丢最旧回潮 (F-166)")
 
 
 if __name__ == "__main__":

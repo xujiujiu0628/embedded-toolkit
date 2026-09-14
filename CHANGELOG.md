@@ -5,6 +5,45 @@
 
 ## Unreleased — zc/hardware（总工单 v2 全量承接: 编号对照 T1~T8=F-145~F-152、T9=F-153, 新任务 F-154 起顺延。号段注记 (审核 L-1): v2 清单曾为 Claude P2 系列预留 F-133~144，实际 Claude 仅消费 F-133 后整批移交本分支, 134~144 空置——非跳号事故, 系分工变更）
 
+- **F-166 (CI 矩阵复绿) py3.10 双腿红——evidence_export PEP701 降级 + stderr pump 逐出策略根因修，fix+test+docs，scripts/openocd_runtime.py / tests/test_evidence_export.py / tests/test_openocd_startup_wait.py / CHANGELOG**:
+  PR #9 (ci-stabilize-20260914) CI 观测: 除计时噪声外 py3.10 双腿自
+  F-151 起从未绿过（ubuntu-3.10 另有一枚确定性红被计时噪声掩盖，F-165
+  消噪后显形）。随本 PR 一并修复（Task 5 远端复绿终判的组成部分）。
+  ① **(a) test_evidence_export.py:93 PEP701 嵌套同引号 f-string**：
+  `f"...{r"D:\local\other"}..."` 双引号套双引号是 py3.12+ (PEP701) 才
+  合法的语法，仓库地板声明 py3.10 (ci.yml matrix 含 3.10) 下 SyntaxError
+  ——63dbb78 (F-151) 引入。修复: 提为模块常量 `_WIN_OTHER` 后普通插值。
+  全仓扫描结论: 对仓库全部 115 个 .py（scripts/ tests/ 及根目录, AST 级
+  JoinedStr 插值表达式扫描——内含反斜杠 / 复用外层同种引号 / 换行三类
+  3.10 拒收形态, 检测器用已知违例的修复前文件反向校验命中），
+  **零残留**；gen_periph.py 的 `{{` 双写是转义非 PEP701，安全。
+  ② **(b) openocd_runtime stderr pump 丢最旧→丢最新（真缺陷，非测试
+  兼容）**：旧策略"满队列 get_nowait 腾位再塞"在**启动即爆发刷日志**
+  （首批 >maxsize=1000 行、consumer 尚未就位）时恰好逐出队头
+  `Listening on port ...` 就绪行 → wait_server_ready 永等不到 ready →
+  ubuntu-3.10 `test_pump_drains_without_blocking_writer` 15s 确定性超时
+  红（PR #8 起即红）。新策略: 满队列直接丢弃当前行（丢最新）——就绪/
+  Error 关键行全在流头部，丢最新只截断洪水后段；排空活性与内存上界
+  （"长会话内存不增长"）不变。EOF 哨兵收尾路径保留腾位逐出——该路径
+  进程流已关，无早期行风险，且必须保 EOF 送达否则消费端空转等哨兵。
+  影响面: wait_server_ready / wait_itm_ready 全体消费方
+  （openocd_gdb / openocd_telnet / openocd_itm 三入口）统一受益于此修，
+  无接口变更。
+  ③ **回归钉** `StderrPumpDrainTests.test_startup_firehose_keeps_ready_line_alive`:
+  `_FirehoseProc(3000)`（3×maxsize 爆发 + 永久沉默尾巴, 与真 gdb server
+  启动形态同构——刻意不立即 EOF: 有限迭代器收尾"腾位保 EOF"同样逐出一行
+  队头, 修复后代码也保不住就绪行, 那就不是存活服务稳态的判别器）。两层断言:
+  队列层钉"保住的必须是流头部一段"（head=Listening, 次行=drain line 0,
+  保留数恰=maxsize 的有界性同钉），端到端层真调 `wait_server_ready` 必须
+  ready=True。**flip 红证**: 临时回退为丢最旧，本钉红（head 实测
+  `drain line 2000 ...` ≠ Listening），已复原，flip 未入任何 commit。
+  既有钉冲突排查: 全仓 grep "丢最旧/pump/逐出" 仅命中本单新改文本，
+  无任何先钉锁死旧逐出契约（F-123 历史条目里的"满丢最旧保活性"是当年
+  账目，append-only 保护区不回写，以本条为契约更正）。
+  ④ **验证**: 聚焦 22 例绿; 全量 858 OK (skipped=6)（+1 新钉）; ruff
+  scripts/tests 干净; F-089 卫生钉绿。本机 py3.14 无法编译级证明 3.10
+  兼容, 以 AST 扫描 + flip 红证 + CI 矩阵实测（Task 5 push 后）为终判。
+
 - **F-165 (预置债销账) CI 计时脆弱钉去墙钟化——两枚钉改注入假时钟，零真实等待，test+docs，tests/test_runtime_contract.py / tests/test_state_write_lock.py / README / CHANGELOG**:
   F-162 副产物登记的计时脆弱钉（ubuntu 降解钉翻车 + windows 实测
   999<1000）两枚一并收口（(a) 段先行落 431b37c，本条记账覆盖 (a)+(b)）。
