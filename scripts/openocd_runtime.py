@@ -356,12 +356,12 @@ def _start_stderr_pump(proc: subprocess.Popen) -> "queue.Queue":
                 # F-166: 满队列丢"最新"而非"最旧"——就绪/Error 行全在流头部,
                 # 丢最旧会在启动爆发 (首批 >maxsize 行) 时恰好逐出这些早期行;
                 # 丢最新只截断洪水的后段, 排空活性与内存上界不变 (泵仍即时回收)。
-                while True:
-                    try:
-                        q.put_nowait(line)
-                        break
-                    except queue.Full:
-                        break
+                # 代价: 若就绪行本身出现在 >maxsize 行爆发之后, 丢最新将截断之
+                # (旧丢最旧反可存活) — OpenOCD 实际启动形态就绪行居首, 判可接受。
+                try:
+                    q.put_nowait(line)
+                except queue.Full:
+                    pass  # F-166: 满队列丢当前行 (丢最新), 无重试
         except Exception:
             pass  # 进程提前死亡等: 排空职责优先于留痕
         finally:
