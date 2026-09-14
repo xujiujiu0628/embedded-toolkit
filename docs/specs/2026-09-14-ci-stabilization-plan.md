@@ -12,7 +12,7 @@
 
 ## Global Constraints
 
-- 分支 `ci-stabilize-20260914`（自 master `fc8fc7a` 切出，已建）；push 需维护者另行授权（Task 6 的人工门）。
+- 分支 `ci-stabilize-20260914`（自 master `fc8fc7a` 切出，已建）；push 需维护者另行授权（Task 5 的人工门）。
 - F 号：**F-164 = gcc_build 预检平台化，F-165 = 计时钉**；CHANGELOG 两条目分记，格式仿 F-162/F-163 近例。
 - 测试框架 `python -m unittest`；跑单文件 `python -m unittest tests.test_xxx -v`；全量 `python -m unittest discover -s tests`（当前基线 853 例 OK, skipped=6）。
 - lint：`python -m ruff check scripts tests` 零违规。
