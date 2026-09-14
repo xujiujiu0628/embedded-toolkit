@@ -420,6 +420,13 @@ Renode 把仿真做成平级判定后端，hardci / jlink-mcp 验证了 MCP 分�
   （`test_runtime_contract` ser 版耗时 / `test_state_write_lock` 降解下界）
   改注入假时钟: 零容差逐字断言, 零真实等待; 墙钟回潮即红。**远端终判 ✅**：
   PR #9 全绿（顺带 F-166 修 py3.10 双腿：PEP701 降级 + pump 逐出策略真缺陷）。
+- **R7 永久登记（F-169, 2026-09-14）**：`release_audit --project
+  stm32f103-mpu6050-oled --tag v0.5` 的 R7 **永久 FAILED 属登记语义**——
+  根因经构造性证据坐实：记录 `config_sha256` = git_head blob 的 LF→CRLF
+  往返哈希（逐字节复现），系 422e45f（autocrlf=false + eol=lf 切换）使
+  发布时工作树字节与入库字节永久错位，非篡改、无内容差异。**处置 = 不重锚
+  不改记录**（发布记录是防篡改审计锚，为消警告改哈希与 R1~R8 设计目的
+  冲突）；该记录后续审计预期 FAILED 勿当新伤，其他记录不受影响。
 - 方向：多 MCU（ESP32）工具栈评估（暂缓：无目标硬件；技术路线 esptool + probe-rs）。
   F-107 勘误：旧文本"见 docs 档案"是悬空指针（docs/ 已迁出，现仅存
   `hooks-install.md`）。F-108 计数订正：旧文本"verify.py 7 处 / release.py 2 处 /
