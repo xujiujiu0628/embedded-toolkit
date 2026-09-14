@@ -16,7 +16,6 @@ import os
 import shutil
 import sys
 import tempfile
-import time
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -119,11 +118,24 @@ class WireContractTests(unittest.TestCase):
     def test_make_timing_is_name_collision_not_dup(self):
         # 实测: ser.make_timing(start_time) 现算耗时; wb.make_timing(started_at,
         # elapsed_ms) 做格式化 —— 同名异物, 各自的钉分别锁形状
-        # 注: start_time 用近期真实时间戳 —— epoch 秒 1000 在 Windows 上
-        # astimezone() 直接 OSError (pre-epoch 边界, 计划编写时实测撞出)
-        t_ser = serial_runtime.make_timing(start_time=time.time() - 1.0)
+        # F-165: 旧版喂 time.time()-1.0 再赌 elapsed_ms>=1000 —— 墙钟版断言,
+        # CI NTP 微调回拨即 999 (0912 首跑实锤)。改注入假 datetime: 耗时逐字 =1000。
+        # (旧注保留意: pre-epoch 边界曾撞 Windows astimezone() OSError,
+        # 本假时钟 t0 取固定 epoch 高位, 天然远离该边界)
+        import datetime as _dt
+        t0 = 1_800_000_000.0  # 未来固定 epoch, 远离 pre-epoch 边界
+        class _FakeDT:
+            @staticmethod
+            def now():
+                return _dt.datetime.fromtimestamp(t0 + 1.0, _dt.timezone.utc)
+            @staticmethod
+            def fromtimestamp(ts):
+                return _dt.datetime.fromtimestamp(ts, _dt.timezone.utc)
+        with mock.patch.object(serial_runtime, "datetime", _FakeDT):
+            t_ser = serial_runtime.make_timing(t0)
         self.assertEqual(set(t_ser), {"started_at", "finished_at", "elapsed_ms"})
-        self.assertGreaterEqual(t_ser["elapsed_ms"], 1000)
+        self.assertEqual(t_ser["elapsed_ms"], 1000,
+                         "假时钟下耗时必须逐字 1000 (墙钟回潮即红)")
         t_wb = wb_runtime.make_timing("2026-09-01T00:00:00+08:00", 123)
         self.assertEqual(t_wb["started_at"], "2026-09-01T00:00:00+08:00",
                          "wb 版 started_at 逐字透传 (ser 版是换算出来的)")

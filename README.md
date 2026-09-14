@@ -394,19 +394,20 @@ Renode 把仿真做成平级判定后端，hardci / jlink-mcp 验证了 MCP 分�
   （head 20e350d）产出 check run **"Sim Verify Results"（已创建且通过）**
   （[103737895345](https://github.com/xujiujiu0628/embedded-toolkit/runs/103737895345)），
   输出摘要 "0 passed, 1 failed and 4 skipped"（失败态产物在摘要模式改关后被
-  消费，`checks.create` 生效）。sim-demo job 本体仍红（预置 ubuntu
-  build_failed 债，见下条），与 reporter 步骤/check run 结论互相独立。
+  消费，`checks.create` 生效）。sim-demo job 本体的预置 ubuntu build_failed 债
+  已随 F-164 闭合（PR #9 run 34816266924 全绿实证），与 reporter 步骤/check
+  run 结论互相独立。
 - **N-3 覆盖洞（审核 L-4）**：✅ **已闭合（F-163, 2026-09-13）**——
   `verify.step_flash` 接入构造性标记共享件（`openocd_run.ACTION_DONE_CMD` /
   `marker_present`），rc=0 且串尾标记在场才算烧录成功；真机复验见 CHANGELOG。
-- **F-162 副产物（预置债 D-3 候选）**：sim-demo job 在 CI ubuntu runner 上
-  build_failed（errors=-1，190ms）——该 job 自 F-150 入仓起从未真跑过 CI
-  （push 触发仅 master，0912 为首跑），本地全绿；根因未查，**非 F-162/F-163
-  引入**，登记待下轮工单。
-- **计时脆弱钉（预置债）**：`test_state_write_lock.test_timeout_degrades_honestly`
-  （ubuntu/py3.12）与 `test_runtime_contract` 的 `elapsed_ms>=1000` 钉（windows）
-  在 CI 慢速 runner 上抖动（实测 999<1000）——F-159 加固后的残余边界，
-  下轮以 F-159 同款 AST/注入判据法收口。
+- **F-162 副产物（预置债 D-3 候选）**：✅ **已闭合（F-164, 2026-09-14）**——根因
+  = `gcc_build.py` 预检写死 `arm-none-eabi-gcc.exe`（ubuntu 无后缀必败, errors=-1
+  速败）；已改 `shutil.which` 平台判定（nt 走 PATHEXT 等价, 本机回归绿 + 4 枚
+  mock/AST 钉）。**远端终判 ✅**：PR #9 run 34816266924 全绿，sim-demo job 转绿实证。
+- **计时脆弱钉（预置债）**：✅ **已闭合（F-165, 2026-09-14）**——两枚墙钟钉
+  （`test_runtime_contract` ser 版耗时 / `test_state_write_lock` 降解下界）
+  改注入假时钟: 零容差逐字断言, 零真实等待; 墙钟回潮即红。**远端终判 ✅**：
+  PR #9 全绿（顺带 F-166 修 py3.10 双腿：PEP701 降级 + pump 逐出策略真缺陷）。
 - 方向：多 MCU（ESP32）工具栈评估（暂缓：无目标硬件；技术路线 esptool + probe-rs）。
   F-107 勘误：旧文本"见 docs 档案"是悬空指针（docs/ 已迁出，现仅存
   `hooks-install.md`）。F-108 计数订正：旧文本"verify.py 7 处 / release.py 2 处 /
