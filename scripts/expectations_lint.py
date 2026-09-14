@@ -22,7 +22,7 @@
       引用的命名捕获组须在 patterns[0] 中定义 (F-148)
   E13 ordered 须为布尔 (F-148)
 
-退出码: 0 = 干净/仅警告, 1 = 存在 error, 2 = 用法/文件不可得
+退出码: 0 = 干净/仅警告, 1 = 存在 error（含文件不存在/不可解析 E0/E1）, 2 = 用法错误
 
 用法:
   python scripts/expectations_lint.py <expectations.json 路径>
