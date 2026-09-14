@@ -5,6 +5,26 @@
 
 ## Unreleased — zc/hardware（总工单 v2 全量承接: 编号对照 T1~T8=F-145~F-152、T9=F-153, 新任务 F-154 起顺延。号段注记 (审核 L-1): v2 清单曾为 Claude P2 系列预留 F-133~144，实际 Claude 仅消费 F-133 后整批移交本分支, 134~144 空置——非跳号事故, 系分工变更）
 
+- **F-167 (清尾三笔) arXiv 引用撤销 + ADC-02 期望正则对齐 + FSD 退役残项勾销，docs(+工程仓联动)**:
+  ① **arXiv:2509.09970 核实并撤销**（README 已落地/立项方向节）: 09-14 经
+  WebSearch 实证该编号解析为 **Ultra-R1: RL for Reasoning in Unified
+  Multimodal Models**（文本生成图像推理, cs.CL）——与嵌入式闭环验证完全无关,
+  系 D-3 点名登记时的编号错误, 当年 arxiv.org 不可达照录未验所致。README
+  措辞改单条引用 (闭环评测论文保留) + 如实记撤销; 本仓不引不实来源。
+  ② **ADC-02 期望正则对齐**（联动, 改动在 stm32f103-adc-oled 工程仓
+  `.workbench/expectations.json`）: 固件 `Format_Raw4` 对 raw<1000 输出右对齐
+  前导空格（`ADC raw= 105`）, 原 pattern `raw=\d+` 隐含 raw≥1000 才命中
+  (Task 5 真机复验发现)。改 `raw=\s*\d+`, 六形态正则实测全对 (含低值/零值/
+  高值/两类坏行反例)。**生效验证挂下次真机 run** (本笔为静态对齐)。
+  ③ **FSD 退役残项勾销**（记录性, 改动在已退役 blink 归档之外无代码触点）:
+  blink 时代 5 项账面——FR-TGL-07 计数回绕 / FR-IMU-04 yaw 漂移 (两项 host
+  pending) + FR-UI-04 渲染周期 / FR-SRV-03 PWM 实测 / FR-OLED-04 全屏刷新
+  耗时 (三项 bench, 需示波器/逻辑分析仪)——载体工程 stm32f103-blink 已于
+  09-03 退役 (archive zip 封存 FSD), 需求未被在役工程 (adc-oled 4 项契约 /
+  mpu6050-oled 自有 FR 体系) 承接, 判定语义不随工程迁移。处置 = 正式作废
+  登记 (记忆账本 fsd-template-stm32 行同步), 非欠账: bench 三项的测量手段
+  议题 (时序测量) 归 mpu6050-oled 自己的 bench 项一并再议。
+
 - **F-166 (CI 矩阵复绿) py3.10 双腿红——evidence_export PEP701 降级 + stderr pump 逐出策略根因修，fix+test+docs，scripts/openocd_runtime.py / tests/test_evidence_export.py / tests/test_openocd_startup_wait.py / CHANGELOG**:
   PR #9 (ci-stabilize-20260914) CI 观测: 除计时噪声外 py3.10 双腿自
   F-151 起从未绿过（ubuntu-3.10 另有一枚确定性红被计时噪声掩盖，F-165
