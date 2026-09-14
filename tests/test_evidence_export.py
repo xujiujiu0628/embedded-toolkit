@@ -20,6 +20,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(
 import evidence_export  # noqa: E402
 
 _WIN_PATH = r"D:\local\toolkit\examples\sim-demo"
+_WIN_OTHER = r"D:\local\other"
 _POSIX_PATH = "/home/runner/work/embedded-toolkit/x.elf"
 
 
@@ -90,10 +91,10 @@ class RedactTests(unittest.TestCase):
 
     def test_extra_root_longest_first(self):
         text = evidence_export.redact(
-            f"{_WIN_PATH} and {r"D:\local\other"}",
+            f"{_WIN_PATH} and {_WIN_OTHER}",
             extra_roots=(_WIN_PATH, r"D:\local"))
         self.assertNotIn(_WIN_PATH, text)
-        self.assertNotIn(r"D:\local\other", text)
+        self.assertNotIn(_WIN_OTHER, text)
 
     def test_machine_json_content_never_enter(self):
         # 红线钉: 渲染函数不读 machine.json — 结果里不该出现工具链键值
