@@ -403,10 +403,10 @@ Renode 把仿真做成平级判定后端，hardci / jlink-mcp 验证了 MCP 分�
   = `gcc_build.py` 预检写死 `arm-none-eabi-gcc.exe`（ubuntu 无后缀必败, errors=-1
   速败）；已改 `shutil.which` 平台判定（nt 走 PATHEXT 等价, 本机回归绿 + 4 枚
   mock/AST 钉）。**远端复绿以 F-164/F-165 合并 PR 的 CI 全绿为终判**（挂本单 Task 5）。
-- **计时脆弱钉（预置债）**：`test_state_write_lock.test_timeout_degrades_honestly`
-  （ubuntu/py3.12）与 `test_runtime_contract` 的 `elapsed_ms>=1000` 钉（windows）
-  在 CI 慢速 runner 上抖动（实测 999<1000）——F-159 加固后的残余边界，
-  下轮以 F-159 同款 AST/注入判据法收口。
+- **计时脆弱钉（预置债）**：✅ **已闭合（F-165, 2026-09-14）**——两枚墙钟钉
+  （`test_runtime_contract` ser 版耗时 / `test_state_write_lock` 降解下界）
+  改注入假时钟: 零容差逐字断言, 零真实等待; 墙钟回潮即红。远端复绿终判挂
+  本单合并 PR CI。
 - 方向：多 MCU（ESP32）工具栈评估（暂缓：无目标硬件；技术路线 esptool + probe-rs）。
   F-107 勘误：旧文本"见 docs 档案"是悬空指针（docs/ 已迁出，现仅存
   `hooks-install.md`）。F-108 计数订正：旧文本"verify.py 7 处 / release.py 2 处 /
