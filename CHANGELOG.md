@@ -43,6 +43,10 @@
   ④ **验证**: 聚焦 22 例绿; 全量 858 OK (skipped=6)（+1 新钉）; ruff
   scripts/tests 干净; F-089 卫生钉绿。本机 py3.14 无法编译级证明 3.10
   兼容, 以 AST 扫描 + flip 红证 + CI 矩阵实测（Task 5 push 后）为终判。
+  - **终判回填（2026-09-14）**：✅ CI 矩阵实测通过——PR #9 run 34816266924
+    （head 2695cf7）py3.10 双腿（ubuntu+windows）首次转绿，10/10 checks
+    全绿；pump 排空钉与 evidence_export 导入钉在 3.10 上均绿，(a)(b)
+    两修同时生效实证（本条目即本单三笔 F-164/165/166 的合并终判凭据）。
 
 - **F-165 (预置债销账) CI 计时脆弱钉去墙钟化——两枚钉改注入假时钟，零真实等待，test+docs，tests/test_runtime_contract.py / tests/test_state_write_lock.py / README / CHANGELOG**:
   F-162 副产物登记的计时脆弱钉（ubuntu 降解钉翻车 + windows 实测
@@ -68,6 +72,8 @@
   - 终判边界：本条为 host 层证据（Windows），远端复绿（ubuntu/py3.12
     降解钉 + windows 耗时钉在新 CI 上连续绿）以 F-164/F-165 合并 PR 的
     CI 全绿为终判（挂本计划 Task 5）。
+  - **终判回填（2026-09-14）**：✅ PR #9 run 34816266924 全绿——ubuntu/py3.12
+    降解钉与 windows 耗时钉均在 CI 连续绿（py3.10 双腿同 run 经 F-166 复绿）。
   - 顺路收尾（前序任务审查裁定）：F-164 条目搬 Unreleased 堆绝对顶部
     （latest-on-top，位置搬迁非文本重写）并在卫生自纠子条归因处补
     "（95d66de 引入）"；(a) 段 t0 注释订正——1.8e9 实为 2027-01，旧注
@@ -99,6 +105,7 @@
     `test_source_hygiene_paths` 扫描钉拦截判红；实现者按最小措辞修复合规入账。
   - 终判边界：本条为 host 层（Windows 活证据 + 行为/形态钉）证据，ubuntu
     远端复绿以 F-164/F-165 合并 PR 的 CI 全绿为终判（挂本计划 Task 5）。
+  - **终判回填（2026-09-14）**：✅ PR #9 run [34816266924](https://github.com/xujiujiu0628/embedded-toolkit/actions/runs/34816266924)（head 2695cf7）10/10 checks 全绿——sim-demo job 转绿实证本修生效。
 
 - **F-162 (审核遗留 M-4) CI 接线：sim-demo job 产 JUnit + test-reporter 消费，ci+docs，.github/workflows/ci.yml / README / CHANGELOG**:
   `verify.py --junit-xml` 旗标自 F-147 起仅有单测层可解析性证据，从未被真实
