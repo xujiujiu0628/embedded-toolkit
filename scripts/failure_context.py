@@ -24,6 +24,8 @@ _LOG_PREFIX_RE = re.compile(r'^(Info|Warn|Error|Debug)\s*:', re.IGNORECASE)
 # **行首锚定的 OpenOCD 已知噪声形态** (实测串照抄自本仓测试与实机日志):
 # OpenOCD 自身状态行几乎总在行首, 正文里的同名词不再误伤。
 # 注: "Info :"/"Warn :" 裸串兜底已由 _LOG_PREFIX_RE (容忍空格) 覆盖, 删除。
+# F-170 裁决: 固件正文行首恰撞下列锚定词 = 可预期误滤(概率≈0, 正文是 printf
+# 风格行), 未来真出现按新事故立项, 不预支修复。
 _CAPTURE_NOISE_RES = tuple(re.compile(p, re.IGNORECASE) for p in (
     r'^Listening on port\b',
     r'^target halted due to\b',

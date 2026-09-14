@@ -30,6 +30,9 @@ FSD 路径: 默认 docs/FSD.md; .workbench/config.json 的 "fsd_path" 字段可�
   python scripts/fsd_coverage.py --project <工程根>
   python scripts/fsd_coverage.py --project . --json
   python scripts/fsd_coverage.py <fsd.md> <expectations.json>   (显式两文件)
+
+退出码语义 (F-170 裁决): 无 docs/FSD.md = 合法存量工程 -> SKIPPED + exit 0
+(HANDOFF §6 "不得为 ERROR, SKIPPED 属预期" 判据依赖此不对称)。
 """
 import argparse
 import json
