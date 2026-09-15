@@ -1,5 +1,12 @@
 # embedded-toolkit
 
+*代号 **arbiter**（裁判机）— 名字沿革注记（F-173）：仓名 `embedded-toolkit` 停在
+0.1~0.4 的纯工具期；0.5 之后内核已长成判定链（门禁拒绝、证据分级、哈希锚是裁判
+属性不是工具属性）。仓名不改——GitHub 地址、CI 徽章、各工程 `.workbench` 与
+VS Code tasks 的绝对路径引用、以及 v0.2~v0.6 全部 tag 都钉在它身上，发布锚点
+不可变是本仓自己的第一纪律。改的是这行字：你面前这个项目的本质是裁判，工具箱
+只是它的手。*
+
 [![CI](https://github.com/xujiujiu0628/embedded-toolkit/actions/workflows/ci.yml/badge.svg)](https://github.com/xujiujiu0628/embedded-toolkit/actions/workflows/ci.yml)
 ![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)
 ![Python](https://img.shields.io/badge/python-3.10%2B-blue)
