@@ -212,6 +212,17 @@ python scripts/verify.py --project examples/sim-demo --json
 python scripts/release.py --project <工程根> --tag v1.0.0 --dry-run
 ```
 
+### 采集窗纪律（真人输入类期望，如按键/旋钮）
+
+1. **窗口在烧录之后才开**——全链 `verify.py --json` 前置 build+flash 约 1 分钟，
+   提前按=白按。交互前先跑 `--no-build --no-flash`（板已是目标固件），窗口几秒内开。
+2. **采集窗由你自持**：`python <toolkit>/scripts/verify.py --project <工程根> --no-build --no-flash --timeout 40`，
+   盯着屏/串口自己把握动作节奏；AI 代发"现在开始按"的回合制协调已多次证伪。
+3. **连拍优于单点**：窗内动作做 5-6 次（消抖节流会吃掉部分，如 button-toggle 60s 实测 TGL 152 行）。
+4. **判 fail ≠ 工具坏**：`evidence=hardware_validated` 说明采集链正常，`missing` 项优先怀疑
+   动作未落在窗内/未达契约阈值（旋钮类）——先看 `captured_output` 再决定重跑。
+5. **SWD 连不上先过物理面**：先确认探针/板线在场且你当下的按键动作状态，再查软件面。
+
 ## 核心工具速查
 
 | 工具 | 一句话 | 需硬件 |
