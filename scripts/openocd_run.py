@@ -131,9 +131,12 @@ def build_action_commands(
         return ["adapter name", "transport list", "adapter speed", "shutdown"], None
     if action == "flash":
         file_abs = os.path.abspath(file).replace("\\", "/")
+        # F-172: program 串尾不带 exit — 内嵌门闩会截胡后续 echo
+        # (marker 装配处统一以 "echo MARK + exit" 收尾; verify.step_flash
+        #  F-163 同序先例。旧版仅摘列表尾元素, 字符串内嵌 exit 摘不掉)
         if file.lower().endswith(".bin"):
-            return ["init", f"program {{{file_abs}}} verify reset exit {address}"], None
-        return ["init", f"program {{{file_abs}}} verify reset exit"], None
+            return ["init", f"program {{{file_abs}}} verify reset {address}"], None
+        return ["init", f"program {{{file_abs}}} verify reset"], None
     if action == "erase":
         bank_idx = bank if bank else "0"
         mass_erase_cmd = infer_mass_erase_command(target, board)
@@ -264,7 +267,15 @@ def run_openocd(
     marker_expected = action in ("flash", "erase")
     if marker_expected:
         # v2 T8 (F-155) N-3: 串尾构造性标记 — 只有脚本跑到底才在场
-        action_commands = list(action_commands) + [_ACTION_DONE_CMD]
+        # F-172: exit/shutdown 必须在标记之后 — program 串自带 "…exit" /
+        # erase 串自带 "shutdown" 时, 后置 echo 永不执行 (OpenOCD 收到
+        # exit/shutdown 即终止脚本), 真机必判 action_incomplete。
+        # 收敛为: 摘除尾部门闩 → 标记 → exit (verify.step_flash F-163 同序)。
+        cmds = list(action_commands)
+        while cmds and cmds[-1] in ("exit", "shutdown"):
+            cmds.pop()
+        cmds += [_ACTION_DONE_CMD, "exit"]
+        action_commands = cmds
     lease = None
     if action in ("flash", "erase"):
         lease = hw_lease.acquire(purpose=f"openocd_run {action}",

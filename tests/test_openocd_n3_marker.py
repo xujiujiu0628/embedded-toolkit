@@ -54,9 +54,31 @@ class MarkerContractTests(unittest.TestCase):
         stderr = _FLASH_OK_STDERR + f"{openocd_run.ACTION_DONE_MARKER}\n"
         rs, cmd = _run_action("flash", stderr=stderr, returncode=0)
         self.assertEqual(rs["status"], "ok", rs)
-        # 构造性标记必须在命令串尾
-        self.assertEqual(cmd[-1], "echo MARK_ACTION_DONE")
-        self.assertEqual(cmd[-2], "-c")
+        # F-172: 标记必须在 exit/shutdown 门闩之前 — OpenOCD 收到 exit 即
+        # 终止脚本, 后置 echo 永不执行 (旧序"exit, ..., echo MARK"真机必假红)
+        self.assertEqual(cmd[-1], "exit")
+        self.assertEqual(cmd[-3], "echo MARK_ACTION_DONE")
+
+    def test_marker_unreachable_after_exit_gate(self):
+        # F-172 结构性钉: 命令串里 exit/shutdown 之后不得再有动作命令
+        for action in ("flash", "erase"):
+            with self.subTest(action=action):
+                _rs, cmd = _run_action(action, stderr="wrote 4096 bytes\n",
+                                       returncode=0)
+                gates = [i for i, c in enumerate(cmd)
+                         if c in ("exit", "shutdown")]
+                self.assertTrue(gates, f"{action} 串必须含退出门闩: {cmd}")
+                last_gate = max(gates)
+                self.assertEqual(cmd[last_gate:], ["exit"],
+                                 f"{action}: 门闩后仍有动作 (标记不可达): {cmd}")
+
+    def test_erase_marker_order(self):
+        # F-172: erase 自带尾部 shutdown 同样须被摘除重排
+        stderr = " erased\n" + f"{openocd_run.ACTION_DONE_MARKER}\n"
+        rs, cmd = _run_action("erase", stderr=stderr, returncode=0)
+        self.assertEqual(rs["status"], "ok", rs)
+        self.assertNotIn("shutdown", cmd)
+        self.assertEqual(cmd[-1], "exit")
 
     def test_warning_wording_does_not_flip_verdict(self):
         # 克隆适配器吓人文案在场, 但 rc=0 + 标记在场 → 仍 ok,
