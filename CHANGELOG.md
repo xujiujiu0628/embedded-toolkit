@@ -29,6 +29,15 @@
   面一问（与既有 stlink-clone-intermittent 记忆同款纪律）。回收 ~150M;
   工程仓已推 origin（adc-oled/button-toggle）。深度记忆见
   [[cmsis-drivers-slimming]] 已执行态。
+- **F-171 (09-15 板前收口) 采集窗纪律五条入 README + 三工程人工项全闭合，docs（README 5 分钟上手节后）**：
+  ① 五条纪律（窗口在烧录后才开 / 自持窗命令模板 / 连拍优于单点 / 判 fail 先查动作 /
+  SWD 连不上先过物理面）收编 toolkit 单点事实源，勿工程各抄——源自当日
+  mpu6050-oled 11/11（含 4 项人工交互一窗全收）与 button-toggle 冒烟 2/2
+  （TGL 152 行）排障三次现形的教训；button-toggle PA0 极性翻高有效适配现接线
+  （工程仓 a538701→93bef5e，README 漂移首例自查联动 HANDOFF §6-4.5 私约条文）。
+  ② 同日教训两笔入工程账：全链 verify 的"开跑"通知必须发在窗口真开后
+  （09-10 发布门禁老坑第三次现形）；探针读电平先对照用户当下动作再定性
+  （"3V3 断路"误判被用户一句"我没有按下"纠正，[[stlink-clone-intermittent]] 变体）。
 - **F-170 (挂账裁决单) L-2/L-6 结案 + L-4/cfg 收口改暂缓，docs（零行为改动，
   spec: embedded-handoff `docs/superpowers/specs/2026-09-14-f170-ledger-
   adjudication-design.md` 2026-09-14 批准; F-035 复审按 F-167/168/169 先例豁免）**:
