@@ -3,7 +3,49 @@
 格式约定: 每条含发现编号（代管期 findings 编目）与证据 commit。当前版本以
 `VERSION` 文件为准（`wb_common.toolkit_version()` 读取）。
 
-## Unreleased — zc/hardware（总工单 v2 全量承接: 编号对照 T1~T8=F-145~F-152、T9=F-153, 新任务 F-154 起顺延。号段注记 (审核 L-1): v2 清单曾为 Claude P2 系列预留 F-133~144，实际 Claude 仅消费 F-133 后整批移交本分支, 134~144 空置——非跳号事故, 系分工变更）
+## 0.6 — 2026-09-15（总工单 v2 全量 + 治理三件套 + 无板闭环 + 真机全链收口）
+
+> 封袋定义: 自 v0.5 标签（commit 2d75209, 2026-09-10）之后落入本账本的
+> 全部 Unreleased 节归入 0.6（账本时间线与 v0.5 tag 有交叠——0.5 节封袋
+> 写于 tag 前, 核对以 git 锚点为准, 勿以本文件行位置为准）。
+> 封袋区间内 F 号大体范围 F-094~F-172。要点导览:
+> - **总工单 v2 全量**（F-117~F-166）: Claude 侧 P0/P1/P2 + z code 侧
+>   A/B/C/N/D 系列合流（分工变更致 F-134~144 空置）; 终审退回代修 F-161
+> - **治理三件套**: F-112 expectations 负断言（prohibited_outcomes 进机器）
+>   / F-113 fsd_coverage 需求↔断言对账（欠条与豁免两级不混用）
+>   / F-145 hw_lease 机器级设备锁（探针互斥, OS 放锁）
+> - **无板闭环与接入面**: F-150 qemu sim 后端（examples/sim-demo 即跑）
+>   / mcp_server 六工具有界包装（白名单校验, 不给 agent 任意 shell）
+> - **互锁链与取证加固**: F-109 SCB 粘滞位真机取证 / F-115~116 RTT 工程
+>   HardFault 闭环补齐 / F-155+F-163 N-3 构造性标记双消费面 / F-127 写锁
+> - **生成器时钟树参数化**: F-110/F-111 --hclk 单入口 + APB 标准分频推导
+>   （846 例逐字节兼容实证）
+> - **CMSIS 浅裁三树**（F-169b）+ 三工程真机全链收口: adc-oled 4/4、
+>   mpu6050-oled 11/11、button-toggle 2/2（09-13~15, 含人工交互项）
+> - **封袋当日收编**: F-171 采集窗纪律五条入 README / F-172 openocd_run
+>   CLI 烧录标记不可达修复（封袋前走读钓出, 真机复验 status: ok）
+> - 质量面: 测试 325→860, CI 六 job（ubuntu×windows 矩阵/coverage 棘轮/
+>   ruff/零覆盖 strict/syntax-smoke/sim-demo+test-reporter）
+
+- **F-172 (B 类缺陷) openocd_run CLI 烧录构造性标记永不可达，fix+tests+真机复验**:
+  0.6 封袋前走读发现——`openocd_run.py flash` 恒判 `action_incomplete` 假红
+  （`programmed: true, verified: true, rc: 0` 俱在却拒收）。双根因: ① builder
+  把 `program … verify reset exit` 做成**单字符串内嵌 exit**，标记装配处
+  "摘尾部门闩"只 pop 列表元素、摘不掉字符串内嵌者，`echo MARK` 落在 OpenOCD
+  退出之后永不执行; ② 既有 mock 钉 `assertEqual(cmd[-1], "echo MARK…")`
+  钉的是"装配意图"而非"OpenOCD 执行序"，恰好掩盖此缺陷（verify.step_flash
+  在 F-163 已改 "-c program / -c MARK / -c exit" 拆序先例，CLI 面未同步）。
+  处置: flash 串去内嵌 exit（reset 保留）+ 装配处门闩收敛（pop 尾部
+  exit/shutdown → echo MARK → exit）; 测试订正为执行序钉（门闩后不得有动作
+  命令 + erase 重排钉 + flash/erase 双 action subTest）。真机复验: mpu6050-oled
+  CLI flash `status: ok`（programmed/verified 俱真）; 全量 860 绿（+2 新钉）。
+  教训: **构造性证据链自身也要有构造性测试**——判据"标记在场"依赖命令执行
+  序，测试须钉执行序而非装配意图; 双消费面（verify/CLI）共享判据时须共享
+  顺序先例。
+
+
+## Unreleased — 0.6 封袋后新账（F 号续接: F-173 起; 原节标题编号对照与号段注记见 0.6 封袋段与 git 历史）
+
 
 - **F-169 (清账) R7 历史遗留处置=登记永久 FAILED 语义，docs（README 已知遗留节）**:
   挂账自 F-114（"重锚注记 or 永久 WARN 并登记"二选一）。**根因今日拿到构造性
