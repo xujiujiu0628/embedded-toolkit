@@ -182,13 +182,13 @@ def step_capture_uart(timeout_s: int, cap_cfg: dict,
                 "error": "缺 pyserial: pip install pyserial"}
 
     chip = cap_cfg.get("chip", "esp32s3")
-    # 复位兼探活用 esptool 只读命令。控制者裁决: 用 dash 形式 chip-id —— IDF v5
-    # 已弃下划线别名 (spike 见 DeprecationWarning); 若真机报 "not recognized"
-    # (部分环境 PATH 只有 esptool.py 入口), 换 `esptool.py chip-id`
-    # (Task 7 现场定; 单测 mock run_idf 不受影响); 若报 unknown command 换
-    # `run` (无参纯复位退出码 0)。
+    # 复位兼探活用 esptool 只读命令。控制者裁决: 用下划线形式 chip_id + hard_reset
+    # —— IDF 5.4 自带 esptool v4.x 的 --after 只认下划线 (真机首跑报 "invalid
+    # choice: 'hard-reset'"); pip 装的 v5 仍收下划线 (仅弃用警告), 故下划线是
+    # 两版通吃的安全集。若 PATH 只有 esptool.py 入口报 "not recognized", 换
+    # `esptool.py ...` (Task 7 现场定; 单测 mock run_idf 不受影响)。
     reset = run_idf_([f"esptool --chip {chip} -p {port} --after "
-                      f"hard-reset chip-id"], timeout=30, workspace=ws)
+                      f"hard_reset chip_id"], timeout=30, workspace=ws)
     if reset.get("status") != "ok":
         return {"status": "error", "method": "uart",
                 "error": ("复位失败 (端口被占/板子未上电?): "
