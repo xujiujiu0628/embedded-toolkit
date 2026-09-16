@@ -67,6 +67,20 @@ class RunIdfTests(unittest.TestCase):
         self.assertIn("D:/id''f/esp-idf/export.ps1", script)
 
 
+    def test_idf_env_strips_msys_markers(self):
+        # F-174 真机裁决: Git Bash 起跑的 CC 会把 MSYSTEM/MINGW* 带进子环境,
+        # IDF export 检测到即拒绝激活 ("MSys/Mingw is not supported")
+        with mock.patch.object(esp_runtime, "load_machine",
+                               return_value={"esp_tools_dir": "T"}),              mock.patch.dict(os.environ, {"MSYSTEM": "MINGW64",
+                                          "MINGW_PREFIX": "/mingw64",
+                                          "MSYS": "x", "KEEP_ME": "k"}):
+            env = esp_runtime._idf_env()
+        for k in ("MSYSTEM", "MINGW_PREFIX", "MSYS"):
+            self.assertNotIn(k, env)
+        self.assertEqual(env["IDF_TOOLS_PATH"], "T")
+        self.assertEqual(env.get("KEEP_ME"), "k")   # 非 MSYS 系键不误伤
+
+
 class ResolveIdfPathTests(unittest.TestCase):
     def test_missing_key_raises(self):
         with mock.patch.object(esp_runtime, "load_machine", return_value={}):

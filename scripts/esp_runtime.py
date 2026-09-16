@@ -39,6 +39,11 @@ def _idf_env() -> dict:
     export.ps1 找不到工具会去默认 %USERPROFILE%\\.espressif 兜底——装在哪
     就必须告诉它去哪找, 键缺省时不注入 (回落 IDF 官方默认)。"""
     env = os.environ.copy()
+    # F-174 真机裁决: 调用方若是 Git Bash 系进程, MSYSTEM/MSYS*/MINGW* 会随
+    # 环境继承进 PowerShell 子进程, IDF export 检测到即拒绝激活
+    # ("MSys/Mingw is not supported")——清除这些标记, 保证原生态激活。
+    for _k in [k for k in env if k.upper().startswith(("MSYSTEM", "MSYS", "MINGW"))]:
+        env.pop(_k)
     tools = load_machine().get("esp_tools_dir", "")
     if tools:
         env["IDF_TOOLS_PATH"] = tools
