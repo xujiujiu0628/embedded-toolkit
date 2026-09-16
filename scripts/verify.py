@@ -71,6 +71,7 @@ from capture_semihosting import (run_semihosting_session,  # noqa: E402  (F-061:
                                  SemihostingTimeout)
 from capture_sim import (DEFAULT_MACHINE, SimTimeout,  # noqa: E402  (F-150: sim 后端)
                          resolve_qemu, run_sim_session)
+import esp_runtime  # noqa: E402  (F-174: builder=idf / flash=esptool / capture=uart 三后端)
 
 GCC_BUILD = os.path.join(TOOLKIT_ROOT, "scripts", "gcc_build.py")         # 默认后端 (builder=gcc)
 # Keil 退役桥 (2026-09-05 F-067b 拆 archive): 仓内不再保留 keil_*.py,
@@ -174,9 +175,14 @@ def run_cmd(cmd: list[str], timeout: int = 60) -> dict:
 def step_build(config: dict, builder: str = "gcc",
                rebuild: bool = False) -> dict:
     """步骤 1: 编译 (按 config.json builder 字段切换后端: gcc | keil[legacy])"""
-    if rebuild and builder != "gcc":
+    if rebuild and builder not in ("gcc", "idf"):
         # YAGNI: keil 后端不接 --rebuild (blink legacy 不用该旗标)
-        return {"status": "error", "message": "--rebuild 仅支持 builder=gcc"}
+        # F-174: idf 的 rebuild = fullclean + build (esp_runtime 内实现)
+        return {"status": "error", "message": "--rebuild 仅支持 builder=gcc|idf"}
+    # F-174: ESP32 后端 — 路由到 esp_runtime (契约对齐 gcc_build 返回值)
+    if builder == "idf":
+        return esp_runtime.step_build_idf(config, rebuild=rebuild,
+                                          workspace=WORKSPACE)
     if builder == "gcc":
         gcc = config.get("gcc", {})
         project = gcc.get("project", "gcc-pilot/Makefile")
@@ -202,8 +208,8 @@ def step_build(config: dict, builder: str = "gcc",
 
 def step_analyze(log_file: str, builder: str = "gcc",
                  build_metrics: dict | None = None) -> dict:
-    """步骤 2: 编译日志诊断 (gcc 后端自带 metrics, 跳过 ARMCC 知识库分析)"""
-    if builder == "gcc":
+    """步骤 2: 编译日志诊断 (gcc/idf 后端自带 metrics, 跳过 ARMCC 知识库分析)"""
+    if builder in ("gcc", "idf"):
         m = build_metrics or {}
         return {"status": "ok",
                 "summary": {"errors": m.get("errors", 0),
@@ -662,7 +668,7 @@ def _run_build_step(args, config, builder, result, max_retries, retry_delay):
                 hex_file = build.get("details", {}).get("hex_file", "")
                 elf_file = build.get("details", {}).get("elf_file", "")  # F-150: sim 内核
 
-                if log_file or builder == "gcc":
+                if log_file or builder in ("gcc", "idf"):
                     analyze = step_analyze(log_file, builder, build.get("metrics"))
                     if analyze.get("status") == "ok":
                         build_ok = True
