@@ -237,8 +237,8 @@ class StepCaptureUartTests(unittest.TestCase):
         # 错误原文可读 (COM3 被占/拔线就是这个出口)
         self.assertEqual(r["status"], "error")
         self.assertIn("done-for-test", r["error"])
-        self.assertIn("esptool", seen[0][0])      # 复位先行 (chip-id 廉价只读)
-        self.assertIn("--after hard-reset", seen[0][0])
+        self.assertIn("esptool", seen[0][0])      # 复位先行 (chip_id 廉价只读)
+        self.assertIn("--after hard_reset", seen[0][0])  # IDF v4 只认下划线 (真机裁决)
 
     def test_happy_path_text_and_panic_flag(self):
         class OkSer:
