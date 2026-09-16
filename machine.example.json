@@ -4,5 +4,7 @@
   "openocd_exe": "<openocd.exe 绝对路径，如 xPack OpenOCD 的 bin 目录下>",
   "gcc_path": "<arm-none-eabi-gcc 所在 bin 目录>",
   "make_exe": "<make.exe 绝对路径（Windows 可用 MSYS2 的 usr/bin/make.exe）>",
-  "qemu_exe": "<可选：qemu-system-arm.exe 绝对路径（F-150 sim 后端；缺省走 PATH）>"
+  "qemu_exe": "<可选：qemu-system-arm.exe 绝对路径（F-150 sim 后端；缺省走 PATH）>",
+  "esp_idf_path": "<d-claude-root>\\vendor\\esp-idf",
+  "esp_tools_dir": "<d-claude-root>\\vendor\\esp-idf-tools"
 }
