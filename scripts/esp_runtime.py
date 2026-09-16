@@ -151,6 +151,76 @@ def step_flash_esptool(flash_cfg: dict, workspace: str | None = None,
             "stderr": out[-500:]}
 
 
+def step_capture_uart(timeout_s: int, cap_cfg: dict,
+                      workspace: str | None = None,
+                      *, _run_idf=None) -> dict:
+    """capture.backend=uart (F-174): esptool 复位进固件 → pyserial 定时采集.
+
+    时序 (spec §7 风险"复位窗口丢日志"缓解):
+      1) esptool --after hard-reset chip-id: 廉价只读命令触发确定性复位
+         (--no-flash 续跑路径同样先复位, 不吃上一轮残态 — 2026-08-16 教训同款)
+      2) settle_sec 静默等端口稳定 (USB-UART 桥重枚举, 默认 1.0s)
+      3) readline 到 deadline: 端口异常即 error (COM3 被占/拔线给可读报错)
+    panic 不拦截: 只打 esp_panic 文本标记, 定性交 AI judge (spec §4.3)。
+    正文经私有键 "_text" 带回, 契约与 step_capture_rtt 一致。
+    """
+    run_idf_ = _run_idf or run_idf
+    ws = workspace or os.getcwd()
+    port = (cap_cfg.get("port") or "").strip()
+    if not port:
+        return {"status": "error", "method": "uart",
+                "error": "capture.port 未配置 (uart 后端需要串口号, 如 COM3)"}
+    try:
+        import serial
+    except ImportError:
+        return {"status": "error", "method": "uart",
+                "error": "缺 pyserial: pip install pyserial"}
+
+    chip = cap_cfg.get("chip", "esp32s3")
+    # 复位兼探活用 esptool 只读命令。控制者裁决: 用 dash 形式 chip-id —— IDF v5
+    # 已弃下划线别名 (spike 见 DeprecationWarning); 若真机报 "not recognized"
+    # (部分环境 PATH 只有 esptool.py 入口), 换 `esptool.py chip-id`
+    # (Task 7 现场定; 单测 mock run_idf 不受影响); 若报 unknown command 换
+    # `run` (无参纯复位退出码 0)。
+    reset = run_idf_([f"esptool --chip {chip} -p {port} --after "
+                      f"hard-reset chip-id"], timeout=30, workspace=ws)
+    if reset.get("status") != "ok":
+        return {"status": "error", "method": "uart",
+                "error": ("复位失败 (端口被占/板子未上电?): "
+                          + (reset.get("message")
+                             or reset.get("output", "")[-300:]))}
+
+    t0 = time.time()
+    deadline = t0 + float(cap_cfg.get("settle_sec", 1.0))
+    try:
+        while time.time() < deadline:
+            time.sleep(0.05)
+    except Exception:
+        pass
+    t0 = time.time()
+    lines = []
+    try:
+        with serial.Serial(port, int(cap_cfg.get("baudrate", 115200)),
+                           timeout=0.5) as ser:
+            while time.time() - t0 < timeout_s:
+                raw = ser.readline()
+                if raw:
+                    lines.append(raw.decode("utf-8", errors="replace")
+                                 .rstrip("\r\n"))
+    except serial.SerialException as e:
+        return {"status": "error", "method": "uart",
+                "error": f"串口 {port} 采集失败: {e}"}
+    text = "\n".join(lines)
+    return {
+        "status": "ok", "method": "uart", "port": port,
+        "timeout_sec": timeout_s,
+        "lines": len([ln for ln in lines if ln.strip()]),
+        "esp_panic": detect_esp_panic(text),
+        "duration_sec": round(time.time() - t0, 1),
+        "_text": text,
+    }
+
+
 def _write_last_build(ws: str, bin_rel: str, elf_rel: str) -> None:
     """state.json last_build (verify --no-build 回读契约, 与 gcc_build 同构)。
 

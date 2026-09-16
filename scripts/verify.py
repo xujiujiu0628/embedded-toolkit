@@ -13,7 +13,7 @@ r"""
     1. Build   → gcc_build.py (默认 builder=gcc; 显式配 "keil" 时唤起 archive 退役桥)
     2. Analyze → gcc 路径直传 build metrics; keil 路径走 archive 唤起的 keil_analyze 知识库 (有 error 则终止)
     3. Flash   → OpenOCD program (默认) | esptool (flash.backend=esptool, F-174)
-    4. Capture → verify.py 内置双路: semihosting 内联会话 (默认) | rtt (capture.backend)
+    4. Capture → verify.py 内置双路: semihosting 内联会话 (默认) | rtt (capture.backend) | uart (F-174, ESP32)
     4c. Physical → OpenOCD ODR 轮询 GPIO 翻转频率 (物理层门控, 默认 skipped)
     5. Output  → 结构化 JSON 结果, Claude 对比期望判断 ✅/❌
 
@@ -959,6 +959,35 @@ def _run_capture_step(args, config, result, lease, sim_mode, cap_backend,
         cap["duration_sec"] = round(time.time() - capture_t0, 1)  # F-050
         result["steps"]["capture"] = cap
         # F-046: 台账落盘 (RTT 后端独立标记 origin, release audit 可按 origin 聚合)
+        append_audit_entry(WORKSPACE, args.task_origin, "capture", "ok",
+                           " ".join(sys.argv))
+    elif cap_backend == "uart":
+        # F-174: ESP32 UART 采集 (esptool 复位 → pyserial 定时窗) — 契约同 rtt 分支
+        cap = esp_runtime.step_capture_uart(
+            capture_timeout, config.get("capture", {}), WORKSPACE)
+        if cap.get("status") != "ok":
+            result["steps"]["capture"] = {
+                k: v for k, v in cap.items() if not k.startswith("_")
+            }
+            result["status"] = "capture_failed"
+            result["error"] = cap.get("error", "uart capture failed")
+            _release_hw_lease(lease)
+            _save_failure_context(result, max_retries, workspace=WORKSPACE)
+            _output(result, args.json)
+            # F-047 自审 Finding 2: 早退路径也必须落 checkpoint
+            _record_checkpoint_early_exit(result, args)
+            sys.exit(1)   # 失败早退必须非零 (审计: 原先恒 0 误导脚本化调用方)
+        captured_text = cap.pop("_text", "")
+        captured_lines = [ln for ln in captured_text.splitlines() if ln.strip()]
+        cap["origin"] = args.task_origin   # F-046: 审计标记
+        cap["duration_sec"] = round(time.time() - capture_t0, 1)  # F-050
+        result["steps"]["capture"] = cap
+        if cap.get("esp_panic"):
+            # ESP panic 只上账文本标记 (spec §4.3); 4b 的 HardFault 归因链是
+            # Cortex-M 专属 (CFSR/OpenOCD 寄存器), 对 ESP 文本天然不触发。
+            result["esp_panic"] = True
+            print("[capture] 检出 ESP panic 文本标记 — 符号化解析用 idf.py "
+                  "monitor (另票), 本流程只交 AI judge 定性", file=sys.stderr)
         append_audit_entry(WORKSPACE, args.task_origin, "capture", "ok",
                            " ".join(sys.argv))
     else:

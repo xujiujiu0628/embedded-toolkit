@@ -1,4 +1,5 @@
 """verify.py F-174 派发钉 — 新分支被正确路由 + 缺省路径回归 (builder/flash/capture 三处)。"""
+import argparse
 import os
 import sys
 import tempfile
@@ -75,6 +76,60 @@ class StepFlashDispatchTests(unittest.TestCase):
             # 诚实断言: 桩返回值确实携带 F-163 构造性标记
             self.assertTrue(verify.marker_present(
                 m.return_value["stdout"] + m.return_value["stderr"]))
+
+
+class CaptureUartDispatchTests(unittest.TestCase):
+    def _args(self):
+        return argparse.Namespace(timeout=5, task_origin="manual",
+                                  require_schedule_origin=False, json=True)
+
+    def test_uart_branch_writes_capture_step_and_panic(self):
+        cfg = {"capture": {"backend": "uart", "port": "COM9"},
+               "verify": {"expect": ["ESP-PILOT-OK"]}}
+        result = {"steps": {}}
+        with tempfile.TemporaryDirectory() as td, \
+             mock.patch.object(verify, "WORKSPACE", td), \
+             mock.patch.object(esp_runtime, "step_capture_uart",
+                     return_value={"status": "ok", "method": "uart",
+                                   "esp_panic": True,
+                                   "_text": "Guru Meditation Error"}) as m, \
+             mock.patch.object(verify, "append_audit_entry"):
+            text, lines, tmo = verify._run_capture_step(
+                self._args(), cfg, result, None, False, "uart", {}, 0, "")
+        self.assertIn("Guru", text)
+        self.assertEqual(result["steps"]["capture"]["method"], "uart")
+        self.assertTrue(result["steps"]["capture"]["esp_panic"])
+        self.assertTrue(result.get("esp_panic"))   # 顶层标记供 judge
+        self.assertEqual(tmo, 5)
+        m.assert_called_once()
+
+    def test_uart_failure_early_exit(self):
+        cfg = {"capture": {"backend": "uart", "port": "COM9"}, "verify": {}}
+        with tempfile.TemporaryDirectory() as td, \
+             mock.patch.object(verify, "WORKSPACE", td), \
+             mock.patch.object(esp_runtime, "step_capture_uart",
+                     return_value={"status": "error", "method": "uart",
+                                   "error": "串口 COM9 采集失败"}), \
+             mock.patch.object(verify, "append_audit_entry"), \
+             mock.patch.object(verify, "_save_failure_context"), \
+             mock.patch.object(verify, "_output"), \
+             mock.patch.object(verify, "_record_checkpoint_early_exit"):
+            with self.assertRaises(SystemExit) as cm:
+                verify._run_capture_step(
+                    self._args(), cfg, {"steps": {}}, None, False, "uart", {}, 0, "")
+        self.assertEqual(cm.exception.code, 1)     # 失败早退非零纪律
+
+    def test_default_backend_still_semihosting(self):
+        # 缺省回归钉: cap_backend 默认值路径不碰 esp_runtime
+        cfg = {"capture": {"backend": "semihosting"}, "verify": {}}
+        with tempfile.TemporaryDirectory() as td, \
+             mock.patch.object(verify, "WORKSPACE", td), \
+             mock.patch.object(verify, "run_semihosting_session",
+                     return_value=("", "")) as m, \
+             mock.patch.object(verify, "append_audit_entry"):
+            verify._run_capture_step(self._args(), cfg, {"steps": {}},
+                                     None, False, "semihosting", {}, 0, "")
+        m.assert_called_once()
 
 
 if __name__ == "__main__":
