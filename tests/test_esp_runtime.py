@@ -187,5 +187,94 @@ class StepFlashEsptoolTests(unittest.TestCase):
         self.assertIn("could not open port", r["stderr"])
 
 
+class StepCaptureUartTests(unittest.TestCase):
+    """假串口: readline 依序吐预制行, 到空后按墙钟截止。"""
+
+    def _fake_serial(self, lines):
+        import serial as _s
+        class FakeSer:
+            def __init__(self, *a, **kw): self.i = 0
+            def __enter__(self): return self
+            def __exit__(self, *a): pass
+            def readline(self):
+                if self.i < len(lines):
+                    self.i += 1
+                    return lines[self.i - 1].encode()
+                raise _s.SerialException("done-for-test")
+        return FakeSer
+
+    def test_missing_port_errors(self):
+        r = esp_runtime.step_capture_uart(5, {}, workspace="W:")
+        self.assertEqual(r["status"], "error")
+        self.assertIn("capture.port", r["error"])
+
+    def test_reset_then_capture_then_contract(self):
+        seen = []
+        def spy(cmds, **kw):
+            seen.append(cmds)
+            return {"status": "ok", "returncode": 0, "output": "Chip type: ESP32-S3"}
+        lines = ["ESP-PILOT-BOOT ok", "ESP-PILOT-OK tick=0 heap=123", ""]
+        with mock.patch("serial.Serial", self._fake_serial(lines)), \
+             mock.patch.object(esp_runtime.time, "sleep"):
+            r = esp_runtime.step_capture_uart(
+                5, {"port": "COM3", "baudrate": 115200, "settle_sec": 0},
+                workspace="W:", _run_idf=spy)
+        # 第 4 次 readline 抛 SerialException("done-for-test") → 端口故障即 error,
+        # 错误原文可读 (COM3 被占/拔线就是这个出口)
+        self.assertEqual(r["status"], "error")
+        self.assertIn("done-for-test", r["error"])
+        self.assertIn("esptool", seen[0][0])      # 复位先行 (chip-id 廉价只读)
+        self.assertIn("--after hard-reset", seen[0][0])
+
+    def test_happy_path_text_and_panic_flag(self):
+        class OkSer:
+            def __init__(self, *a, **kw): self.n = 0
+            def __enter__(self): return self
+            def __exit__(self, *a): pass
+            def readline(self):
+                self.n += 1
+                if self.n == 1: return b"ESP-PILOT-OK tick=0\n"
+                return b""      # 静默, 等 deadline
+        fake_time = iter([0, 0, 0, 1, 2, 3, 4, 5, 6, 6])   # deadline 走秒
+        with mock.patch("serial.Serial", lambda *a, **kw: OkSer()), \
+             mock.patch.object(esp_runtime.time, "sleep"), \
+             mock.patch.object(esp_runtime.time, "time", lambda: next(fake_time)):
+            r = esp_runtime.step_capture_uart(
+                5, {"port": "COM3", "settle_sec": 0}, workspace="W:",
+                _run_idf=lambda c, **kw: {"status": "ok", "returncode": 0,
+                                          "output": ""})
+        self.assertEqual(r["status"], "ok")
+        self.assertEqual(r["method"], "uart")
+        self.assertEqual(r["_text"], "ESP-PILOT-OK tick=0")
+        self.assertFalse(r["esp_panic"])
+
+    def test_panic_marked_not_fatal(self):
+        class PanicSer:
+            def __init__(self, *a, **kw): self.n = 0
+            def __enter__(self): return self
+            def __exit__(self, *a): pass
+            def readline(self):
+                self.n += 1
+                if self.n == 1: return b"Guru Meditation Error: Core 0 panic'ed\n"
+                return b""
+        fake_time = iter([0, 0, 0, 1, 2, 3, 4, 5, 6, 6])
+        with mock.patch("serial.Serial", lambda *a, **kw: PanicSer()), \
+             mock.patch.object(esp_runtime.time, "sleep"), \
+             mock.patch.object(esp_runtime.time, "time", lambda: next(fake_time)):
+            r = esp_runtime.step_capture_uart(
+                5, {"port": "COM3", "settle_sec": 0}, workspace="W:",
+                _run_idf=lambda c, **kw: {"status": "ok", "returncode": 0,
+                                          "output": ""})
+        self.assertEqual(r["status"], "ok")      # panic 不拦截采集 (交 AI judge 定性)
+        self.assertTrue(r["esp_panic"])
+
+    def test_reset_failure_short_circuits(self):
+        r = esp_runtime.step_capture_uart(
+            5, {"port": "COM3"}, workspace="W:",
+            _run_idf=lambda c, **kw: {"status": "error", "message": "超时 (5s)"})
+        self.assertEqual(r["status"], "error")
+        self.assertIn("复位失败", r["error"])
+
+
 if __name__ == "__main__":
     unittest.main()
