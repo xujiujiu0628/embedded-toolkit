@@ -127,6 +127,30 @@ def step_build_idf(config: dict, rebuild: bool = False,
             "summary": f"idf build ok ({warnings} warnings)"}
 
 
+def step_flash_esptool(flash_cfg: dict, workspace: str | None = None,
+                       *, _run_idf=None) -> dict:
+    """flash.backend=esptool (F-174): 经 idf.py -p <port> flash 烧录.
+
+    选 idf.py flash 而非手拼 esptool write_flash 地址表: flash_args 由构建
+    系统生成 (bootloader/分区表/app 三镜像+offset), 手拼即漂移 (spec §4.2)。
+    结束自带 --after hard-reset, capture 段仍显式再复位一次 (确定性起点)。"""
+    run_idf_ = _run_idf or run_idf
+    ws = workspace or os.getcwd()
+    port = (flash_cfg.get("port") or "").strip()
+    if not port:
+        return {"status": "error", "backend": "esptool",
+                "message": "flash.port 未配置 (esptool 后端需要串口号, 如 COM3)"}
+    run = run_idf_([f"idf.py -p {port} flash"],
+                   timeout=int(flash_cfg.get("timeout", 300)), workspace=ws)
+    out = run.get("output", "")
+    if run.get("status") == "ok":
+        return {"status": "ok", "backend": "esptool", "stdout": out[-1000:]}
+    return {"status": "error", "backend": "esptool",
+            "message": f"idf.py flash 失败 (port={port}, "
+                       f"rc={run.get('returncode', '?')})",
+            "stderr": out[-500:]}
+
+
 def _write_last_build(ws: str, bin_rel: str, elf_rel: str) -> None:
     """state.json last_build (verify --no-build 回读契约, 与 gcc_build 同构)。
 
