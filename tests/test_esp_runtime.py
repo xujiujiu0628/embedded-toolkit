@@ -159,5 +159,33 @@ class StepBuildIdfTests(unittest.TestCase):
         self.assertEqual(seen[0], ["idf.py fullclean", "idf.py build"])
 
 
+class StepFlashEsptoolTests(unittest.TestCase):
+    def test_port_required(self):
+        r = esp_runtime.step_flash_esptool({}, workspace="W:")
+        self.assertEqual(r["status"], "error")
+        self.assertIn("port", r["message"])
+
+    def test_command_assembly_and_rc(self):
+        seen = []
+        def spy(cmds, **kw):
+            seen.append((cmds, kw.get("timeout")))
+            return {"status": "ok", "returncode": 0,
+                    "output": "Hash of data verified.\nHard resetting via RTS pin..."}
+        r = esp_runtime.step_flash_esptool({"port": "COM3", "timeout": 120},
+                                           workspace=r"W:", _run_idf=spy)
+        self.assertEqual(r["status"], "ok")
+        self.assertEqual(seen[0][0], ["idf.py -p COM3 flash"])  # 地址表由 idf flash_args 管理
+        self.assertEqual(seen[0][1], 120)
+
+    def test_rc_fail_carries_stderr_tail(self):
+        r = esp_runtime.step_flash_esptool(
+            {"port": "COM9"}, workspace="W:",
+            _run_idf=lambda c, **kw: {"status": "error", "returncode": 2,
+                                      "output": "x" * 600 + "could not open port"})
+        self.assertEqual(r["status"], "error")
+        self.assertIn("COM9", r["message"])
+        self.assertIn("could not open port", r["stderr"])
+
+
 if __name__ == "__main__":
     unittest.main()

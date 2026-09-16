@@ -12,7 +12,7 @@ r"""
 流程:
     1. Build   → gcc_build.py (默认 builder=gcc; 显式配 "keil" 时唤起 archive 退役桥)
     2. Analyze → gcc 路径直传 build metrics; keil 路径走 archive 唤起的 keil_analyze 知识库 (有 error 则终止)
-    3. Flash   → OpenOCD program
+    3. Flash   → OpenOCD program (默认) | esptool (flash.backend=esptool, F-174)
     4. Capture → verify.py 内置双路: semihosting 内联会话 (默认) | rtt (capture.backend)
     4c. Physical → OpenOCD ODR 轮询 GPIO 翻转频率 (物理层门控, 默认 skipped)
     5. Output  → 结构化 JSON 结果, Claude 对比期望判断 ✅/❌
@@ -220,8 +220,8 @@ def step_analyze(log_file: str, builder: str = "gcc",
     return run_py(keil_analyze, [log_file, "--json"], timeout=30)
 
 
-def step_flash(hex_file: str) -> dict:
-    """步骤 3: OpenOCD 烧录"""
+def step_flash(hex_file: str, config: dict | None = None) -> dict:
+    """步骤 3: 烧录 (flash.backend 派发: openocd[默认] | esptool[F-174])"""
     if not hex_file:
         # F-007: blink 退役后旧默认 obj/blink.hex 已移除; --no-build 无产物须明说
         return {"status": "error",
@@ -229,6 +229,11 @@ def step_flash(hex_file: str) -> dict:
                             "last_build.hex_file): 先完整构建一次")}
     if not os.path.exists(os.path.join(WORKSPACE, hex_file)):
         return {"status": "error", "message": f"hex file not found: {hex_file}"}
+
+    # F-174: ESP32 esptool 后端 — 地址表交给 idf.py flash (esp_runtime 内)
+    flash_cfg = (config or {}).get("flash", {}) or {}
+    if flash_cfg.get("backend", "openocd") == "esptool":
+        return esp_runtime.step_flash_esptool(flash_cfg, workspace=WORKSPACE)
 
     hex_abs = os.path.join(WORKSPACE, hex_file)
     cmd = [
@@ -813,7 +818,7 @@ def _run_flash_step(args, config, result, hex_file, sim_mode, max_retries,
         flash_attempts = []
         flash_ok = False
         for attempt in range(max_retries + 1):
-            flash = step_flash(hex_file)
+            flash = step_flash(hex_file, config)
             # F-163 审核 Minor: message-only 错误 dict (无 hex / action_incomplete)
             # 不带 stderr/stdout——消费端必须回退读 message, 否则根因在 JSON 里隐身
             _flash_msg = (flash.get("stderr") or flash.get("stdout")
