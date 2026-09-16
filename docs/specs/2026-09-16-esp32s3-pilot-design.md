@@ -2,7 +2,7 @@
 
 - 日期：2026-09-16
 - 分支：`feat/esp32s3-pilot`（今日全部改动不入 master，验收合入另议）
-- 状态：设计已获用户批准
+- 状态：已落地 (2026-09-16, feat/esp32s3-pilot) — 真机双 PASS + 4 负路径 + 2 真机钓修 (410bdcb/b678fca); STM32 真机回归挂账 (ST-Link 失联), 见 plan 台账
 - 前史：2026-08-25 路线图（multi-mcu-tooling-roadmap）、2026-09-04 因无板挂起（esp32-onboarding-deferred）；本文档为唤起落地
 
 ## 0. 已验证事实（2026-09-16 spike）
