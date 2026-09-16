@@ -7,8 +7,11 @@
 - idf.py / esptool 依赖 export.ps1 注入的环境, 统一经 run_idf 单点封装
   (PowerShell 会话内 source 后顺序执行, 逐命令 $LASTEXITCODE 门闩传播退出码)。
 """
+import glob
+import json
 import os
 import subprocess
+import time
 
 from wb_common import load_machine
 
@@ -51,6 +54,7 @@ def run_idf(ps_commands: list[str], timeout: int, workspace: str,
     超时 {status:"error", message}。_run 注入点供 host 单测。"""
     idf = resolve_idf_path()
     export = os.path.join(idf, "export.ps1").replace("\\", "/")  # PS 单引号不吃反斜杠转义
+    export = export.replace("'", "''")  # PS 单引号串内 ' 只能翻倍转义 (Task 2 审查裁决)
     parts = [f". '{export}'"]
     for c in ps_commands:
         parts.append(c)
@@ -71,3 +75,73 @@ def run_idf(ps_commands: list[str], timeout: int, workspace: str,
 def detect_esp_panic(text: str) -> bool:
     """ESP panic 只做文本级标记 (spec §4.3): 符号化解析后置另票。"""
     return any(m in text for m in _PANIC_MARKERS)
+
+
+def step_build_idf(config: dict, rebuild: bool = False,
+                   workspace: str | None = None,
+                   *, _run_idf=None) -> dict:
+    """builder=idf (F-174): idf.py build, 契约对齐 gcc_build (spec §4.2)。
+
+    metrics 从合并日志行计数 ("error:" 行 + ninja "FAILED:" 行);
+    成败判据: run_idf rc==0 且 errors==0, 两者缺一即 error。
+    _run_idf 注入点供单测 (默认走模块级 run_idf)。"""
+    run_idf_ = _run_idf or run_idf
+    ws = workspace or os.getcwd()
+    cfg = (config or {}).get("idf", {}) or {}
+    commands = (["idf.py fullclean"] if rebuild else []) + ["idf.py build"]
+    run = run_idf_(commands, timeout=int(cfg.get("build_timeout", 900)),
+                   workspace=ws)
+    output = run.get("output", "")
+
+    log_dir = os.path.join(ws, ".workbench", "build")
+    os.makedirs(log_dir, exist_ok=True)
+    log_file = os.path.join(log_dir, "idf_build.log")
+    with open(log_file, "w", encoding="utf-8") as f:
+        f.write(output)
+
+    errors = sum(1 for ln in output.splitlines()
+                 if "error:" in ln or "FAILED:" in ln)
+    warnings = sum(1 for ln in output.splitlines() if "warning:" in ln)
+    metrics = {"errors": errors, "warnings": warnings}
+    details = {"log_file": os.path.relpath(log_file, ws).replace(os.sep, "/")}
+
+    if run.get("status") != "ok" or errors > 0:
+        return {"status": "error", "metrics": metrics, "details": details,
+                "summary": (f"idf build failed "
+                            f"(rc={run.get('returncode', '?')}, {errors} errors)"),
+                "stderr": output[-500:]}
+
+    bins = sorted(glob.glob(os.path.join(ws, "build", "*.bin")))
+    elfs = sorted(glob.glob(os.path.join(ws, "build", "*.elf")))
+    if not bins:
+        return {"status": "error", "metrics": metrics, "details": details,
+                "summary": "idf build ok 但 build/*.bin 缺失 (先 set-target?)",
+                "stderr": output[-300:]}
+    bin_rel = os.path.relpath(bins[0], ws).replace(os.sep, "/")
+    elf_rel = (os.path.relpath(elfs[0], ws).replace(os.sep, "/")
+               if elfs else "")
+    details.update({"hex_file": bin_rel, "bin_file": bin_rel,
+                    "elf_file": elf_rel})
+    _write_last_build(ws, bin_rel, elf_rel)
+    return {"status": "ok", "metrics": metrics, "details": details,
+            "summary": f"idf build ok ({warnings} warnings)"}
+
+
+def _write_last_build(ws: str, bin_rel: str, elf_rel: str) -> None:
+    """state.json last_build (verify --no-build 回读契约, 与 gcc_build 同构)。
+
+    hex_file 键复用 = .bin 路径: step_flash 的存在性检查与 --no-build
+    读取逻辑零改动即可走通 esptool 后端。"""
+    state_path = os.path.join(ws, ".workbench", "state.json")
+    state = {}
+    if os.path.isfile(state_path):
+        try:
+            with open(state_path, encoding="utf-8") as f:
+                state = json.load(f)
+        except (json.JSONDecodeError, OSError):
+            state = {}
+    state["last_build"] = {"provider": "idf", "hex_file": bin_rel,
+                           "bin_file": bin_rel, "elf_file": elf_rel,
+                           "ts": time.strftime("%Y-%m-%dT%H:%M:%S")}
+    with open(state_path, "w", encoding="utf-8") as f:
+        json.dump(state, f, ensure_ascii=False, indent=2)
