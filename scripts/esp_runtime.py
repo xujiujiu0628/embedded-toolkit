@@ -138,7 +138,7 @@ def step_build_idf(config: dict, rebuild: bool = False,
 # 收紧后"可信"不再依赖操作者自觉。port 只收 Windows COMn 与 Linux tty/cu
 # 形态; 一切含空格/引号/分号/管道/$() 的"端口"在这里就被拒, 不进 shell。
 _ESP_PORT_RE = re.compile(
-    r"^(?:COM\d{1,3}|/dev/(?:ttyUSB\d+|ttyACM\d+|cu\.[A-Za-z0-9._-]+))$")
+    r"^(?:(?i:COM)\d{1,3}|/dev/(?:ttyUSB\d+|ttyACM\d+|cu\.[A-Za-z0-9._-]+))$")
 _ESP_CHIPS = {"esp32", "esp32s2", "esp32s3", "esp32c2", "esp32c3",
               "esp32c5", "esp32c6", "esp32h2", "esp32p4"}
 

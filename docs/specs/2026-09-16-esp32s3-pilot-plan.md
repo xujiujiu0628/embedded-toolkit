@@ -1066,9 +1066,10 @@ dependencies.lock
   "capture": {"backend": "uart", "port": "COM3", "baudrate": 115200,
               "settle_sec": 1.0, "duration_sec": 15},
   "verify": {"expect": ["ESP-PILOT-BOOT ok", "ESP-PILOT-OK tick="]}
-  <!-- I-3 勘误 2026-09-18: 原 capture_timeout 为死键, 按 T6 裁决改 duration_sec (见 design §4.1 勘误注) -->
 }
 ```
+
+> I-3 勘误 2026-09-18（复审 N-1 订正注释位置）：原示例 `verify.capture_timeout` 为死键，按 T6 裁决改 `capture.duration_sec`，见 design §4.1 勘误注。
 
 - [ ] **Step 2: git 入库（独立仓库）**：`<d-claude-root>\esp32s3-hello` 内 `git init` + 提交全部（autocrlf/gitignore 处理照抄 `<d-claude-root>\stm32f103-adc-oled\.gitattributes` 若存在）。提交前 `git status` 确认 build/ 未混入。
 

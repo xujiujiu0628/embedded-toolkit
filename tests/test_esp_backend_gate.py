@@ -171,8 +171,10 @@ class PortChipWhitelistTests(unittest.TestCase):
             rec.assert_not_called()
 
     def test_flash_accepts_canonical_ports(self):
-        for ok in ("COM3", "COM128", "/dev/ttyUSB0", "/dev/ttyACM5",
-                   "/dev/cu.usbmodem1401"):
+        # 复审 N-2①: COM 大小写放宽 (esptool/pyserial 均收小写形态;
+        # (?i:COM) 只放行字母大小写, 元字符禁令零损失, 实测 "com3"→接受)
+        for ok in ("COM3", "com3", "CoM12", "COM128", "/dev/ttyUSB0",
+                   "/dev/ttyACM5", "/dev/cu.usbmodem1401"):
             r, rec = self._flash(ok)
             self.assertEqual(r["status"], "ok", ok)
             self.assertIn(f"-p {ok}", rec.call_args[0][0][0])
