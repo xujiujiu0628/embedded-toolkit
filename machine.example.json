@@ -5,6 +5,6 @@
   "gcc_path": "<arm-none-eabi-gcc 所在 bin 目录>",
   "make_exe": "<make.exe 绝对路径（Windows 可用 MSYS2 的 usr/bin/make.exe）>",
   "qemu_exe": "<可选：qemu-system-arm.exe 绝对路径（F-150 sim 后端；缺省走 PATH）>",
-  "esp_idf_path": "<d-claude-root>\\vendor\\esp-idf",
-  "esp_tools_dir": "<d-claude-root>\\vendor\\esp-idf-tools"
+  "esp_idf_path": "<ESP-IDF 根目录绝对路径，如 <工作区根>\\vendor\\esp-idf>",
+  "esp_tools_dir": "<esptool 等工具目录绝对路径，如 <工作区根>\\vendor\\esp-idf-tools>"
 }

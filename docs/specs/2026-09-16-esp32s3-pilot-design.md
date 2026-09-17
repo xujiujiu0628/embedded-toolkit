@@ -50,12 +50,15 @@
 {
   "builder": "idf",
   "flash":  { "backend": "esptool", "port": "COM3" },
-  "capture":{ "backend": "uart", "port": "COM3", "baudrate": 115200 },
-  "verify": { "expect": ["..."], "capture_timeout": 10 }
+  "capture":{ "backend": "uart", "port": "COM3", "baudrate": 115200,
+              "duration_sec": 15 },
+  "verify": { "expect": ["..."] }
 }
 ```
 
 缺省值全部维持现状（builder=gcc、flash=openocd、capture=semihosting），**不配置 = 行为与今日完全一致**。
+
+> **2026-09-18 I-3 勘误（终审#2）**：① 原示例 `verify.capture_timeout` 为死键——`resolve_capture_timeout` 实际认 `capture.duration_sec`（T6 台账裁决，hello 工程实配 15s），示例已订正。② §4.2 表 capture 行的复位参数终态为 `--after hard_reset`（esptool v4/v5 通吃下划线集，真机实证 b678fca）；§0 第 11 行 spike 连通记录系 pip-esptool-v5 现场史实，保留不改。③ plan 内的代码/测试原文（dash 形态）按执行档案保真，终态以本文件 + git 为准。
 
 ### 4.2 三个派发点（现状已核实）
 
@@ -63,7 +66,7 @@
 |---|---|---|
 | `step_build`（verify.py:174） | `builder == "gcc"` / keil | `idf` 分支 → 调 esp_runtime 封装的 `idf.py build`，产物 .bin 路径写入 state.json `last_build` |
 | `step_flash`（:217） | OpenOCD 直调 | 按 `flash.backend` 派发：openocd（默认，原路径）/ esptool → `esp_runtime.step_flash_esptool()` |
-| capture 派发（:622，现 semihosting\|rtt\|sim） | if-elif | `uart` 分支 → 新 `esp_runtime.step_capture_uart()`：esptool `--after hard-reset` 复位 → 串口采集 N 秒 → 返回文本 |
+| capture 派发（:622，现 semihosting\|rtt\|sim） | if-elif | `uart` 分支 → 新 `esp_runtime.step_capture_uart()`：esptool `--after hard_reset` 复位 → 串口采集 N 秒 → 返回文本 |
 
 ### 4.3 esp_runtime.py（新文件，scripts/）
 

@@ -10,7 +10,7 @@ r"""
     python verify.py --json                 # JSON 输出 (供 Claude 判断)
 
 流程:
-    1. Build   → gcc_build.py (默认 builder=gcc; 显式配 "keil" 时唤起 archive 退役桥)
+    1. Build   → gcc_build.py (默认 builder=gcc; idf → esp_runtime, F-174; 显式配 "keil" 时唤起 archive 退役桥)
     2. Analyze → gcc 路径直传 build metrics; keil 路径走 archive 唤起的 keil_analyze 知识库 (有 error 则终止)
     3. Flash   → OpenOCD program (默认) | esptool (flash.backend=esptool, F-174)
     4. Capture → verify.py 内置双路: semihosting 内联会话 (默认) | rtt (capture.backend) | uart (F-174, ESP32)
@@ -344,6 +344,23 @@ def _hardfault_trigger(captured_text, capture_empty, flash_ran):
     return None
 
 
+def _esp_backend_mode(config) -> bool:
+    """F-174/I-1 (终审#2): ESP 后端判据——OpenOCD/ST-Link 专属动作的闸根。
+
+    builder=idf / flash.backend=esptool / capture.backend=uart 任一在场
+    即为 ESP 运行: post_reset 与 hardfault 层 2 都是占 ST-Link 的 Cortex-M
+    动作, 必须整体抑制。三标记 OR 而非 AND: 混配 (漏写其一) 时宁可停
+    Cortex 动作, 也不能拿 ESP 目标去跑 OpenOCD。"""
+    cfg = config or {}
+    if cfg.get("builder") == "idf":
+        return True
+    if (cfg.get("flash") or {}).get("backend") == "esptool":
+        return True
+    if (cfg.get("capture") or {}).get("backend") == "uart":
+        return True
+    return False
+
+
 def _step_durations_from(result: dict) -> tuple[list, dict]:
     """F-050 时长画像样本组装 (F-085 提取为共享 helper)。
 
@@ -498,7 +515,7 @@ def _parse_args(argv=None):
                         help="断言 capture 中至少 1 条 TGL 事件 (手动按键验证用, "
                              "2026-08-16 review M1 门禁; 纯 boot 验证勿用)")
     parser.add_argument("--rebuild", action="store_true",
-                        help="编译前先 clean (仅 builder=gcc; 发布门禁用)")
+                        help="编译前先 clean (builder=gcc|idf; 发布门禁用)")
     parser.add_argument("--gate-run", dest="gate_run", action="store_true",
                         help="发布门禁发起的运行: 跳过 feedback_db 落账")
     parser.add_argument("--doctor", action="store_true",
@@ -1054,6 +1071,12 @@ def _run_judgement(args, config, result, captured_text, captured_lines,
     flash_ran = (not args.no_flash) and \
         result.get("steps", {}).get("flash", {}).get("status") == "ok"
     hf_trigger = _hardfault_trigger(captured_text, capture_empty, flash_ran)
+    # F-174/I-1: ESP 模式下双路全闸——层 2 经 OpenOCD 连 ST-Link, 语义仅
+    # Cortex-M。空捕获在 ESP 侧归因串口/复位窗, 不是 HardFault; 若正文真出现
+    # HARDFAULT 字样, 跨读另一台板子的 live 寄存器比不诊断更危险。ESP panic
+    # 归因走 capture 段 esp_panic 文本标记 + AI 判定 (spec §4.3)。
+    if hf_trigger and _esp_backend_mode(config):
+        hf_trigger = None
     has_hardfault = hf_trigger == "marker"
     if hf_trigger:
         hf_path = os.path.join(TOOLKIT_ROOT, "scripts", "hardfault.py")
@@ -1204,7 +1227,12 @@ def _finalize_run(args, config, result, lease, max_retries, captured_text):
     # false 显式关闭; --no-flash / flash 未跑成的运行不触发 (无判定即无复位,
     # 早退出口也不复位——OpenOCD 卡死场景下复位大概率同样卡死)。
     flash_ok = result.get("steps", {}).get("flash", {}).get("status") == "ok"
-    if flash_ok and (config.get("capture", {}) or {}).get("post_reset", True):
+    if _esp_backend_mode(config):
+        # F-174/I-1: ESP 目标复位归 capture 起点 (esptool --after hard_reset),
+        # 判定后 OpenOCD 复位对 ESP 既无意义又占 ST-Link——09-16 双 PASS
+        # 碰巧无害只因 ST-Link 失联, 同机插着 STM32 时就是跨设备副作用。
+        result["post_reset"] = "skipped"
+    elif flash_ok and (config.get("capture", {}) or {}).get("post_reset", True):
         rs = reset_target(_openocd_exe())
         result["post_reset"] = "ok" if rs.get("status") == "ok" else "failed"
         if rs.get("status") != "ok":

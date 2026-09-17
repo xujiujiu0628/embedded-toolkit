@@ -10,6 +10,7 @@
 import glob
 import json
 import os
+import re
 import subprocess
 import time
 
@@ -132,19 +133,46 @@ def step_build_idf(config: dict, rebuild: bool = False,
             "summary": f"idf build ok ({warnings} warnings)"}
 
 
+# ── 合入前置校验票 (F-174 终审安全节) ──────────────────────────────────────
+# port/chip 会拼进 PowerShell 命令串 (run_idf)——config 虽是可信源, 白名单
+# 收紧后"可信"不再依赖操作者自觉。port 只收 Windows COMn 与 Linux tty/cu
+# 形态; 一切含空格/引号/分号/管道/$() 的"端口"在这里就被拒, 不进 shell。
+_ESP_PORT_RE = re.compile(
+    r"^(?:COM\d{1,3}|/dev/(?:ttyUSB\d+|ttyACM\d+|cu\.[A-Za-z0-9._-]+))$")
+_ESP_CHIPS = {"esp32", "esp32s2", "esp32s3", "esp32c2", "esp32c3",
+              "esp32c5", "esp32c6", "esp32h2", "esp32p4"}
+
+
+def _esp_port_error(port: str) -> str:
+    """合法返空串; 非法返可读拒因 (调用方各自包 status:error 返回)。"""
+    if not _ESP_PORT_RE.match(port):
+        return ("flash/capture.port 不在白名单 (只收 COMn、/dev/ttyUSB*、"
+                "/dev/ttyACM*、/dev/cu.*; 禁空格与 shell 元字符): "
+                + repr(port))
+    return ""
+
+
+def _normalize_chip(chip) -> str:
+    """esp32-S3 / ESP32_S3 等书写变体归一到白名单键形态。"""
+    return str(chip).strip().lower().replace("-", "").replace("_", "")
+
+
 def step_flash_esptool(flash_cfg: dict, workspace: str | None = None,
                        *, _run_idf=None) -> dict:
     """flash.backend=esptool (F-174): 经 idf.py -p <port> flash 烧录.
 
     选 idf.py flash 而非手拼 esptool write_flash 地址表: flash_args 由构建
     系统生成 (bootloader/分区表/app 三镜像+offset), 手拼即漂移 (spec §4.2)。
-    结束自带 --after hard-reset, capture 段仍显式再复位一次 (确定性起点)。"""
+    结束自带 --after hard_reset, capture 段仍显式再复位一次 (确定性起点)。"""
     run_idf_ = _run_idf or run_idf
     ws = workspace or os.getcwd()
     port = (flash_cfg.get("port") or "").strip()
     if not port:
         return {"status": "error", "backend": "esptool",
                 "message": "flash.port 未配置 (esptool 后端需要串口号, 如 COM3)"}
+    port_err = _esp_port_error(port)
+    if port_err:
+        return {"status": "error", "backend": "esptool", "message": port_err}
     run = run_idf_([f"idf.py -p {port} flash"],
                    timeout=int(flash_cfg.get("timeout", 300)), workspace=ws)
     out = run.get("output", "")
@@ -162,7 +190,7 @@ def step_capture_uart(timeout_s: int, cap_cfg: dict,
     """capture.backend=uart (F-174): esptool 复位进固件 → pyserial 定时采集.
 
     时序 (spec §7 风险"复位窗口丢日志"缓解):
-      1) esptool --after hard-reset chip-id: 廉价只读命令触发确定性复位
+      1) esptool --after hard_reset chip_id: 廉价只读命令触发确定性复位
          (--no-flash 续跑路径同样先复位, 不吃上一轮残态 — 2026-08-16 教训同款)
       2) settle_sec 静默等端口稳定 (USB-UART 桥重枚举, 默认 1.0s)
       3) readline 到 deadline: 端口异常即 error (COM3 被占/拔线给可读报错)
@@ -175,13 +203,19 @@ def step_capture_uart(timeout_s: int, cap_cfg: dict,
     if not port:
         return {"status": "error", "method": "uart",
                 "error": "capture.port 未配置 (uart 后端需要串口号, 如 COM3)"}
+    port_err = _esp_port_error(port)
+    if port_err:
+        return {"status": "error", "method": "uart", "error": port_err}
+    chip = _normalize_chip(cap_cfg.get("chip", "esp32s3"))
+    if chip not in _ESP_CHIPS:
+        return {"status": "error", "method": "uart",
+                "error": f"capture.chip 不在白名单: {chip!r} "
+                         f"(支持: {', '.join(sorted(_ESP_CHIPS))})"}
     try:
         import serial
     except ImportError:
         return {"status": "error", "method": "uart",
                 "error": "缺 pyserial: pip install pyserial"}
-
-    chip = cap_cfg.get("chip", "esp32s3")
     # 复位兼探活用 esptool 只读命令。控制者裁决: 用下划线形式 chip_id + hard_reset
     # —— IDF 5.4 自带 esptool v4.x 的 --after 只认下划线 (真机首跑报 "invalid
     # choice: 'hard-reset'"); pip 装的 v5 仍收下划线 (仅弃用警告), 故下划线是
