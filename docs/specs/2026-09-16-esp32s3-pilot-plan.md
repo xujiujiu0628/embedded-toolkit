@@ -1064,9 +1064,9 @@ dependencies.lock
   "idf": {"build_timeout": 900},
   "flash": {"backend": "esptool", "port": "COM3"},
   "capture": {"backend": "uart", "port": "COM3", "baudrate": 115200,
-              "settle_sec": 1.0},
-  "verify": {"expect": ["ESP-PILOT-BOOT ok", "ESP-PILOT-OK tick="],
-             "capture_timeout": 15}
+              "settle_sec": 1.0, "duration_sec": 15},
+  "verify": {"expect": ["ESP-PILOT-BOOT ok", "ESP-PILOT-OK tick="]}
+  <!-- I-3 勘误 2026-09-18: 原 capture_timeout 为死键, 按 T6 裁决改 duration_sec (见 design §4.1 勘误注) -->
 }
 ```
 
