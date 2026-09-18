@@ -10,10 +10,10 @@ r"""
     python verify.py --json                 # JSON 输出 (供 Claude 判断)
 
 流程:
-    1. Build   → gcc_build.py (默认 builder=gcc; 显式配 "keil" 时唤起 archive 退役桥)
+    1. Build   → gcc_build.py (默认 builder=gcc; idf → esp_runtime, F-174; 显式配 "keil" 时唤起 archive 退役桥)
     2. Analyze → gcc 路径直传 build metrics; keil 路径走 archive 唤起的 keil_analyze 知识库 (有 error 则终止)
-    3. Flash   → OpenOCD program
-    4. Capture → verify.py 内置双路: semihosting 内联会话 (默认) | rtt (capture.backend)
+    3. Flash   → OpenOCD program (默认) | esptool (flash.backend=esptool, F-174)
+    4. Capture → verify.py 内置双路: semihosting 内联会话 (默认) | rtt (capture.backend) | uart (F-174, ESP32)
     4c. Physical → OpenOCD ODR 轮询 GPIO 翻转频率 (物理层门控, 默认 skipped)
     5. Output  → 结构化 JSON 结果, Claude 对比期望判断 ✅/❌
 
@@ -71,6 +71,7 @@ from capture_semihosting import (run_semihosting_session,  # noqa: E402  (F-061:
                                  SemihostingTimeout)
 from capture_sim import (DEFAULT_MACHINE, SimTimeout,  # noqa: E402  (F-150: sim 后端)
                          resolve_qemu, run_sim_session)
+import esp_runtime  # noqa: E402  (F-174: builder=idf / flash=esptool / capture=uart 三后端)
 
 GCC_BUILD = os.path.join(TOOLKIT_ROOT, "scripts", "gcc_build.py")         # 默认后端 (builder=gcc)
 # Keil 退役桥 (2026-09-05 F-067b 拆 archive): 仓内不再保留 keil_*.py,
@@ -174,9 +175,14 @@ def run_cmd(cmd: list[str], timeout: int = 60) -> dict:
 def step_build(config: dict, builder: str = "gcc",
                rebuild: bool = False) -> dict:
     """步骤 1: 编译 (按 config.json builder 字段切换后端: gcc | keil[legacy])"""
-    if rebuild and builder != "gcc":
+    if rebuild and builder not in ("gcc", "idf"):
         # YAGNI: keil 后端不接 --rebuild (blink legacy 不用该旗标)
-        return {"status": "error", "message": "--rebuild 仅支持 builder=gcc"}
+        # F-174: idf 的 rebuild = fullclean + build (esp_runtime 内实现)
+        return {"status": "error", "message": "--rebuild 仅支持 builder=gcc|idf"}
+    # F-174: ESP32 后端 — 路由到 esp_runtime (契约对齐 gcc_build 返回值)
+    if builder == "idf":
+        return esp_runtime.step_build_idf(config, rebuild=rebuild,
+                                          workspace=WORKSPACE)
     if builder == "gcc":
         gcc = config.get("gcc", {})
         project = gcc.get("project", "gcc-pilot/Makefile")
@@ -202,8 +208,8 @@ def step_build(config: dict, builder: str = "gcc",
 
 def step_analyze(log_file: str, builder: str = "gcc",
                  build_metrics: dict | None = None) -> dict:
-    """步骤 2: 编译日志诊断 (gcc 后端自带 metrics, 跳过 ARMCC 知识库分析)"""
-    if builder == "gcc":
+    """步骤 2: 编译日志诊断 (gcc/idf 后端自带 metrics, 跳过 ARMCC 知识库分析)"""
+    if builder in ("gcc", "idf"):
         m = build_metrics or {}
         return {"status": "ok",
                 "summary": {"errors": m.get("errors", 0),
@@ -214,8 +220,8 @@ def step_analyze(log_file: str, builder: str = "gcc",
     return run_py(keil_analyze, [log_file, "--json"], timeout=30)
 
 
-def step_flash(hex_file: str) -> dict:
-    """步骤 3: OpenOCD 烧录"""
+def step_flash(hex_file: str, config: dict | None = None) -> dict:
+    """步骤 3: 烧录 (flash.backend 派发: openocd[默认] | esptool[F-174])"""
     if not hex_file:
         # F-007: blink 退役后旧默认 obj/blink.hex 已移除; --no-build 无产物须明说
         return {"status": "error",
@@ -223,6 +229,11 @@ def step_flash(hex_file: str) -> dict:
                             "last_build.hex_file): 先完整构建一次")}
     if not os.path.exists(os.path.join(WORKSPACE, hex_file)):
         return {"status": "error", "message": f"hex file not found: {hex_file}"}
+
+    # F-174: ESP32 esptool 后端 — 地址表交给 idf.py flash (esp_runtime 内)
+    flash_cfg = (config or {}).get("flash", {}) or {}
+    if flash_cfg.get("backend", "openocd") == "esptool":
+        return esp_runtime.step_flash_esptool(flash_cfg, workspace=WORKSPACE)
 
     hex_abs = os.path.join(WORKSPACE, hex_file)
     cmd = [
@@ -331,6 +342,23 @@ def _hardfault_trigger(captured_text, capture_empty, flash_ran):
     if capture_empty and flash_ran:
         return "empty_fallback"
     return None
+
+
+def _esp_backend_mode(config) -> bool:
+    """F-174/I-1 (终审#2): ESP 后端判据——OpenOCD/ST-Link 专属动作的闸根。
+
+    builder=idf / flash.backend=esptool / capture.backend=uart 任一在场
+    即为 ESP 运行: post_reset 与 hardfault 层 2 都是占 ST-Link 的 Cortex-M
+    动作, 必须整体抑制。三标记 OR 而非 AND: 混配 (漏写其一) 时宁可停
+    Cortex 动作, 也不能拿 ESP 目标去跑 OpenOCD。"""
+    cfg = config or {}
+    if cfg.get("builder") == "idf":
+        return True
+    if (cfg.get("flash") or {}).get("backend") == "esptool":
+        return True
+    if (cfg.get("capture") or {}).get("backend") == "uart":
+        return True
+    return False
 
 
 def _step_durations_from(result: dict) -> tuple[list, dict]:
@@ -487,7 +515,7 @@ def _parse_args(argv=None):
                         help="断言 capture 中至少 1 条 TGL 事件 (手动按键验证用, "
                              "2026-08-16 review M1 门禁; 纯 boot 验证勿用)")
     parser.add_argument("--rebuild", action="store_true",
-                        help="编译前先 clean (仅 builder=gcc; 发布门禁用)")
+                        help="编译前先 clean (builder=gcc|idf; 发布门禁用)")
     parser.add_argument("--gate-run", dest="gate_run", action="store_true",
                         help="发布门禁发起的运行: 跳过 feedback_db 落账")
     parser.add_argument("--doctor", action="store_true",
@@ -662,7 +690,7 @@ def _run_build_step(args, config, builder, result, max_retries, retry_delay):
                 hex_file = build.get("details", {}).get("hex_file", "")
                 elf_file = build.get("details", {}).get("elf_file", "")  # F-150: sim 内核
 
-                if log_file or builder == "gcc":
+                if log_file or builder in ("gcc", "idf"):
                     analyze = step_analyze(log_file, builder, build.get("metrics"))
                     if analyze.get("status") == "ok":
                         build_ok = True
@@ -807,7 +835,7 @@ def _run_flash_step(args, config, result, hex_file, sim_mode, max_retries,
         flash_attempts = []
         flash_ok = False
         for attempt in range(max_retries + 1):
-            flash = step_flash(hex_file)
+            flash = step_flash(hex_file, config)
             # F-163 审核 Minor: message-only 错误 dict (无 hex / action_incomplete)
             # 不带 stderr/stdout——消费端必须回退读 message, 否则根因在 JSON 里隐身
             _flash_msg = (flash.get("stderr") or flash.get("stdout")
@@ -950,6 +978,35 @@ def _run_capture_step(args, config, result, lease, sim_mode, cap_backend,
         # F-046: 台账落盘 (RTT 后端独立标记 origin, release audit 可按 origin 聚合)
         append_audit_entry(WORKSPACE, args.task_origin, "capture", "ok",
                            " ".join(sys.argv))
+    elif cap_backend == "uart":
+        # F-174: ESP32 UART 采集 (esptool 复位 → pyserial 定时窗) — 契约同 rtt 分支
+        cap = esp_runtime.step_capture_uart(
+            capture_timeout, config.get("capture", {}), WORKSPACE)
+        if cap.get("status") != "ok":
+            result["steps"]["capture"] = {
+                k: v for k, v in cap.items() if not k.startswith("_")
+            }
+            result["status"] = "capture_failed"
+            result["error"] = cap.get("error", "uart capture failed")
+            _release_hw_lease(lease)
+            _save_failure_context(result, max_retries, workspace=WORKSPACE)
+            _output(result, args.json)
+            # F-047 自审 Finding 2: 早退路径也必须落 checkpoint
+            _record_checkpoint_early_exit(result, args)
+            sys.exit(1)   # 失败早退必须非零 (审计: 原先恒 0 误导脚本化调用方)
+        captured_text = cap.pop("_text", "")
+        captured_lines = [ln for ln in captured_text.splitlines() if ln.strip()]
+        cap["origin"] = args.task_origin   # F-046: 审计标记
+        cap["duration_sec"] = round(time.time() - capture_t0, 1)  # F-050
+        result["steps"]["capture"] = cap
+        if cap.get("esp_panic"):
+            # ESP panic 只上账文本标记 (spec §4.3); 4b 的 HardFault 归因链是
+            # Cortex-M 专属 (CFSR/OpenOCD 寄存器), 对 ESP 文本天然不触发。
+            result["esp_panic"] = True
+            print("[capture] 检出 ESP panic 文本标记 — 符号化解析用 idf.py "
+                  "monitor (另票), 本流程只交 AI judge 定性", file=sys.stderr)
+        append_audit_entry(WORKSPACE, args.task_origin, "capture", "ok",
+                           " ".join(sys.argv))
     else:
         # 直接调 OpenOCD: init → reset halt → semihosting enable → resume → sleep → halt → shutdown
         # 这是手工验证过的可靠方式（曾有独立 openocd_semihosting.py，F-028 删除，git 史可回放）
@@ -1014,6 +1071,12 @@ def _run_judgement(args, config, result, captured_text, captured_lines,
     flash_ran = (not args.no_flash) and \
         result.get("steps", {}).get("flash", {}).get("status") == "ok"
     hf_trigger = _hardfault_trigger(captured_text, capture_empty, flash_ran)
+    # F-174/I-1: ESP 模式下双路全闸——层 2 经 OpenOCD 连 ST-Link, 语义仅
+    # Cortex-M。空捕获在 ESP 侧归因串口/复位窗, 不是 HardFault; 若正文真出现
+    # HARDFAULT 字样, 跨读另一台板子的 live 寄存器比不诊断更危险。ESP panic
+    # 归因走 capture 段 esp_panic 文本标记 + AI 判定 (spec §4.3)。
+    if hf_trigger and _esp_backend_mode(config):
+        hf_trigger = None
     has_hardfault = hf_trigger == "marker"
     if hf_trigger:
         hf_path = os.path.join(TOOLKIT_ROOT, "scripts", "hardfault.py")
@@ -1164,7 +1227,12 @@ def _finalize_run(args, config, result, lease, max_retries, captured_text):
     # false 显式关闭; --no-flash / flash 未跑成的运行不触发 (无判定即无复位,
     # 早退出口也不复位——OpenOCD 卡死场景下复位大概率同样卡死)。
     flash_ok = result.get("steps", {}).get("flash", {}).get("status") == "ok"
-    if flash_ok and (config.get("capture", {}) or {}).get("post_reset", True):
+    if _esp_backend_mode(config):
+        # F-174/I-1: ESP 目标复位归 capture 起点 (esptool --after hard_reset),
+        # 判定后 OpenOCD 复位对 ESP 既无意义又占 ST-Link——09-16 双 PASS
+        # 碰巧无害只因 ST-Link 失联, 同机插着 STM32 时就是跨设备副作用。
+        result["post_reset"] = "skipped"
+    elif flash_ok and (config.get("capture", {}) or {}).get("post_reset", True):
         rs = reset_target(_openocd_exe())
         result["post_reset"] = "ok" if rs.get("status") == "ok" else "failed"
         if rs.get("status") != "ok":
