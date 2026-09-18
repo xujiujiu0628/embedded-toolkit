@@ -5,6 +5,14 @@
 
 ## Unreleased — 0.6 封袋后新账（F-173 起）
 
+- **F-176 (fix, CI): coverage-gate 缺 requirements 安装——F-174 合入即现形**:
+  根因: F-174 分支未推过, 其测试从未在 CI 跑; `step_capture_uart` 内部
+  `import serial` (pyserial, requirements.txt 声明件), 本地"已装环境"全绿而
+  coverage-gate (F-084 设计只装 coverage) 连爆 3 例 ModuleNotFoundError/断言
+  漂移。处置: coverage-gate 补 `pip install -r requirements.txt`——**套件跨 job
+  等价**优先于最小安装 (unittest 四金丝雀本就装 requirements, 棘轮/失败面不该随
+  job 依赖差异漂移)。教训重演 F-164 口径: **分支"本地全绿"≠"CI 全绿"**——新增
+  依赖面的分支, 合入前应经 draft PR 让 CI 真跑一次; 至少台账显式标注"CI 未验"。
 - **F-175 (chore, 仓级): 脱敏换血与转公开 (2026-09-18, 秋招准备)**:
   公开前全仓复检发现——09-01 两轮重写后, 新增提交把 `<user-home>` 绝对路径带回
   CHANGELOG 引文与 docs 计划 (F-2 纪律回归, 防回归缺口: 守卫只拦提交时点不拦
