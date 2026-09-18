@@ -453,37 +453,20 @@ Renode 把仿真做成平级判定后端，hardci / jlink-mcp 验证了 MCP 分�
   差异仍属盲区。已补 mock-Popen 平台派发钉（属性级 + kwargs 级双层），真机 Linux
   冒烟清单留待社区/后续
 - **F-032**（限制声明，非缺陷）`serial_mux` PTY 虚拟串口层硬依赖 `socat`，
-  Linux/macOS-only，Windows 不支持；`which("socat")` 在 `start_mux()` 最前无条件执行，
-  无 socat 则整个 mux 起不来。`--no-pty` 解耦列为后续增强，未实现前不按部分功能规划
+  Linux/macOS-only，Windows 不支持；`which("socat")` 在 `start_mux()` 最前无条件
+  执行，无 socat 时体面拒绝（`socat_missing`，无裸 traceback）但整个 mux 不可用。
+  `--no-pty` 解耦列为后续增强，未实现前不按部分功能规划
 - 有意搁置：UART 串口补丁的发布门禁脆弱性（成本/收益不立项）
-- **F-147 遗留（审核 M-4）**：✅ **已闭合（F-162, 2026-09-13；fresh-checker
-  M-1/M-2 残余已勾销）双形态均实证**——CI sim-demo job 的
-  `--junit-xml` 产物已被 `dorny/test-reporter`（SHA 锁定）**实吃成立**：首吃
-  证据 = PR #8 run [34755875069](https://github.com/xujiujiu0628/embedded-toolkit/actions/runs/34755875069)
-  日志中 `Using test report parser 'java-junit'` 解析 + 四态映射逐条正确
-  （0 passed / 1 failed / 4 skipped）——首吃为 v3.0.0 默认**摘要模式**
-  （只写 GITHUB_STEP_SUMMARY，不 `checks.create`），且该销账 run 基于
-  `fail-on-error` 默认 true 的修订前配置。随后 reporter 步骤显式
-  `use-actions-summary: false`（贴 spec "PR 页面出现检查结果" 原意）+
-  `fail-on-error: false`；**check run 形态于终态配置复观成立**：PR #8 run
-  [34762552201](https://github.com/xujiujiu0628/embedded-toolkit/actions/runs/34762552201)
-  （head 20e350d）产出 check run **"Sim Verify Results"（已创建且通过）**
-  （[103737895345](https://github.com/xujiujiu0628/embedded-toolkit/runs/103737895345)），
-  输出摘要 "0 passed, 1 failed and 4 skipped"（失败态产物在摘要模式改关后被
-  消费，`checks.create` 生效）。sim-demo job 本体的预置 ubuntu build_failed 债
-  已随 F-164 闭合（PR #9 run 34816266924 全绿实证），与 reporter 步骤/check
-  run 结论互相独立。
-- **N-3 覆盖洞（审核 L-4）**：✅ **已闭合（F-163, 2026-09-13）**——
-  `verify.step_flash` 接入构造性标记共享件（`openocd_run.ACTION_DONE_CMD` /
-  `marker_present`），rc=0 且串尾标记在场才算烧录成功；真机复验见 CHANGELOG。
-- **F-162 副产物（预置债 D-3 候选）**：✅ **已闭合（F-164, 2026-09-14）**——根因
-  = `gcc_build.py` 预检写死 `arm-none-eabi-gcc.exe`（ubuntu 无后缀必败, errors=-1
-  速败）；已改 `shutil.which` 平台判定（nt 走 PATHEXT 等价, 本机回归绿 + 4 枚
-  mock/AST 钉）。**远端终判 ✅**：PR #9 run 34816266924 全绿，sim-demo job 转绿实证。
-- **计时脆弱钉（预置债）**：✅ **已闭合（F-165, 2026-09-14）**——两枚墙钟钉
-  （`test_runtime_contract` ser 版耗时 / `test_state_write_lock` 降解下界）
-  改注入假时钟: 零容差逐字断言, 零真实等待; 墙钟回潮即红。**远端终判 ✅**：
-  PR #9 全绿（顺带 F-166 修 py3.10 双腿：PEP701 降级 + pump 逐出策略真缺陷）。
+- **已闭合归档账**（不在本区逐条展开，证据链——run 号 / PR 号 / 钉子清单——均见
+  [`CHANGELOG.md`](CHANGELOG.md) 对应票）：审核 M-4（F-147）✅ F-162 ·
+  审核 L-4 覆盖洞 ✅ F-163 · 预置债 D-3 gcc_build 预检平台化 ✅ F-164 ·
+  计时脆弱钉 ✅ F-165（同批 F-166 修 py3.10 双腿 + stderr pump 真缺陷）·
+  CI 依赖跨 job 等价 ✅ F-176
+- **F-174 遗留（open）**：deferred 票 F-174a（`_write_last_build` 无锁
+  read-modify-write，单进程+持锁场景伤害有限）/ F-174b（`build/*.bin` glob
+  双 OTA 分区表下可能选错展示值，烧录不受影响）终审全裁"可留"；另有两张后续票
+  ——终审波 N-3（ESP 空捕获提示语换串口/波特率/复位窗口径）与 N-4
+  （`physical_gate` 纳入 `_esp_backend_mode` 闸；现默认关断无实害）。
 - **R7 永久登记（F-169, 2026-09-14）**：`release_audit --project
   stm32f103-mpu6050-oled --tag v0.5` 的 R7 **永久 FAILED 属登记语义**——
   根因经构造性证据坐实：记录 `config_sha256` = git_head blob 的 LF→CRLF
