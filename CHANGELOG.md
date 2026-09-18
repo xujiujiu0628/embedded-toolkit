@@ -25,6 +25,30 @@
   证据链: 重写前全量 commit 图 bundle 备份 (维护者 archive 区登记, 旧短 hash 账目
   一律以其为回放映射源); 复检报告在维护者 reports/ (仓外)。
 
+- **F-174 (feat, 合入收口 2026-09-18): ESP32-S3 最小闭环——三后端 idf/esptool/uart**:
+  09-16 板到唤起 [[multi-mcu-tooling-roadmap]] (决策史见 esp32 挂账记忆)。新
+  `scripts/esp_runtime.py` + verify 三派发点各加一分支 (`builder=idf` 经 idf.py
+  build / `flash.backend=esptool` 经 idf.py flash, flash_args 单一事实源 /
+  `capture.backend=uart` esptool chip_id 确定性复位 + pyserial 定时窗);
+  **缺省路径逐字节回归钉**全绿 (不配置 = 行为与今日完全一致, F-150 先例同构)。
+  - 真机: esp32s3-hello 全链双 PASS (74 行 capture, expect 双靶命中) + 负路径 4/4
+    (错 port/错 expect/占口/panic 标记); 真机钓出 host 不可见 2 真 bug——Git Bash
+    的 MSYSTEM/MSYS 继承被 IDF export 拒激活 (`_idf_env` 清除) + IDF 5.4 内置
+    esptool v4 拒 dash 形式 `--after hard-reset` (通吃下划线集)。教训入册:
+    封装外部工具链的 mock 单测过 ≠ 通路过, 真机首跑必留调试预算。
+  - 终审#2 (sonnet, 包 f17a29c..6dda398): 修后可合 → 修复波 I-1 `_esp_backend_mode`
+    三标记 OR 闸 (post_reset/hardfault 层 2 双路抑制——09-16 双 PASS 属 ST-Link
+    失联碰巧无害) + port/chip 白名单 (合入前置票: port 拼 PS 命令串的注入面,
+    COMn//dev tty 形态白名单 + shell 元字符拒收, chip 归一+有限集) + I-2/I-3/minor×2;
+    scoped re-review 判可合入, 撤销实验实证 14 例双向钉非空洞 (撤任一闸红点精确,
+    判据恒真时 STM32 回归 3 红)。
+  - 真机收口 (09-18, 销双挂账): ESP 快验 **post_reset=skipped** (闸兑现, 全链零触
+    OpenOCD) + 全链 status=ok; STM32 回归 adc-oled 4/4 matched **post_reset=ok**
+    (缺省路径零破坏的反向真机证明)。merge 后全量 898+6+282 绿复跑落账。
+  - 仍挂 (deferred 全裁"可留"或后续票): F-174a state.json 无锁写 / F-174b bin glob /
+    N-3 空捕获提示语 ESP 措辞 / N-4 physical_gate 入 `_esp_backend_mode` 闸。
+    非目标未做: WiFi/BLE、probe-rs、xiaozhi 接入、panic 符号化。
+
 - **F-173 (docs) 叙事层正名——产品名 arbiter 入 README，仓名不动**:
   走读介绍时发现名实脱节——`embedded-toolkit` 暗示的是一只可挑拣使用的零件盒，
   而 0.5 之后内核已长成判定链（G1 门禁拒绝、证据分级、哈希锚都是裁判属性不是
