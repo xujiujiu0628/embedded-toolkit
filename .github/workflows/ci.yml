@@ -42,6 +42,12 @@ jobs:
           python-version: "3.12"
       - name: Install coverage
         run: pip install coverage
+      # F-176: 与本 job 应跑同一套完整测试——补装声明依赖 (pyserial 族)。
+      # 此前刻意最小安装, 但 F-174 uart 后端的 step_capture_uart 内部
+      # `import serial` 有 3 例测试可达, 缺依赖即红; "套件跨 job 等价"
+      # 优先于最小化 (棘轮/失败面不应随 job 依赖差异漂移)。
+      - name: Install declared deps
+        run: pip install -r requirements.txt
       - name: Run suite under coverage
         run: python -m coverage run --source=scripts --omit="*/legacy/*" -m unittest discover -s tests
       # 棘轮下限: 2026-09-08 实测 TOTAL 40% (windows); 留平台差异余量取 38。
