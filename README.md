@@ -285,6 +285,9 @@ python scripts/release.py --project <工程根> --tag v1.0.0 --dry-run
 ESP 模式下 OpenOCD 专属动作自动让位（F-174 终审修复波）：`post_reset` 记
 `skipped`、HardFault 层 2 双路抑制——ESP panic 的归因走采集文本中的
 `esp_panic` 标记 + AI 判定。采集窗起点纪律与 STM32 相同（烧录/复位后才开）。
+uart 采集开口即释放 DTR/RTS（F-177：CH340/CP210x 自动下载电路否则会把芯片
+按在复位里收 0 行；释放附带一次确定复位；S3 原生 CDC 无影响）。非 S3 芯片族
+必须显式设 `capture.chip`——默认 `esp32s3`，探针判错芯片型会在复位步体面报错。
 
 ## 使用注意：采集窗纪律（真人输入类期望，如按键/旋钮）
 
@@ -448,8 +451,9 @@ embedded-toolkit/
   详情：CHANGELOG 对应裁决记录。
 - **已闭合归档账**（不在此展开）：审核 M-4 ✅ F-162 · L-4 覆盖洞 ✅ F-163 ·
   gcc_build 预检平台化 ✅ F-164 · 计时脆弱钉 ✅ F-165（同批 F-166 py3.10 双腿
-  + stderr pump）· CI 依赖跨 job 等价 ✅ F-176——证据链（run/PR/钉子清单）
-  均在 CHANGELOG 对应票。
+  + stderr pump）· CI 依赖跨 job 等价 ✅ F-176 · uart 采集桥接板握手线释放
+  ✅ F-177（初代 esp32 真机双 PASS；S3 真机回归待补票）——证据链
+  （run/PR/钉子清单）均在 CHANGELOG 对应票。
 
 > **F-021~F-030 已在本轮收口**（原子写收口包 / R7 双布局认路 / RTT 平台守卫 /
 > 孤儿链删除 / 三 runtime 契约统一 / 头图刷新），逐条处置记录与证据 commit 见

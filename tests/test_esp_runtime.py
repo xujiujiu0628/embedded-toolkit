@@ -289,6 +289,92 @@ class StepCaptureUartTests(unittest.TestCase):
         self.assertEqual(r["status"], "error")
         self.assertIn("复位失败", r["error"])
 
+    def test_handshake_released_before_first_read_f177(self):
+        """F-177: pyserial 开串口默认断言 DTR/RTS——CH340/CP210x 自动下载
+        电路把这对组合等价于拉低 EN, 芯片被按在复位里, 采集静默收 0 行
+        (初代 esp32 真机首跑钓出; S3 原生 USB CDC 无此电气通路, 故 F-174
+        未触达)。执行序钉: 释放必须发生在第一次 readline 之前。"""
+        events = ["open"]
+
+        class BridgeSer:
+            def __init__(self, *a, **kw):
+                self._dtr = True
+                self._rts = True
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                pass
+
+            @property
+            def dtr(self):
+                return self._dtr
+
+            @dtr.setter
+            def dtr(self, v):
+                events.append(f"dtr={v}")
+                self._dtr = v
+
+            @property
+            def rts(self):
+                return self._rts
+
+            @rts.setter
+            def rts(self, v):
+                events.append(f"rts={v}")
+                self._rts = v
+
+            def readline(self):
+                events.append("read")
+                return b""
+
+        fake_time = iter([0, 0, 0, 1, 2, 3, 4, 5, 6, 6])
+        with mock.patch("serial.Serial", lambda *a, **kw: BridgeSer()), \
+             mock.patch.object(esp_runtime.time, "sleep"), \
+             mock.patch.object(esp_runtime.time, "time",
+                               lambda: next(fake_time)):
+            r = esp_runtime.step_capture_uart(
+                5, {"port": "COM8", "settle_sec": 0}, workspace="W:",
+                _run_idf=lambda c, **kw: {"status": "ok", "returncode": 0,
+                                          "output": ""})
+        self.assertEqual(r["status"], "ok")
+        first_read = events.index("read")
+        self.assertEqual(events[:first_read],
+                         ["open", "dtr=False", "rts=False"])
+
+    def test_handshake_release_unsupported_tolerated(self):
+        """部分 CDC 设备不支持设控制线 (property 无 setter →
+        AttributeError)——吞掉继续采集, 不得把 S3 路径搞红。"""
+        class CdcSer:
+            def __init__(self, *a, **kw):
+                self.n = 0
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                pass
+
+            dtr = property(None, None)
+            rts = property(None, None)
+
+            def readline(self):
+                self.n += 1
+                return b"tick 0\n" if self.n == 1 else b""
+
+        fake_time = iter([0, 0, 0, 1, 2, 3, 4, 5, 6, 6])
+        with mock.patch("serial.Serial", lambda *a, **kw: CdcSer()), \
+             mock.patch.object(esp_runtime.time, "sleep"), \
+             mock.patch.object(esp_runtime.time, "time",
+                               lambda: next(fake_time)):
+            r = esp_runtime.step_capture_uart(
+                5, {"port": "COM3", "settle_sec": 0}, workspace="W:",
+                _run_idf=lambda c, **kw: {"status": "ok", "returncode": 0,
+                                          "output": ""})
+        self.assertEqual(r["status"], "ok")
+        self.assertEqual(r["_text"], "tick 0")
+
 
 if __name__ == "__main__":
     unittest.main()
