@@ -5,6 +5,26 @@
 
 ## Unreleased — 0.6 封袋后新账（F-173 起）
 
+- **F-175 (chore, 仓级): 脱敏换血与转公开 (2026-09-18, 秋招准备)**:
+  公开前全仓复检发现——09-01 两轮重写后, 新增提交把 `<user-home>` 绝对路径带回
+  CHANGELOG 引文与 docs 计划 (F-2 纪律回归, 防回归缺口: 守卫只拦提交时点不拦
+  叙述), 且 10 个 commit 以个人 QQ 邮箱为 author (署名漂移)。处置: filter-repo
+  多 pass——`--replace-text`(blobs/paths) + `--mailmap`(旧邮箱必须 `<old@x>`
+  尖括号形态, 裸地址静默整行忽略) + `--message-callback`(实测本版本 replace-text
+  不覆盖 commit message; 回调变量名是 `message` 非 `msg`, 写错即 NameError 崩
+  fast-import)。全部失败形态零报错——**执行日志绿不是判据, blob/message/身份
+  三通道独立复扫才是** (322 revs 复扫零命中收口; ghp_/github_pat_ 命中系
+  SENSITIVE_FINDINGS 模式表自身, 良性)。重写后全量 898+6 绿 + 真机中性背书
+  (esp32s3-hello status=ok, post_reset=skipped, F-174 台账)。
+  ⚠ **新坑记录 (filter-repo 第四坑)**: `refs/pull/*/head` 不可变——9 个已合并 PR
+  把重写前旧历史钉死原仓, force-push/删分支均无法触及, 公开即成挖掘通道。处置经
+  用户批准: **净仓换名**——旧仓改 `embedded-toolkit-legacy-archive` (私有归档),
+  新建同名仓承接干净历史 (master+5 tags+5 Releases+14 topics 搬运), README 徽章
+  路径零变更, CI 当日绿, 2026-09-18 转 Public。凡有 PR 历史的仓转公开前, 先
+  `git ls-remote | grep refs/pull` 评估, 别等收官才发现。
+  证据链: 重写前全量 commit 图 bundle 备份 (维护者 archive 区登记, 旧短 hash 账目
+  一律以其为回放映射源); 复检报告在维护者 reports/ (仓外)。
+
 - **F-173 (docs) 叙事层正名——产品名 arbiter 入 README，仓名不动**:
   走读介绍时发现名实脱节——`embedded-toolkit` 暗示的是一只可挑拣使用的零件盒，
   而 0.5 之后内核已长成判定链（G1 门禁拒绝、证据分级、哈希锚都是裁判属性不是
