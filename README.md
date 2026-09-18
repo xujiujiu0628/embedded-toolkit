@@ -14,10 +14,14 @@ VS Code tasks 的绝对路径引用、以及 v0.2~v0.6 全部 tag 都钉在它�
 
 **AI 写嵌入式固件的闭环验证工作台：代码可以由 AI 生成，但"算不算对"由机器说了算。**
 
-针对 STM32F103（可扩展）的 GCC 工具链，把 `需求契约 → 构建 → 烧录 → 真机输出采集 →
-期望判定 → 发布门禁 → 反馈落账` 串成一条全自动判定链——AI 生成的固件必须在自己
-板子上打印出符合契约的证据，才有资格打 tag。它解决的核心问题是：**LLM 写固件
-无法自证正确**，而人眼盯串口又慢又漏。
+面向 **STM32F103 / ESP32-S3** 两族 MCU（架构可扩展），把 `需求契约 → 构建 → 烧录 →
+真机输出采集 → 期望判定 → 发布门禁 → 反馈落账` 串成一条全自动判定链——AI 生成的
+固件必须在自己板子上打印出符合契约的证据，才有资格打 tag。它解决的核心问题是：
+**LLM 写固件无法自证正确**，而人眼盯串口又慢又漏。
+
+版本线 v0.2 → v0.6（每个 tag 均过 G0~G3 真机门禁 + CI 全绿），逐版变更见
+[Releases](https://github.com/xujiujiu0628/embedded-toolkit/releases) 与
+[CHANGELOG](CHANGELOG.md)（每条账可对到证据 commit）。
 
 ## 特性
 
@@ -25,6 +29,10 @@ VS Code tasks 的绝对路径引用、以及 v0.2~v0.6 全部 tag 都钉在它�
   意外通过（XPASS）强制判红——"碰巧对了"也算错
 - **真机证据采集**：RTT / semihosting 双后端抓取固件 printf 输出，数值断言
   （正则 + capture_group + min/max）直接编进契约
+- **多平台后端矩阵（F-174）**：STM32 = OpenOCD 烧录 + RTT/semihosting 采集；
+  ESP32-S3 = `idf.py` 构建 + esptool 烧录 + UART 定时窗采集（真机双 PASS 收口）；
+  QEMU sim 作无板平级判定后端（不进发布门禁）。**缺省配置行为逐字节不变**，
+  OpenOCD 专属动作（判定后复位 / HardFault 层 2 诊断）按后端设闸互不越界
 - **发布门禁 G0→G3**：git clean → SWD 连通预检 → clean rebuild 重跑判定 →
   xfail 翻转 → 落记录打 annotated tag，任一环失败自动回滚
 - **双重取证锚**：hex 字节哈希锚定"烧的是什么"，契约哈希（sha256）锚定
@@ -53,6 +61,15 @@ ADC raw=3961 mv=3192 (3.19 V)
 ALERT HIGH mv=3192
 ADC raw=3959 mv=3190 (3.19 V)
 ALERT HIGH mv=3190
+```
+
+ESP32-S3（F-174 试点，idf build + esptool flash + UART 采集）同一契约引擎下的
+expect 靶命中（`capture.backend: "uart"`，esptool `--after hard_reset` 确定性
+复位后开采集窗）：
+
+```text
+ESP-PILOT-BOOT ok
+ESP-PILOT-OK tick=1
 ```
 
 对应的机器判定输出（`verify.py --json` 节选，全文真实可回放）：
@@ -103,8 +120,8 @@ ALERT HIGH mv=3190
 ## 它是怎么工作的
 
 ```text
-需求(FSD/expectations.json) → 生成(Claude + review-code 对抗审查) → 构建(gcc_build/verify.py)
-  → 真机判定(RTT/semihosting 采集 printf) → 门禁(release.py G0-G3, 全绿才打 tag) → 落账(feedback_db.py 校准)
+需求(FSD/expectations.json) → 生成(Claude + review-code 对抗审查) → 构建(gcc_build / idf, F-174)
+  → 真机判定(RTT / semihosting / UART 采集 printf) → 门禁(release.py G0-G3, 全绿才打 tag) → 落账(feedback_db.py 校准)
 ```
 
 三个设计支点：
@@ -124,8 +141,10 @@ ALERT HIGH mv=3190
 | Python **3.10+** | 全部脚本 | 标准库为主，串口族需 `pip install -r requirements.txt` |
 | arm-none-eabi-gcc | 构建 | GNU Arm Embedded Toolchain（或 xPack） |
 | GNU make | 构建 | Windows 推荐 MSYS2 的 make.exe |
-| OpenOCD | 烧录/RTT/semihosting 采集 | 推荐 xPack 发行版 |
-| ST-Link + STM32F103 板 | 仅真机步骤 | 无板也能跑测试、lint、审计、代码生成 |
+| OpenOCD | STM32 烧录/RTT/semihosting 采集 | 推荐 xPack 发行版 |
+| ESP-IDF v5.4.x（含 esptool） | ESP32 后端构建/烧录/复位（F-174） | `machine.json` 键 `esp_idf_path` / `esp_tools_dir`；UART 采集另需 pyserial |
+| ST-Link + STM32F103 板 | 仅 STM32 真机步骤 | 无板也能跑测试、lint、审计、代码生成 |
+| ESP32-S3 板（USB 串口） | 仅 ESP 真机步骤 | port/chip 走白名单校验（`COMn` 或 `/dev/tty*` 形态） |
 
 平台现状：**Windows 为主要开发/真机平台**；工具链预检自 F-164 起统一
 `shutil.which` 平台判定（nt 按 PATHEXT 试 `.exe`，POSIX 查可执行位），
@@ -143,7 +162,7 @@ cd embedded-toolkit
 python -m unittest discover -s tests
 
 # 3. 要用真机前：生成机器路径配置（machine.json 是本机文件，不入库）
-cp machine.example.json machine.json   # 编辑填入 gcc_path / make_exe / openocd_exe 绝对路径
+cp machine.example.json machine.json   # 填 gcc_path / make_exe / openocd_exe；ESP 后端另填 esp_idf_path / esp_tools_dir
 
 # 4. 可选：串口工具的第三方依赖
 pip install -r requirements.txt
@@ -219,6 +238,29 @@ python scripts/verify.py --project examples/sim-demo --json
 python scripts/release.py --project <工程根> --tag v1.0.0 --dry-run
 ```
 
+### ESP32-S3 工程（F-174）
+
+前提：ESP-IDF v5.4.x 已 `install.ps1 esp32s3`，`machine.json` 填好
+`esp_idf_path` / `esp_tools_dir`；工程为标准 IDF 工程（`idf.py build` 可跑通）。
+`.workbench/config.json` 换三件后端即可，期望契约与判定引擎完全复用：
+
+```jsonc
+{
+  "toolkit_min_version": "0.6",
+  "builder": "idf",                                  // 构建经 esp_runtime → idf.py
+  "idf":  { "build_timeout": 900 },
+  "flash":  { "backend": "esptool", "port": "COM3" },// 烧录走 idf.py flash (flash_args 单一事实源)
+  "capture":{ "backend": "uart", "port": "COM3",     // esptool --after hard_reset 确定性复位
+              "baudrate": 115200, "duration_sec": 15,// → pyserial 定时窗采集
+              "chip": "esp32s3" },                   // 可省 (默认 esp32s3); port/chip 均过白名单校验
+  "verify": { "expect": ["ESP-PILOT-BOOT ok"] }
+}
+```
+
+ESP 模式下 OpenOCD 专属动作自动让位（F-174 终审修复波）：`post_reset` 记
+`skipped`、HardFault 层 2 双路抑制——ESP panic 的归因走采集文本中的
+`esp_panic` 标记 + AI 判定。采集窗起点纪律与 STM32 相同（烧录/复位后才开）。
+
 ### 采集窗纪律（真人输入类期望，如按键/旋钮）
 
 1. **窗口在烧录之后才开**——全链 `verify.py --json` 前置 build+flash 约 1 分钟，
@@ -246,6 +288,7 @@ python scripts/release.py --project <工程根> --tag v1.0.0 --dry-run
 | `scripts/gen_periph.py` | 参数 → 寄存器级 C 初始化代码 / 外设文档（时钟经 `--hclk` 参数化，默认 72MHz 按标准 APB 分频推导，非默认值生成物头注回显前提；`--tim-clk` 显式值优先） | ❌ |
 | `scripts/hardfault.py` | HardFault 现场：寄存器 + 符号表定位出错函数 | ✅ |
 | `scripts/capture_sim.py` | sim 采集会话：qemu-system-arm 直接加载 elf（无板闭环，F-150） | ❌ |
+| `scripts/esp_runtime.py` | ESP32 三后端封装：idf.py build / esptool flash / UART 定时窗采集 + esp_panic 文本标记（F-174） | ✅（flash/capture） |
 | `scripts/serial_*` / `openocd_*` | 串口与探针底层族（RTT/GDB/telnet） | ✅ |
 | `scripts/mcp_server.py` | MCP 接入：六工具有界包装（见下节），零业务复制 | 视工具 |
 
@@ -298,7 +341,9 @@ Claude Code 注册：把仓根 `.mcp.json.example` 拷为工程根（或 `~/.cla
 全程持有**机器级设备锁**（`%USERPROFILE%\.embedded-toolkit\device-locks\stlink.lock`，
 Windows `msvcrt.locking` / POSIX `flock` 的 OS 级文件锁）——同一探针/板子
 同时只被一个 agent（或同一台机的另一份 clone）占用；进程崩溃 = OS 自动
-放锁，无 PID 探活、无超期回收。冲突方收到 `resource_busy` + 持有者
+放锁，无 PID 探活、无超期回收。锁粒度当前为**机器级**（设备名固定
+`stlink`，F-174 后 ESP 运行同样经这把锁排队——宁多排不错排；多探针细粒度
+列为后续）。冲突方收到 `resource_busy` + 持有者
 purpose/获取时间，`--lease-wait N` 可有界等待。它与 `.workbench/state.json`
 的写锁（F-127，防数据竞争）是两层，互不替代。
 
@@ -323,12 +368,13 @@ embedded-toolkit/
 ## 质量与验证
 
 - 回归套件：`python -m unittest discover -s tests` 全绿为准（例数随修复增长，
-  以实跑为准）；CI 每 push 必跑六 job：unittest（ubuntu×windows × Python
-  3.10/3.12 矩阵）、coverage-gate（棘轮下限，只升不降）、lint（ruff E/F）、
+  以实跑为准）；CI 每 push 必跑 9 job（+1 测试报告 check run）：unittest
+  四腿矩阵（ubuntu×windows × Python 3.10/3.12）、coverage-gate（棘轮下限，
+  只升不降；F-176 起与金丝雀同装声明依赖，套件跨 job 等价）、lint（ruff E/F）、
   coverage-lint（零覆盖清单 --strict）、syntax-smoke（ubuntu 真实 arm-gcc
-  编译生成物）、sim-demo（ubuntu qemu 无板端到端闭环 + test-reporter 出
-  check run）；真机冒烟另有 `hw-smoke.yml` 门控形态（self-hosted runner
-  就绪才跑）
+  编译生成物）、sim-demo（ubuntu qemu 无板端到端闭环 + dorny/test-reporter
+  出 "Sim Verify Results" check run）；真机冒烟另有 `hw-smoke.yml` 门控形态
+  （self-hosted runner 就绪才跑）
 - 修复纪律：**修 bug 必带回归测试**；写回型工具的默认参数路径必须有测试
 - 治理机制：外部异构智能体代管两轮——机制本身（分支起点核查、guard 禁线、
   换回五步、fresh-check 外审）持续演进；完整对账链在维护者私有仓
@@ -445,9 +491,12 @@ Renode 把仿真做成平级判定后端，hardci / jlink-mcp 验证了 MCP 分�
   发布时工作树字节与入库字节永久错位，非篡改、无内容差异。**处置 = 不重锚
   不改记录**（发布记录是防篡改审计锚，为消警告改哈希与 R1~R8 设计目的
   冲突）；该记录后续审计预期 FAILED 勿当新伤，其他记录不受影响。
-- 方向：多 MCU（ESP32）工具栈评估（暂缓：无目标硬件；技术路线 esptool + probe-rs）。
-  F-107 勘误：旧文本"见 docs 档案"是悬空指针（docs/ 已迁出，现仅存
-  `hooks-install.md`）。
+- **多 MCU（ESP32）——已落地最小闭环（F-174，09-16 试点 / 09-18 合入）**：
+  `builder=idf` / `flash.backend=esptool` / `capture.backend=uart` 三后端，
+  ESP32-S3 真机双 PASS + 终审修复波（后端闸 + port/chip 白名单）收口。
+  剩余非目标（按立项裁决后置）：WiFi/BLE、probe-rs 调试、panic 符号化、
+  xiaozhi 类业务工程接入。F-107 勘误：旧文本"见 docs 档案"是悬空指针（docs/ 已迁出，
+  现仅存 `hooks-install.md`）。
   F-108 计数订正：旧文本"verify.py 7 处 / release.py 2 处 / hardfault.py 2 处"
   源于 F-034 时代快照，release 的 cfg 已随 F-041 下沉 `openocd_runtime`；实测
   现状为 6 个脚本各硬编码 `interface/stlink.cfg` + `target/stm32f1x.cfg` 一对
@@ -455,6 +504,8 @@ Renode 把仿真做成平级判定后端，hardci / jlink-mcp 验证了 MCP 分�
   openocd_runtime）。**收口改暂缓（F-170）**：唤起条件 = 接入第二板型
   （F4/F0 等）或 F-031 Linux 真机验证窗口；届时落工程
   `.workbench/config.json`（如 `openocd.cfg_files` 键，缺省 = 现值零行为变化）。
+  注：F-174 的 ESP32 走 esptool/UART 后端不经 stlink cfg，不触发本项——唤起条件
+  仍特指**第二 ARM 板型**（F4/F0 等）。
 
 > **F-021~F-030 已在本轮收口**（原子写收口包 / R7 双布局认路 / RTT 平台守卫 /
 > 孤儿链删除 / 三 runtime 契约统一 / 头图刷新），逐条处置记录与证据 commit 见
