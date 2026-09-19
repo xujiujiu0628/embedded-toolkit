@@ -314,7 +314,7 @@ uart 采集开口即释放 DTR/RTS（F-177：CH340/CP210x 自动下载电路否�
 | `scripts/handoff_guard.py` | 外部智能体代管分支的三级禁线机检 | `python scripts/handoff_guard.py --branch <代管分支>` |
 | `scripts/feedback_db.py` | 修复事件落账 + 每流水线准确率校准 | `python scripts/feedback_db.py --stats` |
 | `scripts/rm_lookup.py` | STM32F103 55 外设寄存器/位域速查（JSON 知识库） | `python scripts/rm_lookup.py --list` |
-| `scripts/gen_periph.py` | 参数 → 寄存器级 C 初始化代码 / 外设文档（时钟经 `--hclk` 参数化，默认 72MHz 按标准 APB 分频推导，非默认值生成物头注回显前提；`--tim-clk` 显式值优先） | `python scripts/gen_periph.py --help` |
+| `scripts/gen_periph.py` | 参数 → 寄存器级 C 初始化代码 / 外设文档（时钟经 `--hclk` 参数化，默认 72MHz 按标准 APB 分频推导，非默认值生成物头注回显前提；`--pclk1/--pclk2` 显式 APB 时钟覆盖逐键独立，定时器内核按 RM0008 §7.3.7 随之派生；`--tim-clk` 显式值优先） | `python scripts/gen_periph.py --help` |
 | `scripts/capture_sim.py` | sim 采集会话：qemu-system-arm 直接加载 elf（无板闭环，F-150） | 经 `verify.py` 消费（见「无硬件快速体验」） |
 | `scripts/mcp_server.py` | MCP 接入：六工具有界包装（见下节），零业务复制 | 见「MCP 接入」节 |
 

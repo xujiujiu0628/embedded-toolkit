@@ -2975,3 +2975,57 @@
   ≥1 且 argv 逐字节不变] + _RESET_CFG_DEFAULT 删除钉）。全量
   **928 = 906+22, skipped=6**；commit 三笔（钉 0f32d7b / 拆 58f184d /
   docs 本笔），主题带 WB-20260919-06，未 push。
+## Unreleased — 2026-09-20（gen_periph `--pclk1/--pclk2` 时钟树参数化：F-110 下半场，WB-20260920-01，分支 wb/f-pclk-param-20260920，未合入）
+
+- **F-110 下半场（feature+test，先金矩阵后拆，外派 Executor 亲执行）**:
+  F-110 已让时钟派生脱离 72MHz 字面量，但锁死"标准分频假设"
+  （APB2=hclk / APB1=hclk//2 / TIM×2=hclk）。本单新增 `--pclk1/--pclk2`
+  （整数 MHz，可选），**逐键独立**覆盖 APB1/APB2 派生——真实板任意
+  PPRE1/PPRE2 从此可表达（如 HCLK=72+PPRE1=4 → PCLK1=18、TIM2 内核 36）。
+  六族计算链全部切到新派生值：usart BRR（USART1=pclk2/USART2,3=pclk1）、
+  i2c CR2.FREQ+CCR+TRISE、adc ADCPRE 自动选档、pwm/timer-int PSC/ARR
+  （tim 内核派生链：显式 `--tim-clk` > pclk1 按 §7.3.7 派生 > hclk 现状）、
+  spi 总线频率注；**systick 内核时钟与 pclk 无关**（签名不含 pclk、CLI
+  接受但忽略——免疫钉固化）。gpio/doc 不涉时钟零改动。
+  **默认逐字节不变（第一契约）**: 基线 capture-once 金矩阵
+  （`tests/fixtures/pclk_golden.json`，9 组代表参数 × {缺省/--hclk 8/
+  --hclk 72 显式} = 27 条）在拆分后逐条复现；`test_gen_hclk_param.py`
+  23 例零修改全绿。
+- **契约变更段（WB-20260920-01）**:
+  - 新 CLI：`--pclk1`（有效 1~36 且 ≤hclk）/ `--pclk2`（有效 1~72 且
+    ≤hclk），整数 MHz；未传键维持 F-110 推导（逐键独立，不要求成对）。
+  - 域出处：PCLK1 上限 36 = APB1 总线顶速（RM0008/F103 数据手册"外设
+    时钟"表；ref.json 未登记——GAP-D-4 纪律，架构常量+行内出处，不入
+    ref.json）。
+  - 报错语义（F-103）：越界/`>hclk`/非整数（含 bool）→ 库级
+    `_pclk_error` 返回 ERROR + CLI `_emit` exit 1（argparse type=int 层
+    拒非整数 rc=2），**禁止静默回落默认**。
+  - 定时器内核前提（不许静默）：显式 `--pclk1` 无法得知分频器原值——
+    `pclk1==hclk//2` → 标准 PPRE1=2、×2 抵消（内核=hclk，F-110 现状）；
+    `pclk1==hclk` → PPRE1=1、×2 **不**适用（内核=pclk1；§7.3.7 原文
+    锚定，简报速记式的物理边界补全）；其余 → PPRE1∈{4,8,16}、内核
+    =pclk1×2。三情形随生成物头注如实回显（hclk=72 显式 pclk 也注入）。
+  - TIM1（APB2）定时器内核维持 hclk 推导——pclk2×2 耦合未建模
+    （GAP-P-1，见下）；systick 不受 pclk 影响。
+  - 零改动兼容：不传 pclk = 输出与基线逐字节一致；`spi_write_burst`
+    函数体一字未动（H-3 另有工单）。
+- **P1（09-19 审查 L-5）顺路修**：简报规则"仅当既有测试未钉住病态时"——
+  grep 取证既有测试仅钉 i2c 400k 的默认 72 输出（CCR=0x01E@36MHz），
+  病态低频无钉 → 修：`gen_i2c` pclk1<2（CR2.FREQ 违反 RM0008 §27.5.2
+  下限 2）或 CCR<4（旧版 `max(4,...)` 静默顶到 4，实际 SCL≈83kHz 却自称
+  400kHz）→ 显式 ERROR exit 1；pclk1=2 @100k（CCR=10）等合法低频配置
+  不受影响（钉 `L5I2cClampErrorTests` 3 例）。
+- **测试**: `tests/test_gen_pclk_param.py` 26 例（金矩阵默认兼容 3 +
+  派生函数 2 + 六族手算实样 8 + 优先级 2 + 域边界 5 + 前提注记 3 +
+  L-5 3）；手算期望值独立演算（RM0008 公式→代码表达式→手算常数，
+  禁止生成器输出回填）。全量 **932 = 906+26, skipped=6**；
+  commit 三笔（钉 53ec576 / 拆 a24bf71 / docs 本笔），未 push。
+- **新发现缺口（只列不改，移交维护者工单批次）**:
+  - GAP-P-1 (Low): TIM1 (APB2) 定时器内核与 pclk2 的 ×2 耦合未建模
+    （显式 pclk2≠hclk 时 TIM1 仍按 hclk 推导）；现行生成器 TIM1 场景
+    均可经 `--tim-clk` 显式表达，实害受限。
+  - GAP-P-2 (Low): `--pclk1` 为整数 MHz，PPRE1=2 且 hclk 奇数时真实
+    PCLK1 为 x.5MHz（如 hclk=9→4.5），整数入参只能取 floor 4 —— 与
+    F-111/H-1 的"floor 如实显示"精神一致（注记回显整数前提），但
+    "小数 MHz 入参" 是否开放留维护者拍板。
+  - GAP-P-3 (Note): SPI `--baud-div` 非法值静默回落 /16（09-19 审查
