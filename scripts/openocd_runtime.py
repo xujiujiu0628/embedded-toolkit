@@ -14,13 +14,14 @@ from shutil import which
 from typing import Any
 
 from runtime_common import (  # noqa: F401  (再导出: 保持 mod.X 调用面, F-029)
-    JSONCorruptError, _first_resolved, build_artifacts, compact_dict,
-    get_state_entry, hidden_subprocess_kwargs, is_missing, load_json_file,
-    load_json_strict, load_skill_section, load_workspace_state,
-    load_workspace_state_for_update, make_result, make_timing, normalize_path,
-    now_iso, output_json, parameter_context, project_config_file,
-    save_json_file, save_skill_section, save_workspace_state,
-    update_state_entry, workspace_root,
+    JSONCorruptError, OpenocdCfgError, _first_resolved, build_artifacts,
+    compact_dict, get_state_entry, hidden_subprocess_kwargs, is_missing,
+    load_json_file, load_json_strict, load_skill_section,
+    load_workspace_state, load_workspace_state_for_update, make_result,
+    make_timing, normalize_path, now_iso, output_json, parameter_context,
+    project_config_file, resolve_openocd_cfg, save_json_file,
+    save_skill_section, save_workspace_state, update_state_entry,
+    workspace_root,
 )
 
 # ocd 侧状态读写 = 共享层默认语义 (原样存, 无序列化钩子);
@@ -170,10 +171,16 @@ def swd_probe(openocd_exe: str, attempts: int = 3) -> tuple[bool, str]:
 
     判定走内容而非返回码 (对齐 hardfault.py 哲学): OpenOCD 关键行在 stderr,
     克隆适配器偶发非零退出; 连接失败形态是 "init mode failed / unable to connect"。
-    attempts: 门禁默认 3 次重试 (ST-Link 释放竞态纪律); doctor 传 1 做单次快探。"""
+    attempts: 门禁默认 3 次重试 (ST-Link 释放竞态纪律); doctor 传 1 做单次快探。
+    cfg 组装经 resolve_openocd_cfg 单一事实源 (WB-20260919-06); 非法配置按
+    探测失败返回 (显式报错不静默回落, F-103)。"""
+    try:
+        pair = resolve_openocd_cfg()
+    except OpenocdCfgError as e:
+        return False, f"openocd cfg 非法: {e}"
     cmd = [openocd_exe,
-           "-f", "interface/stlink.cfg",
-           "-f", "target/stm32f1x.cfg",
+           "-f", pair["interface"],
+           "-f", pair["target"],
            "-c", "transport select swd",
            "-c", "init", "-c", "targets", "-c", "shutdown"]
     last = ""
@@ -509,22 +516,30 @@ def build_openocd_cmd(
 # ── F-129 (工单二 A-2): 判定后硬件自恢复 ─────────────────────────────────
 # 借鉴 agentic-hil 的失败自恢复: 运行结束后板子状态不留给下一次运行——
 # 超时/卡死场景留下的挂着断点或半初始化外设会污染下一次 verify。
-
-_RESET_CFG_DEFAULT = ["interface/stlink.cfg", "target/stm32f1x.cfg"]  # verify.step_flash 同款
+# (WB-20260919-06: 旧 _RESET_CFG_DEFAULT 硬编码对已删除, cfg 缺省改经
+# resolve_openocd_cfg 单一事实源解析 — 与 step_flash/swd_probe 同源。)
 
 
 def reset_target(exe: str, cfg: list[str] | None = None, *,
                  timeout: int = 20) -> dict:
     """复位目标: openocd -f <cfg...> -c "init" -c "reset run" -c "shutdown"。
 
-    verify.py 在 flash 实际发生过的判定结束后调用; cfg 缺省与 step_flash
-    同一套 (stlink + stm32f1x)。exe 由调用方经既有 resolve 链取好传入,
-    本函数不读 machine.json——保持纯函数, 测试无需环境桩。
+    verify.py 在 flash 实际发生过的判定结束后调用; cfg=None 时经
+    resolve_openocd_cfg 单一事实源解析 (WB-20260919-06, 与 step_flash/
+    swd_probe 同源, 可经工程/工具库配置覆盖); cfg 显式传入则原样透传。
+    exe 由调用方经既有 resolve 链取好传入, 本函数不读 machine.json——
+    保持纯函数, 测试无需环境桩。
     判据沿 swd_probe 内容口径 (克隆适配器偶发非零退出, 关键行才是真相):
     "shutdown command invoked" 在场且无 init 失败词。失败只返回 status
     留痕, 调用方绝不因复位失败改判 verdict。"""
+    if cfg is None:
+        try:
+            pair = resolve_openocd_cfg()
+        except OpenocdCfgError as e:
+            return {"status": "error", "message": str(e)}
+        cfg = [pair["interface"], pair["target"]]
     cmd = [exe]
-    for c in (cfg or _RESET_CFG_DEFAULT):
+    for c in cfg:
         cmd.extend(["-f", c])
     cmd.extend(["-c", "init", "-c", "reset run", "-c", "shutdown"])
     try:

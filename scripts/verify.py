@@ -48,6 +48,7 @@ def _openocd_exe() -> str:
     return load_machine()["openocd_exe"]
 
 from runtime_common import now_iso, output_json  # noqa: E402  (F-041: doctor --json 复用共享层; F-157: now_iso 收编)
+from runtime_common import OpenocdCfgError, resolve_openocd_cfg  # noqa: E402  (WB-20260919-06: cfg 组装单一事实源)
 from openocd_runtime import reset_target, swd_probe  # noqa: E402,F401  (F-041: SWD 探测与 release G0.5 同源; F-129: 判定后复位)
 from openocd_run import ACTION_DONE_CMD, marker_present  # noqa: E402  (F-163: N-3 标记共享件)
 import hw_lease  # noqa: E402  (F-145: flash+capture 段机器级设备锁)
@@ -236,10 +237,14 @@ def step_flash(hex_file: str, config: dict | None = None) -> dict:
         return esp_runtime.step_flash_esptool(flash_cfg, workspace=WORKSPACE)
 
     hex_abs = os.path.join(WORKSPACE, hex_file)
+    try:
+        pair = resolve_openocd_cfg(workspace=WORKSPACE)
+    except OpenocdCfgError as e:
+        return {"status": "error", "message": str(e)}
     cmd = [
         _openocd_exe(),
-        "-f", "interface/stlink.cfg",
-        "-f", "target/stm32f1x.cfg",
+        "-f", pair["interface"],
+        "-f", pair["target"],
         # F-163 (L-4): program 串拆序 — verify 不带 reset, 串尾 echo 构造性标记
         # 先于 exit (exit 截胡时标记 echo 不会在场, 这正是"脚本没跑完"的构造性
         # 证据方向); reset 由主流程 post_reset (F-129) 与 capture 会话各自的
