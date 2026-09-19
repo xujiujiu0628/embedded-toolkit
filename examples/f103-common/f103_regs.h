@@ -74,9 +74,9 @@ typedef struct {   /* Cortex-M3 核心外设 (架构定义; ref.json peripherals
 
 typedef struct {   /* Cortex-M3 核心外设; ref.json peripherals.NVIC 仅登记 ISER@0xE100,
                      其余 (ICER@0x080/IABR@0x100/IP@0x300 相对 0xE000E000) 为架构
-                     常量 — GAP-D-1 已记账 */
-    volatile uint32_t ISER[8u], ICER[8u], ISPR[8u], ICPR[8u], IABR[8u],
-        IP[240u];
+                     常量 — GAP-D-1 已记账。IP 为字节宽 (架构定义)。 */
+    volatile uint32_t ISER[8u], ICER[8u], ISPR[8u], ICPR[8u], IABR[8u];
+    volatile uint8_t  IP[240u];
 } NVIC_Type;
 
 typedef struct {   /* ref.json peripherals.DMA1: ISR@0x00 IFCR@0x04,
@@ -189,6 +189,7 @@ typedef struct {   /* DR1@0x04 .. DR42@0xB8, RTCCR@0x2C, CR@0x30, CSR@0x34 */
 #define WWDG    ((WWDG_TypeDef *)    0x40002C00UL)  /* ref.json peripherals.WWDG */
 #define CRC     ((CRC_TypeDef *)     0x40023000UL)  /* ref.json peripherals.CRC */
 #define CAN     ((CAN_TypeDef *)     0x40006400UL)  /* ref.json peripherals.CAN */
+#define DAC     ((DAC_TypeDef *)     0x40007400UL)  /* ref.json peripherals.DAC */
 #define RTC     ((RTC_TypeDef *)     0x40002800UL)  /* ref.json peripherals.RTC */
 #define AFIO    ((AFIO_TypeDef *)    0x40010000UL)  /* ref.json peripherals.AFIO */
 #define PWR     ((PWR_TypeDef *)     0x40007000UL)  /* ref.json peripherals.PWR */
@@ -253,6 +254,14 @@ typedef struct {   /* DR1@0x04 .. DR42@0xB8, RTCCR@0x2C, CR@0x30, CSR@0x34 */
 #define RCC_AHBENR_DMA1EN     (1UL << 0)
 #define RCC_AHBENR_DMA2EN     (1UL << 1)
 #define RCC_AHBENR_CRCEN      (1UL << 6)
+/* BDCR: 0=LSEON 1=LSERDY 2=LSEBYP 8:9=RTCSEL 15=RTCEN 16=BDRST
+ *       (ref.json RCC.BDCR bits) — RTC 选择域 10b=LSE (RM 语义, GAP-D-4) */
+#define RCC_BDCR_LSEON        (1UL << 0)
+#define RCC_BDCR_LSERDY       (1UL << 1)
+#define RCC_BDCR_RTCSEL_LSE   (2UL << 8)
+#define RCC_BDCR_RTCEN        (1UL << 15)
+/* PWR.CR: 8=DBP (ref.json peripherals.PWR.registers.CR bits) */
+#define PWR_CR_DBP            (1UL << 8)
 
 /* ── SysTick CTRL 位 (Cortex-M3 核心架构, 与 test_gen_syntax_smoke 契约同源) ── */
 #define SysTick_CTRL_ENABLE    (1UL << 0)
