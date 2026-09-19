@@ -433,11 +433,14 @@ embedded-toolkit/
   体面拒绝（`socat_missing`），整个 mux 族不可用。规避：直连物理串口即可满足
   verify 全链——RTT/semihosting/UART 采集后端均不经 mux 层。
   详情：CHANGELOG F-032、`scripts/serial_mux.py` 头注。
-- **OpenOCD cfg 参数化收口暂缓（F-170）**
-  影响：6 个脚本硬编码 `interface/stlink.cfg` + `target/stm32f1x.cfg` 一对。
-  规避：当前板型集（STM32F1 系 + ESP32 走 esptool 不经此路径）不受影响。
-  唤起条件 = 接入第二 **ARM** 板型（F4/F0 等）或 F-031 Linux 真机窗口。
-  详情：CHANGELOG F-107 / F-108 / F-170。
+- **OpenOCD cfg 参数化已收口（F-170 提前行权，WB-20260919-06，待真机回归合入）**
+  影响：原 7 处硬编码 `interface/stlink.cfg` + `target/stm32f1x.cfg` 已收敛到
+  `runtime_common.resolve_openocd_cfg` 单一事实源（默认行为逐字节不变）。
+  覆盖：工程 `.workbench/config.json` openocd 段 / 工具库 `config/openocd.json`
+  的可选键 `interface_cfg` / `target_cfg`（优先级 显式参数 > 工程 > 工具库 >
+  内置默认；类型非法显式报错不回落）。规避：不配置 = 行为与收口前逐字节一致。
+  合入门禁 = 维护者真机全链回归（唤起条件"第二 ARM 板型/F-031"未满足，本单
+  系提前行权）。详情：CHANGELOG F-170 / 契约变更段。
 - **v0.5 发布记录 R7 永久 FAILED（F-169，登记语义）**
   影响：`release_audit --project stm32f103-mpu6050-oled --tag v0.5` 预期恒
   FAILED（历史 autocrlf 切换致工作树/入库字节永久错位，构造性证据坐实，
