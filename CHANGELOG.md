@@ -2924,6 +2924,34 @@
 - 合入后套件基线 **172**（155∪106，master 净增 17 零丢失）；未跟踪
   .mcp.json（用户确认非本人添加）移出至 archive/mcp-from-toolkit-20260831/。
 
+## 样例工厂（WB-20260919-04，2026-09-19，分支 wb/f103-sample-factory-20260919，未合入）
+
+- **T1/T2/T3 三层 40 个 F103 外设样例**（简报 WB-20260919-04）：
+  T1 = gen_periph 生成 18（usart×3/pwm×3/timer-int×3/adc×2/i2c×2/spi×2/
+  gpio/systick + spi3 适配体）；T2 = 手写寄存器级 17（dma1/exti/iwdg/wwdg/
+  crc/dac/can/rtc/afio/nvic/pwr-bkp/flash/tim1/tim8/tim5/tim6-7/tim9-14）；
+  T3 = 参考型 5（adc3/gpiod-g/usb/sdio/fsmc，`available_on_c8=false`；
+  **dbg 不做已声明** — ref.json 无 DBGMCU 条目无数据可锚定）。全部
+  `make all` rc=0 且 ELF+HEX 产出；每样例 README 带三行硬性
+  （用途/生成方式/**硬件验收: 未做（编译级样例）**）。
+- **工厂巡检测试** `tests/test_sample_factory.py`：每样例一用例
+  （`make all` → rc=0 + ELF+HEX），MOCK 哨兵样例追加 `make test`
+  （host gcc `-DF103_MOCK_REGS -DF103_SAMPLE_HOST_TEST`，寄存器写序列
+  与纯逻辑换算断言，全过 exit 0）——7 个 mock（iwdg/wwdg/crc/dac/can/
+  tim5/tim6-7）。工具解析链收口 machine.json→PATH；全量 953 绿
+  （906+47, skipped=6 不变）。
+- **共享件** `examples/f103-common/`：f103_regs.h（裸偏移寄存器层，
+  逐项锚定 ref.json + gen_periph error_chain 契约垫片 + host mock
+  重定向口）/ startup.c（向量表槽位逐项注明 ref 来源，data/bss 最小桩）/
+  link.ld（母本 sim-demo，映像 C8T6 64K/20K）。
+- **GAPREPORT**（`docs/specs/2026-09-19-sample-factory-status.md`）：
+  生成器缺口 GAP-G-1（SPI3 不支持）/G-2（timer-int 100ms ARR 溢出）/
+  G-3（systick 参数口径）/G-4（adc 必填 pin、doc 错误路径 rc=0）；
+  ref.json 数据问题 GAP-D-1~D-5（TIM9/12/13/14 bus 字段与 RCC 使能位
+  矛盾、BKP 基址口径、NVIC 仅 ISER、IRQ 表缺口、魔数/编码表未登记）；
+  scripts 疑似缺陷 GAP-S-1（spi write_burst 不排空 RX）/GAP-S-2
+  （I2C 片段 error_chain 契约不发射定义）。缺口一律只列不改。
+
 ## 0.1.x — 2026-08-30（代管 R1，分支 handoff/zcode-20260830）
 
 ## Unreleased — 2026-09-19（F-170 提前行权：OpenOCD cfg 参数化收口，WB-20260919-06，分支 wb/f170-openocd-cfg-param-20260919，未合入）
