@@ -1,0 +1,410 @@
+{
+ "_meta": {
+  "baseline": "c0df0c6",
+  "captured_at": "2026-09-20",
+  "cli": [
+   "D:\\python\\python.exe",
+   "D:/claude/embedded-toolkit/scripts/gen_periph.py"
+  ],
+  "note": "WB-20260920-01 金矩阵: 基线代码 (无 --pclk1/--pclk2) 上 capture-once。拆分后默认路径 (不传 pclk) 必须逐字节复现本文件全部输出。"
+ },
+ "adc_default": {
+  "argv": [
+   "--type",
+   "adc",
+   "--adc",
+   "ADC1",
+   "--ch",
+   "1",
+   "--pin",
+   "PA1"
+  ],
+  "output": "/* ========================================================================\n * ADC1 CH1 — PA1 (single conversion, 12-bit)\n * ======================================================================== */\n\n/* 1. 时钟使能 */\nRCC->APB2ENR |= RCC_APB2ENR_ADC1EN | RCC_APB2ENR_IOPAEN;\n__DSB();\n\n/* 1b. ADC 时钟分频 — ADCPRE=/6 (12MHz @ PCLK2=72MHz, ≤14MHz 上限) */\nRCC->CFGR &= ~(3UL << 14);         // 清 ADCPRE[1:0]\nRCC->CFGR |=  (2UL << 14);         // ADCPRE=10b → PCLK2/6\n\n/* 2. GPIO — PA1 模拟输入 */\nGPIOA->CRL &= ~(0xFUL << 4);\n// CNF=00 MODE=00 → 模拟输入\n\n/* 3. ADC 配置 (单次转换, 软件触发) */\n// 采样时间: 55.5 cycles (推荐用于 12-bit 精度)\nADC1->SMPR2 |= (5UL << 3);  // CH1: 55.5 cycles\nADC1->SQR3 = 1;                 // 转换序列: 1 个通道 = CH1\nADC1->CR2 = 1;                    // ADON 上电\n\n/* 4. 单次转换 */\nstatic uint16_t adc_read_ch1(void) {\n    ADC1->CR2 |= (1UL << 22);    // SWSTART\n    while (!(ADC1->SR & 2));    // 等待 EOC\n    return ADC1->DR & 0xFFF;     // 12-bit result\n}\n\n/* 5. 电压换算 (Vref=3.3V) */\nstatic uint32_t adc_to_mv(uint16_t val) {\n    return (uint32_t)val * 3300 / 4096;\n}\n"
+ },
+ "adc_hclk72": {
+  "argv": [
+   "--type",
+   "adc",
+   "--adc",
+   "ADC1",
+   "--ch",
+   "1",
+   "--pin",
+   "PA1",
+   "--hclk",
+   "72"
+  ],
+  "output": "/* ========================================================================\n * ADC1 CH1 — PA1 (single conversion, 12-bit)\n * ======================================================================== */\n\n/* 1. 时钟使能 */\nRCC->APB2ENR |= RCC_APB2ENR_ADC1EN | RCC_APB2ENR_IOPAEN;\n__DSB();\n\n/* 1b. ADC 时钟分频 — ADCPRE=/6 (12MHz @ PCLK2=72MHz, ≤14MHz 上限) */\nRCC->CFGR &= ~(3UL << 14);         // 清 ADCPRE[1:0]\nRCC->CFGR |=  (2UL << 14);         // ADCPRE=10b → PCLK2/6\n\n/* 2. GPIO — PA1 模拟输入 */\nGPIOA->CRL &= ~(0xFUL << 4);\n// CNF=00 MODE=00 → 模拟输入\n\n/* 3. ADC 配置 (单次转换, 软件触发) */\n// 采样时间: 55.5 cycles (推荐用于 12-bit 精度)\nADC1->SMPR2 |= (5UL << 3);  // CH1: 55.5 cycles\nADC1->SQR3 = 1;                 // 转换序列: 1 个通道 = CH1\nADC1->CR2 = 1;                    // ADON 上电\n\n/* 4. 单次转换 */\nstatic uint16_t adc_read_ch1(void) {\n    ADC1->CR2 |= (1UL << 22);    // SWSTART\n    while (!(ADC1->SR & 2));    // 等待 EOC\n    return ADC1->DR & 0xFFF;     // 12-bit result\n}\n\n/* 5. 电压换算 (Vref=3.3V) */\nstatic uint32_t adc_to_mv(uint16_t val) {\n    return (uint32_t)val * 3300 / 4096;\n}\n"
+ },
+ "adc_hclk8": {
+  "argv": [
+   "--type",
+   "adc",
+   "--adc",
+   "ADC1",
+   "--ch",
+   "1",
+   "--pin",
+   "PA1",
+   "--hclk",
+   "8"
+  ],
+  "output": "/* ========================================================================\n * ADC1 CH1 — PA1 (single conversion, 12-bit)\n * 时钟前提 (F-110): HCLK=8MHz 按标准 APB 分频推导\n *   APB1=4/APB2=8 MHz (HPRE=1/PPRE2=1/PPRE1=2, TIM×2 §7.3.7); 异常分频请显式传 --tim-clk 或手改。\n * ======================================================================== */\n\n/* 1. 时钟使能 */\nRCC->APB2ENR |= RCC_APB2ENR_ADC1EN | RCC_APB2ENR_IOPAEN;\n__DSB();\n\n/* 1b. ADC 时钟分频 — ADCPRE=/2 (4MHz @ PCLK2=8MHz, ≤14MHz 上限) */\nRCC->CFGR &= ~(3UL << 14);         // 清 ADCPRE[1:0]\nRCC->CFGR |=  (0UL << 14);         // ADCPRE=00b → PCLK2/2\n\n/* 2. GPIO — PA1 模拟输入 */\nGPIOA->CRL &= ~(0xFUL << 4);\n// CNF=00 MODE=00 → 模拟输入\n\n/* 3. ADC 配置 (单次转换, 软件触发) */\n// 采样时间: 55.5 cycles (推荐用于 12-bit 精度)\nADC1->SMPR2 |= (5UL << 3);  // CH1: 55.5 cycles\nADC1->SQR3 = 1;                 // 转换序列: 1 个通道 = CH1\nADC1->CR2 = 1;                    // ADON 上电\n\n/* 4. 单次转换 */\nstatic uint16_t adc_read_ch1(void) {\n    ADC1->CR2 |= (1UL << 22);    // SWSTART\n    while (!(ADC1->SR & 2));    // 等待 EOC\n    return ADC1->DR & 0xFFF;     // 12-bit result\n}\n\n/* 5. 电压换算 (Vref=3.3V) */\nstatic uint32_t adc_to_mv(uint16_t val) {\n    return (uint32_t)val * 3300 / 4096;\n}\n"
+ },
+ "gpio_default": {
+  "argv": [
+   "--type",
+   "gpio",
+   "--pin",
+   "PC13",
+   "--mode",
+   "out-pp-2mhz"
+  ],
+  "output": "/* PC13 — 通用推挽输出 2MHz */\nRCC->APB2ENR |= RCC_APB2ENR_IOPCEN;\n__DSB();\nGPIOC->CRH &= ~(0xFUL << 20);\nGPIOC->CRH |=  (0x2UL << 20);\n"
+ },
+ "gpio_hclk72": {
+  "argv": [
+   "--type",
+   "gpio",
+   "--pin",
+   "PC13",
+   "--mode",
+   "out-pp-2mhz",
+   "--hclk",
+   "72"
+  ],
+  "output": "/* PC13 — 通用推挽输出 2MHz */\nRCC->APB2ENR |= RCC_APB2ENR_IOPCEN;\n__DSB();\nGPIOC->CRH &= ~(0xFUL << 20);\nGPIOC->CRH |=  (0x2UL << 20);\n"
+ },
+ "gpio_hclk8": {
+  "argv": [
+   "--type",
+   "gpio",
+   "--pin",
+   "PC13",
+   "--mode",
+   "out-pp-2mhz",
+   "--hclk",
+   "8"
+  ],
+  "output": "/* PC13 — 通用推挽输出 2MHz */\nRCC->APB2ENR |= RCC_APB2ENR_IOPCEN;\n__DSB();\nGPIOC->CRH &= ~(0xFUL << 20);\nGPIOC->CRH |=  (0x2UL << 20);\n"
+ },
+ "i2c_default": {
+  "argv": [
+   "--type",
+   "i2c",
+   "--i2c",
+   "I2C1",
+   "--speed",
+   "100000",
+   "--scl",
+   "PB6",
+   "--sda",
+   "PB7"
+  ],
+  "output": "/* ========================================================================\n * I2C1 — 100kHz standard mode, SCL=PB6 SDA=PB7\n * CCR=0x0B4 (180), TRISE=0x25 (37)\n * WARNING: STM32F103 I2C has known errata. Consider software I2C for\n *          production use. See f103_known_issues.json.\n * ======================================================================== */\n\n/* 1. Clock enable */\nRCC->APB1ENR |= RCC_APB1ENR_I2C1EN;\nRCC->APB2ENR |= RCC_APB2ENR_IOPBEN | RCC_APB2ENR_IOPBEN;\n__DSB();\n\n/* 2. GPIO — SCL=PB6 AF-OD, SDA=PB7 AF-OD */\nGPIOB->CRL &= ~(0xFUL << 24);\nGPIOB->CRL |=  (0xFUL << 24);\nGPIOB->CRL &= ~(0xFUL << 28);\nGPIOB->CRL |=  (0xFUL << 28);\n\n/* 3. I2C1 config */\nI2C1->CR2 = 36;               // FREQ = PCLK1 MHz\nI2C1->CCR = 0x0B4;       // 100kHz, CCR=180\nI2C1->TRISE = 37;                // max rise time = 37\nI2C1->CR1 = 1;                  // PE=1, enable\n\n/* 4. Poll write helper */\nstatic error_chain_t i2c1_write(uint8_t dev_addr, uint8_t reg, uint8_t data) {\n    uint32_t timeout = 100000;\n    while (I2C1->SR2 & (1<<1)) {        // wait BUSY=0\n        if (--timeout == 0) return ERR_PLAIN(0xE001, \"I2C BUSY timeout\");\n    }\n    I2C1->CR1 |= (1<<8);                 // START\n    timeout = 100000;\n    while (!(I2C1->SR1 & 1)) {           // wait SB\n        if (--timeout == 0) return ERR_PLAIN(0xE002, \"I2C START timeout\");\n    }\n    I2C1->DR = (dev_addr << 1);          // ADDR + W\n    timeout = 100000;\n    while (!(I2C1->SR1 & (1<<1))) {       // wait ADDR\n        if (--timeout == 0) return ERR_PLAIN(0xE003, \"I2C ADDR timeout\");\n    }\n    (void)I2C1->SR2;                       // clear ADDR\n    I2C1->DR = reg;                       // send register\n    timeout = 100000;\n    while (!(I2C1->SR1 & (1<<7))) {       // wait TXE\n        if (--timeout == 0) return ERR_PLAIN(0xE004, \"I2C TXE timeout\");\n    }\n    I2C1->DR = data;                      // send data\n    timeout = 100000;\n    while (!(I2C1->SR1 & (1<<7))) {\n        if (--timeout == 0) return ERR_PLAIN(0xE004, \"I2C TXE timeout\");\n    }\n    timeout = 100000;\n    while (!(I2C1->SR1 & (1<<2))) {       // wait BTF\n        if (--timeout == 0) return ERR_PLAIN(0xE005, \"I2C BTF timeout\");\n    }\n    I2C1->CR1 |= (1<<9);                  // STOP\n    return ERR_OK;\n}\n"
+ },
+ "i2c_hclk72": {
+  "argv": [
+   "--type",
+   "i2c",
+   "--i2c",
+   "I2C1",
+   "--speed",
+   "100000",
+   "--scl",
+   "PB6",
+   "--sda",
+   "PB7",
+   "--hclk",
+   "72"
+  ],
+  "output": "/* ========================================================================\n * I2C1 — 100kHz standard mode, SCL=PB6 SDA=PB7\n * CCR=0x0B4 (180), TRISE=0x25 (37)\n * WARNING: STM32F103 I2C has known errata. Consider software I2C for\n *          production use. See f103_known_issues.json.\n * ======================================================================== */\n\n/* 1. Clock enable */\nRCC->APB1ENR |= RCC_APB1ENR_I2C1EN;\nRCC->APB2ENR |= RCC_APB2ENR_IOPBEN | RCC_APB2ENR_IOPBEN;\n__DSB();\n\n/* 2. GPIO — SCL=PB6 AF-OD, SDA=PB7 AF-OD */\nGPIOB->CRL &= ~(0xFUL << 24);\nGPIOB->CRL |=  (0xFUL << 24);\nGPIOB->CRL &= ~(0xFUL << 28);\nGPIOB->CRL |=  (0xFUL << 28);\n\n/* 3. I2C1 config */\nI2C1->CR2 = 36;               // FREQ = PCLK1 MHz\nI2C1->CCR = 0x0B4;       // 100kHz, CCR=180\nI2C1->TRISE = 37;                // max rise time = 37\nI2C1->CR1 = 1;                  // PE=1, enable\n\n/* 4. Poll write helper */\nstatic error_chain_t i2c1_write(uint8_t dev_addr, uint8_t reg, uint8_t data) {\n    uint32_t timeout = 100000;\n    while (I2C1->SR2 & (1<<1)) {        // wait BUSY=0\n        if (--timeout == 0) return ERR_PLAIN(0xE001, \"I2C BUSY timeout\");\n    }\n    I2C1->CR1 |= (1<<8);                 // START\n    timeout = 100000;\n    while (!(I2C1->SR1 & 1)) {           // wait SB\n        if (--timeout == 0) return ERR_PLAIN(0xE002, \"I2C START timeout\");\n    }\n    I2C1->DR = (dev_addr << 1);          // ADDR + W\n    timeout = 100000;\n    while (!(I2C1->SR1 & (1<<1))) {       // wait ADDR\n        if (--timeout == 0) return ERR_PLAIN(0xE003, \"I2C ADDR timeout\");\n    }\n    (void)I2C1->SR2;                       // clear ADDR\n    I2C1->DR = reg;                       // send register\n    timeout = 100000;\n    while (!(I2C1->SR1 & (1<<7))) {       // wait TXE\n        if (--timeout == 0) return ERR_PLAIN(0xE004, \"I2C TXE timeout\");\n    }\n    I2C1->DR = data;                      // send data\n    timeout = 100000;\n    while (!(I2C1->SR1 & (1<<7))) {\n        if (--timeout == 0) return ERR_PLAIN(0xE004, \"I2C TXE timeout\");\n    }\n    timeout = 100000;\n    while (!(I2C1->SR1 & (1<<2))) {       // wait BTF\n        if (--timeout == 0) return ERR_PLAIN(0xE005, \"I2C BTF timeout\");\n    }\n    I2C1->CR1 |= (1<<9);                  // STOP\n    return ERR_OK;\n}\n"
+ },
+ "i2c_hclk8": {
+  "argv": [
+   "--type",
+   "i2c",
+   "--i2c",
+   "I2C1",
+   "--speed",
+   "100000",
+   "--scl",
+   "PB6",
+   "--sda",
+   "PB7",
+   "--hclk",
+   "8"
+  ],
+  "output": "/* ========================================================================\n * I2C1 — 100kHz standard mode, SCL=PB6 SDA=PB7\n * 时钟前提 (F-110): HCLK=8MHz 按标准 APB 分频推导\n *   APB1=4/APB2=8 MHz (HPRE=1/PPRE2=1/PPRE1=2, TIM×2 §7.3.7); 异常分频请显式传 --tim-clk 或手改。\n * CCR=0x014 (20), TRISE=0x05 (5)\n * WARNING: STM32F103 I2C has known errata. Consider software I2C for\n *          production use. See f103_known_issues.json.\n * ======================================================================== */\n\n/* 1. Clock enable */\nRCC->APB1ENR |= RCC_APB1ENR_I2C1EN;\nRCC->APB2ENR |= RCC_APB2ENR_IOPBEN | RCC_APB2ENR_IOPBEN;\n__DSB();\n\n/* 2. GPIO — SCL=PB6 AF-OD, SDA=PB7 AF-OD */\nGPIOB->CRL &= ~(0xFUL << 24);\nGPIOB->CRL |=  (0xFUL << 24);\nGPIOB->CRL &= ~(0xFUL << 28);\nGPIOB->CRL |=  (0xFUL << 28);\n\n/* 3. I2C1 config */\nI2C1->CR2 = 4;               // FREQ = PCLK1 MHz\nI2C1->CCR = 0x014;       // 100kHz, CCR=20\nI2C1->TRISE = 5;                // max rise time = 5\nI2C1->CR1 = 1;                  // PE=1, enable\n\n/* 4. Poll write helper */\nstatic error_chain_t i2c1_write(uint8_t dev_addr, uint8_t reg, uint8_t data) {\n    uint32_t timeout = 100000;\n    while (I2C1->SR2 & (1<<1)) {        // wait BUSY=0\n        if (--timeout == 0) return ERR_PLAIN(0xE001, \"I2C BUSY timeout\");\n    }\n    I2C1->CR1 |= (1<<8);                 // START\n    timeout = 100000;\n    while (!(I2C1->SR1 & 1)) {           // wait SB\n        if (--timeout == 0) return ERR_PLAIN(0xE002, \"I2C START timeout\");\n    }\n    I2C1->DR = (dev_addr << 1);          // ADDR + W\n    timeout = 100000;\n    while (!(I2C1->SR1 & (1<<1))) {       // wait ADDR\n        if (--timeout == 0) return ERR_PLAIN(0xE003, \"I2C ADDR timeout\");\n    }\n    (void)I2C1->SR2;                       // clear ADDR\n    I2C1->DR = reg;                       // send register\n    timeout = 100000;\n    while (!(I2C1->SR1 & (1<<7))) {       // wait TXE\n        if (--timeout == 0) return ERR_PLAIN(0xE004, \"I2C TXE timeout\");\n    }\n    I2C1->DR = data;                      // send data\n    timeout = 100000;\n    while (!(I2C1->SR1 & (1<<7))) {\n        if (--timeout == 0) return ERR_PLAIN(0xE004, \"I2C TXE timeout\");\n    }\n    timeout = 100000;\n    while (!(I2C1->SR1 & (1<<2))) {       // wait BTF\n        if (--timeout == 0) return ERR_PLAIN(0xE005, \"I2C BTF timeout\");\n    }\n    I2C1->CR1 |= (1<<9);                  // STOP\n    return ERR_OK;\n}\n"
+ },
+ "pwm_default": {
+  "argv": [
+   "--type",
+   "pwm",
+   "--timer",
+   "TIM2",
+   "--ch",
+   "1",
+   "--freq",
+   "1000",
+   "--duty",
+   "50"
+  ],
+  "output": "/* ========================================================================\n * TIM2 CH1 PWM — PA0, 1000Hz, 50% duty\n * TIM_CLK=72MHz, PSC=71, ARR=999, CCR1=500 \n * ======================================================================== */\n\n/* 1. 时钟使能 */\nRCC->APB1ENR |= RCC_APB1ENR_TIM2EN;\nRCC->APB2ENR |= RCC_APB2ENR_IOPAEN;\n__DSB();\n\n/* 2. GPIO — PA0 复用推挽 50MHz */\nGPIOA->CRL &= ~(0xFUL << 0);\nGPIOA->CRL |=  (0xBUL << 0);\n\n/* 3. Timer 配置 */\nTIM2->PSC = 71;            // 72MHz/(71+1) = 1000000Hz\nTIM2->ARR = 999;           // → 1000Hz\nTIM2->CCR1 = 500;            // 50% duty\nTIM2->CCMR1 = (6<<4) | (1<<3);  // CH1: PWM mode 1, preload\nTIM2->CCER  |= (1<<0);           // CH1 output enable\nTIM2->CR1 = (1<<7) | 1;        // ARPE + enable\n"
+ },
+ "pwm_hclk72": {
+  "argv": [
+   "--type",
+   "pwm",
+   "--timer",
+   "TIM2",
+   "--ch",
+   "1",
+   "--freq",
+   "1000",
+   "--duty",
+   "50",
+   "--hclk",
+   "72"
+  ],
+  "output": "/* ========================================================================\n * TIM2 CH1 PWM — PA0, 1000Hz, 50% duty\n * TIM_CLK=72MHz, PSC=71, ARR=999, CCR1=500 \n * ======================================================================== */\n\n/* 1. 时钟使能 */\nRCC->APB1ENR |= RCC_APB1ENR_TIM2EN;\nRCC->APB2ENR |= RCC_APB2ENR_IOPAEN;\n__DSB();\n\n/* 2. GPIO — PA0 复用推挽 50MHz */\nGPIOA->CRL &= ~(0xFUL << 0);\nGPIOA->CRL |=  (0xBUL << 0);\n\n/* 3. Timer 配置 */\nTIM2->PSC = 71;            // 72MHz/(71+1) = 1000000Hz\nTIM2->ARR = 999;           // → 1000Hz\nTIM2->CCR1 = 500;            // 50% duty\nTIM2->CCMR1 = (6<<4) | (1<<3);  // CH1: PWM mode 1, preload\nTIM2->CCER  |= (1<<0);           // CH1 output enable\nTIM2->CR1 = (1<<7) | 1;        // ARPE + enable\n"
+ },
+ "pwm_hclk8": {
+  "argv": [
+   "--type",
+   "pwm",
+   "--timer",
+   "TIM2",
+   "--ch",
+   "1",
+   "--freq",
+   "1000",
+   "--duty",
+   "50",
+   "--hclk",
+   "8"
+  ],
+  "output": "/* ========================================================================\n * TIM2 CH1 PWM — PA0, 1000Hz, 50% duty\n * 时钟前提 (F-110): HCLK=8MHz 按标准 APB 分频推导\n *   APB1=4/APB2=8 MHz (HPRE=1/PPRE2=1/PPRE1=2, TIM×2 §7.3.7); 异常分频请显式传 --tim-clk 或手改。\n * TIM_CLK=8MHz, PSC=7, ARR=999, CCR1=500 \n * ======================================================================== */\n\n/* 1. 时钟使能 */\nRCC->APB1ENR |= RCC_APB1ENR_TIM2EN;\nRCC->APB2ENR |= RCC_APB2ENR_IOPAEN;\n__DSB();\n\n/* 2. GPIO — PA0 复用推挽 50MHz */\nGPIOA->CRL &= ~(0xFUL << 0);\nGPIOA->CRL |=  (0xBUL << 0);\n\n/* 3. Timer 配置 */\nTIM2->PSC = 7;            // 8MHz/(7+1) = 1000000Hz\nTIM2->ARR = 999;           // → 1000Hz\nTIM2->CCR1 = 500;            // 50% duty\nTIM2->CCMR1 = (6<<4) | (1<<3);  // CH1: PWM mode 1, preload\nTIM2->CCER  |= (1<<0);           // CH1 output enable\nTIM2->CR1 = (1<<7) | 1;        // ARPE + enable\n"
+ },
+ "spi_default": {
+  "argv": [
+   "--type",
+   "spi",
+   "--spi",
+   "SPI1",
+   "--spi-mode",
+   "0",
+   "--baud-div",
+   "8",
+   "--sck",
+   "PA5",
+   "--miso",
+   "PA6",
+   "--mosi",
+   "PA7",
+   "--nss",
+   "PA4"
+  ],
+  "output": "/* ========================================================================\n * SPI1 — Mode 0 (CPOL=0,CPHA=0), 9000kHz\n * SCK=PA5 MISO=PA6 MOSI=PA7 NSS=PA4 (software CS)\n * PCLK=72MHz, BR[2:0]=2 (/ 8)\n * ======================================================================== */\n\n/* 1. Clock enable */\nRCC->APB2ENR |= RCC_APB2ENR_SPI1EN;\nRCC->APB2ENR |= RCC_APB2ENR_IOPAEN;\n__DSB();\n\n/* 2. GPIO config */\n// SCK=PA5 — AF push-pull 50MHz\nGPIOA->CRL &= ~(0xFUL << 20);\nGPIOA->CRL |=  (0xBUL << 20);\n// MOSI=PA7 — AF push-pull 50MHz\nGPIOA->CRL &= ~(0xFUL << 28);\nGPIOA->CRL |=  (0xBUL << 28);\n// MISO=PA6 — floating input\nGPIOA->CRL &= ~(0xFUL << 24);\nGPIOA->CRL |=  (0x4UL << 24);\n// NSS=PA4 — GPIO output (software CS)\nGPIOA->CRL &= ~(0xFUL << 16);\nGPIOA->CRL |=  (0x3UL << 16);\nGPIOA->BSRR = (1UL << 4);  // CS=HIGH (inactive)\n\n/* 3. SPI1 config */\n// CR1: BR[2:0]=2 CPOL=0 CPHA=0 MSTR=1 SSM=1 SSI=1\nSPI1->CR1 = 0x0014 | (1<<9) | (1<<8);  // SSM+SSI (software NSS)\n// CR2: SSOE=0 (output disabled, manual CS)\nSPI1->CR1 |= (1<<6);                        // SPE=1, enable\n\n/* 4. CS control macros */\n#define SPI1_CS_LOW()  GPIOA->BRR = (1UL << 4)\n#define SPI1_CS_HIGH() GPIOA->BSRR = (1UL << 4)\n\n/* 5. Poll transfer */\nstatic uint8_t spi1_transfer(uint8_t tx_byte) {\n    while (!(SPI1->SR & (1<<1)));  // wait TXE\n    SPI1->DR = tx_byte;\n    while (!(SPI1->SR & (1<<0)));  // wait RXNE\n    return SPI1->DR;\n}\n\n/* 6. Burst write example */\nstatic void spi1_write_burst(uint8_t *buf, int len) {\n    SPI1_CS_LOW();\n    for (int i = 0; i < len; i++) {\n        while (!(SPI1->SR & (1<<1)));\n        SPI1->DR = buf[i];\n    }\n    while (SPI1->SR & (1<<7));  // wait BSY=0\n    SPI1_CS_HIGH();\n}\n"
+ },
+ "spi_hclk72": {
+  "argv": [
+   "--type",
+   "spi",
+   "--spi",
+   "SPI1",
+   "--spi-mode",
+   "0",
+   "--baud-div",
+   "8",
+   "--sck",
+   "PA5",
+   "--miso",
+   "PA6",
+   "--mosi",
+   "PA7",
+   "--nss",
+   "PA4",
+   "--hclk",
+   "72"
+  ],
+  "output": "/* ========================================================================\n * SPI1 — Mode 0 (CPOL=0,CPHA=0), 9000kHz\n * SCK=PA5 MISO=PA6 MOSI=PA7 NSS=PA4 (software CS)\n * PCLK=72MHz, BR[2:0]=2 (/ 8)\n * ======================================================================== */\n\n/* 1. Clock enable */\nRCC->APB2ENR |= RCC_APB2ENR_SPI1EN;\nRCC->APB2ENR |= RCC_APB2ENR_IOPAEN;\n__DSB();\n\n/* 2. GPIO config */\n// SCK=PA5 — AF push-pull 50MHz\nGPIOA->CRL &= ~(0xFUL << 20);\nGPIOA->CRL |=  (0xBUL << 20);\n// MOSI=PA7 — AF push-pull 50MHz\nGPIOA->CRL &= ~(0xFUL << 28);\nGPIOA->CRL |=  (0xBUL << 28);\n// MISO=PA6 — floating input\nGPIOA->CRL &= ~(0xFUL << 24);\nGPIOA->CRL |=  (0x4UL << 24);\n// NSS=PA4 — GPIO output (software CS)\nGPIOA->CRL &= ~(0xFUL << 16);\nGPIOA->CRL |=  (0x3UL << 16);\nGPIOA->BSRR = (1UL << 4);  // CS=HIGH (inactive)\n\n/* 3. SPI1 config */\n// CR1: BR[2:0]=2 CPOL=0 CPHA=0 MSTR=1 SSM=1 SSI=1\nSPI1->CR1 = 0x0014 | (1<<9) | (1<<8);  // SSM+SSI (software NSS)\n// CR2: SSOE=0 (output disabled, manual CS)\nSPI1->CR1 |= (1<<6);                        // SPE=1, enable\n\n/* 4. CS control macros */\n#define SPI1_CS_LOW()  GPIOA->BRR = (1UL << 4)\n#define SPI1_CS_HIGH() GPIOA->BSRR = (1UL << 4)\n\n/* 5. Poll transfer */\nstatic uint8_t spi1_transfer(uint8_t tx_byte) {\n    while (!(SPI1->SR & (1<<1)));  // wait TXE\n    SPI1->DR = tx_byte;\n    while (!(SPI1->SR & (1<<0)));  // wait RXNE\n    return SPI1->DR;\n}\n\n/* 6. Burst write example */\nstatic void spi1_write_burst(uint8_t *buf, int len) {\n    SPI1_CS_LOW();\n    for (int i = 0; i < len; i++) {\n        while (!(SPI1->SR & (1<<1)));\n        SPI1->DR = buf[i];\n    }\n    while (SPI1->SR & (1<<7));  // wait BSY=0\n    SPI1_CS_HIGH();\n}\n"
+ },
+ "spi_hclk8": {
+  "argv": [
+   "--type",
+   "spi",
+   "--spi",
+   "SPI1",
+   "--spi-mode",
+   "0",
+   "--baud-div",
+   "8",
+   "--sck",
+   "PA5",
+   "--miso",
+   "PA6",
+   "--mosi",
+   "PA7",
+   "--nss",
+   "PA4",
+   "--hclk",
+   "8"
+  ],
+  "output": "/* ========================================================================\n * SPI1 — Mode 0 (CPOL=0,CPHA=0), 1000kHz\n * SCK=PA5 MISO=PA6 MOSI=PA7 NSS=PA4 (software CS)\n * 时钟前提 (F-110): HCLK=8MHz 按标准 APB 分频推导\n *   APB1=4/APB2=8 MHz (HPRE=1/PPRE2=1/PPRE1=2, TIM×2 §7.3.7); 异常分频请显式传 --tim-clk 或手改。\n * PCLK=8MHz, BR[2:0]=2 (/ 8)\n * ======================================================================== */\n\n/* 1. Clock enable */\nRCC->APB2ENR |= RCC_APB2ENR_SPI1EN;\nRCC->APB2ENR |= RCC_APB2ENR_IOPAEN;\n__DSB();\n\n/* 2. GPIO config */\n// SCK=PA5 — AF push-pull 50MHz\nGPIOA->CRL &= ~(0xFUL << 20);\nGPIOA->CRL |=  (0xBUL << 20);\n// MOSI=PA7 — AF push-pull 50MHz\nGPIOA->CRL &= ~(0xFUL << 28);\nGPIOA->CRL |=  (0xBUL << 28);\n// MISO=PA6 — floating input\nGPIOA->CRL &= ~(0xFUL << 24);\nGPIOA->CRL |=  (0x4UL << 24);\n// NSS=PA4 — GPIO output (software CS)\nGPIOA->CRL &= ~(0xFUL << 16);\nGPIOA->CRL |=  (0x3UL << 16);\nGPIOA->BSRR = (1UL << 4);  // CS=HIGH (inactive)\n\n/* 3. SPI1 config */\n// CR1: BR[2:0]=2 CPOL=0 CPHA=0 MSTR=1 SSM=1 SSI=1\nSPI1->CR1 = 0x0014 | (1<<9) | (1<<8);  // SSM+SSI (software NSS)\n// CR2: SSOE=0 (output disabled, manual CS)\nSPI1->CR1 |= (1<<6);                        // SPE=1, enable\n\n/* 4. CS control macros */\n#define SPI1_CS_LOW()  GPIOA->BRR = (1UL << 4)\n#define SPI1_CS_HIGH() GPIOA->BSRR = (1UL << 4)\n\n/* 5. Poll transfer */\nstatic uint8_t spi1_transfer(uint8_t tx_byte) {\n    while (!(SPI1->SR & (1<<1)));  // wait TXE\n    SPI1->DR = tx_byte;\n    while (!(SPI1->SR & (1<<0)));  // wait RXNE\n    return SPI1->DR;\n}\n\n/* 6. Burst write example */\nstatic void spi1_write_burst(uint8_t *buf, int len) {\n    SPI1_CS_LOW();\n    for (int i = 0; i < len; i++) {\n        while (!(SPI1->SR & (1<<1)));\n        SPI1->DR = buf[i];\n    }\n    while (SPI1->SR & (1<<7));  // wait BSY=0\n    SPI1_CS_HIGH();\n}\n"
+ },
+ "systick_default": {
+  "argv": [
+   "--type",
+   "systick",
+   "--freq",
+   "1000"
+  ],
+  "output": "/* SysTick — 1000Hz (1000us interval), 72MHz core clock */\nSysTick->LOAD = 71999;         // 72MHz/1000 - 1\nSysTick->VAL  = 0;\nSysTick->CTRL = SysTick_CTRL_ENABLE | SysTick_CTRL_TICKINT | SysTick_CTRL_CLKSOURCE;\n\n/* 基于 SysTick 的延时计数 */\nstatic volatile uint32_t tick_ms;\n\n/* SysTick ISR */\nvoid SysTick_Handler(void) {\n    tick_ms++;                  // F-087: 必须递增, 否则 delay_ms 永久挂死\n    // called every 1000us — 用户代码加在这里\n}\n\nvoid delay_ms(uint32_t ms) {\n    uint32_t start = tick_ms;\n    while ((tick_ms - start) < ms) { __WFI(); }\n}\n"
+ },
+ "systick_hclk72": {
+  "argv": [
+   "--type",
+   "systick",
+   "--freq",
+   "1000",
+   "--hclk",
+   "72"
+  ],
+  "output": "/* SysTick — 1000Hz (1000us interval), 72MHz core clock */\nSysTick->LOAD = 71999;         // 72MHz/1000 - 1\nSysTick->VAL  = 0;\nSysTick->CTRL = SysTick_CTRL_ENABLE | SysTick_CTRL_TICKINT | SysTick_CTRL_CLKSOURCE;\n\n/* 基于 SysTick 的延时计数 */\nstatic volatile uint32_t tick_ms;\n\n/* SysTick ISR */\nvoid SysTick_Handler(void) {\n    tick_ms++;                  // F-087: 必须递增, 否则 delay_ms 永久挂死\n    // called every 1000us — 用户代码加在这里\n}\n\nvoid delay_ms(uint32_t ms) {\n    uint32_t start = tick_ms;\n    while ((tick_ms - start) < ms) { __WFI(); }\n}\n"
+ },
+ "systick_hclk8": {
+  "argv": [
+   "--type",
+   "systick",
+   "--freq",
+   "1000",
+   "--hclk",
+   "8"
+  ],
+  "output": "/* SysTick — 1000Hz (1000us interval), 8MHz core clock */\n * 时钟前提 (F-110): HCLK=8MHz 按标准 APB 分频推导\n *   APB1=4/APB2=8 MHz (HPRE=1/PPRE2=1/PPRE1=2, TIM×2 §7.3.7); 异常分频请显式传 --tim-clk 或手改。\nSysTick->LOAD = 7999;         // 8MHz/1000 - 1\nSysTick->VAL  = 0;\nSysTick->CTRL = SysTick_CTRL_ENABLE | SysTick_CTRL_TICKINT | SysTick_CTRL_CLKSOURCE;\n\n/* 基于 SysTick 的延时计数 */\nstatic volatile uint32_t tick_ms;\n\n/* SysTick ISR */\nvoid SysTick_Handler(void) {\n    tick_ms++;                  // F-087: 必须递增, 否则 delay_ms 永久挂死\n    // called every 1000us — 用户代码加在这里\n}\n\nvoid delay_ms(uint32_t ms) {\n    uint32_t start = tick_ms;\n    while ((tick_ms - start) < ms) { __WFI(); }\n}\n"
+ },
+ "timer-int_default": {
+  "argv": [
+   "--type",
+   "timer-int",
+   "--timer",
+   "TIM2",
+   "--period-ms",
+   "10"
+  ],
+  "output": "/* ========================================================================\n * TIM2 定时中断 — 每 10ms 触发一次\n * TIM_CLK=72MHz, PSC=71, ARR=9999\n * ======================================================================== */\n\n/* 1. 时钟 + NVIC */\nRCC->APB1ENR |= RCC_APB1ENR_TIM2EN;\n__DSB();\nNVIC->ISER[0] = (1UL << 28);  // TIM2_IRQn = 28\n\n/* 2. Timer 配置 */\nTIM2->PSC = 71;            // 72MHz/(71+1) = 1000000Hz\nTIM2->ARR = 9999;           // → 100Hz (10ms)\nTIM2->DIER = 1;                  // 更新中断使能\nTIM2->CR1 = 1;                   // 使能\n\n/* 3. ISR */\nvoid TIM2_IRQHandler(void) {\n    if (TIM2->SR & 1) {          // 更新标志\n        TIM2->SR &= ~1;           // 清除标志\n        // TODO: 每 10ms 执行的代码\n    }\n}\n"
+ },
+ "timer-int_hclk72": {
+  "argv": [
+   "--type",
+   "timer-int",
+   "--timer",
+   "TIM2",
+   "--period-ms",
+   "10",
+   "--hclk",
+   "72"
+  ],
+  "output": "/* ========================================================================\n * TIM2 定时中断 — 每 10ms 触发一次\n * TIM_CLK=72MHz, PSC=71, ARR=9999\n * ======================================================================== */\n\n/* 1. 时钟 + NVIC */\nRCC->APB1ENR |= RCC_APB1ENR_TIM2EN;\n__DSB();\nNVIC->ISER[0] = (1UL << 28);  // TIM2_IRQn = 28\n\n/* 2. Timer 配置 */\nTIM2->PSC = 71;            // 72MHz/(71+1) = 1000000Hz\nTIM2->ARR = 9999;           // → 100Hz (10ms)\nTIM2->DIER = 1;                  // 更新中断使能\nTIM2->CR1 = 1;                   // 使能\n\n/* 3. ISR */\nvoid TIM2_IRQHandler(void) {\n    if (TIM2->SR & 1) {          // 更新标志\n        TIM2->SR &= ~1;           // 清除标志\n        // TODO: 每 10ms 执行的代码\n    }\n}\n"
+ },
+ "timer-int_hclk8": {
+  "argv": [
+   "--type",
+   "timer-int",
+   "--timer",
+   "TIM2",
+   "--period-ms",
+   "10",
+   "--hclk",
+   "8"
+  ],
+  "output": "/* ========================================================================\n * TIM2 定时中断 — 每 10ms 触发一次\n * 时钟前提 (F-110): HCLK=8MHz 按标准 APB 分频推导\n *   APB1=4/APB2=8 MHz (HPRE=1/PPRE2=1/PPRE1=2, TIM×2 §7.3.7); 异常分频请显式传 --tim-clk 或手改。\n * TIM_CLK=8MHz, PSC=71, ARR=1110\n * ======================================================================== */\n\n/* 1. 时钟 + NVIC */\nRCC->APB1ENR |= RCC_APB1ENR_TIM2EN;\n__DSB();\nNVIC->ISER[0] = (1UL << 28);  // TIM2_IRQn = 28\n\n/* 2. Timer 配置 */\nTIM2->PSC = 71;            // 8MHz/(71+1) = 111111Hz\nTIM2->ARR = 1110;           // → 100Hz (10ms)\nTIM2->DIER = 1;                  // 更新中断使能\nTIM2->CR1 = 1;                   // 使能\n\n/* 3. ISR */\nvoid TIM2_IRQHandler(void) {\n    if (TIM2->SR & 1) {          // 更新标志\n        TIM2->SR &= ~1;           // 清除标志\n        // TODO: 每 10ms 执行的代码\n    }\n}\n"
+ },
+ "usart1_default": {
+  "argv": [
+   "--type",
+   "usart",
+   "--usart",
+   "USART1",
+   "--baud",
+   "115200"
+  ],
+  "output": "/* ========================================================================\n * USART1 — 115200 baud, 8N1, TX=PA9 RX=PA10\n * PCLK2=72MHz, BRR=0x0271 (39.1/16)\n * ======================================================================== */\n\n/* 1. 时钟使能 */\nRCC->APB2ENR |= RCC_APB2ENR_USART1EN;\nRCC->APB2ENR |= RCC_APB2ENR_IOPAEN;\n__DSB();\n\n/* 2. GPIO 配置 */\n// PA9 = USART1_TX (复用推挽 50MHz)\nGPIOA->CRH &= ~(0xFUL << 4);\nGPIOA->CRH |=  (0xBUL << 4);\n// PA10 = USART1_RX (浮空输入)\nGPIOA->CRH &= ~(0xFUL << 8);\nGPIOA->CRH |=  (0x4UL << 8);\n\n/* 3. USART 配置 */\nUSART1->BRR = 0x0271;\nUSART1->CR1 = USART_CR1_TE | USART_CR1_RE;\nUSART1->CR1 |= USART_CR1_UE;\n\n/* 4. printf 重定向 (GCC/newlib-nano 系统桩 _write; Keil Microlib 的 fputc 在此链不生效) */\n#include <unistd.h>\nint _write(int fd, char *buf, int len) {\n    for (int i = 0; i < len; i++) {\n        while (!(USART1->SR & (1UL<<7)));  // wait TXE\n        USART1->DR = (uint8_t)buf[i];\n    }\n    return len;\n}\n\n/* 5. 轮询读写 */\nstatic void uart_putc(uint8_t byte) {\n    while (!(USART1->SR & (1UL<<7)));\n    USART1->DR = byte;\n}\nstatic uint8_t uart_getc(void) {\n    while (!(USART1->SR & (1UL<<5)));  // wait RXNE\n    return USART1->DR;\n}\n"
+ },
+ "usart1_hclk72": {
+  "argv": [
+   "--type",
+   "usart",
+   "--usart",
+   "USART1",
+   "--baud",
+   "115200",
+   "--hclk",
+   "72"
+  ],
+  "output": "/* ========================================================================\n * USART1 — 115200 baud, 8N1, TX=PA9 RX=PA10\n * PCLK2=72MHz, BRR=0x0271 (39.1/16)\n * ======================================================================== */\n\n/* 1. 时钟使能 */\nRCC->APB2ENR |= RCC_APB2ENR_USART1EN;\nRCC->APB2ENR |= RCC_APB2ENR_IOPAEN;\n__DSB();\n\n/* 2. GPIO 配置 */\n// PA9 = USART1_TX (复用推挽 50MHz)\nGPIOA->CRH &= ~(0xFUL << 4);\nGPIOA->CRH |=  (0xBUL << 4);\n// PA10 = USART1_RX (浮空输入)\nGPIOA->CRH &= ~(0xFUL << 8);\nGPIOA->CRH |=  (0x4UL << 8);\n\n/* 3. USART 配置 */\nUSART1->BRR = 0x0271;\nUSART1->CR1 = USART_CR1_TE | USART_CR1_RE;\nUSART1->CR1 |= USART_CR1_UE;\n\n/* 4. printf 重定向 (GCC/newlib-nano 系统桩 _write; Keil Microlib 的 fputc 在此链不生效) */\n#include <unistd.h>\nint _write(int fd, char *buf, int len) {\n    for (int i = 0; i < len; i++) {\n        while (!(USART1->SR & (1UL<<7)));  // wait TXE\n        USART1->DR = (uint8_t)buf[i];\n    }\n    return len;\n}\n\n/* 5. 轮询读写 */\nstatic void uart_putc(uint8_t byte) {\n    while (!(USART1->SR & (1UL<<7)));\n    USART1->DR = byte;\n}\nstatic uint8_t uart_getc(void) {\n    while (!(USART1->SR & (1UL<<5)));  // wait RXNE\n    return USART1->DR;\n}\n"
+ },
+ "usart1_hclk8": {
+  "argv": [
+   "--type",
+   "usart",
+   "--usart",
+   "USART1",
+   "--baud",
+   "115200",
+   "--hclk",
+   "8"
+  ],
+  "output": "/* ========================================================================\n * USART1 — 115200 baud, 8N1, TX=PA9 RX=PA10\n * 时钟前提 (F-110): HCLK=8MHz 按标准 APB 分频推导\n *   APB1=4/APB2=8 MHz (HPRE=1/PPRE2=1/PPRE1=2, TIM×2 §7.3.7); 异常分频请显式传 --tim-clk 或手改。\n * PCLK2=8MHz, BRR=0x0045 (4.5/16)\n * ======================================================================== */\n\n/* 1. 时钟使能 */\nRCC->APB2ENR |= RCC_APB2ENR_USART1EN;\nRCC->APB2ENR |= RCC_APB2ENR_IOPAEN;\n__DSB();\n\n/* 2. GPIO 配置 */\n// PA9 = USART1_TX (复用推挽 50MHz)\nGPIOA->CRH &= ~(0xFUL << 4);\nGPIOA->CRH |=  (0xBUL << 4);\n// PA10 = USART1_RX (浮空输入)\nGPIOA->CRH &= ~(0xFUL << 8);\nGPIOA->CRH |=  (0x4UL << 8);\n\n/* 3. USART 配置 */\nUSART1->BRR = 0x0045;\nUSART1->CR1 = USART_CR1_TE | USART_CR1_RE;\nUSART1->CR1 |= USART_CR1_UE;\n\n/* 4. printf 重定向 (GCC/newlib-nano 系统桩 _write; Keil Microlib 的 fputc 在此链不生效) */\n#include <unistd.h>\nint _write(int fd, char *buf, int len) {\n    for (int i = 0; i < len; i++) {\n        while (!(USART1->SR & (1UL<<7)));  // wait TXE\n        USART1->DR = (uint8_t)buf[i];\n    }\n    return len;\n}\n\n/* 5. 轮询读写 */\nstatic void uart_putc(uint8_t byte) {\n    while (!(USART1->SR & (1UL<<7)));\n    USART1->DR = byte;\n}\nstatic uint8_t uart_getc(void) {\n    while (!(USART1->SR & (1UL<<5)));  // wait RXNE\n    return USART1->DR;\n}\n"
+ },
+ "usart2_default": {
+  "argv": [
+   "--type",
+   "usart",
+   "--usart",
+   "USART2",
+   "--baud",
+   "9600",
+   "--tx",
+   "PA2",
+   "--rx",
+   "PA3"
+  ],
+  "output": "/* ========================================================================\n * USART2 — 9600 baud, 8N1, TX=PA2 RX=PA3\n * PCLK1=36MHz, BRR=0x0EA6 (234.6/16)\n * ======================================================================== */\n\n/* 1. 时钟使能 */\nRCC->APB1ENR |= RCC_APB1ENR_USART2EN;\nRCC->APB2ENR |= RCC_APB2ENR_IOPAEN;\n__DSB();\n\n/* 2. GPIO 配置 */\n// PA2 = USART2_TX (复用推挽 50MHz)\nGPIOA->CRL &= ~(0xFUL << 8);\nGPIOA->CRL |=  (0xBUL << 8);\n// PA3 = USART2_RX (浮空输入)\nGPIOA->CRL &= ~(0xFUL << 12);\nGPIOA->CRL |=  (0x4UL << 12);\n\n/* 3. USART 配置 */\nUSART2->BRR = 0x0EA6;\nUSART2->CR1 = USART_CR1_TE | USART_CR1_RE;\nUSART2->CR1 |= USART_CR1_UE;\n\n/* 4. printf 重定向 (GCC/newlib-nano 系统桩 _write; Keil Microlib 的 fputc 在此链不生效) */\n#include <unistd.h>\nint _write(int fd, char *buf, int len) {\n    for (int i = 0; i < len; i++) {\n        while (!(USART2->SR & (1UL<<7)));  // wait TXE\n        USART2->DR = (uint8_t)buf[i];\n    }\n    return len;\n}\n\n/* 5. 轮询读写 */\nstatic void uart_putc(uint8_t byte) {\n    while (!(USART2->SR & (1UL<<7)));\n    USART2->DR = byte;\n}\nstatic uint8_t uart_getc(void) {\n    while (!(USART2->SR & (1UL<<5)));  // wait RXNE\n    return USART2->DR;\n}\n"
+ },
+ "usart2_hclk72": {
+  "argv": [
+   "--type",
+   "usart",
+   "--usart",
+   "USART2",
+   "--baud",
+   "9600",
+   "--tx",
+   "PA2",
+   "--rx",
+   "PA3",
+   "--hclk",
+   "72"
+  ],
+  "output": "/* ========================================================================\n * USART2 — 9600 baud, 8N1, TX=PA2 RX=PA3\n * PCLK1=36MHz, BRR=0x0EA6 (234.6/16)\n * ======================================================================== */\n\n/* 1. 时钟使能 */\nRCC->APB1ENR |= RCC_APB1ENR_USART2EN;\nRCC->APB2ENR |= RCC_APB2ENR_IOPAEN;\n__DSB();\n\n/* 2. GPIO 配置 */\n// PA2 = USART2_TX (复用推挽 50MHz)\nGPIOA->CRL &= ~(0xFUL << 8);\nGPIOA->CRL |=  (0xBUL << 8);\n// PA3 = USART2_RX (浮空输入)\nGPIOA->CRL &= ~(0xFUL << 12);\nGPIOA->CRL |=  (0x4UL << 12);\n\n/* 3. USART 配置 */\nUSART2->BRR = 0x0EA6;\nUSART2->CR1 = USART_CR1_TE | USART_CR1_RE;\nUSART2->CR1 |= USART_CR1_UE;\n\n/* 4. printf 重定向 (GCC/newlib-nano 系统桩 _write; Keil Microlib 的 fputc 在此链不生效) */\n#include <unistd.h>\nint _write(int fd, char *buf, int len) {\n    for (int i = 0; i < len; i++) {\n        while (!(USART2->SR & (1UL<<7)));  // wait TXE\n        USART2->DR = (uint8_t)buf[i];\n    }\n    return len;\n}\n\n/* 5. 轮询读写 */\nstatic void uart_putc(uint8_t byte) {\n    while (!(USART2->SR & (1UL<<7)));\n    USART2->DR = byte;\n}\nstatic uint8_t uart_getc(void) {\n    while (!(USART2->SR & (1UL<<5)));  // wait RXNE\n    return USART2->DR;\n}\n"
+ },
+ "usart2_hclk8": {
+  "argv": [
+   "--type",
+   "usart",
+   "--usart",
+   "USART2",
+   "--baud",
+   "9600",
+   "--tx",
+   "PA2",
+   "--rx",
+   "PA3",
+   "--hclk",
+   "8"
+  ],
+  "output": "/* ========================================================================\n * USART2 — 9600 baud, 8N1, TX=PA2 RX=PA3\n * 时钟前提 (F-110): HCLK=8MHz 按标准 APB 分频推导\n *   APB1=4/APB2=8 MHz (HPRE=1/PPRE2=1/PPRE1=2, TIM×2 §7.3.7); 异常分频请显式传 --tim-clk 或手改。\n * PCLK1=4MHz, BRR=0x01A1 (26.1/16)\n * ======================================================================== */\n\n/* 1. 时钟使能 */\nRCC->APB1ENR |= RCC_APB1ENR_USART2EN;\nRCC->APB2ENR |= RCC_APB2ENR_IOPAEN;\n__DSB();\n\n/* 2. GPIO 配置 */\n// PA2 = USART2_TX (复用推挽 50MHz)\nGPIOA->CRL &= ~(0xFUL << 8);\nGPIOA->CRL |=  (0xBUL << 8);\n// PA3 = USART2_RX (浮空输入)\nGPIOA->CRL &= ~(0xFUL << 12);\nGPIOA->CRL |=  (0x4UL << 12);\n\n/* 3. USART 配置 */\nUSART2->BRR = 0x01A1;\nUSART2->CR1 = USART_CR1_TE | USART_CR1_RE;\nUSART2->CR1 |= USART_CR1_UE;\n\n/* 4. printf 重定向 (GCC/newlib-nano 系统桩 _write; Keil Microlib 的 fputc 在此链不生效) */\n#include <unistd.h>\nint _write(int fd, char *buf, int len) {\n    for (int i = 0; i < len; i++) {\n        while (!(USART2->SR & (1UL<<7)));  // wait TXE\n        USART2->DR = (uint8_t)buf[i];\n    }\n    return len;\n}\n\n/* 5. 轮询读写 */\nstatic void uart_putc(uint8_t byte) {\n    while (!(USART2->SR & (1UL<<7)));\n    USART2->DR = byte;\n}\nstatic uint8_t uart_getc(void) {\n    while (!(USART2->SR & (1UL<<5)));  // wait RXNE\n    return USART2->DR;\n}\n"
+ }
+}
