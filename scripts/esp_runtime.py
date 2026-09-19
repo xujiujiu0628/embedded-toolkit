@@ -193,8 +193,9 @@ def step_capture_uart(timeout_s: int, cap_cfg: dict,
       1) esptool --after hard_reset chip_id: 廉价只读命令触发确定性复位
          (--no-flash 续跑路径同样先复位, 不吃上一轮残态 — 2026-08-16 教训同款)
       2) settle_sec 静默等端口稳定 (USB-UART 桥重枚举, 默认 1.0s)
-      2.5) F-177: 开口即释放 DTR/RTS (桥接板不断言则芯片被按在复位里
-         收 0 行; 释放附带一次 POWERON 复位=确定起点; CDC 吞不支持)
+      2.5) F-177: 开口即释放 DTR/RTS (CH340 类桥电路断言双线=按住复位
+         收 0 行; 释放附带一次 POWERON 复位=确定起点; 不支持设控制线
+         的设备吞掉)
       3) readline 到 deadline: 端口异常即 error (COM3 被占/拔线给可读报错)
     panic 不拦截: 只打 esp_panic 文本标记, 定性交 AI judge (spec §4.3)。
     正文经私有键 "_text" 带回, 契约与 step_capture_rtt 一致。
@@ -245,9 +246,11 @@ def step_capture_uart(timeout_s: int, cap_cfg: dict,
                            timeout=0.5) as ser:
             # F-177: pyserial 开串口默认断言 DTR/RTS——CH340/CP210x 自动
             # 下载电路把该组合等价于拉低 EN, 芯片被按在复位里静默 0 行
-            # (初代 esp32 真机首跑钓出; S3 原生 CDC 无此电气通路)。开
-            # 口后立即释放; 桥接板上"断言→释放"本身就是一次 POWERON
-            # 复位, 反而给出确定起点。不支持设控制线的设备 (CDC) 吞掉。
+            # (初代 esp32 真机首跑钓出; S3 试点板为 FTDI 桥 0403:6001,
+            # 其对断言双线不拉 EN——旧代码在该板一向有行, 09-19 回归
+            # 2× PASS 实证释放亦兼容)。开口后立即释放; CH340 板上
+            # "断言→释放"本身就是一次 POWERON 复位, 反而给出确定起点。
+            # 不支持设控制线的设备吞掉。
             try:
                 ser.dtr = False
                 ser.rts = False
