@@ -8,10 +8,12 @@
 - **F-177 (fix, capture): uart 采集在 CH340/CP210x 桥接板上 0 行——开口即释放 DTR/RTS (2026-09-19 凌晨, 初代 esp32 补票真机钓出)**:
   根因: pyserial 打开串口默认断言 DTR/RTS; 初代 ESP32 开发板的自动下载
   三极管电路把该断言组合等价于把 EN 拉低——芯片被按在复位里过完整个采集
-  窗, build/flash 全 OK 而 `lines=0` 静默 FAIL。F-174 未触达: S3 试点走
-  原生 USB CDC, 无此电气通路。真机诊断两段同口实验: A 默认开(=verify 当
-  时行为) 4s 0 行 → B 释放 dtr/rts 后 63 行自 `rst:0x1 (POWERON_RESET)`
-  首行起。
+  窗, build/flash 全 OK 而 `lines=0` 静默 FAIL。F-174 未触达: S3 试点板
+  同为 USB-UART 桥(补票时枚举 VID:PID=0403:6001, FTDI; 原判"原生 CDC"系
+  凭记忆"USB 直连"措辞推断, 勘误见下), 该桥电路对 pyserial 断言双线组合
+  不拉低 EN——真机实证旧代码在该板上一向有行; 踩坑是 CH340 板的极性组合
+  恰好相反。真机诊断两段同口实验: A 默认开(=verify 当时行为) 4s 0 行 →
+  B 释放 dtr/rts 后 63 行自 `rst:0x1 (POWERON_RESET)` 首行起。
   处置: `step_capture_uart` 开口后立即释放 DTR/RTS, 不支持设控制线的设备
   吞掉(CDC 无操作)——桥接板"断言→释放"本身就是一次 POWERON 复位, 顺带
   给出确定起点(两次真机复验均 72 行自首行收齐)。
@@ -19,10 +21,13 @@
   绿) + CDC 不支持容错钉; 全量 906 绿 + ruff 零告。
   真机复验: esp32-hello 连续 2× 全链 PASS(72 行/次, 双 expect 命中;
   `chip_id` 在初代片上 "ESP32 has no Chip ID. Reading MAC instead." 为
-  预期回落, rc=0 不断流程)。⚠ **S3 真机回归待补票**(诊断时板未在场;
-  host 面证据=既有 S3 capture 钉全绿+容错钉)。
-  教训(承 F-174 口径): **同一后端的下一芯片族≠同一电气特性**——capture
-  类代码"真机验过"只对那块板成立, 第二块板补票才兑现路径覆盖。
+  预期回落, rc=0 不断流程)。
+  S3 真机回归 ✅ **同日补票闭合**(09-19 板到): esp32s3-hello verify 2×
+  PASS, 74 行/次双 expect 命中——F-177 对两种桥电路极性均实证兼容。
+  教训两笔(承 F-174 口径): ① **同一后端的下一芯片族≠同一电气特性**——
+  capture 类代码"真机验过"只对那块板成立, 第二块板补票才兑现路径覆盖;
+  ② **电路层结论以现场枚举(VID:PID)为锚**——"USB 直连"措辞不是电气通路
+  证据, 本票初判"S3 原生 CDC"即因此出形, 登记别太乐观再兑现。
 - **F-176 (fix, CI): coverage-gate 缺 requirements 安装——F-174 合入即现形**:
   根因: F-174 分支未推过, 其测试从未在 CI 跑; `step_capture_uart` 内部
   `import serial` (pyserial, requirements.txt 声明件), 本地"已装环境"全绿而
