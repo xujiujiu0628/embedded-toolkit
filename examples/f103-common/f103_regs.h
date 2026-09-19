@@ -150,6 +150,22 @@ typedef struct {   /* DR1@0x04 .. DR42@0xB8, RTCCR@0x2C, CR@0x30, CSR@0x34 */
     volatile uint32_t RTCCR, CR, CSR;
 } BKP_TypeDef;
 
+typedef struct {   /* ref.json peripherals.SDIO: POWER@0x00 .. FIFO@0x80
+                     (0x40/0x44 与 0x4C..0x7C 为保留区间) */
+    volatile uint32_t POWER, CLKCR, ARG, CMD, RESPCMD, RESP1, RESP2,
+        RESP3, RESP4, DTIMER, DLEN, DCTRL, DCOUNT, STA, ICR, MASK;
+    volatile uint32_t RESERVED0[2];
+    volatile uint32_t FIFOCNT;
+    volatile uint32_t RESERVED1[13];
+    volatile uint32_t FIFO;
+} SDIO_TypeDef;
+
+typedef struct {   /* ref.json peripherals.FSMC — 样例仅用 BCR1/BTR1;
+                     PCR/SR/PMEM/ECC/BWTR 区 (0x60..0x11C) 未在本头定义,
+                     需要时按 ref.json 偏移另行扩展 */
+    volatile uint32_t BCR1, BTR1, BCR2, BTR2, BCR3, BTR3, BCR4, BTR4;
+} FSMC_TypeDef;
+
 /* ── 外设实例指针 (基地址逐项 = ref.json peripherals.<P>.base) ── */
 #define RCC     ((RCC_TypeDef *)     0x40021000UL)  /* ref.json peripherals.RCC */
 #define GPIOA   ((GPIO_TypeDef *)    0x40010800UL)  /* ref.json peripherals.GPIOA */
@@ -197,6 +213,8 @@ typedef struct {   /* DR1@0x04 .. DR42@0xB8, RTCCR@0x2C, CR@0x30, CSR@0x34 */
 #define EXTI    ((EXTI_TypeDef *)    0x40010400UL)  /* ref.json peripherals.EXTI */
 #define DMA1    ((DMA_TypeDef *)     0x40020000UL)  /* ref.json peripherals.DMA1 */
 #define DMA2    ((DMA_TypeDef *)     0x40020400UL)  /* ref.json peripherals.DMA2 */
+#define SDIO    ((SDIO_TypeDef *)    0x40018000UL)  /* ref.json peripherals.SDIO */
+#define FSMC    ((FSMC_TypeDef *)    0xA0000000UL)  /* ref.json peripherals.FSMC */
 #define FLASH   ((FLASH_TypeDef *)   0x40022000UL)  /* ref.json peripherals.FLASH */
 #define SysTick ((SysTick_Type *)    0xE000E010UL)  /* Cortex-M3 核心 */
 #define NVIC    ((NVIC_Type *)       0xE000E100UL)  /* ref.json peripherals.NVIC */
@@ -254,6 +272,8 @@ typedef struct {   /* DR1@0x04 .. DR42@0xB8, RTCCR@0x2C, CR@0x30, CSR@0x34 */
 #define RCC_AHBENR_DMA1EN     (1UL << 0)
 #define RCC_AHBENR_DMA2EN     (1UL << 1)
 #define RCC_AHBENR_CRCEN      (1UL << 6)
+#define RCC_AHBENR_FSMCEN     (1UL << 8)
+#define RCC_AHBENR_SDIOEN     (1UL << 10)
 /* BDCR: 0=LSEON 1=LSERDY 2=LSEBYP 8:9=RTCSEL 15=RTCEN 16=BDRST
  *       (ref.json RCC.BDCR bits) — RTC 选择域 10b=LSE (RM 语义, GAP-D-4) */
 #define RCC_BDCR_LSEON        (1UL << 0)
