@@ -93,7 +93,13 @@ class SampleFactoryTests(unittest.TestCase):
             env["PATH"] = make_dir + os.pathsep + env.get("PATH", "")
         cmd = [MAKE, *args]
         if kw.get("host_gcc"):
-            cmd.append(f"CC_HOST={kw['host_gcc']}")
+            host_gcc = kw["host_gcc"]
+            # host gcc 的编译器子进程 (cc1) 依赖其同目录 DLL — 不在其 bin
+            # 目录进 PATH 时 gcc 会静默退出 1 (无诊断输出), 必须 prepend
+            host_dir = os.path.dirname(host_gcc)
+            if host_dir:
+                env["PATH"] = host_dir + os.pathsep + env["PATH"]
+            cmd.append(f"CC_HOST={host_gcc}")
         return subprocess.run(
             cmd, cwd=sample_dir, capture_output=True, text=True,
             encoding="utf-8", errors="replace", timeout=MAKE_TIMEOUT, env=env)
