@@ -23,7 +23,7 @@ clean:
 # F103_SAMPLE_HOST_TEST 只编译纯逻辑/序列断言, 断言全过 exit 0。
 # CC_HOST 可在命令行覆盖 (工厂测试注入解析到的 host gcc 绝对路径)。
 CC_HOST ?= gcc
-MOCK_DEFS = 
+MOCK_DEFS = -DF103_MOCK_CAN -DF103_MOCK_RCC
 
 test:
 	@mkdir -p $(BUILD_DIR)

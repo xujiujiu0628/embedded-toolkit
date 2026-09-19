@@ -5,6 +5,8 @@
  *                  EGR/CNT/PSC/ARR), peripherals.TIM7 (base=0x40001400,
  *                  布局同 TIM6), RCC.APB1ENR bits 4/5=TIM6EN/TIM7EN。
  * 硬件验收: 未做（编译级样例）
+ * mock 二期 (WB-20260920-02): host 断言加深 — 16 位宽度边界 + 除零/
+ *          ARR 溢出防御 (GAP-G-2 样例侧哨兵)。
  */
 #include "f103_regs.h"
 
@@ -13,13 +15,32 @@
 static uint32_t basic_timer_irq_hz(uint32_t tim_clk_hz, uint32_t psc,
                                    uint32_t arr)
 {
-    return tim_clk_hz / ((psc + 1u) * (arr + 1u));
+    uint32_t div;
+    /* 二期防御: 16 位寄存器宽度 (ref.json TIM6/TIM7 PSC/ARR bits 0:15) */
+    if (psc > 0xFFFFu || arr > 0xFFFFu) {
+        return 0u;
+    }
+    div = (psc + 1u) * (arr + 1u);
+    if (div == 0u) {                     /* 满档乘积回绕 → 拒绝 (防除零) */
+        return 0u;
+    }
+    return tim_clk_hz / div;
 }
 
 static uint32_t basic_timer_arr_for_hz(uint32_t tim_clk_hz, uint32_t psc,
                                        uint32_t hz)
 {
-    return tim_clk_hz / ((psc + 1u) * hz) - 1u;
+    uint32_t arr;
+    /* 二期防御: 零目标频率 (除零) 与 PSC 超宽拒绝 */
+    if (hz == 0u || psc > 0xFFFFu) {
+        return 0u;
+    }
+    arr = tim_clk_hz / ((psc + 1u) * hz) - 1u;
+    if (arr > 0xFFFFu) {                 /* 二期防御: 16 位 ARR 放不下
+                                            (GAP-G-2 家族, 样例侧哨兵) */
+        return 0u;
+    }
+    return arr;
 }
 
 /* 配置序列 — target 写真寄存器 / host(F103_MOCK_REGS) 写重定向结构, 两态共用 */
@@ -69,6 +90,16 @@ int main(void)
     CHECK(basic_timer_irq_hz(72000000u, 7199, 9999) == 1u);
     CHECK(basic_timer_irq_hz(72000000u, 719, 99) == 1000u);
     CHECK(basic_timer_arr_for_hz(72000000u, 7199u, 1u) == 9999u);
+    /* 组1 边界: PSC=0 + ARR 满档 0xFFFF → 72M/65536 = 1098 (截断) */
+    CHECK(basic_timer_irq_hz(72000000u, 0, 65535) == 1098u);
+    /* 组2 防御-除零 (二期新增): hz=0 → 0 哨兵, 不崩 */
+    CHECK(basic_timer_arr_for_hz(72000000u, 719u, 0u) == 0u);
+    /* 组3 防御-溢出 (二期新增): 72M/1-1 超 16 位 → 0 哨兵; PSC 超宽
+     * 拒绝; 满档乘积回绕拒绝 */
+    CHECK(basic_timer_arr_for_hz(72000000u, 0u, 1u) == 0u);
+    CHECK(basic_timer_arr_for_hz(72000000u, 0x10000u, 1u) == 0u);
+    CHECK(basic_timer_irq_hz(72000000u, 0x10000u, 0u) == 0u);
+    CHECK(basic_timer_irq_hz(72000000u, 0xFFFFu, 0xFFFFu) == 0u);
     /* 双实例序列断言 (互不串扰) */
     tim6_tim7_init();
     CHECK(f103_mock_RCC.APB1ENR & RCC_APB1ENR_TIM6EN);
@@ -76,6 +107,11 @@ int main(void)
     CHECK(f103_mock_TIM6.PSC == 7199u && f103_mock_TIM6.ARR == 9999u);
     CHECK(f103_mock_TIM7.PSC == 719u && f103_mock_TIM7.ARR == 99u);
     CHECK(f103_mock_TIM6.CR1 == 1u && f103_mock_TIM7.CR1 == 1u);
+    /* 组4 序列↔换算联动: mock 终态回代换算函数仍得目标频率 */
+    CHECK(basic_timer_irq_hz(72000000u, f103_mock_TIM6.PSC,
+                             f103_mock_TIM6.ARR) == 1u);
+    CHECK(basic_timer_irq_hz(72000000u, f103_mock_TIM7.PSC,
+                             f103_mock_TIM7.ARR) == 1000u);
     if (failures) {
         printf("MOCK FAILED (%d)\n", failures);
         return 1;

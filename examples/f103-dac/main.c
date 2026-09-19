@@ -3,12 +3,17 @@
  * ref.json anchor: peripherals.DAC (CR/SWTRIGR/DHR12R1/DOR1 位名),
  *                  RCC.APB1ENR bit29=DACEN; DAC available_on_c8=false。
  * 硬件验收: 未做（编译级样例）
+ * mock 二期 (WB-20260920-02): host 断言加深 — 边界/防御 + clamp 进序列。
  */
 #include "f103_regs.h"
 
-/* mv→12bit 码值 (Vref=3.3V, 纯函数 host 可测) */
+/* mv→12bit 码值 (Vref=3.3V, 纯函数 host 可测)。
+ * 二期防御: 超 12 位满档 clamp 4095 — 先判后乘, 合法输入行为不变 */
 static uint32_t dac_mv_to_code(uint32_t mv)
 {
+    if (mv > 3300u) {
+        return 4095u;
+    }
     return mv * 4095u / 3300u;
 }
 
@@ -51,16 +56,31 @@ static int failures;
 
 int main(void)
 {
-    /* 纯换算断言 (期望值手工演算) */
+    /* 组1 换算断言 (期望值手工演算) + 整除截断边界 */
     CHECK(dac_mv_to_code(3300) == 4095u);
     CHECK(dac_mv_to_code(0)    == 0u);
     CHECK(dac_mv_to_code(1650) == 2047u);   /* 1650*4095/3300 整除截断 */
-    /* 序列断言 */
+    CHECK(dac_mv_to_code(1)    == 1u);      /* 4095/3300=1.24 → 1 */
+    CHECK(dac_mv_to_code(3299) == 4093u);   /* 13509405/3300=4093.8 → 4093 */
+    /* 组2 满档边界: ref.json DAC.DHR12R1 bits 0:11 上满档 */
+    CHECK(dac_mv_to_code(3300) == 4095u);
+    /* 组3 非法输入防御 (二期新增): 超量程 clamp 4095, 含乘法溢出
+     * 输入 (先判后乘, 不回绕) */
+    CHECK(dac_mv_to_code(5000) == 4095u);
+    CHECK(dac_mv_to_code(0xFFFFFFFFu) == 4095u);
+    /* 组4 init 序列断言 */
     dac1_init();
     CHECK(f103_mock_RCC.APB1ENR & RCC_APB1ENR_DACEN);
+    CHECK(f103_mock_RCC.APB2ENR & RCC_APB2ENR_IOPAEN);
     CHECK(f103_mock_DAC.CR == ((1u << 0) | (1u << 2)));
+    /* 组5 write 序列 + clamp 联动 (防御经写值路径生效) */
     dac1_write_mv(1650);
     CHECK(f103_mock_DAC.DHR12R1 == 2047u);
+    CHECK(f103_mock_DAC.SWTRIGR == 1u);
+    dac1_write_mv(5000);
+    CHECK(f103_mock_DAC.DHR12R1 == 4095u);
+    dac1_write_mv(0);
+    CHECK(f103_mock_DAC.DHR12R1 == 0u);
     CHECK(f103_mock_DAC.SWTRIGR == 1u);
     if (failures) {
         printf("MOCK FAILED (%d)\n", failures);
