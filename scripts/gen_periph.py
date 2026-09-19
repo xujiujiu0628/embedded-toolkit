@@ -65,16 +65,50 @@ I2C_SPEED_MODES = {int(k): tuple(v)
 
 # ---- F-110: 时钟树推导 (单一事实源) ----
 HCLK_MIN, HCLK_MAX = 2, 72  # 2 起: pclk1=HCLK//2 须 ≥1; 72 = F103 规格上限
+# WB-20260920-01: PCLK1 规格上限 36MHz = APB1 总线顶速 (RM0008/F103 数据
+# 手册"外设时钟"表; ref.json 未登记 — GAP-D-4 纪律: 架构常量+行内出处,
+# 不入 ref.json)。PCLK2 上限即 HCLK_MAX。
+PCLK1_MAX = 36
 
 
-def apb_clock_mhz(hclk_mhz: int, bus: str) -> int:
-    """HCLK → APB 总线时钟, 按 F103 标准分频假设 (HPRE=1 / PPRE2=1 / PPRE1=2,
-    CubeMX 复位默认即此; 非标准分频请显式传 --tim-clk 或手改生成物)。
+def apb_clock_mhz(hclk_mhz: int, bus: str,
+                  pclk1_mhz: int | None = None,
+                  pclk2_mhz: int | None = None) -> int:
+    """HCLK → APB 总线时钟。
 
-    APB2 = HCLK; APB1 = HCLK//2 (floor——奇数 HCLK 的取整结果由注释如实呈现)。
-    定时器内核: TIM1=APB2=HCLK; TIM2~4=APB1×2=HCLK (APB1 分频≠1 时定时器
-    时钟 ×2, RM0008 §7.3.7), 故 tim 侧推导值恒为 hclk。"""
-    return hclk_mhz if bus == "APB2" else hclk_mhz // 2
+    F-110: 默认按 F103 标准分频假设 (HPRE=1 / PPRE2=1 / PPRE1=2, CubeMX
+    复位默认即此)——APB2 = HCLK; APB1 = HCLK//2 (floor——奇数 HCLK 的取整
+    结果由注释如实呈现)。
+    WB-20260920-01 (--pclk1/--pclk2): 对应总线的显式 PCLK 覆盖推导值,
+    逐键独立; 未传的键维持 F-110 公式不动。默认路径 (两参皆 None) 与
+    F-110 行为逐字节一致。"""
+    if bus == "APB2":
+        return pclk2_mhz if pclk2_mhz is not None else hclk_mhz
+    return pclk1_mhz if pclk1_mhz is not None else hclk_mhz // 2
+
+
+def tim_kernel_clock_mhz(hclk_mhz: int, pclk1_mhz: int | None = None) -> int:
+    """TIM2~4 定时器内核时钟派生 (RM0008 §7.3.7: APB1 分频≠1 时定时器
+    时钟 ×2; 分频=1 不倍增)。
+
+    WB-20260920-01 派生链 (简报 §2.1): 显式 --tim-clk (调用方处理) >
+    APB1×2 规则随 --pclk1 派生 > hclk 推导 (F-110 现状)。
+
+    --pclk1 为整数 MHz, 无法从参数得知分频器原值——按以下**前提规则**
+    判定 (非静默: 该前提随生成物注记与本报告披露):
+      pclk1 == hclk//2 → 标准 PPRE1=2 → ×2 抵消, 内核 = hclk (F-110 现状);
+      pclk1 == hclk    → PPRE1=1 → 分频=1, ×2 **不**适用, 内核 = pclk1
+                         (RM0008 §7.3.7 原文锚定——简报规则的物理边界
+                         补全, 详见报告三列对账表);
+      其余             → 视为 PPRE1∈{4,8,16} → 内核 = pclk1×2。
+    pclk1 未传 → F-110 现状推导 (内核 = hclk)。"""
+    if pclk1_mhz is None:
+        return hclk_mhz
+    if pclk1_mhz == hclk_mhz // 2:
+        return hclk_mhz
+    if pclk1_mhz == hclk_mhz:
+        return pclk1_mhz
+    return pclk1_mhz * 2
 
 
 def _hclk_error(hclk_mhz: int) -> str | None:
@@ -88,16 +122,65 @@ def _hclk_error(hclk_mhz: int) -> str | None:
     return None
 
 
-def _hclk_precondition_note(hclk_mhz: int) -> list:
-    """F-111 (复审 M-4, spec §6 承诺三处声明的生成物落点): 非默认 hclk 时
-    生成物头部回显"标准 APB 分频假设"前提。hclk=72 返回空列表——默认路径
-    输出逐字节兼容契约优先。"""
-    if hclk_mhz == 72:
+def _pclk_error(hclk_mhz: int, pclk1_mhz: int | None = None,
+                pclk2_mhz: int | None = None) -> str | None:
+    """WB-20260920-01: --pclk1/--pclk2 域校验 (库级, 与 _hclk_error 同款
+    F-103 两层互补纪律)。规则:
+      pclk2 ∈ [1, HCLK_MAX] 且 ≤ hclk (PPRE2≥1 ⇒ PCLK2 ≤ HCLK);
+      pclk1 ∈ [1, PCLK1_MAX=36] 且 ≤ hclk (36 = APB1 总线顶速, RM0008
+      数据手册"外设时钟"表 — GAP-D-4 架构常量);
+      非整数 (含 bool) / 空白串同律 — 显式报错, 禁止静默回落默认。"""
+    for key, value, lo, hi in (("--pclk2", pclk2_mhz, 1, HCLK_MAX),
+                               ("--pclk1", pclk1_mhz, 1, PCLK1_MAX)):
+        if value is None:
+            continue
+        if not isinstance(value, int) or isinstance(value, bool):
+            return (f"/* ERROR: {key}={value!r} 非整数 — 须为整数 MHz "
+                    f"(F-103: 不静默回落默认)。*/")
+        if not (lo <= value <= hi):
+            return (f"/* ERROR: {key}={value} 越界 — 有效范围 {lo}~{hi} MHz "
+                    f"({'PCLK2 ≤ HCLK' if key == '--pclk2' else
+                        '36 = APB1 总线顶速 (RM0008 数据手册, GAP-D-4 架构常量)'})。*/")
+        if value > hclk_mhz:
+            return (f"/* ERROR: {key}={value} > hclk={hclk_mhz} — PPRE 分频比 "
+                    f"不可能小于 1:1 (F-103: 不静默回落默认)。*/")
+    return None
+
+
+def _hclk_precondition_note(hclk_mhz: int, pclk1_mhz: int | None = None,
+                            pclk2_mhz: int | None = None) -> list:
+    """F-111 (复审 M-4, spec §6 承诺三处声明的生成物落点): 非默认时钟假设时
+    生成物头部回显前提。hclk=72 且无 pclk 覆盖 → 空列表 (默认路径逐字节
+    兼容契约优先)。
+    WB-20260920-01: 显式 pclk 在场时**必须**注入 (哪怕是 hclk=72——新信息
+    必须如实回显, 含 tim 内核 ×2 前提, 不许静默)。"""
+    if hclk_mhz == 72 and pclk1_mhz is None and pclk2_mhz is None:
         return []
-    return [" * 时钟前提 (F-110): HCLK=%dMHz 按标准 APB 分频推导" % hclk_mhz,
-            " *   APB1=%d/APB2=%d MHz (HPRE=1/PPRE2=1/PPRE1=2, TIM×2"
-            " §7.3.7); 异常分频请显式传 --tim-clk 或手改。"
-            % (hclk_mhz // 2, hclk_mhz)]
+    if pclk1_mhz is None and pclk2_mhz is None:
+        # F-110 原文 (hclk 非默认) — 逐字节保持
+        return [" * 时钟前提 (F-110): HCLK=%dMHz 按标准 APB 分频推导" % hclk_mhz,
+                " *   APB1=%d/APB2=%d MHz (HPRE=1/PPRE2=1/PPRE1=2, TIM×2"
+                " §7.3.7); 异常分频请显式传 --tim-clk 或手改。"
+                % (hclk_mhz // 2, hclk_mhz)]
+    lines = [" * 时钟前提 (WB-20260920-01): HCLK=%dMHz, 显式 PCLK 覆盖生效"
+             % hclk_mhz]
+    if pclk1_mhz is not None:
+        tim = tim_kernel_clock_mhz(hclk_mhz, pclk1_mhz)
+        if pclk1_mhz == hclk_mhz // 2:
+            premise = "标准 PPRE1=2, ×2 抵消"
+        elif pclk1_mhz == hclk_mhz:
+            premise = "PPRE1=1, ×2 不适用"
+        else:
+            premise = "PPRE1≠1, ×2 (分频器原值不可知, 按整数 pclk1 前提)"
+        lines.append(" *   PCLK1=%dMHz (--pclk1); TIM2~4 内核=%dMHz (%s,"
+                     " §7.3.7)" % (pclk1_mhz, tim, premise))
+    else:
+        lines.append(" *   PCLK1=%dMHz (PPRE1=2 推导)" % (hclk_mhz // 2))
+    if pclk2_mhz is not None:
+        lines.append(" *   PCLK2=%dMHz (--pclk2)" % pclk2_mhz)
+    else:
+        lines.append(" *   PCLK2=%dMHz (PPRE2=1 推导)" % hclk_mhz)
+    return lines
 
 # ---- 引脚号提取 ----
 def pin_port(pin: str) -> str:
@@ -208,14 +291,20 @@ def gen_systick(freq_hz: int, hclk_mhz: int = 72) -> str:
 
 
 def gen_usart(usart: str, baud: int, tx: str, rx: str,
-              hclk_mhz: int = 72) -> str:
-    """生成 USART 初始化代码 (F-110: 总线时钟经 apb_clock_mhz 推导)"""
-    err = _hclk_error(hclk_mhz)  # F-111 (M-3): 库级域校验
+              hclk_mhz: int = 72, pclk1_mhz: int | None = None,
+              pclk2_mhz: int | None = None) -> str:
+    """生成 USART 初始化代码 (F-110: 总线时钟经 apb_clock_mhz 推导;
+    WB-20260920-01: pclk1/pclk2 显式覆盖逐键独立, USART1 吃 pclk2,
+    USART2/3 吃 pclk1)"""
+    err = _hclk_error(hclk_mhz)
+    if err:
+        return err
+    err = _pclk_error(hclk_mhz, pclk1_mhz, pclk2_mhz)
     if err:
         return err
     usart_n = usart[-1]  # "1", "2", "3"
     bus = "APB2" if usart_n == "1" else "APB1"
-    pclk_mhz = apb_clock_mhz(hclk_mhz, bus)
+    pclk_mhz = apb_clock_mhz(hclk_mhz, bus, pclk1_mhz, pclk2_mhz)
 
     # F-108 (L-1): baud<=0 结构化 ERROR, 不再除零 traceback。
     if baud <= 0:
@@ -248,7 +337,7 @@ def gen_usart(usart: str, baud: int, tx: str, rx: str,
     lines = []
     lines.append("/* ========================================================================")
     lines.append(f" * {usart} — {baud} baud, 8N1, TX={tx} RX={rx}")
-    lines.extend(_hclk_precondition_note(hclk_mhz))
+    lines.extend(_hclk_precondition_note(hclk_mhz, pclk1_mhz, pclk2_mhz))
     lines.append(f" * PCLK{bus[-1].lower()}={pclk_mhz}MHz, BRR=0x{brr:04X} ({mantissa}.{fraction}/16)")
     lines.append(" * ======================================================================== */")
     lines.append("")
@@ -301,12 +390,19 @@ def gen_usart(usart: str, baud: int, tx: str, rx: str,
 
 
 def gen_pwm(timer: str, ch: int, pin: str, freq: int, duty: int,
-            tim_clk_mhz: int = None, hclk_mhz: int = 72) -> str:
+            tim_clk_mhz: int = None, hclk_mhz: int = 72,
+            pclk1_mhz: int | None = None) -> str:
     """生成 PWM 初始化代码
 
     F-110 优先级契约: tim_clk_mhz 显式传值 > hclk 推导
-    (TIM2~4 内核 = APB1×2 = hclk; TIM1 = APB2 = hclk, 恒为 hclk)。"""
+    (TIM2~4 内核 = APB1×2 = hclk; TIM1 = APB2 = hclk, 恒为 hclk)。
+    WB-20260920-01 派生链: 显式 tim_clk > pclk1 派生 (APB1 族, §7.3.7)
+    > hclk 推导; TIM1 (APB2) 维持 hclk 推导 (pclk2×2 耦合未建模 —
+    见报告 GAP-P-1)。"""
     err = _hclk_error(hclk_mhz)  # F-111 (M-3): 库级域校验
+    if err:
+        return err
+    err = _pclk_error(hclk_mhz, pclk1_mhz)
     if err:
         return err
     # F-111 (M-3): 显式 tim_clk 也纳域纪律——旧版 tim_clk=0/-5 产出
@@ -314,7 +410,10 @@ def gen_pwm(timer: str, ch: int, pin: str, freq: int, duty: int,
     if tim_clk_mhz is not None and tim_clk_mhz <= 0:
         return f"/* ERROR: tim_clk={tim_clk_mhz}MHz 非法 — 必须为正整数。*/"
     if tim_clk_mhz is None:
-        tim_clk_mhz = hclk_mhz
+        tim_bus = TIM_BUS.get(timer, "APB1")   # F-077: TIM1 → APB2, 其余 APB1
+        tim_clk_mhz = (tim_kernel_clock_mhz(hclk_mhz, pclk1_mhz)
+                       if tim_bus == "APB1" else hclk_mhz)
+    tim_bus = TIM_BUS.get(timer, "APB1")   # F-077: TIM1 → APB2, 其余 APB1
     # F-103 边界三连 (仿 F-086 gen_timer_int 显式报错惯例):
     # ① TIM2~4 只有 4 通道, ch≥5 时 CCR5/CCMR 写的是保留位——硬件静默无效,
     #    生成物编译通过但永远无输出 (B 类静默缺陷);
@@ -366,12 +465,11 @@ def gen_pwm(timer: str, ch: int, pin: str, freq: int, duty: int,
     lines = []
     lines.append("/* ========================================================================")
     lines.append(f" * {timer} CH{ch} PWM — {pin}, {freq}Hz, {duty}% duty")
-    lines.extend(_hclk_precondition_note(hclk_mhz))
+    lines.extend(_hclk_precondition_note(hclk_mhz, pclk1_mhz))
     lines.append(f" * TIM_CLK={tim_clk_mhz}MHz, PSC={best_psc}, ARR={best_arr}, CCR{ch}={ccr} {freq_note}")
     lines.append(" * ======================================================================== */")
     lines.append("")
     lines.append("/* 1. 时钟使能 */")
-    tim_bus = TIM_BUS.get(timer, "APB1")   # F-077: TIM1 → APB2, 其余 APB1
     lines.append(f"RCC->{tim_bus}ENR |= RCC_{tim_bus}ENR_{tim_clock};")
     lines.append(f"RCC->APB2ENR |= RCC_APB2ENR_{port_clock};")
     lines.append("__DSB();")
@@ -403,9 +501,14 @@ def gen_pwm(timer: str, ch: int, pin: str, freq: int, duty: int,
     return "\n".join(lines)
 
 
-def gen_adc(adc: str, ch: int, pin: str, hclk_mhz: int = 72) -> str:
-    """生成 ADC 初始化 + 单次转换代码 (F-110: ADCPRE 按 pclk2 自动选)"""
+def gen_adc(adc: str, ch: int, pin: str, hclk_mhz: int = 72,
+            pclk2_mhz: int | None = None) -> str:
+    """生成 ADC 初始化 + 单次转换代码 (F-110: ADCPRE 按 pclk2 自动选;
+    WB-20260920-01: pclk2 显式覆盖逐键独立)"""
     err = _hclk_error(hclk_mhz)  # F-111 (M-3): 库级域校验
+    if err:
+        return err
+    err = _pclk_error(hclk_mhz, pclk2_mhz=pclk2_mhz)
     if err:
         return err
     # F-119 (工单 P0-4): 通道域校验 (仿 gen_pwm F-103 三连守卫)。F103 ADC
@@ -424,7 +527,7 @@ def gen_adc(adc: str, ch: int, pin: str, hclk_mhz: int = 72) -> str:
     # F-111 (复审 H-1): 合规判断用精确比较 pclk2 <= 14*div——旧式
     # pclk2//div <= 14 的 floor 截断会把 29/2=14.5MHz 粉饰成 "14MHz 合规"
     # (实测 hclk∈{29,57,58,59} 越限)。72 下两式选档与显示值完全一致。
-    pclk2 = apb_clock_mhz(hclk_mhz, "APB2")
+    pclk2 = apb_clock_mhz(hclk_mhz, "APB2", pclk2_mhz=pclk2_mhz)
     # (ADCPRE 位值, 分频数) — RM0008 CFGR ADCPRE[1:0]: 00=/2 01=/4 10=/6 11=/8
     for bits, div in ((0, 2), (1, 4), (2, 6), (3, 8)):
         if pclk2 <= 14 * div:
@@ -437,7 +540,7 @@ def gen_adc(adc: str, ch: int, pin: str, hclk_mhz: int = 72) -> str:
     lines = []
     lines.append("/* ========================================================================")
     lines.append(f" * {adc} CH{ch} — {pin} (single conversion, 12-bit)")
-    lines.extend(_hclk_precondition_note(hclk_mhz))
+    lines.extend(_hclk_precondition_note(hclk_mhz, pclk2_mhz=pclk2_mhz))
     lines.append(" * ======================================================================== */")
     lines.append("")
     lines.append("/* 1. 时钟使能 */")
@@ -483,11 +586,14 @@ def gen_adc(adc: str, ch: int, pin: str, hclk_mhz: int = 72) -> str:
 
 
 def gen_timer_int(timer: str, period_ms: int,
-                  tim_clk_mhz: int = None, hclk_mhz: int = 72) -> str:
+                  tim_clk_mhz: int = None, hclk_mhz: int = 72,
+                  pclk1_mhz: int | None = None) -> str:
     """生成定时中断代码
 
     F-110 优先级契约同 gen_pwm: 显式 tim_clk > hclk 推导 (= hclk,
     TIM2~4 内核 = APB1×2 抵消; TIM1 = APB2 = hclk)。
+    WB-20260920-01 派生链: 显式 tim_clk > pclk1 派生 (APB1 族, §7.3.7)
+    > hclk 推导; TIM1 (APB2) 维持 hclk 推导 (见 gen_pwm GAP-P-1 注)。
 
     F-086 修复两处 C 类静默缺陷:
       1. TIM1 的 CMSIS 向量名是 TIM1_UP_* (bit25 = TIM1_UP_IRQn);
@@ -500,11 +606,17 @@ def gen_timer_int(timer: str, period_ms: int,
     err = _hclk_error(hclk_mhz)  # F-111 (M-3): 库级域校验
     if err:
         return err
+    err = _pclk_error(hclk_mhz, pclk1_mhz)
+    if err:
+        return err
     # F-111 (M-3): 显式 tim_clk 纳入域纪律 (同 gen_pwm)。
     if tim_clk_mhz is not None and tim_clk_mhz <= 0:
         return f"/* ERROR: tim_clk={tim_clk_mhz}MHz 非法 — 必须为正整数。*/"
     if tim_clk_mhz is None:
-        tim_clk_mhz = hclk_mhz
+        tim_bus = TIM_BUS.get(timer, "APB1")   # F-077: TIM1 → APB2, 其余 APB1
+        tim_clk_mhz = (tim_kernel_clock_mhz(hclk_mhz, pclk1_mhz)
+                       if tim_bus == "APB1" else hclk_mhz)
+    tim_bus = TIM_BUS.get(timer, "APB1")   # F-077: TIM1 → APB2, 其余 APB1
     tim_clock = TIM_CLOCK_BIT.get(timer, f"{timer}EN")
 
     # F-108 (L-1): period_ms<=0 结构化 ERROR, 不再 1000//0 traceback。
@@ -543,12 +655,11 @@ def gen_timer_int(timer: str, period_ms: int,
     lines = []
     lines.append("/* ========================================================================")
     lines.append(f" * {timer} 定时中断 — 每 {period_ms}ms 触发一次")
-    lines.extend(_hclk_precondition_note(hclk_mhz))
+    lines.extend(_hclk_precondition_note(hclk_mhz, pclk1_mhz))
     lines.append(f" * TIM_CLK={tim_clk_mhz}MHz, PSC={best_psc}, ARR={best_arr}")
     lines.append(" * ======================================================================== */")
     lines.append("")
     lines.append("/* 1. 时钟 + NVIC */")
-    tim_bus = TIM_BUS.get(timer, "APB1")   # F-077: TIM1 → APB2, 其余 APB1
     lines.append(f"RCC->{tim_bus}ENR |= RCC_{tim_bus}ENR_{tim_clock};")
     lines.append("__DSB();")
     lines.append(f"NVIC->ISER[{irq//32}] = (1UL << {irq%32});  // {vec_irq} = {irq}")
@@ -570,14 +681,19 @@ def gen_timer_int(timer: str, period_ms: int,
 
 
 def gen_i2c(i2c_periph: str, speed_hz: int, scl: str, sda: str,
-            hclk_mhz: int = 72) -> str:
+            hclk_mhz: int = 72, pclk1_mhz: int | None = None) -> str:
     """Generate I2C initialization code (register-level).
+
+    WB-20260920-01: pclk1 显式覆盖逐键独立 (CR2.FREQ/CCR/TRISE 全随派生值)。
 
     Note: STM32F103 I2C has known errata (clock stretching, state machine
     hangs). For production, prefer HAL_I2C or software I2C (i2c_soft module).
     See: f103_known_issues.json → I2C section.
     """
     err = _hclk_error(hclk_mhz)  # F-111 (M-3): 库级域校验
+    if err:
+        return err
+    err = _pclk_error(hclk_mhz, pclk1_mhz=pclk1_mhz)
     if err:
         return err
     i2c_n = i2c_periph[-1]  # "1" or "2"
@@ -587,7 +703,9 @@ def gen_i2c(i2c_periph: str, speed_hz: int, scl: str, sda: str,
     if not clock_info:
         return f"/* ERROR: Unknown I2C peripheral {i2c_periph} */"
     bus_reg, bit_name, bit_num = clock_info
-    pclk1_mhz = apb_clock_mhz(hclk_mhz, "APB1")  # F-110: 推导 (标准分频 72→36)
+    # WB-20260920-01: 派生值用独立局部名 pclk1 (不复写覆盖参数——注记需以
+    # 覆盖参数的 None-ness 区分"显式"与"推导")
+    pclk1 = apb_clock_mhz(hclk_mhz, "APB1", pclk1_mhz=pclk1_mhz)
 
     # Speed mode
     speed_info = I2C_SPEED_MODES.get(speed_hz)
@@ -598,18 +716,31 @@ def gen_i2c(i2c_periph: str, speed_hz: int, scl: str, sda: str,
     # CCR calculation
     if is_fast:
         if not duty:
-            ccr_val = pclk1_mhz * 1000000 // (3 * speed_hz)
+            ccr_val = pclk1 * 1000000 // (3 * speed_hz)
         else:
-            ccr_val = pclk1_mhz * 1000000 // (25 * speed_hz)
+            ccr_val = pclk1 * 1000000 // (25 * speed_hz)
     else:
-        ccr_val = pclk1_mhz * 1000000 // (2 * speed_hz)
-    ccr_val = max(4, min(4095, ccr_val))  # clamp to 12-bit
+        ccr_val = pclk1 * 1000000 // (2 * speed_hz)
+    # WB-20260920-01 (P1, L-5 收口): 静默 clamp 改显式 ERROR — 旧版
+    # max(4, ...) 把 pclk1=1MHz × 400kHz 的 CCR=0 顶到 4 (实际 SCL≈83kHz
+    # 却自称 400kHz) 且 CR2.FREQ=1 违反 RM0008 §27.5.2 (FREQ≥2)。
+    # 既有测试仅钉默认 72 输出 (2026-09-20 grep 取证), 简报 §2 P1 条件
+    # 满足 → 顺路修。pclk1=2 @100k (CCR=10) 等合法低频配置不受影响。
+    if pclk1 < 2:
+        return (f"/* ERROR: PCLK1={pclk1}MHz < 2 — CR2.FREQ 下限为 2 "
+                f"(RM0008 §27.5.2), 该时钟下 I2C 不可用。*/")
+    if ccr_val < 4:
+        return (f"/* ERROR: {i2c_periph} @{speed_hz}Hz 在 PCLK1="
+                f"{pclk1}MHz 下 CCR={ccr_val} < 4 — 目标速率超出该时钟"
+                f"可表达范围 (旧版静默 clamp, 实际 SCL 远低于请求值); "
+                f"请提高 PCLK1 或降低速率。*/")
+    ccr_val = min(4095, ccr_val)  # 上限截断 (现支持速率×合法 pclk1 域不可达, 保留防御)
 
     # TRISE calculation
     if is_fast:
-        trise_val = (pclk1_mhz * 300 // 1000) + 1
+        trise_val = (pclk1 * 300 // 1000) + 1
     else:
-        trise_val = pclk1_mhz + 1
+        trise_val = pclk1 + 1
     trise_val = max(1, min(63, trise_val))
 
     # GPIO config
@@ -623,7 +754,7 @@ def gen_i2c(i2c_periph: str, speed_hz: int, scl: str, sda: str,
     lines = []
     lines.append("/* ========================================================================")
     lines.append(f" * {i2c_periph} — {speed_hz//1000}kHz {mode_name} mode, SCL={scl} SDA={sda}")
-    lines.extend(_hclk_precondition_note(hclk_mhz))
+    lines.extend(_hclk_precondition_note(hclk_mhz, pclk1_mhz=pclk1_mhz))
     lines.append(f" * CCR=0x{ccr_val:03X} ({ccr_val}), TRISE=0x{trise_val:02X} ({trise_val})")
     lines.append(" * WARNING: STM32F103 I2C has known errata. Consider software I2C for")
     lines.append(" *          production use. See f103_known_issues.json.")
@@ -641,7 +772,7 @@ def gen_i2c(i2c_periph: str, speed_hz: int, scl: str, sda: str,
     lines.append(f"GPIO{sda_port}->{pin_cr_reg(sda)} |=  (0xFUL << {sda_shift});")
     lines.append("")
     lines.append(f"/* 3. {i2c_periph} config */")
-    lines.append(f"{i2c_periph}->CR2 = {pclk1_mhz};               // FREQ = PCLK1 MHz")
+    lines.append(f"{i2c_periph}->CR2 = {pclk1};               // FREQ = PCLK1 MHz")
     lines.append(f"{i2c_periph}->CCR = 0x{ccr_val:03X}{fs_bit};       // {speed_hz//1000}kHz, CCR={ccr_val}")
     lines.append(f"{i2c_periph}->TRISE = {trise_val};                // max rise time = {trise_val}")
     lines.append(f"{i2c_periph}->CR1 = 1;                  // PE=1, enable")
@@ -685,13 +816,18 @@ def gen_i2c(i2c_periph: str, speed_hz: int, scl: str, sda: str,
 
 def gen_spi(spi_periph: str, mode: int, nss: str, sck: str,
             miso: str, mosi: str, baud_div: int = 16,
-            hclk_mhz: int = 72) -> str:
+            hclk_mhz: int = 72, pclk1_mhz: int | None = None,
+            pclk2_mhz: int | None = None) -> str:
     """Generate SPI initialization code (register-level).
 
-    SPI1 on APB2, SPI2 on APB1 (F-110: 总线时钟经 apb_clock_mhz 推导)。
+    SPI1 on APB2, SPI2 on APB1 (F-110: 总线时钟经 apb_clock_mhz 推导;
+    WB-20260920-01: pclk1/pclk2 显式覆盖逐键独立)。
     Mode = CPOL:CPHA (0-3). NSS handled as GPIO output (software CS).
     """
     err = _hclk_error(hclk_mhz)  # F-111 (M-3): 库级域校验
+    if err:
+        return err
+    err = _pclk_error(hclk_mhz, pclk1_mhz, pclk2_mhz)
     if err:
         return err
     spi_n = spi_periph[-1]  # "1" or "2"
@@ -700,7 +836,7 @@ def gen_spi(spi_periph: str, mode: int, nss: str, sck: str,
     if not clock_info:
         return f"/* ERROR: Unknown SPI peripheral {spi_periph} */"
     bus_reg, bit_name, bit_num, bus = clock_info
-    pclk_mhz = apb_clock_mhz(hclk_mhz, bus)
+    pclk_mhz = apb_clock_mhz(hclk_mhz, bus, pclk1_mhz, pclk2_mhz)
 
     # Mode parsing
     cpol = 1 if mode & 2 else 0
@@ -726,7 +862,7 @@ def gen_spi(spi_periph: str, mode: int, nss: str, sck: str,
     lines.append("/* ========================================================================")
     lines.append(f" * {spi_periph} — Mode {mode} ({mode_names.get(mode, '?')}), {spi_freq_hz//1000}kHz")
     lines.append(f" * SCK={sck} MISO={miso} MOSI={mosi} NSS={nss} (software CS)")
-    lines.extend(_hclk_precondition_note(hclk_mhz))
+    lines.extend(_hclk_precondition_note(hclk_mhz, pclk1_mhz, pclk2_mhz))
     lines.append(f" * PCLK={pclk_mhz}MHz, BR[2:0]={br_val} (/ {actual_div})")
     lines.append(" * ======================================================================== */")
     lines.append("")
@@ -960,6 +1096,15 @@ GPIO 模式 (F-103: 由 --mode choices 强制, 未知模式报错):
                              f"APB1=hclk/2, APB2=hclk, 标准分频假设)")
     parser.add_argument("--tim-clk", type=int, default=None,
                         help="定时器时钟 MHz (显式值优先; 缺省由 --hclk 推导)")
+    # WB-20260920-01: --pclk1/--pclk2 显式 APB 时钟覆盖 (逐键独立;
+    # 缺省维持 F-110 标准分频推导, 默认路径输出逐字节不变)。
+    parser.add_argument("--pclk1", type=int, default=None,
+                        help=f"APB1 时钟 MHz 显式覆盖 (有效 1~{PCLK1_MAX} 且 "
+                             f"≤hclk; 缺省 = hclk/2 推导; TIM2~4 内核按 "
+                             f"RM0008 §7.3.7 随之派生)")
+    parser.add_argument("--pclk2", type=int, default=None,
+                        help="APB2 时钟 MHz 显式覆盖 (有效 1~72 且 ≤hclk; "
+                             "缺省 = hclk)")
     # adc
     parser.add_argument("--adc", default="ADC1", help="ADC 外设: ADC1/2")
     # timer-int
@@ -986,10 +1131,15 @@ GPIO 模式 (F-103: 由 --mode choices 强制, 未知模式报错):
 
     # F-110: hclk 域校验前置 (仅时钟相关 type; gpio/doc 不涉及时钟)。
     # 越界走 _emit 统一 ERROR→exit 1 (F-103 边界纪律)。
+    # WB-20260920-01: --pclk1/--pclk2 域校验同层前置 (非整数由 argparse
+    # type=int 拒收 rc=2; 越界/>hclk 走 _emit ERROR→exit 1)。
     if args.type in ("usart", "pwm", "adc", "systick", "timer-int", "i2c", "spi"):
         if not (HCLK_MIN <= args.hclk <= HCLK_MAX):
             _emit(f"/* ERROR: --hclk={args.hclk} 越界 — 有效范围 "
                   f"{HCLK_MIN}~{HCLK_MAX} MHz (F103 规格; pclk1=hclk/2 须≥1)。*/")
+        pclk_err = _pclk_error(args.hclk, args.pclk1, args.pclk2)
+        if pclk_err:
+            _emit(pclk_err)
 
     if args.type == "gpio":
         if not args.pin:
@@ -998,7 +1148,8 @@ GPIO 模式 (F-103: 由 --mode choices 强制, 未知模式报错):
         _emit(gen_gpio(args.pin, args.mode))
 
     elif args.type == "usart":
-        _emit(gen_usart(args.usart, args.baud, args.tx, args.rx, args.hclk))
+        _emit(gen_usart(args.usart, args.baud, args.tx, args.rx, args.hclk,
+                        args.pclk1, args.pclk2))
 
     elif args.type == "pwm":
         if not args.pin and args.ch and args.timer:
@@ -1007,7 +1158,7 @@ GPIO 模式 (F-103: 由 --mode choices 强制, 未知模式报错):
             print("Error: --pin required for PWM (or use --timer + --ch for auto-detect)", file=sys.stderr)
             sys.exit(1)
         _emit(gen_pwm(args.timer, args.ch, args.pin, args.freq, args.duty,
-                      args.tim_clk, args.hclk))
+                      args.tim_clk, args.hclk, args.pclk1))
 
     elif args.type == "adc":
         if not args.pin:
@@ -1015,20 +1166,23 @@ GPIO 模式 (F-103: 由 --mode choices 强制, 未知模式报错):
             sys.exit(1)
         # F-119 (工单 P0-4): 旧版此处裸 print — ERROR 也恒 exit 0。
         # 改走 _emit 统一 ERROR→exit 1 纪律 (F-103 收敛遗漏的一半)。
-        _emit(gen_adc(args.adc, args.ch, args.pin, args.hclk))
+        _emit(gen_adc(args.adc, args.ch, args.pin, args.hclk, args.pclk2))
 
     elif args.type == "systick":
         _emit(gen_systick(args.freq, args.hclk))
 
     elif args.type == "timer-int":
-        _emit(gen_timer_int(args.timer, args.period_ms, args.tim_clk, args.hclk))
+        _emit(gen_timer_int(args.timer, args.period_ms, args.tim_clk,
+                            args.hclk, args.pclk1))
 
     elif args.type == "i2c":
-        _emit(gen_i2c(args.i2c, args.speed, args.scl, args.sda, args.hclk))
+        _emit(gen_i2c(args.i2c, args.speed, args.scl, args.sda, args.hclk,
+                      args.pclk1))
 
     elif args.type == "spi":
         _emit(gen_spi(args.spi, args.spi_mode, args.nss, args.sck,
-                      args.miso, args.mosi, args.baud_div, args.hclk))
+                      args.miso, args.mosi, args.baud_div, args.hclk,
+                      args.pclk1, args.pclk2))
 
     elif args.type == "doc":
         if not args.periph:
