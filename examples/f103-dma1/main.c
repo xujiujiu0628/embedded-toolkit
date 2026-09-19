@@ -2,6 +2,8 @@
  * 用途: DMA1 通道 1 内存到内存搬运 4 字, 轮询传输完成标志后清位。
  * ref.json anchor: peripherals.DMA1 (ISR/IFR/CCR1..CMAR1 及位名)。
  * 硬件验收: 未做（编译级样例）
+ * mock 二期 (WB-20260920-02): 新增 host mock — CCR 位型/计数地址/
+ *          完成握手/超时防御断言。
  */
 #include "f103_regs.h"
 
@@ -40,6 +42,7 @@ static int dma1_ch1_wait_done(void)
     return -1;
 }
 
+#ifndef F103_SAMPLE_HOST_TEST
 int main(void)
 {
     dma1_ch1_mem2mem_start();
@@ -52,3 +55,40 @@ int main(void)
     for (;;) {
     }
 }
+#else
+#include <stdio.h>
+static int failures;
+#define CHECK(cond) do { if (!(cond)) { printf("FAIL %s\n", #cond); \
+                                        failures++; } } while (0)
+
+int main(void)
+{
+    /* 组1 CCR 位型已知答案 (手算分解, ref DMA1.CCR1 bits):
+     * MEM2MEM(14)|MSIZE=10b(10:11)|PSIZE=10b(8:9)|MINC(7)|DIR(4)|EN(0)
+     * = 0x4000|0x800|0x200|0x80|0x10|0x1 = 0x4A91 */
+    dma1_ch1_mem2mem_start();
+    CHECK(f103_mock_RCC.AHBENR & RCC_AHBENR_DMA1EN);
+    CHECK(f103_mock_DMA1.CH[0].CCR == 0x4A91u);
+    CHECK((f103_mock_DMA1.CH[0].CCR & (1u << 5)) == 0u);  /* CIRC 未置位 */
+    /* 组2 传输计数与地址 (ref CNDTR1 bits 0:15, CPAR1/CMAR1 0:31):
+     * 计数=4 字; 源/目的首址进 CPAR/CMAR */
+    CHECK(f103_mock_DMA1.CH[0].CNDTR == 4u);
+    CHECK(f103_mock_DMA1.CH[0].CPAR == (uint32_t)dma_src);
+    CHECK(f103_mock_DMA1.CH[0].CMAR == (uint32_t)dma_dst);
+    /* 组3 完成握手: start 先写 CTCIF1(bit1) 清残留 → IFCR=0x2;
+     * 预置 ISR TCIF1 → wait_done 返回 0 且写 1 清 (mock 保留写值) */
+    CHECK(f103_mock_DMA1.IFCR == (1u << 1));
+    f103_mock_DMA1.ISR = (1u << 1);       /* 模拟硬件传输完成 */
+    CHECK(dma1_ch1_wait_done() == 0);
+    CHECK(f103_mock_DMA1.IFCR == (1u << 1));
+    /* 组4 超时防御: 无完成标志 → -1 (守卫 1e6 轮, 不死等) */
+    f103_mock_DMA1.ISR = 0;
+    CHECK(dma1_ch1_wait_done() == -1);
+    if (failures) {
+        printf("MOCK FAILED (%d)\n", failures);
+        return 1;
+    }
+    printf("MOCK PASS\n");
+    return 0;
+}
+#endif
