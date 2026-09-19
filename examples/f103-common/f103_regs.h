@@ -365,6 +365,51 @@ static USART_TypeDef f103_mock_USART1 __attribute__((unused));
 #undef USART1
 #define USART1 (&f103_mock_USART1)
 #endif
+#ifdef F103_MOCK_PWR
+static PWR_TypeDef f103_mock_PWR __attribute__((unused));
+#undef PWR
+#define PWR (&f103_mock_PWR)
+#endif
+#ifdef F103_MOCK_RTC
+static RTC_TypeDef f103_mock_RTC __attribute__((unused));
+#undef RTC
+#define RTC (&f103_mock_RTC)
+#endif
+#ifdef F103_MOCK_DMA1
+static DMA_TypeDef f103_mock_DMA1 __attribute__((unused));
+#undef DMA1
+#define DMA1 (&f103_mock_DMA1)
+#endif
+#ifdef F103_MOCK_TIM1
+static TIM_TypeDef f103_mock_TIM1 __attribute__((unused));
+#undef TIM1
+#define TIM1 (&f103_mock_TIM1)
+#endif
+#ifdef F103_MOCK_TIM9
+static TIM_TypeDef f103_mock_TIM9 __attribute__((unused));
+#undef TIM9
+#define TIM9 (&f103_mock_TIM9)
+#endif
+#ifdef F103_MOCK_TIM10
+static TIM_TypeDef f103_mock_TIM10 __attribute__((unused));
+#undef TIM10
+#define TIM10 (&f103_mock_TIM10)
+#endif
+#ifdef F103_MOCK_NVIC
+static NVIC_Type f103_mock_NVIC __attribute__((unused));
+#undef NVIC
+#define NVIC (&f103_mock_NVIC)
+#endif
+#ifdef F103_MOCK_AFIO
+static AFIO_TypeDef f103_mock_AFIO __attribute__((unused));
+#undef AFIO
+#define AFIO (&f103_mock_AFIO)
+#endif
+#ifdef F103_MOCK_EXTI
+static EXTI_TypeDef f103_mock_EXTI __attribute__((unused));
+#undef EXTI
+#define EXTI (&f103_mock_EXTI)
+#endif
 #endif /* F103_MOCK_REGS */
 
 #endif /* F103_REGS_H */
