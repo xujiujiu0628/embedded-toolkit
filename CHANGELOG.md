@@ -2952,6 +2952,31 @@
   scripts 疑似缺陷 GAP-S-1（spi write_burst 不排空 RX）/GAP-S-2
   （I2C 片段 error_chain 契约不发射定义）。缺口一律只列不改。
 
+## 样例工厂 mock 二期（WB-20260920-02，2026-09-20，分支 wb/f103-mock-round2-20260920，未合入）
+
+- **既有 7 个 MOCK 样例断言加深**（R1，简报 WB-20260920-02，R1→R2→R3
+  分层）：crc/can/dac/iwdg/tim5/tim6-7/wwdg 各补至 ≥5 断言组（边界值 +
+  已知答案向量 + 非法输入防御），期望值全部为独立手算常数附推导注释
+  （CRC 已知答案按 ST 固定语义 poly=0x04C11DB7/初值 0xFFFFFFFF/MSB
+  -first 独立演算——简报示例数字 0xCBF43926 属反射族 zlib 算法不同族
+  不采）。can 补 125k/250k/500k/1M 四速率（同 18-TQ 位时序家族 BRP=
+  15/7/3/1）+ INAK 握手序列；can 位时序函数补位域宽度/零时钟防御，
+  dac 补 12 位满档 clamp，iwdg/tim5/tim6-7/wwdg 补各自域宽与除零
+  哨兵——合法输入行为逐位不变，target 初始化序列一字未动。
+- **新增 7 个 MOCK 样例**（R2，判据=断言验证可手算数值/位型）：
+  dma1（CCR 位型 0x4A91/计数地址/完成握手/超时防御）、tim1（分频与
+  死区 DTG 换算已知答案+序列位型）、tim9-14（双实例位型/分频）、
+  rtc（备份域链/BDCR 0x8203/1Hz 预分频/日历进位）、nvic（IRQ 槽位
+  算术/优先级字节编码/ISER-ICER 留痕）、afio（EXTICR 路由编码/
+  重映射值/掩码清洗）、exti（线选择/触发沿配置值/清挂起语义）。
+  f103_regs.h mock 重定向口扩至 23 外设（新增 PWR/RTC/DMA1/TIM1/
+  TIM9/TIM10/NVIC/AFIO/EXTI）。
+- **T1 gen 系样例显式跳过**（R3）：样例侧无可测的自身纯逻辑——
+  断言生成体内的常数属测生成器输出（scripts 测试域），不硬凑。
+- **巡检与全量**：工厂巡检 47→54 全绿（40 样例 + 14 mock 子用例）；
+  全量 960 绿（953+7, skipped=6 不变，Git Bash 口径）。逐样例
+  n→m 断言组对照与手算推导存疑点见收工报告与状态文档二期表。
+
 ## 0.1.x — 2026-08-30（代管 R1，分支 handoff/zcode-20260830）
 
 ## Unreleased — 2026-09-19（F-170 提前行权：OpenOCD cfg 参数化收口，WB-20260919-06，分支 wb/f170-openocd-cfg-param-20260919，未合入）

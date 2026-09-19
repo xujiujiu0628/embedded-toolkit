@@ -142,3 +142,67 @@ rc=0 且 ELF+HEX 产出（工厂巡检测试断言）；mock = 目录含 `MOCK` 
 | f91b211 | T2a dma1/exti/iwdg/wwdg/crc/dac/can/rtc/afio |
 | 97ba99e | T2b nvic/pwr-bkp/flash/tim1/tim8/tim5/tim6-7/tim9-14 — T2 17/17 |
 | c7cf16a | T3 adc3/gpiod-g/usb/sdio/fsmc（dbg 不做已声明） |
+
+## 七、mock 二期（WB-20260920-02，2026-09-20，分支 wb/f103-mock-round2-20260920）
+
+简报 `D:\wordbuddy\embedded-toolkit_样例工厂二期mock加深简报_WB-20260920-02.md`。
+基线 7b56ee5（一期终点），R1→R2→R3 分层收口。核对：工厂巡检
+**Ran 54 tests OK**（40 样例 + 14 mock 子用例）；全量（Git Bash 口径）
+**Ran 960 tests OK (skipped=6)**（953+7）。R1 的"断言组"= 带推导注释
+的逻辑断言组（既有断言全部保持，target 初始化序列一字未动）。
+
+### R1 既有 7 MOCK 样例加深（断言组数 n→m）
+
+| 样例 | n→m | 加深内容 |
+|---|---|---|
+| f103-crc | 4→5 | ST 语义模型已知答案（单字 0xFFFFFFFF→0 手证；0x31323334→0xA695C4AA、payload 4 字→0x376454AF 独立演算）+ n=0/空指针防御 |
+| f103-can | 2→5 | 四速率 125k/250k/500k/1M（18-TQ 家族 BRP=15/7/3/1）+ BRP/TS1/TS2 满档边界 + 位域宽度/零时钟防御 + INAK 拒绝/完成两路序列握手 |
+| f103-dac | 4→5 | 截断边界 mv=1/3299 + 满档 clamp 防御（含溢出输入）+ clamp 进写值序列 |
+| f103-iwdg | 2→5 | tick 边界 PR=0/7 + 反解边界/不足一 tick + RL=0 + 非法 PR 全链 0 哨兵（规避除零） |
+| f103-tim5 | 2→5 | ARR 满档边界 + hz=0 除零防御 + 16 位 ARR 溢出哨兵（GAP-G-2 样例侧）+ 序列↔换算联动 |
+| f103-tim6-7 | 2→5 | 同 tim5 家族 + 双实例联动 |
+| f103-wwdg | 2→5 | 窗口边界 0x41/0x7F/t==w + 7 位宽度防御 + 超时模型已知答案（WDGTB 0/1/3→3640/7281/29127µs）+ 刷新/WDGTB 满档位型 |
+
+### R2 新增 MOCK 样例（判据：断言验证可手算数值/位型）
+
+| 样例 | 核心手算断言 |
+|---|---|
+| f103-dma1 | CCR 位型 0x4A91 逐位分解（MEM2MEM/MSIZE/PSIZE/MINC/DIR/EN）；CNDTR=4；CPAR/CMAR 首址；TCIF 握手与 1e6 轮超时防御 |
+| f103-tim1 | 分频 10kHz 与死区 DTG=32→444ns（线性段）已知答案；CRH/CCMR1/CCER/BDTR=0x9020/EGR/CR1 位型 |
+| f103-tim9-14 | TIM9 CCMR1=0x6868 双通道位型；TIM10 2kHz；双实例互不串扰 |
+| f103-rtc | BDCR 终态 0x8203；PRL=32767→1Hz；CNF 进出后 CRL=0x08；日历进位 3661/86399/86400s |
+| f103-nvic | IRQ 28→ISER[0]=0x10000000；IP[28]=0x40；ICER 留痕；IRQ55→字1位23；优先级域 4 位宽度防御 |
+| f103-afio | 预置脏值掩码清洗 EXTICR1=0x33333330、MAPR=0xF8FFF0FF；EXTICR 端口编码 PA/PB/PC=0/1/2；TIM2_REMAP 值计算 |
+| f103-exti | RTSR=1/FTSR 清低位留高位；IMR=1/EMR=0；CRL=0xFFFFFFF4/EXTICR1=0x33333330；IRQ6→0x40；ISR 命中计数与清挂起 |
+
+放弃/不扩项理由：T2 无 MOCK 余量中的 pwr-bkp（写读自证，无可手算值）、
+flash（仅解锁钥匙序列，无计算）、tim8（与 tim1 同模板，冗余）——均不在
+简报候选清单且不满足判据。T1 gen 系（R3）显式跳过：断言生成体常数
+属测生成器输出（scripts 测试域）。
+
+### 二期勘误与新发现（只记不改）
+
+1. **一期 can 断言物理不可表示**：既有 CHECK `ts2=8` 超出 BTR bits
+   20:22（3 位域），防御新增后被正确拒绝——已改为等价合法组合
+   ts1=8/ts2=7（仍 16 TQ = 2.25M）。
+2. **一期 nvic 注释与编码不符**：`NVIC->IP[28] = 0x40` 注释称"抢占
+   优先级 1"，但 F103 优先级域在 bits 7:4，0x40 → 优先级 4（值 1 应写
+   0x10）。断言以实际写入值为准；初始化序列按禁令未动，语义勘误留
+   人工复核。
+3. **rtc RTOFF 忙等极性疑误（target 硬件路径）**：`while (RTC->CRL &
+   (1<<5))` 在 RTOFF 置位（=写完成）时循环，与"等待写完成"意图相反，
+   真机上写完成后将死等。mock 下预置 0 直接跳过。初始化语义禁改未动，
+   待真机/人工终判。
+4. **简报示例 CRC 数字家族不符**：0xCBF43926 属反射族 zlib 算法
+   check 值；ST 硬件 CRC（GAP-D-4，ref.json 未登记 poly/初值）按样例
+   头注固定语义独立演算，不采简报数字。
+5. **一期状态文档"dbg 未做"理由失实**：ref.json 存在 `DBG` 条目
+   （base 0xE0042000，IDCODE/CR 位名齐全），"无 DBGMCU 条目零数据可
+   锚定"不成立——后续如补 dbg 样例有锚可依（本轮未做，不在候选清单）。
+
+### 二期 commit 台账（分支 wb/f103-mock-round2-20260920，未 push）
+
+| commit | 内容 |
+|---|---|
+| 3c0a336 | R1 既有 7 MOCK 样例断言加深（含 can 四速率/序列握手/一期勘误） |
+| 9463209 | R2 七个真纯逻辑样例补 MOCK + f103_regs.h 9 外设重定向 |
