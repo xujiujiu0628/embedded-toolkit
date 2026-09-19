@@ -19,6 +19,7 @@ import sys
 import threading
 import time
 
+from runtime_common import OpenocdCfgError, resolve_openocd_cfg
 from wb_common import load_machine
 
 _RTT_TELNET_PORT = 4444
@@ -90,8 +91,13 @@ def step_capture_rtt(timeout_s: int, rtt_cfg: dict, workspace=None) -> dict:
     boot_delay_ms = int(rtt_cfg.get("boot_delay_ms", 300))
     connect_wait = float(rtt_cfg.get("connect_timeout_s", 3.0))
 
+    # cfg 组装单一事实源 (WB-20260919-06); 非法配置显式报错不静默回落 (F-103)
+    try:
+        pair = resolve_openocd_cfg(workspace=workspace)
+    except OpenocdCfgError as e:
+        return {"status": "error", "method": "rtt", "lines": 0, "error": str(e)}
     base_cmd = [load_machine()["openocd_exe"], "-c", "bindto 127.0.0.1",
-                "-f", "interface/stlink.cfg", "-f", "target/stm32f1x.cfg"]
+                "-f", pair["interface"], "-f", pair["target"]]
     # F-027: 该常量仅 Windows 存在, 裸用会让 Linux 在 rtt 分支直接 AttributeError
     creationflags = subprocess.CREATE_NEW_PROCESS_GROUP if sys.platform == "win32" else 0
     started = time.time()

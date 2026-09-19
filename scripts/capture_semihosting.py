@@ -17,7 +17,7 @@ boot 输出——只有复位给确定性起点。
 """
 import subprocess
 
-from runtime_common import hidden_subprocess_kwargs
+from runtime_common import hidden_subprocess_kwargs, resolve_openocd_cfg
 from wb_common import load_machine
 
 
@@ -36,10 +36,13 @@ def run_semihosting_session(capture_timeout: int, workspace=None) -> tuple:
     超时收尸与结果组装留守 verify (派发胶水不下沉)。workspace 作为
     OpenOCD 子进程 cwd (原读 verify.WORKSPACE 全局)。
     """
+    # cfg 组装单一事实源 (WB-20260919-06); 非法配置抛 OpenocdCfgError,
+    # 由调用方 capture_failed 分支显式落账 (F-103 不静默回落)
+    pair = resolve_openocd_cfg(workspace=workspace)
     openocd_cmd = [
         load_machine()["openocd_exe"],
-        "-f", "interface/stlink.cfg",
-        "-f", "target/stm32f1x.cfg",
+        "-f", pair["interface"],
+        "-f", pair["target"],
         "-c", "transport select swd",
         "-c", "init",
         "-c", "reset halt",

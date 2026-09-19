@@ -3,5 +3,7 @@
   "gdb_port": 3333,
   "telnet_port": 4444,
   "gdb_exe": "",
-  "operation_mode": 1
+  "operation_mode": 1,
+  "interface_cfg": "interface/stlink.cfg",
+  "target_cfg": "target/stm32f1x.cfg"
 }

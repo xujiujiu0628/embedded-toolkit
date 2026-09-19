@@ -406,3 +406,80 @@ def save_skill_section(config_file: str | Path, skill: str, values: dict) -> Pat
     data[skill] = {**(data.get(skill) or {}), **values}
     save_json_file(file_path, data)
     return file_path
+
+
+# ── OpenOCD cfg 组装单一事实源 (WB-20260919-06, F-170 提前行权) ─────────────
+# 硬编码沿革: F-108/M-3 grep 全量取证 "6 脚本各一对 interface/stlink.cfg +
+# target/stm32f1x.cfg"; F-170 裁决暂缓 (唤起条件 = 第二 ARM 板型 / F-031
+# Linux 真机窗口), 本单提前行权。7 处调用点 (capture_rtt/capture_semihosting/
+# hardfault/openocd_runtime.swd_probe + _RESET_CFG_DEFAULT/physical_gate/
+# verify.step_flash) 收敛到 resolve_openocd_cfg 一次调用, 默认行为逐字节
+# 不变 (tests/test_openocd_cfg_param.py 跨点身份钉为证)。
+# 放置论证: 消费方横跨 openocd 家族 (swd_probe/reset_target) 与 verify/
+# capture/physical_gate 等编排侧 —— 跨族共享逻辑正是本模块职责; 且落
+# runtime_common 使 Layer 1 (openocd_runtime) 可合法消费而无需改动
+# test_layering_gates 的层表。工具库 cfg 路径经 __file__ 推导 (与
+# openocd_runtime.default_config_path 同款), 不引 wb_common (互不渗透
+# 边界保持)。
+
+DEFAULT_OPENOCD_INTERFACE_CFG = "interface/stlink.cfg"
+DEFAULT_OPENOCD_TARGET_CFG = "target/stm32f1x.cfg"
+OPENOCD_CFG_KEYS = ("interface_cfg", "target_cfg")
+TOOLKIT_OPENOCD_CFG_FILE = Path(__file__).resolve().parents[1] / "config" / "openocd.json"
+
+
+class OpenocdCfgError(ValueError):
+    """openocd cfg 键类型非法 (非字符串/空白串/含换行) — F-103 纪律:
+    显式报错, 禁止静默回落默认。"""
+
+
+def _validate_openocd_cfg_value(value, key):
+    if not isinstance(value, str) or not value.strip() \
+            or "\n" in value or "\r" in value:
+        raise OpenocdCfgError(
+            f"openocd cfg 键 {key} 非法: {value!r} "
+            "(须为非空字符串且不含换行 — F-103 显式报错, 不静默回落)")
+    return value
+
+
+def resolve_openocd_cfg(interface=None, target=None, workspace=None, *,
+                        project_config=None) -> dict:
+    """OpenOCD interface/target cfg 组装单一事实源。
+
+    优先级 (高→低): 显式参数 (CLI/调用方层) > 工程 .workbench/config.json
+    openocd 段的 interface_cfg/target_cfg > 工具库 config/openocd.json
+    同名键 > 内置默认 (= F-108/M-3 取证的现硬编码两串)。值只透传拼接
+    不解释内容 (OpenOCD 自己报错); 任一层提供的值类型非法 → 抛
+    OpenocdCfgError, 不静默回落默认。
+
+    返回 {"interface", "target", "interface_source", "target_source"},
+    source ∈ {"cli", "project", "toolkit", "default"}。
+
+    workspace=None 时跳过工程层 (swd_probe 类纯预检场景); 调用方已持有
+    工程配置时可经 project_config 注入避免重复读盘。
+
+    与 openocd_runtime.resolve_openocd_params 的分界: 后者服务 openocd
+    run/gdb/telnet 三个 CLI 的 board/interface/target 参数链
+    (cli>工程>state), 本函数服务其余 7 处 cfg 组装点; 新键名
+    (interface_cfg/target_cfg) 有意错开既有 interface/target 键, 避免
+    两套语义互串。
+    """
+    project = project_config if project_config is not None else (
+        load_skill_section(project_config_file(workspace), "openocd")
+        if workspace else {})
+    toolkit = load_json_file(TOOLKIT_OPENOCD_CFG_FILE)
+    out: dict = {}
+    for key, default in (("interface_cfg", DEFAULT_OPENOCD_INTERFACE_CFG),
+                         ("target_cfg", DEFAULT_OPENOCD_TARGET_CFG)):
+        short = key[:-4]
+        for source, value in (("cli", interface if key == "interface_cfg"
+                               else target),
+                              ("project", project.get(key)),
+                              ("toolkit", toolkit.get(key)),
+                              ("default", default)):
+            if value is None:
+                continue
+            out[short] = _validate_openocd_cfg_value(value, key)
+            out[short + "_source"] = source
+            break
+    return out

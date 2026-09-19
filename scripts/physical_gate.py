@@ -19,6 +19,7 @@ import subprocess
 import time
 from datetime import datetime
 
+from runtime_common import OpenocdCfgError, resolve_openocd_cfg
 from wb_common import load_machine
 
 
@@ -104,10 +105,15 @@ shutdown
     with open(tcl_path, 'w', encoding='utf-8', newline='\n') as f:
         f.write(tcl)
 
+    # cfg 组装单一事实源 (WB-20260919-06); 非法配置显式报错不静默回落 (F-103)
+    try:
+        pair = resolve_openocd_cfg(workspace=workspace)
+    except OpenocdCfgError as e:
+        return {"status": "probe_error", "error": str(e)}
     cmd = [
         load_machine()["openocd_exe"],
-        "-f", "interface/stlink.cfg",
-        "-f", "target/stm32f1x.cfg",
+        "-f", pair["interface"],
+        "-f", pair["target"],
         "-c", "transport select swd",
         "-c", "init",
         # reset halt: 确定性起点 — 上一会话可能在 printf 的 BKPT 冻结且状态缓存错乱,
