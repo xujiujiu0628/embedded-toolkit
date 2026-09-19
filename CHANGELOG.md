@@ -2925,3 +2925,53 @@
   .mcp.json（用户确认非本人添加）移出至 archive/mcp-from-toolkit-20260831/。
 
 ## 0.1.x — 2026-08-30（代管 R1，分支 handoff/zcode-20260830）
+
+## Unreleased — 2026-09-19（F-170 提前行权：OpenOCD cfg 参数化收口，WB-20260919-06，分支 wb/f170-openocd-cfg-param-20260919，未合入）
+
+> 状态更正（登记用）: F-170 原文唤起条件 = "接入第二 **ARM** 板型（F4/F0
+> 等）或 F-031 Linux 真机窗口"——ESP32/S3 走 esptool 不算触发。本单系
+> **提前行权**（消化临期外派额度 + 次日真机回归窗口兜底），**合入门禁 =
+> 维护者真机全链回归**，不是"条件已满足"。
+
+- **F-170 提前行权（refactor+test，先钉后拆按 F-091 方法模板）**:
+  7 处硬编码 cfg 对（F-108/M-3 "6 脚本各一对" 取证口径 + 2026-09-19
+  行号复核）收敛到 `runtime_common.resolve_openocd_cfg` 单一事实源:
+  capture_rtt:94 / capture_semihosting:41-2 / hardfault:83-4 /
+  openocd_runtime.swd_probe:175-2 与 _RESET_CFG_DEFAULT(:513, 删除) /
+  physical_gate:109-10 / verify:241-2。**默认行为逐字节不变**——钉 commit
+  先以 mock argv 捕获证明七点产出同一 cfg 对（跨点身份总钉），拆后原样
+  保持绿；`test_verify_esp_dispatch.py:75` 既有身份钉未触碰、并行有效。
+- **契约变更段（WB-20260919-06）**:
+  - 新键 `interface_cfg` / `target_cfg`：可选、字符串、**透传拼接不解释
+    内容**（OpenOCD 自己报错）。生效位置 = 工程 `.workbench/config.json`
+    的 **openocd 段**（对齐 openocd_runtime:207-225 既有 board/interface
+    消费先例，不另起炉灶）与工具库 `config/openocd.json`（本单已写入
+    同值两键作显式默认锚）。
+  - 优先级：显式参数(CLI/调用方) > 工程配置 > 工具库配置 > 内置默认
+    （=原硬编码两串）；逐键独立解析。
+  - 报错语义（F-103）：任一层提供的值非字符串/空白串/含换行 → 抛
+    `OpenocdCfgError` 显式报错，**不静默回落默认**；各调用点经既有错误
+    通道落账（step_flash→flash_failed / capture_rtt→capture_failed /
+    semihosting→capture_failed / physical_gate→probe_error / swd_probe→
+    (False, 报文) / hardfault CLI→stderr+exit 1 / reset_target→error
+    dict），管线退出码非零。
+  - 零改动兼容：不配置任何新键 = 行为与收口前逐字节一致（旧 config/
+    旧工程零迁移）；`workspace=None` 调用（swd_probe/reset_target）跳过
+    工程层，只吃工具库+默认两层；`project_config` 注入形态 = openocd
+    段 dict（与 load_skill_section 返回一致）。
+  - 与 `resolve_openocd_params` 分界：后者服务 openocd run/gdb/telnet
+    三个 CLI 的 board/interface/target 链（cli>工程>state），本函数服务
+    其余 7 处组装点；新键名有意错开既有 interface/target 键防语义互串。
+- **放置论证（简报二选一）**: 解析器落 `runtime_common` 而非新建
+  `scripts/openocd_cfg.py`——消费方横跨 openocd 家族（swd_probe/
+  reset_target）与 verify/capture/physical_gate 编排侧，跨族共享逻辑正是
+  本模块职责；且 Layer 1（openocd_runtime）可合法消费而无需改动
+  test_layering_gates 层表；工具库 cfg 路径经 `__file__` 推导（与
+  openocd_runtime.default_config_path 同款），不引 wb_common（互不渗透
+  边界保持）。
+- **测试**: `tests/test_openocd_cfg_param.py` 22 例（7 点默认 argv 身份钉
+  + 跨点身份总钉 + reset 显式 cfg 旁路钉 + 解析器四层优先级/逐键独立/
+  workspace=None 跳层/F-103 报错钉 ×10 + 7 点收敛钉[mock 包裹记录调用
+  ≥1 且 argv 逐字节不变] + _RESET_CFG_DEFAULT 删除钉）。全量
+  **928 = 906+22, skipped=6**；commit 三笔（钉 0f32d7b / 拆 58f184d /
+  docs 本笔），主题带 WB-20260919-06，未 push。
