@@ -49,6 +49,16 @@ class EvidenceLevelUnitTests(unittest.TestCase):
         self.assertEqual(verify._evidence_level(_result(capture=cap)),
                          "hardware_validated")
 
+    def test_uart_is_real_hardware(self):
+        # F-178 (WB-20260920-04, H-4): F-174 三后端合入 (esp_runtime.py:269
+        # "method": "uart") 时本表未同步 — ESP32 真机链每次全绿都落
+        # evidence=static, G2 证据门二选一: 拒收 ESP 发版 / 强行豁免使证据
+        # 等级语义失真 (fail-closed 方向, 非假 PASS)。uart 与 rtt/semihosting
+        # 同为真机采集后端, 同档 hardware_validated。
+        cap = {"status": "ok", "method": "uart"}
+        self.assertEqual(verify._evidence_level(_result(capture=cap)),
+                         "hardware_validated")
+
     def test_sim_is_simulation_validated(self):
         # C-1 预留: capture_sim.py 落地后 verify 分派 method="sim"
         cap = {"status": "ok", "method": "sim"}

@@ -171,6 +171,66 @@ class DispatchPlanTests(unittest.TestCase):
                 "diagnose_hardfault", {"text": "x" * 20_001})
 
 
+class BooleanFlagArgvTests(unittest.TestCase):
+    """F-178 (WB-20260920-04, H-1): boolean 参数是 store_true 开关旗标。
+
+    第一层病: `_validate_param` 末行对 False 也成立 (False != "" 恒真),
+    argv 里落进裸 Python bool → Windows 上 subprocess.list2cmdline 抛
+    `TypeError: expected str, bytes or os.PathLike object, not bool`,
+    进程未起且异常不被信封捕获 (违反本文件"统一信封"设计)。
+    第二层病: 即便子进程起得来, argparse 的 store_true 旗标带值会报
+    `unrecognized arguments`。两层都坏 → run_verify 的两个布尔能力全废。
+    """
+
+    def setUp(self):
+        self.ws = tempfile.mkdtemp()
+        os.makedirs(os.path.join(self.ws, ".workbench"))
+        with open(os.path.join(self.ws, ".workbench", "config.json"), "w",
+                  encoding="utf-8") as f:
+            json.dump({"builder": "gcc"}, f)
+
+    def tearDown(self):
+        shutil.rmtree(self.ws, ignore_errors=True)
+
+    def _argv(self, **params):
+        return mcp_server.plan_tool_call(
+            "run_verify", dict({"project": self.ws}, **params))["argv"]
+
+    def test_true_emits_bare_flag_exactly_once(self):
+        argv = self._argv(no_flash=True)
+        self.assertEqual(argv.count("--no-flash"), 1, argv)
+        self.assertFalse([a for a in argv if isinstance(a, bool)],
+                         f"argv 不得含裸 bool: {argv}")
+        # 旗标之后不得跟值 (store_true 不接受值)
+        idx = argv.index("--no-flash")
+        self.assertTrue(idx == len(argv) - 1 or argv[idx + 1].startswith("-"),
+                        f"--no-flash 后不得跟值: {argv}")
+
+    def test_false_emits_no_flag_at_all(self):
+        argv = self._argv(no_flash=False)
+        self.assertNotIn("--no-flash", argv, argv)
+        self.assertFalse([a for a in argv if isinstance(a, bool)],
+                         f"argv 不得含裸 bool: {argv}")
+
+    def test_require_tgl_same_shape(self):
+        # 同族第二个 boolean 一并钉: 修一处漏一处即红
+        argv_t = self._argv(require_tgl=True)
+        self.assertEqual(argv_t.count("--require-tgl"), 1, argv_t)
+        self.assertFalse([a for a in argv_t if isinstance(a, bool)], argv_t)
+        argv_f = self._argv(require_tgl=False)
+        self.assertNotIn("--require-tgl", argv_f, argv_f)
+
+    def test_argv_is_all_str(self):
+        # 端到端前置: 计划层产出的 argv 必须全部是 str, 否则
+        # subprocess.list2cmdline 在任何平台上都会 TypeError。
+        # (True/False 双值都过一遍, 顺序敏感的组合也过)
+        for params in ({"no_flash": True, "require_tgl": False},
+                       {"no_flash": False, "require_tgl": True}):
+            argv = self._argv(timeout=10, **params)
+            self.assertTrue(all(isinstance(a, str) for a in argv),
+                            f"非 str 元素: {argv}")
+
+
 class RunPlannedCallTests(unittest.TestCase):
     """mock 子进程层: 分发与错误透传"""
 
