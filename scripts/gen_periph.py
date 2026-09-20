@@ -138,9 +138,10 @@ def _pclk_error(hclk_mhz: int, pclk1_mhz: int | None = None,
             return (f"/* ERROR: {key}={value!r} 非整数 — 须为整数 MHz "
                     f"(F-103: 不静默回落默认)。*/")
         if not (lo <= value <= hi):
+            bound_note = ("PCLK2 ≤ HCLK" if key == "--pclk2"
+                          else "36 = APB1 总线顶速 (RM0008 数据手册, GAP-D-4 架构常量)")
             return (f"/* ERROR: {key}={value} 越界 — 有效范围 {lo}~{hi} MHz "
-                    f"({'PCLK2 ≤ HCLK' if key == '--pclk2' else
-                        '36 = APB1 总线顶速 (RM0008 数据手册, GAP-D-4 架构常量)'})。*/")
+                    f"({bound_note})。*/")
         if value > hclk_mhz:
             return (f"/* ERROR: {key}={value} > hclk={hclk_mhz} — PPRE 分频比 "
                     f"不可能小于 1:1 (F-103: 不静默回落默认)。*/")
