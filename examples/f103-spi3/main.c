@@ -20,12 +20,14 @@ static uint8_t spi3_transfer(uint8_t tx_byte) {
     return SPI3->DR;
 }
 
-/* 6. Burst write example (GAP-S-1 同源: 不排空 RX) */
+/* 6. Burst write example (F-178/H-3 同源: 逐字节排空 RX) */
 static void spi3_write_burst(uint8_t *buf, int len) {
     SPI3_CS_LOW();
     for (int i = 0; i < len; i++) {
-        while (!(SPI3->SR & (1<<1)));
+        while (!(SPI3->SR & (1<<1)));  /* wait TXE */
         SPI3->DR = buf[i];
+        while (!(SPI3->SR & (1<<0)));  /* wait RXNE */
+        (void)SPI3->DR;                /* drain RX (清 RXNE, 防 OVR 滞留) */
     }
     while (SPI3->SR & (1<<7));  /* wait BSY=0 */
     SPI3_CS_HIGH();

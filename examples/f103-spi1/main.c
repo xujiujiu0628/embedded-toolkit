@@ -1,5 +1,6 @@
 /* f103-spi1 — T1 样例 (编译级)。
- * 用途: SPI1 Mode0 /8 分频主模式最小样例 (软件 CS), 已知 write_burst 不排空 RX (见 GAPREPORT GAP-S-1)。
+ * 用途: SPI1 Mode0 /8 分频主模式最小样例 (软件 CS); write_burst 逐字节排空 RX
+ *       (F-178/H-3 已修 — 原 GAPREPORT GAP-S-1 注销)。
  * 生成方式: gen_periph --type spi --spi SPI1 --spi-mode 0 --baud-div 8 --sck PA5 --miso PA6 --mosi PA7 --nss PA4
  * ref.json anchor: peripherals.SPI1 (+ _relationships.SPI1.pins: NSS=A4 SCK=A5 MISO=A6 MOSI=A7)
  * 组装变换: 仅两处 — ①生成体裸语句包入 spi1_init(); ②static 函数/ISR/
@@ -24,8 +25,10 @@ static uint8_t spi1_transfer(uint8_t tx_byte) {
 static void spi1_write_burst(uint8_t *buf, int len) {
     SPI1_CS_LOW();
     for (int i = 0; i < len; i++) {
-        while (!(SPI1->SR & (1<<1)));
+        while (!(SPI1->SR & (1<<1)));  // wait TXE
         SPI1->DR = buf[i];
+        while (!(SPI1->SR & (1<<0)));  // wait RXNE
+        (void)SPI1->DR;                // drain RX (清 RXNE, 防 OVR 滞留)
     }
     while (SPI1->SR & (1<<7));  // wait BSY=0
     SPI1_CS_HIGH();
@@ -71,8 +74,8 @@ SPI1->CR1 |= (1<<6);                        // SPE=1, enable
 int main(void)
 {
     spi1_init();
-    /* write_burst 一次 (已知问题 GAP-S-1: burst 后 RXNE/OVR 残留, 下一次
-     * transfer 首字节会读到陈旧值 — 本样例先 burst 后连续 transfer 做排空) */
+    /* write_burst 一次 (F-178/H-3: 每写一字节 wait RXNE 并读回 DR,
+     * 不再留 OVR/RXNE 残留 — 紧随其后的 transfer 读到的是本次真收字节) */
     uint8_t tx[4] = {0xDE, 0xAD, 0xBE, 0xEF};
     spi1_write_burst(tx, 4);
     for (;;) {

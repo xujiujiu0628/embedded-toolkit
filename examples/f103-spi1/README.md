@@ -1,6 +1,7 @@
 # f103-spi1
 
-SPI1 Mode0 /8 分频主模式最小样例 (软件 CS), 已知 write_burst 不排空 RX (见 GAPREPORT GAP-S-1)。
+SPI1 Mode0 /8 分频主模式最小样例 (软件 CS); write_burst 逐字节排空 RX
+(F-178/H-3 已修 — 原 GAPREPORT GAP-S-1 注销)。
 
 - 生成方式: gen_periph --type spi --spi SPI1 --spi-mode 0 --baud-div 8 --sck PA5 --miso PA6 --mosi PA7 --nss PA4
 - 硬件验收: 未做（编译级样例）

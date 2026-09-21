@@ -197,7 +197,19 @@ def _validate_param(tool_name: str, p_name: str, p_spec: tuple, value) -> list:
             reason = checker(value)
     if reason:
         raise McpToolError(f"{tool_name}.{p_name} 非法: {reason}")
-    return [flag, value] if flag and value != "" else []
+    if not flag:
+        return []
+    if schema_type == "boolean":
+        # F-178 (WB-20260920-04, H-1): boolean 参数映射的是 store_true 开关
+        # 旗标 —— 只发旗标本身, 绝不把 Python bool 当值塞进 argv。
+        # 旧式 `[flag, value]` 对 False 也成立 (False != "" 恒真), 两层皆坏:
+        #   · subprocess.list2cmdline 对非 str 抛
+        #     `TypeError: expected str, bytes or os.PathLike object, not bool`
+        #     —— 进程未起且异常不被 run_planned_call 的信封捕获;
+        #   · 即便子进程起得来, argparse 的 store_true 收到值会报
+        #     `unrecognized arguments`。
+        return [flag] if value else []
+    return [flag, value] if value != "" else []
 
 
 def plan_tool_call(tool_name: str, arguments: dict | None) -> dict:

@@ -1,5 +1,6 @@
 /* f103-spi2 — T1 样例 (编译级)。
- * 用途: SPI2 Mode0 /8 分频主模式最小样例 (软件 CS), 已知 write_burst 不排空 RX (见 GAPREPORT GAP-S-1)。
+ * 用途: SPI2 Mode0 /8 分频主模式最小样例 (软件 CS); write_burst 逐字节排空 RX
+ *       (F-178/H-3 已修 — 原 GAPREPORT GAP-S-1 注销)。
  * 生成方式: gen_periph --type spi --spi SPI2 --spi-mode 0 --baud-div 8 --sck PB13 --miso PB14 --mosi PB15 --nss PB12
  * ref.json anchor: peripherals.SPI2 (+ _relationships.SPI2.pins: NSS=B12 SCK=B13 MISO=B14 MOSI=B15)
  * 组装变换: 仅两处 — ①生成体裸语句包入 spi2_init(); ②static 函数/ISR/
@@ -24,8 +25,10 @@ static uint8_t spi2_transfer(uint8_t tx_byte) {
 static void spi2_write_burst(uint8_t *buf, int len) {
     SPI2_CS_LOW();
     for (int i = 0; i < len; i++) {
-        while (!(SPI2->SR & (1<<1)));
+        while (!(SPI2->SR & (1<<1)));  // wait TXE
         SPI2->DR = buf[i];
+        while (!(SPI2->SR & (1<<0)));  // wait RXNE
+        (void)SPI2->DR;                // drain RX (清 RXNE, 防 OVR 滞留)
     }
     while (SPI2->SR & (1<<7));  // wait BSY=0
     SPI2_CS_HIGH();
