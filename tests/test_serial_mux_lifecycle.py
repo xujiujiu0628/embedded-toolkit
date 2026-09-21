@@ -17,8 +17,24 @@ F-182 (WB-20260921-03 / GAP-ENV-3): 旧版在用例开头按
 "全绿"口径随 PATH 在 skipped 7↔6 间漂移而不自知。占位进程既已由解释器
 自身承担 (与外部 `sleep` 无关), 该守卫已无存在理由, **删除**;
 skip 数自此与 PATH 无关 (收单口径: 全量 skipped 恒 6)。
+
+F-183 (WB-20260921-04 / T3, GAP-F-9) **阶段一 (钉, 本 commit)**: 本文件的
+打桩仍是 `mock.patch.object(serial_mux.subprocess, "Popen", …)` 与
+`mock.patch.object(serial_mux.shutil, "which", …)` —— 而 `serial_mux.subprocess`
+/ `serial_mux.shutil` **就是全局模块对象**, 等于改全局 `subprocess.Popen` /
+`shutil.which`: 打桩窗口内一切第三方 spawn / which 都被 fake 吞走
+(GAP-ENV-1 同族; F-182 §三已实证占位进程会递归调回 fake → RecursionError →
+被 start_mux 的 `except Exception` 吞成 start_failed)。
+
+本阶段把打桩入口收敛到**两个唯一改动点** (`_patch_serial_mux_subprocess` /
+`_patch_serial_mux_shutil_which`, 行为与改动前**逐字节等价** —— 旧的行内
+`mock.patch.object(...)` 原样搬进 helper 体内), 并新增 `StubIsolationTests`
+隔离自证钉。**钉必须红** (打桩面当前是全局的); 阶段二把两个 helper 体改为
+**模块引用替换** (SimpleNamespace stub, 显式列全属性、fail-closed) → 转绿。
+既有 mux 生命周期断言语义**零变**。
 """
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -37,7 +53,24 @@ _PLACEHOLDER_CODE = "import time; time.sleep(60)"
 # 注意: 下面的用例用 `mock.patch.object(serial_mux.subprocess, "Popen", …)` ——
 # 而 `serial_mux.subprocess` 就是全局 subprocess 模块 (GAP-ENV-1 同族, 见 GAP-F-9),
 # 故必须在 import 期先抓住真实句柄, 否则占位进程会递归调回 fake。
+# F-183 阶段二: 打桩面收窄为模块引用替换后, 本句柄不再必要 (届时移除)。
 _REAL_POPEN = subprocess.Popen
+
+
+def _patch_serial_mux_subprocess(fake_popen):
+    """打桩入口 (唯一改动点) —— **阶段一 = 现状**: 换全局 `subprocess.Popen`。
+
+    `serial_mux.subprocess` 是全局 subprocess **模块对象**, 故本式等价于
+    `mock.patch.object(subprocess, "Popen", fake_popen)` —— 打桩窗口内一切
+    第三方 spawn 都会被 fake 吞走 (GAP-ENV-1 / GAP-F-9)。
+    F-183 阶段二将改为替换 `serial_mux` 自己的模块属性 (SimpleNamespace stub)。
+    """
+    return mock.patch.object(serial_mux.subprocess, "Popen", fake_popen)
+
+
+def _patch_serial_mux_shutil_which(fake_which):
+    """同上 (阶段一 = 现状): 换全局 `shutil.which`。"""
+    return mock.patch.object(serial_mux.shutil, "which", fake_which)
 
 
 def _spawn_placeholder(**kw):
@@ -74,9 +107,9 @@ class MuxStartNoLeakTests(unittest.TestCase):
         def fake_wait(port, proc, timeout=2.0):
             return False   # 模拟服务起不来
 
-        with mock.patch.object(serial_mux.subprocess, "Popen", fake_popen), \
+        with _patch_serial_mux_subprocess(fake_popen), \
              mock.patch.object(serial_mux, "wait_for_tcp_server", fake_wait), \
-             mock.patch.object(serial_mux.shutil, "which", lambda x: "/usr/bin/socat"):
+             _patch_serial_mux_shutil_which(lambda x: "/usr/bin/socat"):
             out = serial_mux.start_mux(port="COMX", baudrate=115200,
                                        workspace=None,
                                        vserial_link="/tmp/nonexistent_link")
@@ -143,6 +176,78 @@ class ReadLoopDeathTraceTests(unittest.TestCase):
         server.stop_event.set()   # 先置位 → 循环应直接退出, 不走死亡分支
         server._serial_read_loop()   # 不应 os._exit
         self.assertFalse(os.path.exists(self.marker))
+
+
+class StubIsolationTests(unittest.TestCase):
+    """F-183 T3 (GAP-F-9) 打桩卫生自证钉 —— 照 F-182 T1 样板。
+
+    收窄后的桩必须只作用在 `serial_mux` 的模块引用上, **不得**劫持全局
+    `subprocess.Popen` / `shutil.which`; 否则打桩窗口内任何第三方 spawn /
+    which 都被 fake 吞走 (F-182 §三实证: 占位进程递归调回 fake →
+    RecursionError → 被 start_mux 的 `except Exception` 吞成 start_failed)。
+
+    本类不依赖外部环境事实 (safe-delete shim 是否在场等), 而是**在打桩窗口内
+    主动真跑一次第三方调用**, 用可观测证据判定是否被劫持:
+
+      · A1/A2/A3 断言第三方进程**真实执行** —— fake 只会抛
+        AssertionError (不可能产出 rc/stdout), 故 rc==0 + stdout 真实 =
+        未被替换;
+      · B 断言桩的**捕获序列不含**该第三方 argv (劫持的直接证据)。
+    """
+
+    def test_module_subprocess_stub_does_not_hijack_global_popen(self):
+        captured = []
+
+        def fake_popen(cmd, **kw):
+            captured.append(list(cmd))
+            raise AssertionError("serial_mux.subprocess 桩被非目标调用命中")
+
+        probe_argv = [sys.executable, "-c",
+                      "import sys; sys.stdout.write('PROBE')"]
+        proc = None
+        stdout = b""
+        err = None
+        try:
+            with _patch_serial_mux_subprocess(fake_popen):
+                # 关键: 探针必须走**调用时**的全局查表 `subprocess.Popen`
+                # (不能用 import 期抓下的句柄 —— 那会绕过桩、把劫持藏起来,
+                #  本单阶段一实测: 用句柄时本钉假绿, 改回全局查表即真红)。
+                proc = subprocess.Popen(probe_argv, stdout=subprocess.PIPE,
+                                        stderr=subprocess.PIPE)
+                stdout, _stderr = proc.communicate(timeout=30)
+        except Exception as e:      # 桩被命中 / 真 spawn 失败 皆为证据
+            err = e
+
+        with self.subTest(check="A1 第三方真 spawn"):
+            self.assertIsNone(err, f"打桩窗口内第三方 spawn 失败/被桩吞: {err!r}")
+        with self.subTest(check="A2 rc==0"):
+            self.assertIsNotNone(proc, "第三方进程未创建")
+            self.assertEqual(proc.returncode, 0)
+        with self.subTest(check="A3 stdout 真实"):
+            self.assertEqual(stdout, b"PROBE",
+                             "第三方进程未真实执行 (stdout 不符)")
+        with self.subTest(check="B 捕获序列隔离"):
+            self.assertNotIn(probe_argv, captured,
+                             f"桩捕获了非目标调用 (全局劫持证据): {captured}")
+
+    def test_module_shutil_stub_does_not_hijack_global_which(self):
+        def fake_which(name):
+            raise AssertionError("serial_mux.shutil.which 桩被非目标调用命中")
+
+        got = None
+        err = None
+        try:
+            with _patch_serial_mux_shutil_which(fake_which):
+                got = shutil.which(sys.executable)
+        except Exception as e:
+            err = e
+
+        with self.subTest(check="A 第三方 which 真执行"):
+            self.assertIsNone(err, f"全局 shutil.which 被桩吞走: {err!r}")
+        with self.subTest(check="B 命中真实路径"):
+            self.assertEqual(
+                os.path.normcase(got or ""), os.path.normcase(sys.executable),
+                f"第三方 shutil.which 结果不符: {got!r}")
 
 
 if __name__ == "__main__":
