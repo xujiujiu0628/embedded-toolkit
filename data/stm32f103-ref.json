@@ -20114,7 +20114,7 @@
   },
   "TIM12": {
    "base": "0x40001800",
-   "bus": "APB2",
+   "bus": "APB1",
    "desc": "",
    "registers": {
     "CR1": {
@@ -20432,7 +20432,7 @@
   },
   "TIM13": {
    "base": "0x40001C00",
-   "bus": "APB2",
+   "bus": "APB1",
    "desc": "",
    "registers": {
     "CR1": {
@@ -20643,7 +20643,7 @@
   },
   "TIM14": {
    "base": "0x40002000",
-   "bus": "APB2",
+   "bus": "APB1",
    "desc": "",
    "registers": {
     "CR1": {
@@ -23469,7 +23469,7 @@
   },
   "TIM9": {
    "base": "0x40014C00",
-   "bus": "APB1",
+   "bus": "APB2",
    "desc": "General purpose timer",
    "registers": {
     "CR1": {
@@ -25786,6 +25786,69 @@
     "number": 25,
     "name": "TIM1_UP_TIM10_IRQn",
     "desc": "update 中断 (TIM1 主 IRQ)"
+   }
+  },
+  "RTC": {
+   "irq": {
+    "number": 3,
+    "name": "RTC_IRQn",
+    "desc": "RTC 全局中断（锚: stm32f103xg.h:85  RTC_IRQn=3）；告警中断 41=RTC_Alarm_IRQn 见 peripherals.RTC.interrupts"
+   }
+  },
+  "EXTI": {
+   "irq": {
+    "number": 6,
+    "name": "EXTI0_IRQn",
+    "desc": "EXTI Line0 中断（锚: stm32f103xg.h:88  EXTI0_IRQn=6）；其余线 7/8/9/10/23/40 见 peripherals.EXTI.interrupts"
+   }
+  },
+  "TIM9": {
+   "irq": {
+    "number": 24,
+    "name": "TIM1_BRK_TIM9_IRQn",
+    "desc": "共享向量（锚: stm32f103xg.h:106 TIM1_BRK_TIM9_IRQn=24）——CMSIS 枚举本身即合并名，不拆假名"
+   }
+  },
+  "TIM12": {
+   "irq": {
+    "number": 43,
+    "name": "TIM8_BRK_TIM12_IRQn",
+    "desc": "共享向量（锚: stm32f103xg.h:125 TIM8_BRK_TIM12_IRQn=43）"
+   }
+  },
+  "TIM13": {
+   "irq": {
+    "number": 44,
+    "name": "TIM8_UP_TIM13_IRQn",
+    "desc": "共享向量（锚: stm32f103xg.h:126 TIM8_UP_TIM13_IRQn=44）"
+   }
+  },
+  "TIM14": {
+   "irq": {
+    "number": 45,
+    "name": "TIM8_TRG_COM_TIM14_IRQn",
+    "desc": "共享向量（锚: stm32f103xg.h:127 TIM8_TRG_COM_TIM14_IRQn=45）"
+   }
+  },
+  "TIM5": {
+   "irq": {
+    "number": 50,
+    "name": "TIM5_IRQn",
+    "desc": "TIM5 全局中断（锚: stm32f103xg.h:132 TIM5_IRQn=50）"
+   }
+  },
+  "TIM6": {
+   "irq": {
+    "number": 54,
+    "name": "TIM6_IRQn",
+    "desc": "TIM6 全局中断（锚: stm32f103xg.h:136 TIM6_IRQn=54）"
+   }
+  },
+  "TIM7": {
+   "irq": {
+    "number": 55,
+    "name": "TIM7_IRQn",
+    "desc": "TIM7 全局中断（锚: stm32f103xg.h:137 TIM7_IRQn=55）"
    }
   }
  }

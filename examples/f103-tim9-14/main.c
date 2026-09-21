@@ -4,8 +4,11 @@
  * ref.json anchor: peripherals.TIM9/TIM10 (寄存器布局), RCC.APB2ENR
  *                  bits 19/20/21=TIM9EN/TIM10EN/TIM11EN, RCC.APB1ENR
  *                  bits 6/7/8=TIM12EN/TIM13EN/TIM14EN。
- * GAP-D-5: ref.json 外设条目的 bus 字段 (TIM9=APB1, TIM12/13/14=APB2)
- *          与其 RCC 使能位归属矛盾 — 本样例一律以 RCC 位数据为准。
+ * GAP-D-5 (已修正 @F-179): ref.json 外设条目的 bus 字段曾与其 RCC 使能位
+ *          归属矛盾 (TIM9 记 APB1, TIM12/13/14 记 APB2) — F-179 已按 RCC
+ *          位数据修正为 TIM9=APB2、TIM12/13/14=APB1; 类级防线见
+ *          tests/test_ref_bus_crosscheck.py。本样例行为不受影响（原即依
+ *          RCC 位数据）。
  * 硬件验收: 未做（编译级样例）
  * mock 二期 (WB-20260920-02): 新增 host mock — 双实例序列位型 + 分频
  *          换算已知答案。
