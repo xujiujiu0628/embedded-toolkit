@@ -3613,3 +3613,4 @@
   （`project` 自身 `type` 实测为 `"string"`，与代码修后实际形态一致）。② `plan_tool_call`
   的"尾部"取"旗标片段流之后"（见上 GAP-F-7 ② 理由），Brief 所述"顺序问题尚不存在"在本单
   现场被 `{recipe, query}` 并用证伪（旧式就地 extend 会把位置片段插到 `--recipe` 之前）。
+- **F-183 追补 (2026-09-22, Orchestrator 裁决)**: GAP-F-11 口径统一 —— 无旗标参数**空值不发** (`return [str(value)] if value != "" else []`, 与 F-180 早退同式); 新钉 `FlaglessEmptyValueTests` (空 query → argv 无空串片段/尾部不变); GAP-F-11 结案。

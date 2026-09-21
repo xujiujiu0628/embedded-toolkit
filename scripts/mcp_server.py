@@ -209,7 +209,9 @@ def _validate_param(tool_name: str, p_name: str, p_spec: tuple, value) -> list:
         # boolean 无旗标者当前不存在 —— 若将来出现, 此处会以 str 值入 argv,
         # 由形态守卫 (tests/test_mcp_registry_shape.py 的无旗标参数快照钉 +
         # 位置投影钉) 拦下。
-        return [str(value)]
+        # GAP-F-11 裁决 (2026-09-22, Orchestrator): 空值不发 —— 与 F-180 非 boolean
+        # 分支的 `value != ""` 早退口径统一 (显式 query="" 不再落空串片段)。
+        return [str(value)] if value != "" else []
     if schema_type == "boolean":
         # F-178 (WB-20260920-04, H-1): boolean 参数映射的是 store_true 开关
         # 旗标 —— 只发旗标本身, 绝不把 Python bool 当值塞进 argv。
