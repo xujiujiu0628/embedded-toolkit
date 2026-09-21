@@ -391,7 +391,7 @@ embedded-toolkit/
 │                       #   单一事实源 + wb/openocd/serial 三 runtime，F-029；
 │                       #   legacy/ 空目录占位，Keil 退役区已拆 archive，F-067b）
 ├── tests/              # unittest 回归套件（纯 mock，Win/Linux 全绿）
-├── data/               # 知识库：55 外设参考 JSON + 已知限制
+├── data/               # 知识库：55 外设参考 JSON + 架构常量档（arch-facts，F-179）+ 已知限制
 │                       #   （ARMCC 错误码库 keil-error-db.json 已随 Keil 退役区拆 archive）
 ├── config/             # 串口/探针族的环境级配置（keil.json 退役后已拆 archive）
 ├── hooks/              # 固件工程侧三条 C 铁律（禁 malloc / 禁逻辑层 HAL_Delay / volatile 告警）
@@ -451,6 +451,21 @@ embedded-toolkit/
   值，烧录不受影响）终审全裁"可留"；后续票两张——终审波 N-3（ESP 空捕获提示
   语换串口/波特率/复位窗口径）/ N-4（`physical_gate` 纳入后端闸，现默认关断
   无实害）。详情：CHANGELOG F-174 收口段。
+- **ref.json 数据面 GAP-D 收口状态（F-179，WB-20260920-05）**
+  影响：`data/stm32f103-ref.json` 的 `bus` 字段曾与外设 RCC 使能位归属相反
+  （TIM9 记 APB1、TIM12/13/14 记 APB2）；`_relationships` 的 IRQ 号只覆盖 12 个外设；
+  IWDG KR 魔数 / FLASH KEYR 魔数 / CRC poly·初值 / PLLMUL 编码表 / USBPRE 位 /
+  SDIO PWRCTRL 位域 / DBGMCU CR 位表等架构常量**未登记**（GAP-D-1/2/3/4/5）。
+  规避：消费方一律以 RCC 位名数据为准；需要架构常量时读新档
+  `data/stm32f103-arch-facts.json`（**每条带 source**，取值三型：
+  RM0008 节号 / CMSIS 文件行 / arch-constant 依据句）。
+  现状：`bus` 已修正并加**类级防线**（`tests/test_ref_bus_crosscheck.py` 从 ref.json
+  自身的 ENR 位名反推期望集，覆盖 46 外设）；`_relationships` IRQ 12 → 21；
+  架构常量入册 48 条（`tests/test_ref_arch_facts.py` 钉结构+出处+CRC 防循环自证）；
+  dbg 样例补做（`examples/f103-dbg/`，工厂巡检 56 绿）。**仍未入册**（本地无 RM0008 /
+  数据手册可锚，宁缺毋滥）：CAN/ADC3/TIM5/TIM8/TIM9/SDIO/FSMC/DMA2 引脚映射、
+  FSMC BCR·BTR 位名、USBPRE 与 SDIO PWRCTRL 的值语义。
+  详情：CHANGELOG F-179 / WB-20260920-05 报告 §8 弃登清单、§9 新发现缺口。
 - **有意搁置**：UART 串口补丁的发布门禁脆弱性（成本/收益不立项）。
   详情：CHANGELOG 对应裁决记录。
 - **已闭合归档账**（不在此展开）：审核 M-4 ✅ F-162 · L-4 覆盖洞 ✅ F-163 ·

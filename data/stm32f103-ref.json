@@ -2076,6 +2076,31 @@
      "offset": "0x00",
      "desc": "Interrupt Set-Enable (write 1 to enable IRQ n)",
      "note": "ISER[0] covers IRQ 0-31, ISER[1] covers IRQ 32-63"
+    },
+    "ICER": {
+     "offset": "0x80",
+     "desc": "Interrupt Clear-Enable Register",
+     "note": "架构常量 (GAP-D-1 补登): 锚 CMSIS:core_cm3.h:344 NVIC_Type.ICER offset 0x80; 绝对地址 = NVIC.base + 0x80 = 0xE000E180; ICER[0] 覆盖 IRQ 0-31, ICER[1] 覆盖 IRQ 32-63; rc_w1 语义（写 1 清使能）"
+    },
+    "ISPR": {
+     "offset": "0x100",
+     "desc": "Interrupt Set-Pending Register",
+     "note": "架构常量 (GAP-D-1 补登): 锚 CMSIS:core_cm3.h:346 NVIC_Type.ISPR offset 0x100; 绝对地址 = NVIC.base + 0x100 = 0xE000E200"
+    },
+    "ICPR": {
+     "offset": "0x180",
+     "desc": "Interrupt Clear-Pending Register",
+     "note": "架构常量 (GAP-D-1 补登): 锚 CMSIS:core_cm3.h:348 NVIC_Type.ICPR offset 0x180; 绝对地址 = NVIC.base + 0x180 = 0xE000E280"
+    },
+    "IABR": {
+     "offset": "0x200",
+     "desc": "Interrupt Active bit Register",
+     "note": "架构常量 (GAP-D-1 补登): 锚 CMSIS:core_cm3.h:350 NVIC_Type.IABR offset 0x200; 绝对地址 = NVIC.base + 0x200 = 0xE000E300"
+    },
+    "IP": {
+     "offset": "0x300",
+     "desc": "Interrupt Priority Register",
+     "note": "架构常量 (GAP-D-1 补登): 锚 CMSIS:core_cm3.h:352 NVIC_Type.IP offset 0x300; 绝对地址 = NVIC.base + 0x300 = 0xE000E400; IP 为字节宽 (架构定义), 高 4 位有效 (F103 优先级域 bits 7:4)"
     }
    },
    "irqs": {
@@ -3885,7 +3910,8 @@
      }
     }
    },
-   "available_on_c8": true
+   "available_on_c8": true,
+   "note": "口径注 (GAP-D-2, base 值按简报不动): 本条沿用\"外设基址+寄存器偏移\"惯例, 以 BKP_DR1 为 origin 记 base=0x40006C04 且 DR1.offset=\"0x0\"; RM0008 口径为外设基址 0x40006C00、DR1@+0x04 —— 两者绝对地址相等, 消费方按绝对地址使用即无歧义。"
   },
   "CAN": {
    "base": "0x40006400",
