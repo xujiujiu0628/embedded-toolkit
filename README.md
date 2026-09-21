@@ -473,7 +473,9 @@ embedded-toolkit/
   + stderr pump）· CI 依赖跨 job 等价 ✅ F-176 · uart 采集桥接板握手线释放
   ✅ F-177（初代 esp32 真机双 PASS + S3 回归同日补票双 PASS）· Agent 正门与数据
   信任包 ✅ F-178（MCP boolean argv / cube_usercode backup-restore 事务化 /
-  spi `write_burst` 排空读 / verify 证据表 `uart` 键）——证据链
+  spi `write_burst` 排空读 / verify 证据表 `uart` 键）· ref.json 数据面收口
+  ✅ F-179（GAP-D-5 bus 反转 + RCC 位名类级防线 / `_relationships` IRQ 9 条逐条锚
+  CMSIS xg.h / `stm32f103-arch-facts.json` 48 条带出处入册 / f103-dbg 样例解锁）——证据链
   （run/PR/钉子清单）均在 CHANGELOG 对应票。
 
 > **F-021~F-030 已在本轮收口**（原子写收口包 / R7 双布局认路 / RTT 平台守卫 /

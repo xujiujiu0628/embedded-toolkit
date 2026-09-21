@@ -2924,7 +2924,7 @@
 - 合入后套件基线 **172**（155∪106，master 净增 17 零丢失）；未跟踪
   .mcp.json（用户确认非本人添加）移出至 archive/mcp-from-toolkit-20260831/。
 
-## 样例工厂（WB-20260919-04，2026-09-19，分支 wb/f103-sample-factory-20260919，未合入）
+## 样例工厂（WB-20260919-04，2026-09-19，分支 wb/f103-sample-factory-20260919，已合入 2026-09-20 合并链）
 
 - **T1/T2/T3 三层 40 个 F103 外设样例**（简报 WB-20260919-04）：
   T1 = gen_periph 生成 18（usart×3/pwm×3/timer-int×3/adc×2/i2c×2/spi×2/
@@ -2952,7 +2952,7 @@
   scripts 疑似缺陷 GAP-S-1（spi write_burst 不排空 RX）/GAP-S-2
   （I2C 片段 error_chain 契约不发射定义）。缺口一律只列不改。
 
-## 样例工厂 mock 二期（WB-20260920-02，2026-09-20，分支 wb/f103-mock-round2-20260920，未合入）
+## 样例工厂 mock 二期（WB-20260920-02，2026-09-20，分支 wb/f103-mock-round2-20260920，已合入 2026-09-20 合并链）
 
 - **既有 7 个 MOCK 样例断言加深**（R1，简报 WB-20260920-02，R1→R2→R3
   分层）：crc/can/dac/iwdg/tim5/tim6-7/wwdg 各补至 ≥5 断言组（边界值 +
@@ -2979,7 +2979,7 @@
 
 ## 0.1.x — 2026-08-30（代管 R1，分支 handoff/zcode-20260830）
 
-## Unreleased — 2026-09-19（F-170 提前行权：OpenOCD cfg 参数化收口，WB-20260919-06，分支 wb/f170-openocd-cfg-param-20260919，未合入）
+## Unreleased — 2026-09-19（F-170 提前行权：OpenOCD cfg 参数化收口，WB-20260919-06，分支 wb/f170-openocd-cfg-param-20260919，已合入 2026-09-20 合并链）
 
 > 状态更正（登记用）: F-170 原文唤起条件 = "接入第二 **ARM** 板型（F4/F0
 > 等）或 F-031 Linux 真机窗口"——ESP32/S3 走 esptool 不算触发。本单系
@@ -3028,7 +3028,7 @@
   ≥1 且 argv 逐字节不变] + _RESET_CFG_DEFAULT 删除钉）。全量
   **928 = 906+22, skipped=6**；commit 三笔（钉 0f32d7b / 拆 58f184d /
   docs 本笔），主题带 WB-20260919-06，未 push。
-## Unreleased — 2026-09-20（gen_periph `--pclk1/--pclk2` 时钟树参数化：F-110 下半场，WB-20260920-01，分支 wb/f-pclk-param-20260920，未合入）
+## Unreleased — 2026-09-20（gen_periph `--pclk1/--pclk2` 时钟树参数化：F-110 下半场，WB-20260920-01，分支 wb/f-pclk-param-20260920，已合入 2026-09-20 合并链（CI 语法修复 14cfe69）
 
 - **F-110 下半场（feature+test，先金矩阵后拆，外派 Executor 亲执行）**:
   F-110 已让时钟派生脱离 72MHz 字面量，但锁死"标准分频假设"
@@ -3083,7 +3083,7 @@
     "小数 MHz 入参" 是否开放留维护者拍板。
   - GAP-P-3 (Note): SPI `--baud-div` 非法值静默回落 /16（09-19 审查
 
-## Unreleased — 2026-09-20（F-178 修复波：数据信任包 + Agent 正门修补，WB-20260920-04，分支 wb/f178-fixwave-20260920，未合入）
+## Unreleased — 2026-09-20（F-178 修复波：数据信任包 + Agent 正门修补，WB-20260920-04，分支 wb/f178-fixwave-20260920，已合入（ff 至 ae57c84 + CI 平台补钉 5e3ab9a，2026-09-21）
 
 > 来源：WB-20260919-05 全仓对抗审查次日排产 ①~④+M-10 —— 三笔"数据损坏/假失败"
 > High + 一行解锁 ESP 发版面的证据分级 + 一笔备份原子性 Medium。全部 host 可验，
