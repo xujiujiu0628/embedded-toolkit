@@ -912,8 +912,16 @@ def gen_spi(spi_periph: str, mode: int, nss: str, sck: str,
     lines.append(f"static void spi{spi_n}_write_burst(uint8_t *buf, int len) {{")
     lines.append(f"    SPI{spi_n}_CS_LOW();")
     lines.append("    for (int i = 0; i < len; i++) {")
-    lines.append(f"        while (!({spi_periph}->SR & (1<<1)));")
+    lines.append(f"        while (!({spi_periph}->SR & (1<<1)));  // wait TXE")
     lines.append(f"        {spi_periph}->DR = buf[i];")
+    # F-178 (WB-20260920-04, H-3): RM0008 §25.3.5 —— SPI 接收是**单缓冲**:
+    # 读 DR 才清 RXNE; RXNE 未清时下一字节到达只置 OVR 并把该字节丢弃。
+    # 只写不读的 burst 收尾会把最后一个陈旧字节滞留在缓冲里并留下 OVR=1,
+    # 随后同片段生成的 spiN_transfer 的 wait-RXNE 立即通过、返回 burst 残留
+    # 字节, 本次真收到的字节被 OVR 丢弃且无人清理 —— "发命令再收数据"的
+    # 传感器读写序列全体错位。故每写一字节必须逐字节排空。
+    lines.append(f"        while (!({spi_periph}->SR & (1<<0)));  // wait RXNE")
+    lines.append(f"        (void){spi_periph}->DR;                // drain RX (清 RXNE, 防 OVR 滞留)")
     lines.append("    }")
     lines.append(f"    while ({spi_periph}->SR & (1<<7));  // wait BSY=0")
     lines.append(f"    SPI{spi_n}_CS_HIGH();")
@@ -1189,7 +1197,15 @@ GPIO 模式 (F-103: 由 --mode choices 强制, 未知模式报错):
         if not args.periph:
             print("Error: --periph required for --type doc", file=sys.stderr)
             sys.exit(1)
-        print(gen_doc(args.periph, args.out_dir))
+        doc_out = gen_doc(args.periph, args.out_dir)
+        # F-178 P1 (WB-20260920-04, 09-19 审查 M-11): gen_doc 的"外设不存在"
+        # 返回值 (test_gen_periph.py 已钉其原文, 故不改返回格式) 必须按**失败**
+        # 退出 —— 与同文件 _emit 的 ERROR→exit 1 纪律同款, 机器消费方按 rc
+        # 判定, 不再把 "Error: ... not found" 当成功。错误走 stderr。
+        if doc_out.startswith("Error:"):
+            print(doc_out, file=sys.stderr)
+            sys.exit(1)
+        print(doc_out)
 
 
 if __name__ == "__main__":

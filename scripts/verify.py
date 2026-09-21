@@ -1349,7 +1349,7 @@ def _sanitize_text(text: str) -> str:
 #   real-hardware → hardware_validated, simulator → simulation_validated;
 #   第四档 production_approved 不由 verify 产出 — 是 release_audit --approve
 #   在发布后对 hardware_validated 记录的人工批准回填 (见 release_audit)。
-EVIDENCE_REAL = "hardware_validated"    # capture 后端 rtt/semihosting 实跑
+EVIDENCE_REAL = "hardware_validated"    # capture 后端 rtt/semihosting/uart 实跑
 EVIDENCE_SIM = "simulation_validated"   # sim 后端 (仿真器加载执行, 无真机在场)
 EVIDENCE_STATIC = "static"              # 仅构建/lint, 或 capture 未跑成 — 无运行时证据
 EVIDENCE_LEVELS = (EVIDENCE_STATIC, EVIDENCE_SIM, EVIDENCE_REAL,
@@ -1357,6 +1357,10 @@ EVIDENCE_LEVELS = (EVIDENCE_STATIC, EVIDENCE_SIM, EVIDENCE_REAL,
 _METHOD_EVIDENCE = {
     "rtt": EVIDENCE_REAL,
     "semihosting": EVIDENCE_REAL,
+    # F-178 (WB-20260920-04, H-4): F-174 三后端合入时漏同步本表 ——
+    # esp_runtime.py 的 uart 采集是真机后端 (pyserial 定时窗 + 复位),
+    # 缺键会让 ESP32 全绿 run 落 evidence=static, G2 证据门拒收发版。
+    "uart": EVIDENCE_REAL,
     "sim": EVIDENCE_SIM,   # C-1 capture_sim.py 落地即生效, 本表无需再改
 }
 

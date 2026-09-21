@@ -567,6 +567,18 @@ class MainCliDispatchTests(unittest.TestCase):
                     gen_periph.main()
         self.assertEqual(ctx.exception.code, 1)
 
+    def test_doc_type_unknown_peripheral_exits_1_m11(self):
+        # F-178 P1 (WB-20260920-04, 09-19 审查 M-11): "外设不存在"必须按失败
+        # 退出 —— F-086/F-103 的 ERROR→exit 1 纪律在本生成器曾是唯一漏网
+        # (旧版 print 直出 rc=0, 机器消费方把 "Error: ... not found" 当成功)。
+        with mock.patch.object(sys, "argv",
+                               ["gen_periph.py", "--type", "doc",
+                                "--periph", "NOPE0"]):
+            with redirect_stdout(io.StringIO()):
+                with self.assertRaises(SystemExit) as ctx:
+                    gen_periph.main()
+        self.assertEqual(ctx.exception.code, 1)
+
     def test_pwm_type_requires_pin_and_autodetects_from_timer_channel(self):
         # 默认 timer/ch (TIM2 CH1) 命中 TIM_CH_PINS 会自动补 pin, 不报错;
         # 映射外的组合 (TIM9 CH1) 才走到"缺 --pin"退出

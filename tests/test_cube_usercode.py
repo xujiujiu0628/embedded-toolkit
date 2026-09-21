@@ -140,13 +140,15 @@ class RestoreByteFidelityTests(unittest.TestCase):
         self.assertIn(PLAIN.encode("utf-8"), data)
 
     def test_crlf_escape_survives_byte_for_byte(self):
-        # ① \r\n 必须原样回来: 反斜杠字面量在位, 且不得落真实 CR/LF
+        # ① \r\n 必须原样回来: 反斜杠字面量在位, 且不得退化成真实控制字符。
+        # 注: 落盘走 write_text 默认 newline 翻译, 整个文件在 Windows 上是
+        # CRLF 行尾 —— 那不是本缺陷, 故只针对**字符串字面量内部**取证。
         rc, data, _err = self._roundtrip(PAYLOAD_CRLF)
         self.assertEqual(rc, 0)
         self.assertIn(b'printf("hi\\r\\n");', data,
                       f"反斜杠字面量被 re.sub 模板吃掉: {data!r}")
-        self.assertNotIn(b"\r", data,
-                         f"源文件出现真实 CR 控制字符: {data!r}")
+        self.assertNotIn(b'printf("hi\r\n");', data,
+                         f"字面量退化成真实 CR/LF 控制字符: {data!r}")
 
     def test_nul_escape_does_not_become_real_nul_byte(self):
         # ② '\0' 必须保持两字符转义, 不得落真实 NUL 字节
@@ -265,6 +267,72 @@ class BackupAtomicityTests(unittest.TestCase):
                       "旧备份 main.c 内容已被破坏")
         self.assertIn(b"gpio_old", read_bytes(old_gpio),
                       "旧备份 gpio.c 内容已被破坏")
+
+
+class LoopCodeBraceTests(unittest.TestCase):
+    """F-178 P1 (L-6): `_extract_loop_code` 的花括号计数必须只在**代码态**进行。
+
+    旧实现逐字符裸数 `{`/`}` —— 被 `printf("}")`、`'{'`、含括号的注释欺骗,
+    while(1) 体被提前截断或过度延展, 用户代码静默丢尾/串味。
+    """
+
+    def _body(self, loop_lines):
+        content = ("int main(void)\n{\n"
+                   "    while (1) {\n"
+                   + "".join("        %s\n" % ln for ln in loop_lines)
+                   + "    }\n"
+                     "    return 0;\n"
+                     "}\n")
+        return cube_usercode._extract_loop_code(content)
+
+    def test_brace_in_string_literal_does_not_truncate(self):
+        body = self._body(['printf("}");', "tick++;", "if (tick > 3) break;"])
+        self.assertIn('printf("}");', body)
+        self.assertIn("tick++;", body)
+        self.assertIn("if (tick > 3) break;", body)
+
+    def test_brace_in_char_literal_does_not_truncate(self):
+        body = self._body(["if (c == '}') { flag = 1; }", "tick++;"])
+        self.assertIn("tick++;", body)
+
+    def test_brace_in_comment_does_not_truncate(self):
+        body = self._body(["/* } 假的闭合 */", "tick++;"])
+        self.assertIn("tick++;", body)
+
+    def test_escaped_quote_in_string_does_not_confuse_scanner(self):
+        body = self._body(['printf("a\\"}" );', "tick++;"])
+        self.assertIn("tick++;", body)
+
+
+class ConflictAccountingTests(unittest.TestCase):
+    """F-178 P1 (L-6): 旧 main.c 有 USER CODE 块而新文件无标记时, 必须**如实
+    落 conflict** —— 旧版 `pass # fall through to conflict` 从不记录, 该文件
+    既不进 restored 也不进 conflicts, 三计数全部蒸发, 用户只看到
+    "[OK] 恢复完成" 便以为没丢代码。
+    """
+
+    def setUp(self):
+        self.ws = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.ws, True)
+
+    def test_markerless_new_file_is_reported_as_conflict(self):
+        mk_project(
+            self.ws,
+            # 新文件完全没有 USER CODE 标记 (CubeMX 模板大变)
+            {"Core/Src/main.c": '#include "main.h"\n\nint main(void)\n{\n'
+                                '  while (1) { }\n}\n'},
+            {"Core/Src/main.c": main_c("  int precious = 42;")})
+
+        r = cli("restore", self.ws)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("无 USER CODE 标记", r.stdout,
+                      f"conflict 未被上报 (三计数蒸发): {r.stdout}")
+        self.assertIn("main.c", r.stdout)
+        self.assertIn("恢复完成: 0 个文件已更新", r.stdout,
+                      f"计数口径不诚实: {r.stdout}")
+        # 新文件一个字节都不该被动
+        self.assertNotIn(b"precious", read_bytes(
+            os.path.join(self.ws, "Core", "Src", "main.c")))
 
 
 if __name__ == "__main__":
