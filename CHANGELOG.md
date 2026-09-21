@@ -3211,3 +3211,79 @@
     改动文件 322 个 f-string 零违规，但 tests/ 白名单外故未入库。
 - **commit 台账（分支 wb/f178-fixwave-20260920，未 push）**: 钉 `468ed8c`（红钉 17 例
   全红）/ 修 `2fac244`（T1~T4 + P1 转绿，含金矩阵随动）/ docs 本笔。
+
+- **F-179（data+test，WB-20260920-05）ref.json 数据面收口三件套：bus 反转修正 / `_relationships` IRQ 补登 / 架构常量新档（GAP-D-5 + GAP-D-3 + GAP-D-4）**:
+  基线 master `5e3ab9a`（WB-20260920-04 合入后），全量 **1037 绿 (skipped=6)**。
+  - **GAP-D-5 数据 bug（双向反转，非单点）**：`peripherals.TIM9.bus` 记 `APB1` 而
+    `RCC.APB2ENR` bit19=`TIM9EN`；`TIM12/13/14.bus` 记 `APB2` 而 `APB1ENR`
+    bits 6/7/8 = `TIM12/13/14EN`。修正**一律以 ref.json 自身的 RCC 位名归属为准**
+    （未动 RCC 数据）。三源互证：工厂状态文档 GAP-D-5 / ref.json RCC 位导出 /
+    本单新钉红摘录。
+  - **类级防线（防类不防点）**：新建 `tests/test_ref_bus_crosscheck.py` —— 从 ref.json
+    自身的 `APB1ENR/APB2ENR/AHBENR` 位名反推「外设→总线」期望集（`IOPxEN`→`GPIOx`
+    规则），实测覆盖 46 个外设、RCC 位名零自相矛盾，逐条断言 `bus` 字段；
+    外加 IRQ 号在**非共享名**场景的唯一性（共享向量名如实豁免）。修前 **4 红**
+    （TIM9/TIM12/TIM13/TIM14），修后 **3/3 绿** —— 下一个同类录入矛盾必被咬。
+  - **样例侧注释随动（仅注释）**：`examples/f103-tim9-14/main.c`、`README.md` 的
+    GAP-D-5 注记改为"已修正 @F-179 + 类级防线指向"，`git diff -U0` 自证只有注释行。
+    `examples/f103-common/f103_regs.h` **零改动**（现场 grep 无 GAP-D-5 命中，前提不成立）。
+  - **GAP-D-3 `_relationships` 补 9 条 IRQ**：`_relationships` 条目 13 → 22（带 irq 的
+    12 → 21；DMA1 无中断）。新增 RTC=3 / EXTI0=6 / TIM1_BRK_TIM9=24 /
+    TIM8_BRK_TIM12=43 / TIM8_UP_TIM13=44 / TIM8_TRG_COM_TIM14=45 / TIM5=50 /
+    TIM6=54 / TIM7=55。值与名逐条锚 **`CMSIS:stm32f103xg.h` 的 `IRQn_Type` 枚举**
+    （行号内联在 `desc`），**共享向量名如实登记、不拆假名**；写入脚本对每条断言
+    `peripherals.<P>.interrupts` 存在同值条目（ref.json 自身即第二源），9 条全过。
+    消费面回归：`test_kb_hygiene` + `test_zero_coverage_pure` + `test_gen_periph`
+    + `test_gen_syntax_smoke` → **94 例 OK**；**无既有测试把"未登记"钉成期望**。
+  - **GAP-D-4 架构常量入册（新文件）**：`data/stm32f103-arch-facts.json` —— IWDG KR
+    三键(0x5555/0xAAAA/0xCCCC) + LSI 40kHz、FLASH KEYR 双魔数、CRC
+    poly/初值/无输出异或、`RCC.CFGR` PLLMUL **15 行编码表（0111→×9）**与 USBPRE 位、
+    SDIO PWRCTRL 位域、DBGMCU CR 位表（**48 条带 source 的入册项**）。**每条带
+    source，三型取值**（`RM0008:§节号` / `CMSIS:文件:行` / `arch-constant:依据句`）；
+    **无本地出处的项宁缺毋滥未入册**（引脚映射全集 / FSMC BCR·BTR 位名 /
+    USBPRE·SDIO 值语义 / DBG_CAN2_STOP 位号），清单见 WB-20260920-05 报告 §8。
+    载入钉 `tests/test_ref_arch_facts.py`（**7 例**）：结构 + 出处纪律（每条属三型之一、
+    总数 ≥30）+ PLLMUL `multiplier == code+2` 家族不变量 + **CRC 防循环自证**（用文件里的
+    poly/init 跑测试内**独立实现**的位模 2 除模型，重现 WB-20260920-02 的**独立演算**
+    常数 `0x00000000` / `0xA695C4AA` / `0x376454AF`）。
+  - **dbg 样例补做（解锁项）**：新建 `examples/f103-dbg/` —— 编译级全绿
+    （ELF 133172 B / HEX 1205 B，`text=408`，`-Wall -Werror` 零告）+ host mock
+    **5 组断言**（基址/偏移锚定、IDCODE 位域切分已知答案、DBGCR 位型手算
+    `0x107`/`0x527` 与掩码常数 `0x3FFFE7`、非法位防御、清零回读）→ `MOCK PASS`。
+    一期（WB-20260919-04）"ref.json 无 DBGMCU 条目、零数据可锚定"的理由失实
+    （WB-20260920-02 勘误④）由此闭合。工厂巡检 **54 → 56 绿**（`make all` + `make test`
+    两个子用例自动入网）。
+  - **P1（T1~T4 全绿后）**：**GAP-D-1** NVIC 补 `ICER/ISPR/ICPR/IABR/IP` 架构项
+    （base 相对 offset `0x80/0x100/0x180/0x200/0x300`，绝对地址 `0xE000E180…0xE000E400`；
+    锚 `CMSIS:core_cm3.h:342-352` 与 `NVIC_BASE=SCS_BASE+0x100`(`:1389`)）；
+    **GAP-D-2** BKP 加口径注（`base` 值**不动**，声明 RM 口径 `0x40006C00`/DR1@+0x04
+    与绝对地址相等）。复核 `Ran 18 tests OK`。
+  - **诚实注记**：本单全部为 host 可验工作——**未触硬件、未跑真机链、未 pip、未联网**；
+    样例仅编译级 + host mock，**无板级行为主张**。GAP-D-5 的修正依据是 ref.json 自身的
+    RCC 位名数据（不是外部文档记忆），GAP-D-4 的弃登项同理宁缺毋滥。
+  - **环境事故与偏差（诚实披露，详见 WB-20260920-05 报告 §0）**：① `git rebase master`
+    在本沙箱**可复现地摧毁 `.git/objects`**（约 300 对象被移入回收站，`fsck` 由 0 变 301），
+    本单以**回收站条目恢复**修回对象库，base 对齐改用**等价快进**（`reset --hard master`
+    落到同一 `5e3ab9a`）——**动词与简报指定不同，如实声明**；② 沙箱回滚 git 松散 ref
+    （`commit` 报 rc=0 而 ref 不落盘），沿用项目既有绕过法并在本单补强：**直写松散 ref
+    并同步 `packed-refs`**（松散 ref 在工具调用边界被回滚，packed 通道持久）；
+    ③ 沙箱 PATH 前置的托管 Python **缺 pyserial**，会让基线误判红 8 例，
+    本单全程改用 `D:\python\python.exe`（3.14.3，`import serial` → 3.5）。
+- **契约变更段（WB-20260920-05）**:
+  - **新增数据档 `data/stm32f103-arch-facts.json`**（此前无此文件）：顶层 `_meta`
+    （version/chip/updated/scope/source_types/policy/anchored_header）+ 分组
+    `iwdg` / `flash` / `crc` / `rcc_cfgr` / `sdio` / `dbg`。条目 `source` **三型约定**：
+    `RM0008:§节号` / `CMSIS:<文件>:<行或枚举>` / `arch-constant:<依据句>`。
+    本单**只建、只钉，不改任何既有消费方**，消费方后续单接。
+  - **`peripherals.*.bus` 判据收紧**：以 RCC 使能位归属为唯一判据（此前 4 处与位数据
+    相反）；类级防线常驻 `tests/test_ref_bus_crosscheck.py`，数据侧再错即红。
+  - **`_relationships.<P>.irq` 覆盖面 12 → 21**（新增 9 条）。`irq` 结构语义与命名
+    沿用既有形态（`number`/`name`，共享向量名按 CMSIS 合并名，`desc` 内联出处锚）。
+  - **`peripherals.NVIC.registers` 扩面**：`ISER` → `ISER/ICER/ISPR/ICPR/IABR/IP`
+    （offset 为 base 相对值，与既有 `ISER "0x00"` 同口径）。
+  - **no-op 声明**：`scripts/**` 零改动；`hooks/**`、`machine.json`、`data/` 其余 json
+    零改动；既有测试断言零删除零弱化。
+- **commit 台账（分支 wb/f179-refdata-20260920，未 push）**: 钉 `046d118`（红摘录 4 红）
+  / 数据修正 `0f6495d`（T1+T2 + 样例注释随动）/ 增补+样例 `c7cf352`（T3+T4）
+  / docs 本笔（CHANGELOG + README；**P1 的 GAP-D-1/D-2 数据改动并入本笔**——
+  简报固定四笔，未给 P1 留 commit 槽，详见报告 §10.5）。
