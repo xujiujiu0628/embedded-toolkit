@@ -3614,3 +3614,38 @@
   的"尾部"取"旗标片段流之后"（见上 GAP-F-7 ② 理由），Brief 所述"顺序问题尚不存在"在本单
   现场被 `{recipe, query}` 并用证伪（旧式就地 extend 会把位置片段插到 `--recipe` 之前）。
 - **F-183 追补 (2026-09-22, Orchestrator 裁决)**: GAP-F-11 口径统一 —— 无旗标参数**空值不发** (`return [str(value)] if value != "" else []`, 与 F-180 早退同式); 新钉 `FlaglessEmptyValueTests` (空 query → argv 无空串片段/尾部不变); GAP-F-11 结案。
+- **F-184 (test, `tests/test_serial_mux_lifecycle.py`) GAP-F-10 全局打桩收窄 · `os._exit` 一处**:
+  GAP-F-9 的**同族残余**: `mock.patch.object(serial_mux.os, "_exit", …)` 里的 `serial_mux.os`
+  **就是全局 `os` 模块对象**, 等于把**全局** `os._exit` 换掉 —— 打桩窗口内任何第三方
+  `os._exit` 都会被 fake 吞走。处置: 打桩入口收敛为唯一 helper `_patch_serial_mux_os`,
+  体内改为**模块引用替换** (`mock.patch.object(serial_mux, "os", SimpleNamespace(…))`),
+  stub 属性**显式列全、fail-closed**: `_exit`(:173) / `path`(:352 `exists`、:441 `islink`) /
+  `kill`(:432) / `unlink`(:443) —— 由 `scripts/serial_mux.py` 现场 grep 核实, 且**机检相等**
+  (探针实测 stub 属性集 == 现场消费集, 未列名属性窗口内直接 `AttributeError`)。
+  `scripts/**` **零改动**(仅测试侧收窄打桩面)。
+- **F-184 隔离自证钉(新)**: `StubIsolationTests::test_module_os_stub_does_not_hijack_global_exit`。
+  ⚠ **安全红线: 严禁真调 `os._exit` 探针**(会把测试进程当场杀掉) —— 故**不**照搬 F-183
+  subprocess 钉的"窗口内真跑第三方 + 看 fake 账目"写法, 改**身份断言法**:
+  A1 窗口内 `os._exit`(**调用时**全局查表) 必须仍是 import 期捕获的真实函数;
+  A2 第三方独立解析路径 (`importlib.import_module("os")._exit`) 亦须为真实函数;
+  B1 桩只挂在 `serial_mux.os` 上、全局 `os` 里**查不到**它; B2 全程 `fake.call_count == 0`
+  (零真实 exit 调用)。判据极性经实测: **修前 A1/A2/B1 三分项红, 收窄后 4/4 绿**。
+- **F-184 钉子(红→绿)**: `tests.test_serial_mux_lifecycle` 修前 `Ran 6 tests in 0.418s`
+  → `FAILED (failures=3)`(恰为新钉三分项); 修后 `Ran 6 tests in 0.412s` → `OK`。
+  变更删除行全集 **3 条**, 全部落在打桩入口与账目变量名(`m_exit` → `exit_mock`);
+  判据本身(`call_args[0][0] == 1`)未变, 既有 `MuxStartNoLeakTests` / `ReadLoopDeathTraceTests`
+  断言**语义零变**(机检: `git diff <BASE>...HEAD | grep -E "^-[^-]"` 仅这三行)。
+- **F-184 全量门禁**: 前置形态 `Ran 1093 tests in 718.519s` → `OK (skipped=6)`
+  (本单基线 = 1092 例, 见口径披露; 新增 1 例);
+  `ruff check scripts tests` → `All checks passed!`; 语法地板 `tests.test_py_floor` **9 例 OK**。
+- **新登记(只列不改, GAP-F-13 起编)**: 全仓 `tests/` 仍有 **98 处"全局模块打桩"**
+  (`mock.patch.object(<模块对象>.<stdlib 模块名>, …)`; 判据 = 静态抽取 2 段式目标 +
+  `tokenize` 剔除字面量/注释内的伪命中; 覆盖 22 个测试文件)。族内代表:
+  `test_json_exit_code_contract.py:150` `serial_mux.shutil`(与 F-183 修过的**同一目标**)、
+  `test_gen_periph.py:533` `gen_periph.os`(`getcwd`)、`test_mux_alive_probe.py:31/33`
+  (`serial_runtime.os.name` + 全局 `os.kill`)、`test_writeback_guards.py:271`
+  `runtime_common.os.replace`。本单只收 `serial_mux` 族最后一处, 其余**未裁定实害、未改动**。
+- **口径披露(F-184)**: ① 任务简报 §3 记"基线 1091", 实测本单基线为 **1092 例** ——
+  差异来自基座 commit `869468a`(F-183 GAP-F-11 追补, 新增 `FlaglessEmptyValueTests` 1 例),
+  非本单改动所致(`git show --stat 869468a` 实证 +1 例 −0 例)。② 本单自证钉**未真调 `os._exit`**:
+  判据等价性由"修前红/修后绿"两态实测保证, 而非由真实 exit 行为保证(红线所限, 如实声明)。
