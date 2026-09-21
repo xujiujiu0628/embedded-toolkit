@@ -195,20 +195,36 @@ class RestoreTransactionTests(unittest.TestCase):
         before_gpio = read_bytes(gpio_path)
         before_main = read_bytes(main_path)
 
-        # 制造真实落盘失败: main.c 只读。find_cubemx_files 排序下 gpio.c
-        # 先于 main.c —— 旧实现会先把 gpio.c 写坏, 再在 main.c 上炸掉。
-        os.chmod(main_path, stat.S_IREAD)
-        try:
-            r = cli("restore", self.ws)
-        finally:
-            os.chmod(main_path, stat.S_IWRITE)
+        # 跨平台注入 (F-178 CI 补钉): 旧夹具用 chmod 只读注入落盘失败 ——
+        # 只在 Windows 咬合 (os.replace 对只读目标报 PermissionError);
+        # POSIX 下 replace 只看**所在目录**写权限, 目标文件只读位无效 →
+        # ubuntu CI 注不进失败、rc=0 假通过 (双腿 3.10/3.12 实红)。
+        # 改为对 os.replace(tmp→main.c) 直接注失败: find_cubemx_files 排序下
+        # gpio.c 先完成替换, 恰好走"已替换→.bak 回滚"分支, 全平台同形。
+        real_replace = os.replace
 
-        self.assertNotEqual(r.returncode, 0,
-                            f"中途失败必须非零退出\nstdout={r.stdout}")
+        def flaky_replace(src, dst, *a, **kw):
+            if os.fspath(dst) == main_path:
+                raise OSError(13, "模拟: 目标被占用 (落盘阶段)")
+            return real_replace(src, dst, *a, **kw)
+
+        prev = os.getcwd()
+        os.chdir(self.ws)
+        try:
+            with mock.patch("os.replace", side_effect=flaky_replace):
+                rc = cube_usercode.cmd_restore()
+        finally:
+            os.chdir(prev)
+
+        self.assertNotEqual(rc, 0, f"中途失败必须非零退出 (rc={rc})")
         self.assertEqual(read_bytes(gpio_path), before_gpio,
-                         "gpio.c 已被写坏 (事务化缺失) — 原文件必须保持不动")
+                         "gpio.c 已替换且回滚未还原 —— 原文件必须保持不动")
         self.assertEqual(read_bytes(main_path), before_main,
                          "main.c 原文件被动过")
+        self.assertEqual(
+            [p for p in os.listdir(os.path.dirname(main_path))
+             if p.endswith(".restore.tmp")], [],
+            "回滚后不得残留 .restore.tmp")
 
 
 class BackupAtomicityTests(unittest.TestCase):
