@@ -1,0 +1,251 @@
+{
+  "_meta": {
+    "version": "1.0.0",
+    "chip": "STM32F103C8T6",
+    "updated": "2026-09-21",
+    "task": "WB-20260920-05 / F-179 (GAP-D-4)",
+    "scope": "ref.json 未登记、样例与生成器需要的架构常量 / 位域 / 编码表",
+    "source_root": "D:\\claude\\vendor\\stm32f103-cmsis-seed",
+    "source_types": [
+      "RM0008:§节号",
+      "CMSIS:<文件>:<行或枚举>",
+      "arch-constant:<依据句>"
+    ],
+    "policy": "无出处不入册（宁缺毋滥）；缺项见 WB-20260920-05 报告 §弃登清单",
+    "anchored_header": "stm32f103xg.h (XL-density 变体：其 IRQn_Type 枚举直接给出 TIM1_BRK_TIM9/TIM8_BRK_TIM12 类共享向量名，与 ref.json 既有命名一致)"
+  },
+  "iwdg": {
+    "kr_write_access_enable": {
+      "value": "0x5555",
+      "source": "CMSIS:stm32f1xx_hal_iwdg.h:155:IWDG_KEY_WRITE_ACCESS_ENABLE"
+    },
+    "kr_reload": {
+      "value": "0xAAAA",
+      "source": "CMSIS:stm32f1xx_hal_iwdg.h:153:IWDG_KEY_RELOAD"
+    },
+    "kr_enable": {
+      "value": "0xCCCC",
+      "source": "CMSIS:stm32f1xx_hal_iwdg.h:154:IWDG_KEY_ENABLE"
+    },
+    "lsi_typical_hz": {
+      "value": 40000,
+      "source": "CMSIS:stm32f1xx_hal_conf_template.h:102:LSI_VALUE"
+    },
+    "note": "KR 三键按 HAL 头注释语义：5555=写使能, AAAA=重装, CCCC=启动"
+  },
+  "flash": {
+    "keyr_fpce_key1": {
+      "value": "0x45670123",
+      "source": "CMSIS:stm32f103xg.h:11209:FLASH_KEY1_Msk"
+    },
+    "keyr_fpce_key2": {
+      "value": "0xCDEF89AB",
+      "source": "CMSIS:stm32f103xg.h:11212:FLASH_KEY2_Msk"
+    }
+  },
+  "crc": {
+    "polynomial": {
+      "value": "0x04C11DB7",
+      "bit_order": "MSB-first",
+      "reflection": false,
+      "source": "arch-constant:ST F1 硬件 CRC 固定生成多项式；依据句 = examples/f103-crc mock 已知答案按 poly=0x04C11DB7/MSB-first/非反射独立演算成立（WB-20260920-02 §四.1），且与初值 0xFFFFFFFF（ref.json peripherals.CRC.registers.DR.reset）组合后平凡向量 0xFFFFFFFF→0 可手证"
+    },
+    "init_value": {
+      "value": "0xFFFFFFFF",
+      "source": "arch-constant:CRC.DR 复位值；依据句 = ref.json peripherals.CRC.registers.DR.reset == \"0xFFFFFFFF\""
+    },
+    "output_xor": {
+      "value": "0x00000000",
+      "source": "arch-constant:ST F1 硬件 CRC 无输出异或（同上依据句）"
+    }
+  },
+  "rcc_cfgr": {
+    "cfgr_pllmul_bits": {
+      "bits": "18:21",
+      "source": "CMSIS:stm32f103xg.h:1419:RCC_CFGR_PLLMULL_Pos"
+    },
+    "pllmul_encoding": {
+      "0b0000": {
+        "multiplier": 2,
+        "value": "0x00000000",
+        "source": "CMSIS:stm32f103xg.h:1430:RCC_CFGR_PLLMULL2"
+      },
+      "0b0001": {
+        "multiplier": 3,
+        "value": "0x00040000",
+        "source": "CMSIS:stm32f103xg.h:1432-1433:RCC_CFGR_PLLMULL3_Msk"
+      },
+      "0b0010": {
+        "multiplier": 4,
+        "value": "0x00080000",
+        "source": "CMSIS:stm32f103xg.h:1435-1436:RCC_CFGR_PLLMULL4_Msk"
+      },
+      "0b0011": {
+        "multiplier": 5,
+        "value": "0x000C0000",
+        "source": "CMSIS:stm32f103xg.h:1438-1439:RCC_CFGR_PLLMULL5_Msk"
+      },
+      "0b0100": {
+        "multiplier": 6,
+        "value": "0x00100000",
+        "source": "CMSIS:stm32f103xg.h:1441-1442:RCC_CFGR_PLLMULL6_Msk"
+      },
+      "0b0101": {
+        "multiplier": 7,
+        "value": "0x00140000",
+        "source": "CMSIS:stm32f103xg.h:1444-1445:RCC_CFGR_PLLMULL7_Msk"
+      },
+      "0b0110": {
+        "multiplier": 8,
+        "value": "0x00180000",
+        "source": "CMSIS:stm32f103xg.h:1447-1448:RCC_CFGR_PLLMULL8_Msk"
+      },
+      "0b0111": {
+        "multiplier": 9,
+        "value": "0x001C0000",
+        "source": "CMSIS:stm32f103xg.h:1450-1451:RCC_CFGR_PLLMULL9_Msk"
+      },
+      "0b1000": {
+        "multiplier": 10,
+        "value": "0x00200000",
+        "source": "CMSIS:stm32f103xg.h:1453-1454:RCC_CFGR_PLLMULL10_Msk"
+      },
+      "0b1001": {
+        "multiplier": 11,
+        "value": "0x00240000",
+        "source": "CMSIS:stm32f103xg.h:1456-1457:RCC_CFGR_PLLMULL11_Msk"
+      },
+      "0b1010": {
+        "multiplier": 12,
+        "value": "0x00280000",
+        "source": "CMSIS:stm32f103xg.h:1459-1460:RCC_CFGR_PLLMULL12_Msk"
+      },
+      "0b1011": {
+        "multiplier": 13,
+        "value": "0x002C0000",
+        "source": "CMSIS:stm32f103xg.h:1462-1463:RCC_CFGR_PLLMULL13_Msk"
+      },
+      "0b1100": {
+        "multiplier": 14,
+        "value": "0x00300000",
+        "source": "CMSIS:stm32f103xg.h:1465-1466:RCC_CFGR_PLLMULL14_Msk"
+      },
+      "0b1101": {
+        "multiplier": 15,
+        "value": "0x00340000",
+        "source": "CMSIS:stm32f103xg.h:1468-1469:RCC_CFGR_PLLMULL15_Msk"
+      },
+      "0b1110": {
+        "multiplier": 16,
+        "value": "0x00380000",
+        "source": "CMSIS:stm32f103xg.h:1471-1472:RCC_CFGR_PLLMULL16_Msk"
+      }
+    },
+    "cfgr_usbpre_bit": {
+      "bit": 22,
+      "width": 1,
+      "name": "USBPRE",
+      "source": "CMSIS:stm32f103xg.h:1473:RCC_CFGR_USBPRE_Pos",
+      "note": "字段名/位置已锚定；**值语义（0/1 对应 1.5/1 分频）无本地文件锚点，按简报『无出处不入册』弃登**，见报告 §弃登清单"
+    }
+  },
+  "sdio": {
+    "power_pwrctrl_bits": {
+      "bits": "0:1",
+      "name": "PWRCTRL",
+      "source": "CMSIS:stm32f103xg.h:5593:SDIO_POWER_PWRCTRL_Pos",
+      "note": "字段名/宽度已锚定；值语义（00=掉电 / 11=上电）无本地文件锚点，弃登"
+    }
+  },
+  "dbg": {
+    "base": {
+      "value": "0xE0042000",
+      "source": "arch-constant:ref.json peripherals.DBG.base（本文件不复制整表，仅锚基址）"
+    },
+    "idcode_bits": {
+      "DEV_ID": "0:11",
+      "REV_ID": "16:31",
+      "source": "arch-constant:ref.json peripherals.DBG.registers.IDCODE.bits（位名与位段一致）"
+    },
+    "cr_bits": {
+      "DBG_SLEEP": {
+        "bit": 0,
+        "source": "CMSIS:stm32f103xg.h:11100:DBGMCU_CR_DBG_SLEEP_Pos"
+      },
+      "DBG_STOP": {
+        "bit": 1,
+        "source": "CMSIS:stm32f103xg.h:11103:DBGMCU_CR_DBG_STOP_Pos"
+      },
+      "DBG_STANDBY": {
+        "bit": 2,
+        "source": "CMSIS:stm32f103xg.h:11106:DBGMCU_CR_DBG_STANDBY_Pos"
+      },
+      "TRACE_IOEN": {
+        "bit": 5,
+        "source": "CMSIS:stm32f103xg.h:11109:DBGMCU_CR_TRACE_IOEN_Pos"
+      },
+      "TRACE_MODE": {
+        "bit": 6,
+        "source": "CMSIS:stm32f103xg.h:11113:DBGMCU_CR_TRACE_MODE_Pos"
+      },
+      "DBG_IWDG_STOP": {
+        "bit": 8,
+        "source": "CMSIS:stm32f103xg.h:11119:DBGMCU_CR_DBG_IWDG_STOP_Pos"
+      },
+      "DBG_WWDG_STOP": {
+        "bit": 9,
+        "source": "CMSIS:stm32f103xg.h:11122:DBGMCU_CR_DBG_WWDG_STOP_Pos"
+      },
+      "DBG_TIM1_STOP": {
+        "bit": 10,
+        "source": "CMSIS:stm32f103xg.h:11125:DBGMCU_CR_DBG_TIM1_STOP_Pos"
+      },
+      "DBG_TIM2_STOP": {
+        "bit": 11,
+        "source": "CMSIS:stm32f103xg.h:11128:DBGMCU_CR_DBG_TIM2_STOP_Pos"
+      },
+      "DBG_TIM3_STOP": {
+        "bit": 12,
+        "source": "CMSIS:stm32f103xg.h:11131:DBGMCU_CR_DBG_TIM3_STOP_Pos"
+      },
+      "DBG_TIM4_STOP": {
+        "bit": 13,
+        "source": "CMSIS:stm32f103xg.h:11134:DBGMCU_CR_DBG_TIM4_STOP_Pos"
+      },
+      "DBG_CAN1_STOP": {
+        "bit": 14,
+        "source": "CMSIS:stm32f103xg.h:11137:DBGMCU_CR_DBG_CAN1_STOP_Pos"
+      },
+      "DBG_I2C1_SMBUS_TIMEOUT": {
+        "bit": 15,
+        "source": "CMSIS:stm32f103xg.h:11140:DBGMCU_CR_DBG_I2C1_SMBUS_TIMEOUT_Pos"
+      },
+      "DBG_I2C2_SMBUS_TIMEOUT": {
+        "bit": 16,
+        "source": "CMSIS:stm32f103xg.h:11143:DBGMCU_CR_DBG_I2C2_SMBUS_TIMEOUT_Pos"
+      },
+      "DBG_TIM8_STOP": {
+        "bit": 17,
+        "source": "CMSIS:stm32f103xg.h:11146:DBGMCU_CR_DBG_TIM8_STOP_Pos"
+      },
+      "DBG_TIM5_STOP": {
+        "bit": 18,
+        "source": "CMSIS:stm32f103xg.h:11149:DBGMCU_CR_DBG_TIM5_STOP_Pos"
+      },
+      "DBG_TIM6_STOP": {
+        "bit": 19,
+        "source": "CMSIS:stm32f103xg.h:11152:DBGMCU_CR_DBG_TIM6_STOP_Pos"
+      },
+      "DBG_TIM7_STOP": {
+        "bit": 20,
+        "source": "CMSIS:stm32f103xg.h:11155:DBGMCU_CR_DBG_TIM7_STOP_Pos"
+      }
+    },
+    "cr_bits_unanchored": {
+      "names": [
+        "DBG_CAN2_STOP"
+      ],
+      "source": "arch-constant:ref.json peripherals.DBG.registers.CR 列有这些位名，但 stm32f103xg.h 无对应 DBGMCU_CR_*_Pos 锚点（F103 无该实例），故不入册，仅登记未锚清单"
+    }
+  }
+}
