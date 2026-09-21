@@ -188,6 +188,17 @@ class SchemaTypeWhitelistTests(unittest.TestCase):
                     f"{prop['type']}")
 
 
+class FlaglessEmptyValueTests(unittest.TestCase):
+    """GAP-F-11 裁决钉 (2026-09-22, Orchestrator): 无旗标参数**空值不发**,
+    与 F-180 非 boolean 分支的 `value != ""` 早退口径统一。"""
+
+    def test_empty_query_emits_no_trailing_segment(self):
+        plan = mcp_server.plan_tool_call("rm_lookup", {"query": ""})
+        argv = plan["argv"]
+        self.assertNotIn("", argv, "空 query 不得产生空串位置片段")
+        self.assertEqual(argv[-1], "--json", "空值时 argv 尾部不得多物")
+
+
 class ProjectPropShapeTests(unittest.TestCase):
     """GAP-F-8 门神 —— F-183 已**翻正**: `properties.project` 必须是 schema
     对象 (JSON object), 不得是数组/tuple。
