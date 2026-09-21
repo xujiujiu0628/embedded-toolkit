@@ -3082,3 +3082,132 @@
     F-111/H-1 的"floor 如实显示"精神一致（注记回显整数前提），但
     "小数 MHz 入参" 是否开放留维护者拍板。
   - GAP-P-3 (Note): SPI `--baud-div` 非法值静默回落 /16（09-19 审查
+
+## Unreleased — 2026-09-20（F-178 修复波：数据信任包 + Agent 正门修补，WB-20260920-04，分支 wb/f178-fixwave-20260920，未合入）
+
+> 来源：WB-20260919-05 全仓对抗审查次日排产 ①~④+M-10 —— 三笔"数据损坏/假失败"
+> High + 一行解锁 ESP 发版面的证据分级 + 一笔备份原子性 Medium。全部 host 可验，
+> **未触硬件**（无 openocd / 无 verify 真机链 / 无串口）。基线 14cfe69。
+
+- **F-178 (fix, verify) H-4 证据分级表补 `uart` 键 — ESP32 真机链 G2 发版门最后一公里**:
+  根因：F-174 三后端合入时 `esp_runtime.py` 已产出 `"method": "uart"`，但
+  `verify._METHOD_EVIDENCE` 未同步该键 → ESP32 真机全绿 run 的 `_evidence_level`
+  恒落 `static`。发布路径二选一：G2 拒收（ESP 工程发不了版）或
+  `--allow-non-hardware-evidence` 强行放行（发布记录落
+  `evidence: static + evidence_waiver: true`，事后审计 R8 恒非 clean，证据等级
+  语义失真）。属 fail-closed 方向（非假 PASS）但破坏证据分级契约。
+  处置：补 `"uart": EVIDENCE_REAL` 一行（与 rtt/semihosting 同档真机后端），
+  `EVIDENCE_REAL` 行注释同步为 rtt/semihosting/uart。
+- **F-178 (fix, mcp_server) H-1 boolean 参数把裸 Python bool 塞进 argv**:
+  根因：`_validate_param` 末行 `return [flag, value] if flag and value != ""` 对
+  `False` 也成立（`False != ""` 恒真）→ argv 落进裸 bool。两层病：① Windows 上
+  `subprocess.list2cmdline` 对非 str 抛
+  `TypeError: expected str, bytes or os.PathLike object, not bool` —— 进程未起且
+  异常不被 `run_planned_call` 的信封捕获（违反该文件"统一信封"设计）；
+  ② 即便子进程起得来，argparse 的 `store_true` 收到值报
+  `unrecognized arguments: False`。结果 run_verify 的 no_flash/require_tgl 100% 不可用。
+  处置：boolean 分支改 `return [flag] if value else []`（只发旗标本身）。
+  实测（修后全链 argv）：`no_flash=True` → `['--json','--project',<ws>,'--no-flash']`
+  （旗标恰一次、argv 全 str、`list2cmdline` 通过）；`no_flash=False` → 旗标不出现。
+  第二层病反证：`verify.py --no-flash False --json` → rc=2
+  `error: unrecognized arguments: False`（纯 argparse 层，解析即退出）。
+- **F-178 (fix, cube_usercode) H-2 restore 把用户 C 代码原文拼进 re.sub 模板**:
+  根因：`replacement = rf'\1\n{code}\3'` 把旧文件源码**原文**当 replacement 模板
+  二次解释。实测三种后果：`printf("hi\r\n")` 恢复后 `\r\n` 变真实 CR/LF（C 字符串
+  字面量被拆断，编译必炸）／`'\0'` 变真实 NUL 字节写进源文件／正文含 `\d` 直接抛
+  `re.PatternError: bad escape \d` 使 restore 崩溃。且逐文件即时写 → 前面文件已写坏
+  而末尾照报 `[OK] 恢复完成`。
+  处置：① replacement 改 **lambda 拼接**（`m.group(1) + "\n" + code + m.group(3)`），
+  原文逐字节通行；② **事务化** —— 全部文件先在内存组装，再经新落盘原语
+  `_commit_restore_plan` 两段落盘：先给每个目标写同目录 `.restore.tmp`（此段失败则
+  原文件零改动），再逐个 `os.replace` 原子替换并留 `.bak` 作回滚源（此段失败用 `.bak`
+  还原已替换者）。失败一律 rc≠0 且 stderr 明示"原文件保持不动"。
+- **F-178 (fix, cube_usercode) M-10 backup 先 rmtree 旧备份再复制 → 原子交换**:
+  根因：`.cube_backup/` 是 CubeMX 覆盖前用户代码的唯一保全副本，旧实现"先删后拷"
+  非原子 —— 复制中途失败（Windows 上工程文件被编辑器/Keil 占用是常态）即旧备份已灭、
+  新备份不全，而用户正处在"马上要跑 CubeMX"的最危险时点。
+  处置：先写 `.cube_backup.staging/`，全部复制成功后再整目录交换（旧备份先让位到
+  `.cube_backup.old`，交换失败可原位挪回）；失败 rc=1 且明示"旧备份保持不动"。
+- **F-178 (fix, gen_periph) H-3 `spiN_write_burst` 逐字节排空读**:
+  根因：RM0008 §25.3.5 SPI 接收是**单缓冲** —— 读 DR 才清 RXNE；RXNE 未清时下一
+  字节到达只置 OVR 并把该字节丢弃。只写不读的 burst 收尾滞留最后一个陈旧字节且
+  OVR=1，随后同片段生成的 `spiN_transfer`（wait-RXNE 立即通过）返回 burst 残留字节，
+  本次真收到的字节被 OVR 丢弃且无人清理、永不自愈 —— "发命令再收数据"的传感器读写
+  序列全体错位；AI 消费方照注释粘贴即编译通过、真机数据错位。
+  处置：burst 每写一字节后 `while (!(SPIx->SR & (1<<0)));` 等 RXNE 再
+  `(void)SPIx->DR;` 读回排空（TXE 等待行补注释）。
+  **`spiN_transfer` 一字未动**（特征文本逐字节钉在 `test_gen_spi_burst.py`）。
+  样例随动：`examples/f103-spi1|2|3` 重生成 —— diff 只落在 burst 函数体与声明行
+  （`spiN_transfer`、init 体、其余行逐字节不变）；`f103-spi3`（GAP-G-1 手工适配体）
+  按归一化同形比对。
+- **F-178 P1 顺路清两笔 09-19 审查遗留（T1~T4 全绿后按简报 §2 P1 执行）**:
+  - **M-11 (gen_periph) `--type doc` 错误路径 rc=0**：F-086/F-103 的 ERROR→exit 1
+    纪律在本生成器曾是唯一漏网（旧版 `print(gen_doc(...))` 直出，stdout 打
+    `Error: NOPE0 not found ...` 而 rc=0）。处置：main() 的 doc 分支对 `gen_doc`
+    返回值判 `startswith("Error:")` → 打 stderr 并 `sys.exit(1)`。
+    **不改 `gen_doc` 的返回格式** —— `test_gen_periph.py:497` 已钉其原文。
+    钉：`--periph NOPE0` → `SystemExit(1)`。
+  - **L-6 (cube_usercode) 两项**（前提已 grep 取证：既有测试**未**钉住病态行为，
+    故按简报"可修"）：
+    ① `_extract_loop_code` 逐字符裸数 `{`/`}`，被 `printf("}")`、`'{'`、含括号
+       注释欺骗 → while(1) 体被提前截断、用户代码静默丢尾。处置：新增
+       `_iter_code_chars` 扫描器（跳过 C 字符串/字符字面量与行/块注释，含反斜杠
+       转义），只在**代码态**计花括号；花括号未闭合时保持旧行为。钉 4 例
+       （字符串/字符/注释/转义引号）。
+    ② 旧 main.c 有 USER CODE 块而新文件无标记时，旧版 `pass  # fall through to
+       conflict` 注释说要落 conflict 却从不记录 → 该文件既不进 restored 也不进
+       conflicts，三计数全部蒸发，用户只看到 "[OK] 恢复完成" 便以为没丢代码。
+       处置：如实 append 进 conflicts 并 continue（新文件零改动）。钉 1 例。
+- **契约变更段（WB-20260920-04）**:
+  - **backup/restore 事务语义**：`cube_usercode` 的 `--backup` / `--restore` 现为
+    "全有或全无" —— 任何一步失败不改变既有文件内容（restore 保留 `*.bak` 回滚源 +
+    `*.restore.tmp` 暂存名；backup 保留 `.cube_backup.staging/`、`.cube_backup.old/`
+    中间名）。失败时 rc≠0 且 stderr 含"原文件保持不动"/"旧备份保持不动"。
+  - **burst 生成语义**：`gen_periph --type spi` 产出的 `spiN_write_burst` 逐字节
+    排空 RX（默认输出随之变更，见下条重基线）；`spiN_transfer` 契约不变。
+  - **MCP boolean argv 契约**：boolean 型参数只产出旗标本身（True 出现恰一次，
+    False 不出现），argv 中不得出现非 str 元素。
+  - **`--type doc` 退出码契约**：外设不存在 → rc=1 且消息走 stderr（此前 rc=0）；
+    成功路径 exit 0 与 `gen_doc` 返回原文均不变。
+  - **`--restore` 冲突上报契约**：无法定位注入口的文件一律进 conflicts 清单
+    （此前 main.c 该类静默蒸发）。
+- **金矩阵重基线（WB-20260920-01 第一契约的必然随动，**经维护者裁决授权**）**:
+  H-3 按设计改动默认生成输出，`tests/fixtures/pclk_golden.json`（WB-20260920-01
+  capture-once 金矩阵，27 条）中**恰 3 条 spi 条目**分歧，逐行 diff 只落在 burst 段
+  （3 行新增 + 1 行注释），其余 24 条与 `argv`/顶层结构逐字节不变。该 fixture 与
+  `test_gen_pclk_param.py` **不在本单 §1 白名单内**（简报 §2 T4 要求修 burst、
+  §3③ 要求全量绿，二者与 §1 白名单互斥 —— 已报维护者裁决并获授权），故只重基线这
+  3 条并加 `_meta._rebased` 记账；原 `_meta.baseline`（c0df0c6）保留不改供追溯。
+- **测试**: 新增 29 例 —— `tests/test_cube_usercode.py`（新建 11 例：纯载荷自证 +
+  `\r\n` 字面量保真 + `'\0'` 不落真实 NUL + `\d` 不崩 + 中途落盘失败原文件零改动且
+  rc≠0 + 复制失败旧备份仍可读 + L-6 花括号欺骗 4 例 + L-6 冲突上报 1 例）、
+  `tests/test_gen_spi_burst.py`（新建 12 例：burst 含 `->DR` 排空读/位置在 for 内/
+  须先 wait RXNE + `spiN_transfer` 特征文本逐字节钉 + 三个样例 burst 同源与工厂巡检
+  范围）、`tests/test_verify_evidence.py` 补 uart 1 例、`tests/test_mcp_server.py` 补
+  `BooleanFlagArgvTests` 4 例、`tests/test_gen_periph.py` 补 M-11 1 例。
+  全量 **1037 = 1008 + 29 绿 (skipped=6)**；样例工厂巡检 **54/54 绿**（重生成样例
+  经 arm-gcc 真编译）；`ruff check` 9 个改动文件零告。
+- **诚实注记**: H-3 的修复依据是 **RM0008 §25.3.5 语义推导 + 生成物静态确认**，
+  **未真机复现**（简报禁线上板）；寄存器级行为由样例工程 `make all` 编译级巡检
+  与下游工程背书。H-2/M-10/L-6 为 host 层文件保全与文本解析，同理未触硬件。
+- **白名单偏离声明（诚实披露，共 2 处）**: ① `tests/fixtures/pclk_golden.json`
+  （金矩阵重基线，见上，已获授权）；② `tests/test_gen_periph.py`（P1 的 M-11 钉，
+  简报 §2 P1 指派 M-11 但 §1 未列该测试文件）。两处均属"§2 任务指派 vs §1 文件
+  白名单"的内部张力，逐条理由与授权记录见 WB-20260920-04 报告 §九。
+- **新发现缺口（只列不改，移交维护者工单批次）**:
+  - **GAP-F-1 (High)**：`mcp_server._validate_param` 的**整数**参数与 H-1 同源 ——
+    `return [flag, value]` 把裸 Python int 塞进 argv，实测 `subprocess.list2cmdline`
+    抛 `TypeError: expected str, bytes or os.PathLike object, not int`（异常同样不被
+    信封捕获）。影响面：`run_verify.timeout` + `gen_peripheral` 的
+    `ch/freq/duty/baud/speed`，共 6 个参数，一旦显式传入即 100% 不可用。
+    **H-1 的 boolean 修法不覆盖本项**；本单白名单限"boolean 分支"，未越界修改。
+  - **GAP-F-2 (Medium，CI 盲区)**：仓内**无 py3.10 语法地板守卫**。CI 有 3.10 job
+    (`ci.yml:14`)，本机 3.14 全绿掩盖；且 `ast.parse(src, feature_version=(3,10))`
+    **不是有效判据** —— 实测 PEP701 探针 `f"{d["k"]}"`（3.12+ 合法 / 3.10 语法错误）
+    在该参数下不报错（14cfe69 的教训无钉承接）。建议落钉：tokenize 抓
+    `FSTRING_START..FSTRING_END` 原文切片，按花括号深度检查表达式区内是否出现
+    **与定界符同类**的引号 / 反斜杠 / 跨行（注意：表达式内出现**异类**引号如
+    `f"{d['k']}"` 在 3.6+ 完全合法，不可误杀）。本单已写一次性自证脚本核过 9 个
+    改动文件 322 个 f-string 零违规，但 tests/ 白名单外故未入库。
+- **commit 台账（分支 wb/f178-fixwave-20260920，未 push）**: 钉 `468ed8c`（红钉 17 例
+  全红）/ 修 `2fac244`（T1~T4 + P1 转绿，含金矩阵随动）/ docs 本笔。
