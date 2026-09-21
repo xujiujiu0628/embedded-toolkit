@@ -47,3 +47,5 @@ desktop.ini
 examples/sim-demo/.workbench/*
 !examples/sim-demo/.workbench/config.json
 !examples/sim-demo/.workbench/expectations.json
+
+.workbuddy/
