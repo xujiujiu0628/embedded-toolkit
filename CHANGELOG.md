@@ -5,6 +5,98 @@
 
 ## Unreleased — 0.6 封袋后新账（F-173 起）
 
+## Unreleased — 2026-09-21（F-181 测试卫生包：py3.10 语法地板钉 + GAP-D-9/D-1 注释随动 + hooks bash 解析加固，WB-20260921-02，分支 wb/f181-test-hygiene-20260921，未合入）
+
+  > **记账注**：本单原四笔 commit 的对象毁于 2026-09-21 晚 `.git/objects` 事故（Executor 收工前发现，停单留档 `_wb02_preserve/`）；下列为 Orchestrator 自 origin 恢复对象库后的重建 commit——工作树与留档逐文件 SHA256 全等、剥注释代码等值机械证明通过，内容零改动。
+
+> 来源：WB-20260920-04 §9.10 **GAP-F-2**（py3.10 语法地板盲区）、
+> WB-20260919-05 §六 **GAP-ENV-2**（hooks 防 System32 回退失效）、
+> WB-20260920-05 §9 **GAP-D-9**（槽位注记与数据面漂移）+ §10.1/§10.4 残项
+> （GAP-D-1 注释未随动）、§9 新发现 **GAP-ACC-1**（backup swap 回滚支无钉）。
+> 三件"防复发/防误导"卫生工作 + 一笔补钉，**全部 host 可验，不碰硬件**。
+> 基线 `f484b91`，全量 **1055 例 OK (skipped=6)**（简报 §3① 判据逐字吻合）。
+
+- **F-181 (test, 新增 `tests/test_py_floor.py`) 无 py3.10 语法地板守卫（GAP-F-2）**:
+  根因：CI 有 py3.10 腿（F-166），但仓内**无任何**语法地板守卫 —— `14cfe69`
+  的教训是一次 f-string 写法踩中 **PEP 701**（3.12 才放宽），本机 3.14 全绿、
+  CI 3.10 整腿炸。**判据不是 `ast.parse(feature_version=(3,10))`**：WB-20260920-04
+  §9.7 已实测该参数对 PEP 701 探针**不报错**（本单现场复证同一结论，并落成
+  `FeatureVersionIsNotAPredicateTests` 对照钉）——PEP 701 的放宽发生在 CPython
+  3.12 的 **tokenizer** 层，`feature_version` 管不到。
+  处置：用 `tokenize` 扫 `FSTRING_START..FSTRING_END` 区段，检官方文档口径的三类
+  （"nested strings, comments, and backslashes are now permitted"）：
+  ① **同类引号**（内层字符串定界引号 == 包裹 f-string 的引号字符）；
+  ② **反斜杠**（表达式区裸反斜杠 or 非 raw 嵌套串里的转义）；
+  ③ **跨行表达式 / 注释**（表达式区出现 `NL`/`COMMENT` token）。
+  **明确不误杀** 3.6+ 合法异类引号写法（`f"{d['k']}"` / `f"{a['b']['c']}"` /
+  `f'{d["k"]}'` 等，落成 ≥10 例绿样例钉）。
+  **夹具自证**（防空洞）：违规样例 7 例必被咬、合法样例 11 例必零报 ——
+  实测变异验证（掏空扫描器 → 9 例全红）证明钉子非空；`SelfDogfoodTests`
+  落实简报 §3 自反条款（本钉自身过自家地板）。
+  运行时 <3.12（无 `FSTRING_*` token）→ **显式 `skipTest`** 并写明
+  "CI 3.12 腿承接本钉"，**绝不静默通过**（简报 §2 明令）。
+  **全树扫描结果：126 文件 / 1075 个 f-string / PEP 701 违规 0** —— 树全绿，
+  与 04 单一次性脚本结论一致（该脚本口径只计含 PEP701 特征的 f-string，故计数
+  不同；**违规数 0 是关键**）。
+- **F-181 (docs) GAP-D-9 槽位注记转正 + GAP-D-1 随动**：
+  `examples/f103-common/startup.c` 的 9 条槽位注记由 `[GAP-D-3] 未登记，填 0`
+  改为 `[ref] <外设> irq=<N> (锚 stm32f103xg.h:NN)`（TIM9/12/13/14、EXTI0、
+  RTC、TIM5/6/7）；`examples/f103-common/f103_regs.h` 与
+  `examples/f103-nvic/main.c` 的 `[GAP-D-1]` 注记随动（NVIC ICER/ISPR/ICPR/
+  IABR/IP 已 @F-179 P1 入册）。
+  **仅注记措辞，向量表/代码零字节变** —— 除 `git diff` 自证外，另做**更强证明**：
+  编译前后 `arm-none-eabi-gcc` 产出的 **ELF 与 HEX 逐字节相同**
+  （ELF 133172B / HEX 1266B，`cmp` 通过），代码面注释剥离后逐字节相同。
+- **F-181 (test, `tests/test_hooks_behavior.py`) hooks bash 解析回退失效（GAP-ENV-2）**:
+  根因：旧回退 `BASH = which("bash"); if "system32" in BASH: BASH = which("bash.exe")`
+  **形同虚设** —— 本机 `which("bash")` 与 `which("bash.exe")` 返回**同一** System32
+  WSL stub 路径，断言没拦住，致 9 例 hooks 断言假红（04 报告 §六已登记）。
+  处置：改为逐个候选探测，**凡命中 system32 一律跳过并继续向后找**（Git for
+  Windows 等）；全部候选不可用 → `skipTest` 并输出**可诊断原因**
+  （解析过的每个候选 + 各自 rc + 处置建议），**绝不静默假红**。
+  **只许变强不许变弱**：Git bash 在场时解析结果与旧实现完全一致（本机 11 例全绿，
+  行为不变）；ubuntu `/usr/bin/bash` 路径不受扰（模拟验证通过）。新增
+  `BashResolverTests` 4 例（含"解析结果绝不允许落在 System32"不变量钉）。
+  两态实测：bash 在场 11 例 OK；PATH 无 bash → **8 例显式 skip（非 fail）**。
+- **F-181 (test, `tests/test_cube_usercode.py`) backup 交换阶段回滚支补钉（GAP-ACC-1）**:
+  F-178 已把 backup 原子化（staging 复制 → 旧备份让位 `.old` → staging 上位），
+  但此前只钉了"复制中途失败"（第①段），**交换段（②③）无任何钉子**——而"旧备份
+  已让位、新备份尚未上位"正是旧备份可能永久丢失的最危险窗口。
+  新增 `BackupSwapRollbackTests` 2 例：注入**第二笔** `os.replace`
+  （staging→BACKUP_DIR）失败 → 断言 rc≠0、旧备份经 `.old` 挪回后**逐字节完整
+  可读**、无 `.staging`/`.old` 残留。
+  **红→绿**：实测该分支**实现已正确**（钉转绿），按简报"夹具自证用掏掉恢复分支
+  必红反证一次"——变异验证下 2 例全红（报 `旧备份 main.c 已丢失`），证明钉子
+  非空。**`scripts/**` 零改动**（`git diff HEAD -- scripts/cube_usercode.py` 为空）。
+- **契约变更段（WB-20260921-02）**：
+  - **无对外契约变更**。本单三处代码面改动全部落在 `tests/**`（新增/加固测试），
+    不改任何脚本的输入输出契约、退出码语义或 JSON 结构；`scripts/**`、`data/**`、
+    `hooks/**`、`machine.json` **零改动**。
+  - `examples/**` 三文件**仅注释措辞**随动（编译产物 ELF/HEX 逐字节相同，见上）。
+  - **调试面加固（非契约）**：`tests/test_hooks_behavior.py` 的 bash 解析在
+    "全部候选不可用"时新增 `skipTest` 语义（旧行为是带着 System32 stub 硬跑并
+    假红）——这是**测试自身的健壮性提升**，不改变任何被判对象的契约。
+  - **无-op 声明**：既有测试断言**零删除零弱化**；`tests/test_py_floor.py` 与
+    `BashResolverTests`/`BackupSwapRollbackTests` 全为**新增**。
+    `tests/test_hooks_behavior.py` 的 `HookWorktreePathTests` /
+    `StagedContentDetectionTests` 断言逐字未动，仅**新增** `skipUnless` 门。
+  - ⚠ **简报 §3④ 过滤器与实际文本形态的差异（如实披露，非本单偏离）**：
+    §3④ 的 `grep -vE "^[+-]\s*(//|/\*|\*)"` 只匹配**行首即注释**的行；而本次
+    三个 examples 文件的注释多为**行尾/内嵌**形态（`... __attribute__(...);  /* … */`），
+    故该过滤器会输出 25 行"看似非注释"的行 —— 但**逐行核实全部是注释文本变更**，
+    由"注释剥离后逐字节相同 + 编译产物 ELF/HEX 相同"双重证明。属简报过滤器
+    对"行尾注释"形态覆盖不足，非任务偏离（详见收工报告 §T2）。
+- **commit 台账（分支 wb/f181-test-hygiene-20260921，未 push）**: 钉 `c9f1eda`
+  （T1 地板钉）/ 注释随动 `ab99245`（T2 三文件）/ 加固 `c56235e`（T3 hooks 解析）
+  / docs 本笔（T4 补钉 + CHANGELOG + README）。
+- **环境适配披露（本单）**：沙箱**再次复现 E-2**（`git commit` 对象与 tree/parent
+  均真实写入，但 `git log` 仍读 `packed-refs` 旧值）—— 按 01 报告 §7.1 更新口径，
+  以 **`git commit` 自身输出的新 SHA** 为唯一可信源（本沙箱连 reflog 读回都被
+  回滚），先 `cat-file -t` 实证对象真实，再直写松散 ref **并同步 `packed-refs`**。
+  本单**未执行 `git rebase`**（先例 E-1 可复现毁对象库）。
+
+## Unreleased — 0.6 封袋后新账（F-173 起）
+
 - **F-177 (fix, capture): uart 采集在 CH340/CP210x 桥接板上 0 行——开口即释放 DTR/RTS (2026-09-19 凌晨, 初代 esp32 补票真机钓出)**:
   根因: pyserial 打开串口默认断言 DTR/RTS; 初代 ESP32 开发板的自动下载
   三极管电路把该断言组合等价于把 EN 拉低——芯片被按在复位里过完整个采集

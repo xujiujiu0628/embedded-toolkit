@@ -466,6 +466,22 @@ embedded-toolkit/
   数据手册可锚，宁缺毋滥）：CAN/ADC3/TIM5/TIM8/TIM9/SDIO/FSMC/DMA2 引脚映射、
   FSMC BCR·BTR 位名、USBPRE 与 SDIO PWRCTRL 的值语义。
   详情：CHANGELOG F-179 / WB-20260920-05 报告 §8 弃登清单、§9 新发现缺口。
+- **py3.10 语法地板（F-181，WB-20260921-02 已加钉）**
+  影响：CI 有 py3.10 腿，而 **PEP 701** f-string 写法（3.12 才放宽：表达式区同类
+  引号 / 反斜杠 / 跨行与注释）在本机 3.14 全绿、到 3.10 腿上整腿炸。
+  ⚠ `ast.parse(feature_version=(3,10))` **不是有效判据**（对 PEP 701 探针不报错，
+  放宽在 tokenizer 层）。
+  规避/守卫：`tests/test_py_floor.py` 用 `tokenize` 扫 `scripts/*.py` + `tests/*.py`
+  的三类违规，夹具自证（违规必咬 / 合法必零报）；<3.12 解释器上**显式 skip**，
+  由 CI 3.12 腿承接。
+  详情：CHANGELOG F-181 / WB-20260921-02 报告。
+- **hooks 行为探针依赖可用 bash（F-181，WB-20260921-02 已加固）**
+  影响：`hooks/*.sh` 是 shell 脚本，探针需 bash。Windows 上 `which("bash")` 可能
+  命中 `System32\bash.exe`（WSL 启动器，未装 WSL 时一律 rc=1）。
+  规避：解析器逐候选探测，**命中 system32 一律跳过继续向后找**（Git for Windows 等）；
+  全部不可用则 `skipTest` 并输出候选/rc 诊断（**不静默假红**）。安装 Git for Windows
+  并把其 `bin` 置于 PATH 即可正常执行。
+  详情：CHANGELOG F-181 / WB-20260919-05 报告 §六 GAP-ENV-2。
 - **有意搁置**：UART 串口补丁的发布门禁脆弱性（成本/收益不立项）。
   详情：CHANGELOG 对应裁决记录。
 - **已闭合归档账**（不在此展开）：审核 M-4 ✅ F-162 · L-4 覆盖洞 ✅ F-163 ·
@@ -477,7 +493,9 @@ embedded-toolkit/
   ✅ F-179（GAP-D-5 bus 反转 + RCC 位名类级防线 / `_relationships` IRQ 9 条逐条锚
   CMSIS xg.h / `stm32f103-arch-facts.json` 48 条带出处入册 / f103-dbg 样例解锁）· MCP
   整型参数 argv 收口 ✅ F-180（GAP-F-1：非 boolean 参数值一律 str 化入 argv，6 个整型
-  参数 `run_verify.timeout` + `gen_peripheral` ch/freq/duty/baud/speed 由 100% 不可用转可用）
+  参数 `run_verify.timeout` + `gen_peripheral` ch/freq/duty/baud/speed 由 100% 不可用转可用）·
+  测试卫生包 ✅ F-181（GAP-F-2 py3.10 语法地板钉 + GAP-D-9/D-1 槽位注记随动 +
+  GAP-ENV-2 hooks bash 解析加固 + GAP-ACC-1 backup 交换回滚支补钉）
   ——证据链
   （run/PR/钉子清单）均在 CHANGELOG 对应票。
 

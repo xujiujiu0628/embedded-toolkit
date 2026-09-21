@@ -351,5 +351,126 @@ class ConflictAccountingTests(unittest.TestCase):
             os.path.join(self.ws, "Core", "Src", "main.c")))
 
 
+class BackupSwapRollbackTests(unittest.TestCase):
+    """F-181 (WB-20260921-02, GAP-ACC-1) 交换阶段**第二笔** os.replace 失败
+    的回滚支回归钉。
+
+    F-178 已把 backup 原子化: ① staging 目录全部复制成功 → ② 旧备份让位到
+    .old → ③ staging 上位为 BACKUP_DIR。此前 ⑤ 只钉了"复制中途失败"(第①段),
+    **交换段(②③)无任何钉子** —— 而这一段恰是"旧备份已让位、新备份尚未上位"
+    的最危险窗口: 若 ③ 失败而回滚支失效, 旧备份即永久丢失。
+
+    本钉注入 ③ 失败 (os.replace(staging→BACKUP_DIR)), 断言:
+      · rc != 0 (不许把失败当成功)
+      · 旧备份经 .old 挪回后**完整可读** (逐字节等于注入前)
+      · 无 .staging / .old 残留
+
+    先按红→绿走: 本单实测该分支**实现已正确**(钉转绿); 并按简报要求用
+    "掏掉恢复分支必红"反证一次夹具有效 (见收工报告 T4 节)。
+    """
+
+    def setUp(self):
+        self.ws = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.ws, True)
+
+    def _reset_module_roots(self):
+        cube_usercode.PROJECT_ROOT = None
+        cube_usercode.CORE_SRC = None
+        cube_usercode.CORE_INC = None
+        cube_usercode.BACKUP_DIR = None
+
+    def test_swap_phase2_failure_restores_old_backup(self):
+        mk_project(
+            self.ws,
+            {"Core/Src/main.c": main_c("  int main_new = 2;"),
+             "Core/Src/gpio.c": gpio_c("  int gpio_new = 2;")},
+            # 既有旧备份 (必须原地完好)
+            {"Core/Src/main.c": main_c("  int main_old = 1;"),
+             "Core/Src/gpio.c": gpio_c("  int gpio_old = 1;")})
+
+        backup_dir = os.path.join(self.ws, ".cube_backup")
+        staging = backup_dir + ".staging"
+        old = backup_dir + ".old"
+        old_main = os.path.join(backup_dir, "Core", "Src", "main.c")
+        old_gpio = os.path.join(backup_dir, "Core", "Src", "gpio.c")
+        before_main = read_bytes(old_main)
+        before_gpio = read_bytes(old_gpio)
+
+        real_replace = os.replace
+        state = {"n": 0}
+
+        def flaky_replace(src, dst, *a, **kw):
+            state["n"] += 1
+            # 第 2 笔 = staging -> BACKUP_DIR (交换段的"上位"步);
+            # 第 1 笔是 BACKUP_DIR -> .old (让位), 必须放行才能构造该窗口。
+            if state["n"] == 2:
+                raise OSError(13, "模拟: 交换阶段 staging->BACKUP_DIR 失败")
+            return real_replace(src, dst, *a, **kw)
+
+        self._reset_module_roots()
+        prev = os.getcwd()
+        os.chdir(self.ws)
+        try:
+            with mock.patch("os.replace", side_effect=flaky_replace):
+                try:
+                    rc = cube_usercode.cmd_backup()
+                except OSError:
+                    rc = 1  # 未捕获 → CLI 侧同为非零退出 (与 ⑤ 同口径)
+        finally:
+            os.chdir(prev)
+            self._reset_module_roots()
+
+        self.assertGreaterEqual(
+            state["n"], 2,
+            "夹具失效: os.replace 未被调用两次, 未注入到交换段第二笔")
+        self.assertNotEqual(rc, 0, f"交换失败必须非零返回 (rc={rc})")
+        # 旧备份必须经 .old 挪回并完整可读
+        self.assertTrue(os.path.isfile(old_main), "旧备份 main.c 已丢失")
+        self.assertTrue(os.path.isfile(old_gpio), "旧备份 gpio.c 已丢失")
+        self.assertEqual(read_bytes(old_main), before_main,
+                         "旧备份 main.c 内容与注入前不一致")
+        self.assertEqual(read_bytes(old_gpio), before_gpio,
+                         "旧备份 gpio.c 内容与注入前不一致")
+        # 无残留
+        self.assertFalse(os.path.exists(staging), "残留 .staging 目录")
+        self.assertFalse(os.path.exists(old), "残留 .old 目录")
+
+    def test_swap_backup_phase_not_touched_after_rollback(self):
+        """回滚后 BACKUP_DIR 必须仍是**旧**备份 (不是半新的或空的)。"""
+        mk_project(
+            self.ws,
+            {"Core/Src/main.c": main_c("  int main_new = 2;")},
+            {"Core/Src/main.c": main_c("  int main_old = 1;")})
+
+        backup_dir = os.path.join(self.ws, ".cube_backup")
+        old_main = os.path.join(backup_dir, "Core", "Src", "main.c")
+        before = read_bytes(old_main)
+
+        real_replace = os.replace
+        state = {"n": 0}
+
+        def flaky_replace(src, dst, *a, **kw):
+            state["n"] += 1
+            if state["n"] == 2:
+                raise OSError(13, "模拟: 交换失败")
+            return real_replace(src, dst, *a, **kw)
+
+        self._reset_module_roots()
+        prev = os.getcwd()
+        os.chdir(self.ws)
+        try:
+            with mock.patch("os.replace", side_effect=flaky_replace):
+                try:
+                    cube_usercode.cmd_backup()
+                except OSError:
+                    pass
+        finally:
+            os.chdir(prev)
+            self._reset_module_roots()
+
+        self.assertEqual(read_bytes(old_main), before,
+                         "回滚后 BACKUP_DIR 内容不是旧备份 (半新/空)")
+
+
 if __name__ == "__main__":
     unittest.main()
