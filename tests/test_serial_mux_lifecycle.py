@@ -9,7 +9,14 @@ r"""serial_mux 生命周期回归钉 (F-097, WB-A / 审计 P1-3)。
   2. 读循环死亡 → stderr 留痕 + %TEMP%/serial_mux/serve_<port>.failed 现场
   3. 异常路径统一回收 _mux_procs
 
-测试不依赖真串口/socat: p1 用假 serve 脚本 (起 TCP 但永不 open serial)。
+测试不依赖真串口/socat: p1 用**解释器自身的长睡进程**做占位 (不起 TCP、
+也不 open serial), 故零外部命令依赖。
+
+F-182 (WB-20260921-03 / GAP-ENV-3): 旧版在用例开头按
+`shutil.which("sleep")` 守卫, PATH 无 coreutils 时整例**静默 skip** ——
+"全绿"口径随 PATH 在 skipped 7↔6 间漂移而不自知。占位进程既已由解释器
+自身承担 (与外部 `sleep` 无关), 该守卫已无存在理由, **删除**;
+skip 数自此与 PATH 无关 (收单口径: 全量 skipped 恒 6)。
 """
 import os
 import subprocess
@@ -24,23 +31,43 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(
 
 import serial_mux  # noqa: E402
 
+# F-182: 占位进程用解释器自身长睡 —— 零外部命令依赖 (旧版依赖外部 `sleep`)
+_PLACEHOLDER_CODE = "import time; time.sleep(60)"
+
+# 注意: 下面的用例用 `mock.patch.object(serial_mux.subprocess, "Popen", …)` ——
+# 而 `serial_mux.subprocess` 就是全局 subprocess 模块 (GAP-ENV-1 同族, 见 GAP-F-9),
+# 故必须在 import 期先抓住真实句柄, 否则占位进程会递归调回 fake。
+_REAL_POPEN = subprocess.Popen
+
+
+def _spawn_placeholder(**kw):
+    return _REAL_POPEN([sys.executable, "-c", _PLACEHOLDER_CODE], **kw)
+
+
+def _reap(proc):
+    """收尾: terminate → 超时兜底 kill, 不留孤儿 (F-182 §4.7)。"""
+    if proc.poll() is not None:
+        return
+    proc.terminate()
+    try:
+        proc.wait(timeout=5)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        proc.wait(timeout=5)
+
 
 class MuxStartNoLeakTests(unittest.TestCase):
     """修复钉 1: 服务起不来时 p1 必须被回收"""
 
     def test_failed_start_terminates_p1(self):
-        # 假 serve: 起一个进程但立刻退出 → wait_for_tcp_server 返回 False
-        # (用 sleep 进程模拟"启动了但没起服务"的窗口, poll 恒 None → 超时 False)
-        if os.name != "posix" and shutil.which("sleep") is None:
-            self.skipTest("无 sleep 模拟进程")
-        calls = {"terminated": []}
-
-        real_popen = subprocess.Popen
+        # 假 serve: 起一个长睡进程 → wait_for_tcp_server 被 monkeypatch 成
+        # False (poll 恒 None → 超时 False), 模拟"进程起了但服务没起"的窗口。
+        # F-182: 占位进程由解释器自身承担, 无外部 `sleep` 依赖, 无 skip 守卫。
+        calls = {}
 
         def fake_popen(cmd, **kw):
-            p = real_popen([sys.executable, "-c",
-                            "import time; time.sleep(30)"], **kw)
-            self.addCleanup(p.kill)
+            p = _spawn_placeholder(**kw)
+            self.addCleanup(_reap, p)
             calls["p1"] = p
             return p
 
@@ -117,8 +144,6 @@ class ReadLoopDeathTraceTests(unittest.TestCase):
         server._serial_read_loop()   # 不应 os._exit
         self.assertFalse(os.path.exists(self.marker))
 
-
-import shutil  # noqa: E402
 
 if __name__ == "__main__":
     unittest.main()
