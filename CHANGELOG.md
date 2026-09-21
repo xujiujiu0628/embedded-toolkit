@@ -3544,3 +3544,72 @@
 - **全量门禁**: 简报 §3 前置形态 `Ran 1080 tests … OK (skipped=6)`；
   `ruff check scripts tests` → `All checks passed!`；语法地板钉
   （py3.10，`tests/test_py_floor.py`）**9 例 OK**。
+## Unreleased — 2026-09-21（F-183 MCP 正门双缺陷收口 + 打桩收窄：GAP-F-7 位置投影 / GAP-F-8 schema 尾逗号 / GAP-F-9，WB-20260921-04，分支 wb/f183-mcp-positional-20260921，未合入）
+
+> 来源：F-182（WB-20260921-03）报告 §六 **GAP-F-7 (Medium) / GAP-F-8 (Medium) /
+> GAP-F-9 (Low)** 三项新发现。本单按维护者裁决收口前两项，并按 F-182 T1 样板收窄第三项。
+> 守卫文件 `tests/test_mcp_registry_shape.py` 由"只报警"翻为"钉正确形态"。
+
+- **F-183 (fix, mcp_server) GAP-F-7 `rm_lookup.query` 永不送达 CLI —— 按位置片段投影**:
+  根因: `rm_lookup.py` 的 CLI 真相是 `parser.add_argument("query", nargs="?")`（**位置参数**），
+  而 `_validate_param` 对 `flag is None` 走 `if not flag: return []` 早退、`plan_tool_call`
+  又只 `argv.extend(旗标片段)` —— MCP 层把 `query` 宣告进 `inputSchema` 却**永不送达**
+  （实测 `plan_tool_call("rm_lookup", {"query": "GPIOA"})` → argv 无 `GPIOA`，子进程收不到查询词）。
+  **裁决 = 走位置参数路线**（不发明旗标）。两定点:
+  ① `_validate_param`: `flag is None` 且非该工具 stdin 通道 → 返 `[str(value)]`
+    （值必 str 化，F-180 契约同式）；stdin 通道（`diagnose_hardfault.text`）维持现状不进 argv。
+  ② `plan_tool_call`: 位置片段按**注册顺序**收集，循环结束后统一追加到 argv **尾部**
+    （旗标片段流之后）。取"尾部"语义的理由：裁决原文即"追加到 argv **尾部**"，且位置参数与
+    旗标混排时尾部才是 CLI 的位置语义 —— `{recipe, query}` 并用产出
+    `... --json --recipe I2C GPIOA`（而非把位置片段插到 `--recipe` 之前），末位恒为该参数值。
+  既有 argv 构造（固定旗标 → `--project` → 旗标片段）**零变**。
+- **F-183 (fix, mcp_server) GAP-F-8 `project` inputSchema 是 1-元 tuple（畸形 schema）**:
+  根因: `props["project"] = { … },` 的**尾逗号**使 RHS 成 tuple → 序列化后
+  `properties.project` 是 JSON **数组**而非对象（对 MCP 客户端即畸形 schema）。
+  处置: 去尾逗号，RHS 从 tuple 还原为 dict；`type` 仍为 `"string"`（project 是工程根
+  **路径字符串**，由 `resolve_project` 做目录+`.workbench/config.json` 白名单校验 ——
+  与 inputSchema **顶层**的 `"type": "object"` 分属两层，不可混读）。
+- **F-183 (test, `tests/test_serial_mux_lifecycle.py`) GAP-F-9 全局打桩收窄（照 F-182 T1 样板）**:
+  `mock.patch.object(serial_mux.subprocess, "Popen", …)` 与
+  `mock.patch.object(serial_mux.shutil, "which", …)` 改的是**全局**模块对象
+  （GAP-ENV-1 同族）。处置: 收窄为**模块引用替换**（`SimpleNamespace` stub，属性显式列全、
+  fail-closed —— `Popen`/`DEVNULL`/`TimeoutExpired` 与 `which`，均由 `scripts/serial_mux.py`
+  实际消费点现场核实）；新增 `StubIsolationTests` 隔离自证钉（窗口内真 spawn 第三方进程 +
+  捕获序列隔离 + `shutil.which` 同族一钉）。打桩收窄后 F-182 那个 import 期抢抓真实句柄的
+  `_REAL_POPEN` **已移除**（`_spawn_placeholder` 直接走全局 `subprocess.Popen`，由自证钉兜底：
+  谁把桩改回全局，自证钉立即红）。既有 mux 生命周期断言**零字符改动**（`git diff` 删除行
+  全部落在 docstring / 两个 helper 体 / `_REAL_POPEN` / `_spawn_placeholder`）。
+  ⚠ 自证钉的一条实测教训（本单现场钓出）：探针必须走**调用时**的全局查表
+  `subprocess.Popen`——阶段一先用 import 期句柄写，本钉**假绿**（句柄绕过桩，把劫持藏起来）；
+  改回全局查表即真红，收窄后转绿。此即"句柄式自证钉是空洞钉子"的机器化。
+- **F-183 钉子（红→绿）**: 定向两文件修前 `Ran 23 tests → FAILED (failures=13, errors=3)`，
+  修后 `Ran 23 tests → OK`。
+  · `tests/test_mcp_registry_shape.py` 9 → 18 例：翻钉 1（"无旗标且非 stdin"丢值面快照
+    `{("rm_lookup","query")}` → **空集**，F-183 闭合；判据由"结构猜测"升级为**中性化校验器后
+    直探 `_validate_param` 是否产 argv 片段**——校验与投影正交，避免逐参数试值引入噪声）
+    + 翻正 1（`ProjectPropShapeTests` 由"钉住畸形 tuple 报警"翻为"钉住正确 dict 形态"）
+    + 新钉 9（位置投影端到端 / 反向无尾巴 / 有旗标参数回归护栏 / argv 全 str +
+    `list2cmdline` / stdin 通道不进 argv / 真 CLI 只读冒烟 / project 必备键 /
+    project 声明 string / `type(schema) is dict` + 顶层 object / JSON roundtrip 后
+    properties 仍为对象 —— 后两者与 project 仅存在于 `requires_project` 工具合为一类计）。
+  · `tests/test_serial_mux_lifecycle.py` 3 → 5 例：`StubIsolationTests` 2 例新钉
+    （subprocess 隔离 4 分项 + shutil.which 隔离 2 分项）。
+- **全量门禁**: 简报 §3 前置形态 `Ran 1091 tests … OK (skipped=6)`（基线 1080 + 新增 11）；
+  `ruff check scripts tests` → `All checks passed!`；语法地板钉（py3.10，
+  `tests/test_py_floor.py`）**9 例 OK**；`tests.test_mcp_server` **36 例 OK（信封全链不破）**。
+- **新登记（只列不改，GAP-F-10 起编）**:
+  · **GAP-F-10 (Low, test 卫生)** `tests/test_serial_mux_lifecycle.py` 仍有
+    `mock.patch.object(serial_mux.os, "_exit", …)` —— 改的是**全局** `os._exit`
+    （GAP-F-9 同族残余；本单 T3 声明范围只含 `subprocess` / `shutil` 两处，故不动）。
+  · **GAP-F-11 (Low, 语义未定义)** `flag is None` 参数的**空值**语义：本单按裁决字面
+    `return [str(value)]`，故显式传 `query=""` 会在 argv 尾部产一个空片段（`nargs="?"`
+    语义下与不传等价，无实害），但"空值不发"（F-180 非 boolean 分支的 `value != ""` 早退）
+    在位置路线上未定义 —— 待维护者裁决是否统一。
+  · **GAP-F-12 (Low, 设计注记)** 无旗标**位置片段**的**多值 / 选项扩展**：当前唯一命中
+    `rm_lookup.query`；将来出现第二个无旗标参数（或 `--list` 类参数改走无旗标路径）时，
+    注册顺序 + 尾部追加的组合须重新设计位置语义（含多值 `nargs="*"` 形态）。
+- **口径披露（供复核）**: ① T2 简报"含 `type=="object"` 类必备键"按"**project 的 schema 对象
+  必备键（`type`/`description`）+ 顶层 inputSchema `type=="object"`**"两读法分别落钉
+  （`project` 自身 `type` 实测为 `"string"`，与代码修后实际形态一致）。② `plan_tool_call`
+  的"尾部"取"旗标片段流之后"（见上 GAP-F-7 ② 理由），Brief 所述"顺序问题尚不存在"在本单
+  现场被 `{recipe, query}` 并用证伪（旧式就地 extend 会把位置片段插到 `--recipe` 之前）。

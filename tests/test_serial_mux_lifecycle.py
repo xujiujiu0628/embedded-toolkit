@@ -203,9 +203,11 @@ class StubIsolationTests(unittest.TestCase):
     本类不依赖外部环境事实 (safe-delete shim 是否在场等), 而是**在打桩窗口内
     主动真跑一次第三方调用**, 用可观测证据判定是否被劫持:
 
-      · A1/A2/A3 断言第三方进程**真实执行** —— fake 只会抛
-        AssertionError (不可能产出 rc/stdout), 故 rc==0 + stdout 与
-        import 期抓的句柄一致 = 未被替换;
+      · A1/A2/A3 断言第三方进程**真实执行** —— 探针走**调用时**的全局
+        `subprocess.Popen` 查表 (不用 import 期句柄: 用句柄会把劫持藏起来,
+        本单阶段一实测该写法假绿); 桩只会抛 AssertionError、不可能产出
+        rc/stdout, 故 A1 无异常 + A2 rc==0 + A3 stdout=="PROBE" 三者同时
+        成立 = 全局查表未被替换;
       · B 断言桩的**捕获序列不含**该第三方 argv (劫持的直接证据)。
     """
 
