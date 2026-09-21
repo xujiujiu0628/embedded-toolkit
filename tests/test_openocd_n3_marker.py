@@ -13,6 +13,7 @@ r"""F-155 (总工单 v2 T8/N-3) openocd 构造性标记法回归钉。
 import subprocess
 import sys
 import os
+import types
 import unittest
 from unittest import mock
 
@@ -26,18 +27,25 @@ _SCRIPTS = os.path.join(os.path.dirname(os.path.dirname(
 
 
 def _patch_openocd_subprocess(fake_run):
-    """单点收敛的打桩入口 (F-182 阶段一: 现状法, 待阶段二收窄)。
+    """把打桩面收窄到 `openocd_run` 模块内的 subprocess 引用 (F-182 阶段二)。
 
-    当前实现改的是 **`openocd_run.subprocess` 的 `run` 属性** —— 而
-    `openocd_run.subprocess` 就是全局 `subprocess` 模块, 故这等于改全局
-    `subprocess.run`。打桩窗口内一切第三方 spawn (如 safe-delete shim 的
-    回收站进程) 都会被 fake 吞走 (WB-20260920-04 GAP-ENV-1, 5 例假红即此病)。
+    旧法 `mock.patch.object(openocd_run.subprocess, "run", …)` 改的是**全局
+    `subprocess` 模块** —— 打桩窗口内一切第三方 spawn (如 safe-delete shim 的
+    回收站进程) 都被 fake 吞走 (WB-20260920-04 GAP-ENV-1, 5 例假红即此病)。
 
-    `StubIsolationTests` 自证钉先把这个行为缺陷钉成红; 阶段二把本函数体
-    换成"只替换 openocd_run 的 subprocess 引用"后, 该钉转绿即为修毕证据。
-    之所以收敛到一个函数: 让"改法"有唯一改动点, 红→绿对照可逐字节复核。
+    本实现改为替换 **`openocd_run` 自己的模块属性** `subprocess`: 只有
+    `openocd_run` 内对 `subprocess.run` 的调用被换掉, 全局 `subprocess.run`
+    原样可跑。stub 显式带上 `openocd_run` 实际消费的另两个属性 ——
+    `TimeoutExpired` (供 `except` 子句求值) 与 `CompletedProcess` (防御性留位)。
+    属性集是**收窄**的, 故 fail-closed: 若 `openocd_run` 未来用到别的
+    subprocess 属性, 测试会直接 `AttributeError` 报出来, 而不是静默放行。
     """
-    return mock.patch.object(openocd_run.subprocess, "run", fake_run)
+    stub = types.SimpleNamespace(
+        run=fake_run,
+        TimeoutExpired=subprocess.TimeoutExpired,
+        CompletedProcess=subprocess.CompletedProcess,
+    )
+    return mock.patch.object(openocd_run, "subprocess", stub)
 
 
 def _run_action(action, *, stdout="", stderr="", returncode=0, **kw):
