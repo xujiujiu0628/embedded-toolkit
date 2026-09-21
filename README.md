@@ -475,7 +475,10 @@ embedded-toolkit/
   信任包 ✅ F-178（MCP boolean argv / cube_usercode backup-restore 事务化 /
   spi `write_burst` 排空读 / verify 证据表 `uart` 键）· ref.json 数据面收口
   ✅ F-179（GAP-D-5 bus 反转 + RCC 位名类级防线 / `_relationships` IRQ 9 条逐条锚
-  CMSIS xg.h / `stm32f103-arch-facts.json` 48 条带出处入册 / f103-dbg 样例解锁）——证据链
+  CMSIS xg.h / `stm32f103-arch-facts.json` 48 条带出处入册 / f103-dbg 样例解锁）· MCP
+  整型参数 argv 收口 ✅ F-180（GAP-F-1：非 boolean 参数值一律 str 化入 argv，6 个整型
+  参数 `run_verify.timeout` + `gen_peripheral` ch/freq/duty/baud/speed 由 100% 不可用转可用）
+  ——证据链
   （run/PR/钉子清单）均在 CHANGELOG 对应票。
 
 > **F-021~F-030 已在本轮收口**（原子写收口包 / R7 双布局认路 / RTT 平台守卫 /

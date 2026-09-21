@@ -3287,3 +3287,68 @@
   / 数据修正 `0f6495d`（T1+T2 + 样例注释随动）/ 增补+样例 `c7cf352`（T3+T4）
   / docs 本笔（CHANGELOG + README；**P1 的 GAP-D-1/D-2 数据改动并入本笔**——
   简报固定四笔，未给 P1 留 commit 槽，详见报告 §10.5）。
+
+## Unreleased — 2026-09-21（F-180 mcp_server 整型参数 argv 收口：GAP-F-1 闭合，WB-20260921-01，分支 wb/f180-mcp-int-argv-20260921，未合入）
+
+> 来源：WB-20260920-04 报告 §9.10 **GAP-F-1 (High)**——与 F-178 的 H-1（boolean）
+> 同源同病的**整型**面残留。全部 host 可验（纯内存 + 临时目录），**未触硬件、
+> 未跑真机链、未 pip、未联网**。基线 `8e35988`，全量 1049 例 OK (skipped=6)。
+
+- **F-180 (fix, mcp_server) GAP-F-1 整数参数把裸 Python int 塞进 argv**:
+  根因：`_validate_param` 末行非 boolean 段 `return [flag, value] if value != ""`
+  原样透传 Python 值 → argv 落进裸 `int`。Windows 上 `subprocess.list2cmdline`
+  对非 str 抛 `TypeError: expected str, bytes or os.PathLike object, not int`，
+  **进程未起且异常不被 `run_planned_call` 的信封捕获**（直接从 `call_tool` 冒泡，
+  违反该文件"统一信封"设计）。F-178 的 boolean 修法**不覆盖本项**。
+  影响面（`_PARAM` 注册表逐项盘点确认，共 6 个整型参数）：
+  `run_verify.timeout` + `gen_peripheral` 的 `ch` / `freq` / `duty` / `baud` / `speed`
+  —— 一旦显式传入即 100% 不可用，且失败形态是**未捕获异常而非 `ok=False` 信封**。
+  处置：非 boolean 段统一 `return [flag, str(value)] if value != "" else []`。
+  实测（修后全链 argv）：`timeout=30` → `['--timeout', '30']`；
+  `ch=3/freq=1000/duty=50/baud=115200/speed=400000` →
+  `['--ch','3'], ['--freq','1000'], ['--duty','50'], ['--baud','115200'],
+  ['--speed','400000']`；两工具 argv **非 str 元素数均为 0**，
+  `subprocess.list2cmdline` 两条均通过。
+- **F-180 钉子（红→绿，6 例）**：`tests/test_mcp_server.py` 新增
+  `IntegerArgvTests`——① `timeout` 值须为 `str` 且 `== "30"`；② `gen_peripheral`
+  五整型逐参数值须为 `str(value)`；③ **类级防线**：遍历注册表全部 `integer`
+  参数（断言恰 6 个）各取 1/100/900000 三值，凡通过校验者产出 argv 必须全 str
+  —— 新增整型参数漏收口即红；④ `list2cmdline` smoke（旧病直接复现位，
+  含 `call_tool` 经 mock 子进程层的端到端断言）；⑤ 非法值（`timeout=-1`/`999`、
+  `ch=99`、`duty=140`、`freq=0`）须抛 `McpToolError` **且早于转换**；
+  ⑥ 非 int（`"30"`/`3.5`/`True`/`None`/`[30]`）收口后仍须拒。
+  **红摘录（修前）**：`Ran 6 tests … FAILED (failures=8)`，`list2cmdline` 位
+  `TypeError: expected str, bytes or os.PathLike object, not int`；
+  `test_timeout_value_is_str` 报 `30 is not an instance of str`。
+  F-178 boolean 四钉**一字未动、原样全绿**（反向证明未被顺手改坏）。
+- **契约变更段（WB-20260921-01）**:
+  - **`plan_tool_call` 返回的 `argv` 元素类型收紧**：注册表内**一切**非 boolean
+    参数（`integer` 与 `string` 两类）映射出的 argv 元素**恒为 `str`**。
+    消费方（`run_planned_call` / `subprocess` 家族）此前只在 str 面被满足，
+    自此为**契约保证**而非巧合。`string` 面经 `str()` 恒等，**语义零变**、
+    输出逐字节不变。
+  - **校验顺序不变式**：非法值仍**先**抛 `McpToolError`（校验在转换前），
+    本单未倒置该顺序——非 int 类型（含 `bool`，其 `int` 子类身份仍被
+    `_bounded_int` 显式拒）不得借 `str()` 蒙混过闸。
+  - **no-op 声明**：`boolean` 分支（F-178 落）**一字未动**；`data/**`、
+    `hooks/**`、`machine.json`、其余 `scripts/**`（含参数消费端
+    `verify.py` / `gen_periph.py` 本体）、`examples/**` 零改动。
+  - ⚠ **既有断言单点随动（显式声明，供维护者复核）**：
+    `tests/test_mcp_server.py:147`（F-130 `07302e5` 落）原断言
+    `self.assertEqual(argv[argv.index("--timeout") + 1], 15)` **编码的是修前
+    裸 int 形态**，与 F-180 契约**直接冲突**，是本单唯一无法回避的既有断言
+    改动。按简报 §1"既有断言零删零弱"的最严口径，此处**只把期望值由 `15`
+    改为 `"15"`（原地收紧、未删未弱化）并加注释**，其余字符零动。
+    变更前已实证：改前全类 `FAILED (failures=1)` 仅此一条，且该断言为
+    **仓内唯一**引用 `argv.index("--timeout")` 的位置（grep 全仓确认）。
+  - ⚠ **`gen_peripheral.speed` 需配 `i2c` 才与 `--i2c` 同现**：本单钉例中
+    `speed` 与 `i2c` 并传（`gen_periph.py` 语义要求），非 `_validate_param`
+    的耦合，注册表层面各参数独立。
+- **commit 台账（分支 wb/f180-mcp-int-argv-20260921，未 push）**: 钉（红摘录 8 红）
+  / 修本笔 / docs 本笔（CHANGELOG 账目 + 契约段）。
+- **环境适配披露（本单）**：`git commit` 报 rc=0 且**对象与 reflog 均写入**，
+  但本沙箱**连 reflog 的读回都是旧值**——故 WB-20260920-05 的
+  "reflog 末条取 SHA"口径在本单**失效**，改为以 **`git commit` 自身输出的新 SHA**
+  为准，再直写松散 ref + 同步 `packed-refs`（`git cat-file -t` 已实证对象真实）。
+  本单**未执行 `git rebase`**（该沙箱可复现毁对象库，先例 E-1）。
+
