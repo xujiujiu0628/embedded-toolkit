@@ -32,6 +32,7 @@ F-183 (WB-20260921-04 / T3, GAP-F-9): 本文件的打桩曾用
 真实句柄的 `_REAL_POPEN` **已移除** (由自证钉兜底 —— 若有人把桩改回全局,
 自证钉立即红)。既有 mux 生命周期断言语义**零变**。
 """
+import importlib
 import os
 import shutil
 import subprocess
@@ -49,6 +50,11 @@ import serial_mux  # noqa: E402
 
 # F-182: 占位进程用解释器自身长睡 —— 零外部命令依赖 (旧版依赖外部 `sleep`)
 _PLACEHOLDER_CODE = "import time; time.sleep(60)"
+
+# F-184 (GAP-F-10): import 期捕获**真实** `os._exit` —— 只作隔离自证钉的
+# **身份判等期望值**。⚠ 严禁真调 `os._exit` 做探针 (会把测试进程当场杀掉);
+# 本文件的自证钉全程只用引用判等, 零 exit 调用。
+_REAL_OS_EXIT = os._exit
 
 
 def _patch_serial_mux_subprocess(fake_popen):
@@ -81,6 +87,24 @@ def _patch_serial_mux_shutil_which(fake_which):
     """
     return mock.patch.object(serial_mux, "shutil",
                              types.SimpleNamespace(which=fake_which))
+
+
+def _patch_serial_mux_os(fake_exit):
+    """打桩入口: `serial_mux` 的 os 引用 (F-184 / GAP-F-10)。
+
+    **阶段一 (钉, 本笔) 的体仍是旧写法**: `serial_mux.os` **就是全局 `os`
+    模块对象**, 故 `mock.patch.object(serial_mux.os, "_exit", …)` 等于把
+    **全局** `os._exit` 换掉 —— 打桩窗口内任何第三方 `os._exit` 都会被 fake
+    吞走 (GAP-F-9 同族残余, 本单 GAP-F-10)。
+
+    本笔只把打桩入口从用例内行内调用**收敛到这一个 helper** (行为等价), 使
+    阶段二的收窄成为**一处 diff**; `StubIsolationTests` 的
+    `test_module_os_stub_does_not_hijack_global_exit` 此刻**必红**。
+
+    阶段二 (修) 把体换成**模块引用替换** —— `mock.patch.object(serial_mux,
+    "os", SimpleNamespace(…))`, 属性显式列全、fail-closed。
+    """
+    return mock.patch.object(serial_mux.os, "_exit", fake_exit)
 
 
 def _spawn_placeholder(**kw):
@@ -166,11 +190,15 @@ class ReadLoopDeathTraceTests(unittest.TestCase):
 
         # serve 子进程内 run() 的主循环逻辑: 读循环死亡 → stop_event + os._exit(1)
         # 这里直接调 _serial_read_loop 并捕获 os._exit
-        with mock.patch.object(serial_mux.os, "_exit",
-                               side_effect=SystemExit(1)) as m_exit:
+        # F-184: 打桩入口收敛到唯一 helper `_patch_serial_mux_os` (阶段一/二同式);
+        # 账目面改用**显式 mock 变量** —— 旧体的 helper 返回 Mock、收窄后返回
+        # SimpleNamespace stub, `as` 绑定值会随之变形态, 故断言面不依赖返回值。
+        exit_mock = mock.Mock(side_effect=SystemExit(1),
+                              name="serial_mux.os._exit")
+        with _patch_serial_mux_os(exit_mock):
             with self.assertRaises(SystemExit):
                 server._serial_read_loop()
-        self.assertEqual(m_exit.call_args[0][0], 1,
+        self.assertEqual(exit_mock.call_args[0][0], 1,
                          "读循环死亡必须非零退出 (旧版静默 break)")
         self.assertTrue(os.path.exists(self.marker),
                         f"死亡现场未落盘: {self.marker}")
@@ -209,6 +237,10 @@ class StubIsolationTests(unittest.TestCase):
         rc/stdout, 故 A1 无异常 + A2 rc==0 + A3 stdout=="PROBE" 三者同时
         成立 = 全局查表未被替换;
       · B 断言桩的**捕获序列不含**该第三方 argv (劫持的直接证据)。
+
+    F-184 (GAP-F-10) 同法加固 `serial_mux.os`: 但 `os._exit` **不可真调**
+    (会当场杀掉测试进程), 故该钉改用**身份断言法** —— 见
+    `test_module_os_stub_does_not_hijack_global_exit`。
     """
 
     def test_module_subprocess_stub_does_not_hijack_global_popen(self):
@@ -261,6 +293,50 @@ class StubIsolationTests(unittest.TestCase):
             self.assertEqual(
                 os.path.normcase(got or ""), os.path.normcase(sys.executable),
                 f"第三方 shutil.which 结果不符: {got!r}")
+
+
+    def test_module_os_stub_does_not_hijack_global_exit(self):
+        """F-184 (GAP-F-10) 隔离自证钉 —— **身份断言法, 零真实 `os._exit` 调用**。
+
+        ⚠ 安全红线: 本钉**不得**真调 `os._exit` 做探针（会把测试进程当场杀掉),
+        故不照搬 subprocess 钉那种"窗口内真跑一次第三方调用 + 看 fake 账目"的
+        写法, 改用**身份判等**:
+
+          · A1 全局面: 窗口内 `os._exit`（**调用时**全局查表）必须仍是 import 期
+            捕获的真实函数 `_REAL_OS_EXIT`;
+          · A2 第三方视角: 第三方代码自己 `import os` 后调用时解析, 拿到的也必须
+            是真实函数（走**独立的模块解析路径** `importlib.import_module("os")`,
+            独立于本测试模块的 `os` 绑定 —— 排除"只改本模块绑定"式的假绿);
+          · B1 桩的落点: 桩只挂在 `serial_mux.os` 上, 全局 `os` 里**查不到**它
+            （收窄的直接证据);
+          · B2 零副作用: 本钉全程 `fake.call_count == 0`（既证明未真调 exit, 也
+            证明上述探针没有误入桩)。
+
+        判据极性: 修前（桩改全局）A1/A2/B1 **必红**, 收窄后全绿。
+        """
+        def fake_exit(code):    # 若真被调用, 立刻以异常暴露而非静默通过
+            raise AssertionError("serial_mux.os._exit 桩被调用 (本钉不应触发)")
+
+        def _third_party_resolve_exit():
+            # 第三方代码的典型形态: 自己 import 拿模块对象, 调用时再解析属性。
+            # **只取引用做判等, 不调用它** —— 真调会杀掉本进程。
+            return importlib.import_module("os")._exit
+
+        fake = mock.Mock(side_effect=fake_exit, name="serial_mux.os._exit")
+        with _patch_serial_mux_os(fake):
+            with self.subTest(check="A1 全局 os._exit 身份未变"):
+                self.assertIs(os._exit, _REAL_OS_EXIT,
+                              "打桩窗口内全局 os._exit 被替换 (劫持)")
+            with self.subTest(check="A2 第三方调用时查表得真实函数"):
+                self.assertIs(_third_party_resolve_exit(), _REAL_OS_EXIT,
+                              "第三方视角解析被劫持")
+            with self.subTest(check="B1 桩只在 serial_mux 引用上"):
+                self.assertIs(serial_mux.os._exit, fake)
+                self.assertIsNot(os._exit, fake,
+                                 "全局 os 里查得到桩 (未收窄)")
+            with self.subTest(check="B2 零副作用"):
+                self.assertEqual(fake.call_count, 0,
+                                 "本钉不应有任何真实 exit 调用")
 
 
 if __name__ == "__main__":
