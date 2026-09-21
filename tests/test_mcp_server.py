@@ -144,7 +144,9 @@ class DispatchPlanTests(unittest.TestCase):
         self.assertTrue(argv[1].endswith("verify.py"))
         self.assertIn("--json", argv)
         self.assertIn("--timeout", argv)
-        self.assertEqual(argv[argv.index("--timeout") + 1], 15)
+        # F-180 (WB-20260921-01, GAP-F-1): 整型值一律 str 化后入 argv,
+        # 故此处由裸 int 15 改为 str "15" —— 否则 list2cmdline 抛 TypeError。
+        self.assertEqual(argv[argv.index("--timeout") + 1], "15")
         self.assertIn("--no-flash", argv)
         self.assertEqual(plan["cwd"], os.path.abspath(self.ws))
 

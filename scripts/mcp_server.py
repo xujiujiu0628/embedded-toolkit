@@ -209,7 +209,15 @@ def _validate_param(tool_name: str, p_name: str, p_spec: tuple, value) -> list:
         #   · 即便子进程起得来, argparse 的 store_true 收到值会报
         #     `unrecognized arguments`。
         return [flag] if value else []
-    return [flag, value] if value != "" else []
+    # F-180 (WB-20260921-01, GAP-F-1): 非 boolean 参数的值一律 str 化后再入
+    # argv —— 旧式 `[flag, value]` 把裸 Python int 塞进 argv, Windows 上
+    # `subprocess.list2cmdline` 抛
+    # `TypeError: expected str, bytes or os.PathLike object, not int`,
+    # 进程未起且异常不被 run_planned_call 的信封捕获 (违反本文件"统一信封"
+    # 设计)。影响面: run_verify.timeout + gen_peripheral 的
+    # ch/freq/duty/baud/speed 共 6 个整型参数。已是 str 者经 str() 恒等,
+    # 语义零变。校验仍在上方先行 (非法值抛 McpToolError, 顺序不倒)。
+    return [flag, str(value)] if value != "" else []
 
 
 def plan_tool_call(tool_name: str, arguments: dict | None) -> dict:
