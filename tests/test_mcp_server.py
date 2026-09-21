@@ -340,5 +340,152 @@ class HardfaultNoProbeTests(unittest.TestCase):
         self.assertIn("--fault-text", out)
 
 
+class IntegerArgvTests(unittest.TestCase):
+    """F-180 (WB-20260921-01, GAP-F-1): 整型参数值一律 str 化后再入 argv。
+
+    与 F-178 的 boolean 面同源同病: `_validate_param` 末行 `return [flag, value]`
+    把裸 Python int 塞进 argv → Windows 上 `subprocess.list2cmdline` 抛
+    `TypeError: expected str, bytes or os.PathLike object, not int`,
+    进程未起、异常不被 `run_planned_call` 信封捕获 (违反本文件"统一信封"设计)。
+    影响面: run_verify.timeout + gen_peripheral 的 ch/freq/duty/baud/speed,
+    共 6 个参数, 显式传入即 100% 不可用。
+    """
+
+    def setUp(self):
+        self.ws = tempfile.mkdtemp()
+        os.makedirs(os.path.join(self.ws, ".workbench"))
+        with open(os.path.join(self.ws, ".workbench", "config.json"), "w",
+                  encoding="utf-8") as f:
+            json.dump({"builder": "gcc"}, f)
+
+    def tearDown(self):
+        shutil.rmtree(self.ws, ignore_errors=True)
+
+    def _value_after(self, argv, flag):
+        """取旗标后紧邻的一个元素。"""
+        self.assertIn(flag, argv, argv)
+        idx = argv.index(flag)
+        self.assertLess(idx + 1, len(argv), f"{flag} 后无值: {argv}")
+        return argv[idx + 1]
+
+    def test_timeout_value_is_str(self):
+        argv = mcp_server.plan_tool_call(
+            "run_verify", {"project": self.ws, "timeout": 30})["argv"]
+        val = self._value_after(argv, "--timeout")
+        self.assertIsInstance(val, str, f"--timeout 值须为 str: {argv}")
+        self.assertEqual(val, "30")
+        # 旗标恰出现一次, 且后跟恰一个值 (不是散落的多个)
+        self.assertEqual(argv.count("--timeout"), 1, argv)
+        self.assertTrue(all(isinstance(a, str) for a in argv),
+                        f"argv 不得含非 str 元素: {argv}")
+
+    def test_gen_peripheral_five_ints_all_str(self):
+        # 同族五个整型参数一并钉: 修一处漏一处即红
+        cases = [("ch", 3, "--ch"), ("freq", 1000, "--freq"),
+                 ("duty", 50, "--duty"), ("baud", 115200, "--baud"),
+                 ("speed", 400000, "--speed")]
+        for p_name, value, flag in cases:
+            with self.subTest(param=p_name):
+                args = {"type": "pwm", p_name: value}
+                if p_name == "speed":
+                    args["i2c"] = "I2C1"
+                argv = mcp_server.plan_tool_call(
+                    "gen_peripheral", args)["argv"]
+                val = self._value_after(argv, flag)
+                self.assertIsInstance(
+                    val, str, f"{p_name} 值须为 str: {argv}")
+                self.assertEqual(val, str(value), argv)
+                self.assertTrue(
+                    all(isinstance(a, str) for a in argv),
+                    f"argv 不得含非 str 元素: {argv}")
+
+    def test_all_registry_int_params_argv_is_str(self):
+        # 值收口的类级防线: 遍历注册表全部 integer 参数, 逐个显式传入,
+        # 断言产出 argv 全为 str —— 新增 integer 参数漏收口即红。
+        seen = []
+        for tool_name, tool in mcp_server._TOOL_REGISTRY.items():
+            if tool.get("requires_project"):
+                base = {"project": self.ws}
+            else:
+                base = {}
+            for p_name, spec in tool["params"].items():
+                if spec[0] != "integer":
+                    continue
+                seen.append(f"{tool_name}.{p_name}")
+                for value in (1, 100, 900000):
+                    args = dict(base)
+                    args[p_name] = value
+                    # 补齐必填 (type/text) 以免因缺必填而误红
+                    for r in tool.get("required_params", ()):
+                        args.setdefault(r, "pwm" if r == "type"
+                                        else "x" * 10)
+                    try:
+                        argv = mcp_server.plan_tool_call(
+                            tool_name, args)["argv"]
+                    except mcp_server.McpToolError:
+                        # 越界属预期 (校验在转换前), 不是本钉的目标
+                        continue
+                    if spec[2] is None:
+                        continue
+                    self.assertTrue(
+                        all(isinstance(a, str) for a in argv),
+                        f"{tool_name}.{p_name}={value} 产出非 str argv: "
+                        f"{argv}")
+        self.assertEqual(len(seen), 6,
+                         f"注册表 integer 参数应为 6 个, 实为 {seen}")
+
+    def test_list2cmdline_smoke(self):
+        # 旧病直接复现位: 修前此处必抛 TypeError。
+        # 全 6 个整型参数一次性显式传入, 再用 list2cmdline 走一遍。
+        plan = mcp_server.plan_tool_call("gen_peripheral", {
+            "type": "pwm", "ch": 3, "freq": 1000, "duty": 50,
+            "baud": 115200, "i2c": "I2C1", "speed": 400000})
+        try:
+            cmdline = subprocess.list2cmdline(plan["argv"])
+        except TypeError as e:
+            self.fail(f"list2cmdline 抛 TypeError: {e} (argv={plan['argv']!r})")
+        self.assertIsInstance(cmdline, str)
+        rv = mcp_server.plan_tool_call(
+            "run_verify", {"project": self.ws, "timeout": 30})
+        subprocess.list2cmdline(rv["argv"])   # 不得抛
+        # 端到端: call_tool 不得再以未捕获 TypeError 冒泡 (信封契约)
+        with mock.patch.object(mcp_server.subprocess, "run") as m_run:
+            m_run.return_value = subprocess.CompletedProcess(
+                args=[], returncode=0, stdout=json.dumps({"ok": True}),
+                stderr="")
+            out = mcp_server.call_tool(
+                "run_verify", {"project": self.ws, "timeout": 30})
+        self.assertTrue(out["ok"])
+        passed_argv = m_run.call_args.args[0]
+        self.assertTrue(all(isinstance(a, str) for a in passed_argv),
+                        f"传给子进程的 argv 含非 str: {passed_argv}")
+
+    def test_illegal_value_raises_before_conversion(self):
+        # 非法值必须先于转换抛 McpToolError (顺序不许倒):
+        # 若实现先把值 str() 再校验, 这里拿到的会是别的异常/静默通过。
+        bad_cases = [
+            ("run_verify", {"project": self.ws, "timeout": -1}, "timeout"),
+            ("run_verify", {"project": self.ws, "timeout": 999}, "timeout"),
+            ("gen_peripheral", {"type": "pwm", "ch": 99}, "ch"),
+            ("gen_peripheral", {"type": "pwm", "duty": 140}, "duty"),
+            ("gen_peripheral", {"type": "pwm", "freq": 0}, "freq"),
+        ]
+        for tool_name, args, p_name in bad_cases:
+            with self.subTest(param=f"{tool_name}.{p_name}"):
+                with self.assertRaises(mcp_server.McpToolError,
+                                       msg=f"{tool_name}.{p_name} 非法值应"
+                                           f"抛 McpToolError") as ctx:
+                    mcp_server.plan_tool_call(tool_name, args)
+                self.assertIn(p_name, str(ctx.exception))
+
+    def test_non_int_types_still_rejected(self):
+        # 值收口不得放宽校验: 非 int (str/float/bool) 仍须拒
+        for bad in ("30", 3.5, True, None, [30]):
+            with self.subTest(value=bad):
+                with self.assertRaises(mcp_server.McpToolError):
+                    mcp_server.plan_tool_call(
+                        "run_verify", {"project": self.ws, "timeout": bad})
+
+
 if __name__ == "__main__":
     unittest.main()
