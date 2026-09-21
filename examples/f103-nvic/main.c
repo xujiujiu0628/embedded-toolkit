@@ -1,8 +1,8 @@
 /* f103-nvic — T2 手写寄存器级样例 (编译级)。
  * 用途: NVIC 使能/禁用/优先级写入演示, 以 TIM2 更新中断 (IRQ 28) 为例。
- * ref.json anchor: peripherals.NVIC (ISER@0xE000E100 — ref.json 仅登记
- *                  此寄存器); ICER/IABR/IP 为 Cortex-M3 架构定义
- *                  (GAP-D-1 已记账); TIM2 irq=28 来自
+ * ref.json anchor: peripherals.NVIC (ISER@0xE000E100 + ICER/ISPR/ICPR/
+ *                  IABR/IP — @F-179 P1 入册, 原 GAP-D-1 已闭合);
+ *                  TIM2 irq=28 来自
  *                  ref.json _relationships.TIM2.irq。
  * 硬件验收: 未做（编译级样例）
  * mock 二期 (WB-20260920-02): 新增 host mock — IRQ 槽位算术/优先级

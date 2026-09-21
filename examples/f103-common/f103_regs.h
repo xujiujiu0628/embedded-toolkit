@@ -72,9 +72,10 @@ typedef struct {   /* Cortex-M3 核心外设 (架构定义; ref.json peripherals
     volatile uint32_t CTRL, LOAD, VAL, CALIB;
 } SysTick_Type;
 
-typedef struct {   /* Cortex-M3 核心外设; ref.json peripherals.NVIC 仅登记 ISER@0xE100,
-                     其余 (ICER@0x080/IABR@0x100/IP@0x300 相对 0xE000E000) 为架构
-                     常量 — GAP-D-1 已记账。IP 为字节宽 (架构定义)。 */
+typedef struct {   /* Cortex-M3 核心外设; ref.json peripherals.NVIC 已登记
+                     ISER@0xE100 + ICER/ISPR/ICPR/IABR/IP (@F-179 P1 入册,
+                     base 相对 offset 0x80/0x100/0x180/0x200/0x300 —
+                     原 GAP-D-1 已闭合, 现为正式登记)。IP 为字节宽 (架构定义)。 */
     volatile uint32_t ISER[8u], ICER[8u], ISPR[8u], ICPR[8u], IABR[8u];
     volatile uint8_t  IP[240u];
 } NVIC_Type;

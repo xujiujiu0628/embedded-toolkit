@@ -3,10 +3,10 @@
  *
  * 向量表槽位纪律: 设备中断槽位逐项注明来源 —
  *   [ref]  = data/stm32f103-ref.json _relationships.<P>.irq.number
- *   [GAP-D-3] = ref.json 未登记该外设 IRQ 号, 槽位值沿用 ref.json 自身的
- *               共享命名先例 (TIM1_UP_TIM10_IRQn=25 ⇒ TIM1_BRK_TIM9=24,
- *               TIM8_BRK_TIM12=43, TIM8_UP_TIM13=44, TIM8_TRG_COM_TIM14=45)
- *               与 ST F1 中断映射的对应槽位, 详见 GAPREPORT; 不得默写新数。
+ *   [ref]  (F-179 转正) = 原 [GAP-D-3] 的 9 个槽位已于 F-179 正式登记入
+ *               _relationships (TIM9/12/13/14、EXTI0、RTC、TIM5/6/7),
+ *               槽位值与 IRQ 号逐一对应, 锚 stm32f103xg.h (见各条注记)。
+ *               本次仅注记措辞随动, 向量表内容零字节变。
  * 槽位 0 值 = 初始栈顶 (link.ld: RAM 20K @ 0x20000000 → 0x20005000)。
  * 未登记槽位填 0 (不可达; 对应外设未使能中断)。
  */
@@ -28,10 +28,10 @@ void DebugMon_Handler(void)  __attribute__((weak, alias("Default_Handler")));
 void PendSV_Handler(void)    __attribute__((weak, alias("Default_Handler")));
 void SysTick_Handler(void)   __attribute__((weak, alias("Default_Handler")));
 
-void RTC_IRQHandler(void)            __attribute__((weak, alias("Default_Handler")));  /* [GAP-D-3] 槽位 3 */
-void EXTI0_IRQHandler(void)          __attribute__((weak, alias("Default_Handler")));  /* [GAP-D-3] 槽位 6 */
+void RTC_IRQHandler(void)            __attribute__((weak, alias("Default_Handler")));  /* [ref] RTC irq=3 (锚 stm32f103xg.h:85) */
+void EXTI0_IRQHandler(void)          __attribute__((weak, alias("Default_Handler")));  /* [ref] EXTI0 irq=6 (锚 stm32f103xg.h:88) */
 void ADC1_2_IRQHandler(void)         __attribute__((weak, alias("Default_Handler")));  /* [ref] ADC1 irq=18 */
-void TIM1_BRK_TIM9_IRQHandler(void)  __attribute__((weak, alias("Default_Handler")));  /* [GAP-D-3] 槽位 24 */
+void TIM1_BRK_TIM9_IRQHandler(void)  __attribute__((weak, alias("Default_Handler")));  /* [ref] TIM9 irq=24 (锚 stm32f103xg.h:106) */
 void TIM1_UP_TIM10_IRQHandler(void)  __attribute__((weak, alias("Default_Handler")));  /* [ref] TIM1 irq=25 */
 void TIM2_IRQHandler(void)           __attribute__((weak, alias("Default_Handler")));  /* [ref] TIM2 irq=28 */
 void TIM3_IRQHandler(void)           __attribute__((weak, alias("Default_Handler")));  /* [ref] TIM3 irq=29 */
@@ -43,12 +43,12 @@ void SPI2_IRQHandler(void)           __attribute__((weak, alias("Default_Handler
 void USART1_IRQHandler(void)         __attribute__((weak, alias("Default_Handler")));  /* [ref] USART1 irq=37 */
 void USART2_IRQHandler(void)         __attribute__((weak, alias("Default_Handler")));  /* [ref] USART2 irq=38 */
 void USART3_IRQHandler(void)         __attribute__((weak, alias("Default_Handler")));  /* [ref] USART3 irq=39 */
-void TIM8_BRK_TIM12_IRQHandler(void) __attribute__((weak, alias("Default_Handler")));  /* [GAP-D-3] 槽位 43 */
-void TIM8_UP_TIM13_IRQHandler(void)  __attribute__((weak, alias("Default_Handler")));  /* [GAP-D-3] 槽位 44 */
-void TIM8_TRG_COM_TIM14_IRQHandler(void) __attribute__((weak, alias("Default_Handler"))); /* [GAP-D-3] 槽位 45 */
-void TIM5_IRQHandler(void)           __attribute__((weak, alias("Default_Handler")));  /* [GAP-D-3] 槽位 50 */
-void TIM6_IRQHandler(void)           __attribute__((weak, alias("Default_Handler")));  /* [GAP-D-3] 槽位 54 */
-void TIM7_IRQHandler(void)           __attribute__((weak, alias("Default_Handler")));  /* [GAP-D-3] 槽位 55 */
+void TIM8_BRK_TIM12_IRQHandler(void) __attribute__((weak, alias("Default_Handler")));  /* [ref] TIM12 irq=43 (锚 stm32f103xg.h:125) */
+void TIM8_UP_TIM13_IRQHandler(void)  __attribute__((weak, alias("Default_Handler")));  /* [ref] TIM13 irq=44 (锚 stm32f103xg.h:126) */
+void TIM8_TRG_COM_TIM14_IRQHandler(void) __attribute__((weak, alias("Default_Handler"))); /* [ref] TIM14 irq=45 (锚 stm32f103xg.h:127) */
+void TIM5_IRQHandler(void)           __attribute__((weak, alias("Default_Handler")));  /* [ref] TIM5 irq=50 (锚 stm32f103xg.h:132) */
+void TIM6_IRQHandler(void)           __attribute__((weak, alias("Default_Handler")));  /* [ref] TIM6 irq=54 (锚 stm32f103xg.h:136) */
+void TIM7_IRQHandler(void)           __attribute__((weak, alias("Default_Handler")));  /* [ref] TIM7 irq=55 (锚 stm32f103xg.h:137) */
 
 typedef void (*isr_handler_t)(void);
 
