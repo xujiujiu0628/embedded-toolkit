@@ -31,6 +31,17 @@ F-183 (WB-20260921-04 / T3, GAP-F-9): 本文件的打桩曾用
 打桩收窄后全局 `subprocess.Popen` 不再被替换, 故 F-182 那个 import 期抢抓
 真实句柄的 `_REAL_POPEN` **已移除** (由自证钉兜底 —— 若有人把桩改回全局,
 自证钉立即红)。既有 mux 生命周期断言语义**零变**。
+F-184 (WB-20260922-01 / GAP-F-10): 同族**最后一处** —— `mock.patch.object(
+serial_mux.os, "_exit", …)` 里的 `serial_mux.os` **也是全局 `os` 模块对象**,
+等于改全局 `os._exit`(窗口内第三方 `os._exit` 会被 fake 吞走)。现收窄为
+**模块引用替换** (`_patch_serial_mux_os`, stub 属性按 `scripts/serial_mux.py`
+现场 grep 显式列全、fail-closed: `_exit` / `path`(exists・islink) / `kill` /
+`unlink`), 并补 os 隔离自证钉
+`StubIsolationTests::test_module_os_stub_does_not_hijack_global_exit`。
+⚠ 该钉**不可**真调 `os._exit` 探针 (会把测试进程当场杀掉) —— 故改用**身份断言法**:
+窗口内 `os._exit` 与第三方 `importlib.import_module("os")._exit` 均须仍为 import
+期捕获的 `_REAL_OS_EXIT`, 桩在全局 `os` 里查不到, 且全程 `call_count == 0`。
+`scripts/**` 零改动; 既有 mux 生命周期断言语义**零变**。
 """
 import importlib
 import os
@@ -90,23 +101,33 @@ def _patch_serial_mux_shutil_which(fake_which):
 
 
 def _patch_serial_mux_os(fake_exit):
-    """打桩入口: `serial_mux` 的 os 引用 (F-184 / GAP-F-10)。
+    """把打桩面收窄到 `serial_mux` 模块内的 os **引用** (F-184 / GAP-F-10)。
 
-    **阶段一 (钉, 本笔) 的体仍是旧写法**: `serial_mux.os` **就是全局 `os`
-    模块对象**, 故 `mock.patch.object(serial_mux.os, "_exit", …)` 等于把
-    **全局** `os._exit` 换掉 —— 打桩窗口内任何第三方 `os._exit` 都会被 fake
-    吞走 (GAP-F-9 同族残余, 本单 GAP-F-10)。
+    只换 `serial_mux` 自己的属性: `serial_mux` 内对 os 的调用被换掉, 全局
+    `os` 模块对象**原样可跑**(第三方 `os._exit` 仍是真实函数)。stub 显式带上
+    `serial_mux` 实际消费的**全部** os 属性 (现场核实 `scripts/serial_mux.py`):
 
-    本笔只把打桩入口从用例内行内调用**收敛到这一个 helper** (行为等价), 使
-    阶段二的收窄成为**一处 diff**; `StubIsolationTests` 的
-    `test_module_os_stub_does_not_hijack_global_exit` 此刻**必红**。
+      · `_exit`  —— :173 读循环死亡路径 `os._exit(1)`
+      · `path`   —— :352 `os.path.exists(vserial_link)` / :441 `os.path.islink(…)`
+      · `kill`   —— :432 `stop_mux` 回收子进程 `os.kill(pid, signal.SIGTERM)`
+      · `unlink` —— :443 清残留虚拟串口符号链接 `os.unlink(vserial)`
 
-    阶段二 (修) 把体换成**模块引用替换** —— `mock.patch.object(serial_mux,
-    "os", SimpleNamespace(…))`, 属性显式列全、fail-closed。
+    属性集是**收窄**的 → fail-closed: 若 `serial_mux` 将来消费别的 os 属性,
+    测试会直接 `AttributeError` 报出来, 而不是静默放行。(`os.path` 同样只给
+    被消费的 `exists` / `islink` 两个名字, 同理由。)
+
+    ⚠ 自证钉的探针**禁止真调 `os._exit`** (会把测试进程当场杀掉), 故
+    `StubIsolationTests` 用**身份断言法**判全局未被换 (修前必红、修后转绿,
+    判据等价而零副作用)。
     """
-    return mock.patch.object(serial_mux.os, "_exit", fake_exit)
-
-
+    stub = types.SimpleNamespace(
+        _exit=fake_exit,
+        path=types.SimpleNamespace(exists=os.path.exists,
+                                   islink=os.path.islink),
+        kill=os.kill,
+        unlink=os.unlink,
+    )
+    return mock.patch.object(serial_mux, "os", stub)
 def _spawn_placeholder(**kw):
     # F-183 T3: 打桩已收窄到 serial_mux 的模块引用 —— 全局 subprocess.Popen
     # 不再被替换, 故无需 import 期抢抓真实句柄 (F-182 的 `_REAL_POPEN` 已移除;
