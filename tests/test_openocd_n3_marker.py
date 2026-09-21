@@ -25,6 +25,21 @@ _SCRIPTS = os.path.join(os.path.dirname(os.path.dirname(
     os.path.abspath(__file__))), "scripts")
 
 
+def _patch_openocd_subprocess(fake_run):
+    """单点收敛的打桩入口 (F-182 阶段一: 现状法, 待阶段二收窄)。
+
+    当前实现改的是 **`openocd_run.subprocess` 的 `run` 属性** —— 而
+    `openocd_run.subprocess` 就是全局 `subprocess` 模块, 故这等于改全局
+    `subprocess.run`。打桩窗口内一切第三方 spawn (如 safe-delete shim 的
+    回收站进程) 都会被 fake 吞走 (WB-20260920-04 GAP-ENV-1, 5 例假红即此病)。
+
+    `StubIsolationTests` 自证钉先把这个行为缺陷钉成红; 阶段二把本函数体
+    换成"只替换 openocd_run 的 subprocess 引用"后, 该钉转绿即为修毕证据。
+    之所以收敛到一个函数: 让"改法"有唯一改动点, 红→绿对照可逐字节复核。
+    """
+    return mock.patch.object(openocd_run.subprocess, "run", fake_run)
+
+
 def _run_action(action, *, stdout="", stderr="", returncode=0, **kw):
     captured = {}
 
@@ -33,7 +48,7 @@ def _run_action(action, *, stdout="", stderr="", returncode=0, **kw):
         return subprocess.CompletedProcess(args=[], returncode=returncode,
                                            stdout=stdout, stderr=stderr)
 
-    with mock.patch.object(openocd_run.subprocess, "run", _fake_run):
+    with _patch_openocd_subprocess(_fake_run):
         rs = openocd_run.run_openocd(
             "openocd-fake", action, board="st-link",
             interface="interface/stlink.cfg", target="target/stm32f1x.cfg",
@@ -132,6 +147,54 @@ class N3SharedContractTests(unittest.TestCase):
 
     def test_marker_present_empty_output_false(self):
         self.assertFalse(openocd_run.marker_present(""))
+
+
+class StubIsolationTests(unittest.TestCase):
+    """F-182 (WB-20260921-03 / GAP-ENV-1) 打桩卫生自证钉。
+
+    打桩必须只作用在 `openocd_run` 的 subprocess 引用上, **不得**劫持全局
+    `subprocess.run` —— 否则打桩窗口内任何第三方 spawn 都被 fake 吞走
+    (WB-20260920-04 里 safe-delete shim 的回收站进程被吞 → 5 例假红)。
+
+    本类不依赖 safe-delete shim 是否在场 (那是外部环境事实), 而是**在窗口内
+    主动跑一次第三方 `subprocess.run`**, 用真实执行的可观测证据判定劫持。
+    """
+
+    def test_patching_does_not_hijack_global_subprocess(self):
+        captured = []
+
+        def _fake_run(cmd, **kwargs):
+            captured.append(list(cmd))
+            return subprocess.CompletedProcess(args=[], returncode=0,
+                                               stdout="FAKE", stderr="")
+
+        probe_argv = [sys.executable, "-c", "pass"]
+        with _patch_openocd_subprocess(_fake_run):
+            # 断言 A: 窗口内第三方 subprocess.run 必须真实执行
+            probe = subprocess.run(probe_argv, capture_output=True, text=True)
+
+        # A-1 返回码: 真跑 `-c pass` → 0
+        with self.subTest(check="A1 rc==0"):
+            self.assertEqual(
+                probe.returncode, 0,
+                f"第三方 subprocess.run 未真实执行: rc={probe.returncode}")
+        # A-2 真实性判据: fake 恒返回 returncode=0 + args=[], 单凭 rc 无法
+        #     判别真假执行 —— 故以 CompletedProcess.args (真跑时回填入参,
+        #     fake 恒为 []) 与 stdout 为判据。
+        with self.subTest(check="A2 args 回填"):
+            self.assertEqual(
+                probe.args, probe_argv,
+                f"第三方 subprocess.run 被 fake 吞走 (args={probe.args!r}, "
+                f"期望 {probe_argv!r})")
+        with self.subTest(check="A2b stdout 真实"):
+            self.assertEqual(
+                probe.stdout, "",
+                f"第三方 subprocess.run 被 fake 吞走 (stdout={probe.stdout!r})")
+        # 断言 B: fake 的捕获序列不得含该第三方调用的 argv
+        with self.subTest(check="B fake 捕获序列隔离"):
+            self.assertNotIn(
+                probe_argv, captured,
+                f"fake 捕获了非目标调用 (全局劫持证据): {captured}")
 
 
 if __name__ == "__main__":
