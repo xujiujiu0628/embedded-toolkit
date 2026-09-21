@@ -18,20 +18,19 @@ F-182 (WB-20260921-03 / GAP-ENV-3): 旧版在用例开头按
 自身承担 (与外部 `sleep` 无关), 该守卫已无存在理由, **删除**;
 skip 数自此与 PATH 无关 (收单口径: 全量 skipped 恒 6)。
 
-F-183 (WB-20260921-04 / T3, GAP-F-9) **阶段一 (钉, 本 commit)**: 本文件的
-打桩仍是 `mock.patch.object(serial_mux.subprocess, "Popen", …)` 与
+F-183 (WB-20260921-04 / T3, GAP-F-9): 本文件的打桩曾用
+`mock.patch.object(serial_mux.subprocess, "Popen", …)` 与
 `mock.patch.object(serial_mux.shutil, "which", …)` —— 而 `serial_mux.subprocess`
 / `serial_mux.shutil` **就是全局模块对象**, 等于改全局 `subprocess.Popen` /
 `shutil.which`: 打桩窗口内一切第三方 spawn / which 都被 fake 吞走
 (GAP-ENV-1 同族; F-182 §三已实证占位进程会递归调回 fake → RecursionError →
-被 start_mux 的 `except Exception` 吞成 start_failed)。
-
-本阶段把打桩入口收敛到**两个唯一改动点** (`_patch_serial_mux_subprocess` /
-`_patch_serial_mux_shutil_which`, 行为与改动前**逐字节等价** —— 旧的行内
-`mock.patch.object(...)` 原样搬进 helper 体内), 并新增 `StubIsolationTests`
-隔离自证钉。**钉必须红** (打桩面当前是全局的); 阶段二把两个 helper 体改为
-**模块引用替换** (SimpleNamespace stub, 显式列全属性、fail-closed) → 转绿。
-既有 mux 生命周期断言语义**零变**。
+被 start_mux 的 `except Exception` 吞成 start_failed)。现按 F-182 T1 样板
+收窄为**模块引用替换** (`_patch_serial_mux_subprocess` /
+`_patch_serial_mux_shutil_which`, stub 属性显式列全、fail-closed), 并补
+`StubIsolationTests` 隔离自证钉 (窗口内真 spawn 第三方进程 + 捕获序列隔离)。
+打桩收窄后全局 `subprocess.Popen` 不再被替换, 故 F-182 那个 import 期抢抓
+真实句柄的 `_REAL_POPEN` **已移除** (由自证钉兜底 —— 若有人把桩改回全局,
+自证钉立即红)。既有 mux 生命周期断言语义**零变**。
 """
 import os
 import shutil
@@ -39,6 +38,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import types
 import unittest
 from unittest import mock
 
@@ -50,31 +50,44 @@ import serial_mux  # noqa: E402
 # F-182: 占位进程用解释器自身长睡 —— 零外部命令依赖 (旧版依赖外部 `sleep`)
 _PLACEHOLDER_CODE = "import time; time.sleep(60)"
 
-# 注意: 下面的用例用 `mock.patch.object(serial_mux.subprocess, "Popen", …)` ——
-# 而 `serial_mux.subprocess` 就是全局 subprocess 模块 (GAP-ENV-1 同族, 见 GAP-F-9),
-# 故必须在 import 期先抓住真实句柄, 否则占位进程会递归调回 fake。
-# F-183 阶段二: 打桩面收窄为模块引用替换后, 本句柄不再必要 (届时移除)。
-_REAL_POPEN = subprocess.Popen
-
 
 def _patch_serial_mux_subprocess(fake_popen):
-    """打桩入口 (唯一改动点) —— **阶段一 = 现状**: 换全局 `subprocess.Popen`。
+    """把打桩面收窄到 `serial_mux` 模块内的 subprocess **引用** (F-183 T3)。
 
-    `serial_mux.subprocess` 是全局 subprocess **模块对象**, 故本式等价于
-    `mock.patch.object(subprocess, "Popen", fake_popen)` —— 打桩窗口内一切
-    第三方 spawn 都会被 fake 吞走 (GAP-ENV-1 / GAP-F-9)。
-    F-183 阶段二将改为替换 `serial_mux` 自己的模块属性 (SimpleNamespace stub)。
+    只换 `serial_mux` 自己的属性: `serial_mux` 内对 subprocess 的调用被换掉,
+    全局 `subprocess.Popen` 原样可跑。stub 显式带上 `serial_mux` 实际消费的
+    全部 subprocess 属性 (现场核实 `scripts/serial_mux.py`):
+
+      · `Popen`          —— :318 / :337 起 serve / mux 子进程
+      · `DEVNULL`        —— :318-319 / :337-338 的 stdout/stderr 目标
+      · `TimeoutExpired` —— :328 `except` 子句求值
+
+    属性集是**收窄**的 → fail-closed: 若 `serial_mux` 将来消费别的 subprocess
+    属性, 测试会直接 `AttributeError` 报出来, 而不是静默放行。
     """
-    return mock.patch.object(serial_mux.subprocess, "Popen", fake_popen)
+    stub = types.SimpleNamespace(
+        Popen=fake_popen,
+        DEVNULL=subprocess.DEVNULL,
+        TimeoutExpired=subprocess.TimeoutExpired,
+    )
+    return mock.patch.object(serial_mux, "subprocess", stub)
 
 
 def _patch_serial_mux_shutil_which(fake_which):
-    """同上 (阶段一 = 现状): 换全局 `shutil.which`。"""
-    return mock.patch.object(serial_mux.shutil, "which", fake_which)
+    """同上: 只换 `serial_mux` 的 shutil 引用。
+
+    `serial_mux` 仅消费 `shutil.which` (:242 `shutil.which("socat")`),
+    故 stub 只给该一个属性 (同样 fail-closed)。
+    """
+    return mock.patch.object(serial_mux, "shutil",
+                             types.SimpleNamespace(which=fake_which))
 
 
 def _spawn_placeholder(**kw):
-    return _REAL_POPEN([sys.executable, "-c", _PLACEHOLDER_CODE], **kw)
+    # F-183 T3: 打桩已收窄到 serial_mux 的模块引用 —— 全局 subprocess.Popen
+    # 不再被替换, 故无需 import 期抢抓真实句柄 (F-182 的 `_REAL_POPEN` 已移除;
+    # 若桩被改回全局, StubIsolationTests 立即红)。
+    return subprocess.Popen([sys.executable, "-c", _PLACEHOLDER_CODE], **kw)
 
 
 def _reap(proc):
@@ -96,6 +109,7 @@ class MuxStartNoLeakTests(unittest.TestCase):
         # 假 serve: 起一个长睡进程 → wait_for_tcp_server 被 monkeypatch 成
         # False (poll 恒 None → 超时 False), 模拟"进程起了但服务没起"的窗口。
         # F-182: 占位进程由解释器自身承担, 无外部 `sleep` 依赖, 无 skip 守卫。
+        # F-183: 打桩面收窄到 serial_mux 的模块引用 (原为全局劫持)。
         calls = {}
 
         def fake_popen(cmd, **kw):
@@ -190,8 +204,8 @@ class StubIsolationTests(unittest.TestCase):
     主动真跑一次第三方调用**, 用可观测证据判定是否被劫持:
 
       · A1/A2/A3 断言第三方进程**真实执行** —— fake 只会抛
-        AssertionError (不可能产出 rc/stdout), 故 rc==0 + stdout 真实 =
-        未被替换;
+        AssertionError (不可能产出 rc/stdout), 故 rc==0 + stdout 与
+        import 期抓的句柄一致 = 未被替换;
       · B 断言桩的**捕获序列不含**该第三方 argv (劫持的直接证据)。
     """
 
@@ -209,9 +223,6 @@ class StubIsolationTests(unittest.TestCase):
         err = None
         try:
             with _patch_serial_mux_subprocess(fake_popen):
-                # 关键: 探针必须走**调用时**的全局查表 `subprocess.Popen`
-                # (不能用 import 期抓下的句柄 —— 那会绕过桩、把劫持藏起来,
-                #  本单阶段一实测: 用句柄时本钉假绿, 改回全局查表即真红)。
                 proc = subprocess.Popen(probe_argv, stdout=subprocess.PIPE,
                                         stderr=subprocess.PIPE)
                 stdout, _stderr = proc.communicate(timeout=30)

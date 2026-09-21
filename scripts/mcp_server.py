@@ -198,7 +198,18 @@ def _validate_param(tool_name: str, p_name: str, p_spec: tuple, value) -> list:
     if reason:
         raise McpToolError(f"{tool_name}.{p_name} 非法: {reason}")
     if not flag:
-        return []
+        # F-183 (WB-20260921-04, GAP-F-7 裁决): `flag is None` 且**非**该工具
+        # stdin 通道的参数 —— 其 CLI 真相是**位置参数** (rm_lookup.py:
+        # `parser.add_argument("query", nargs="?")`), 旧式 `return []` 让 MCP 层
+        # 宣告进 inputSchema 的参数**永不送达** (argv 无该值、无报错)。
+        # 裁决 = 走**位置参数路线**(不发明旗标): 值按位置片段投影, 必 str 化
+        # (F-180 契约同式)。
+        # 前提/边界: 注册表当前唯一命中 `rm_lookup.query`, 故"尾部追加"即正确
+        # 位置; 出现第二个无旗标参数时须重设计位置语义 (登记 GAP-F-12)。
+        # boolean 无旗标者当前不存在 —— 若将来出现, 此处会以 str 值入 argv,
+        # 由形态守卫 (tests/test_mcp_registry_shape.py 的无旗标参数快照钉 +
+        # 位置投影钉) 拦下。
+        return [str(value)]
     if schema_type == "boolean":
         # F-178 (WB-20260920-04, H-1): boolean 参数映射的是 store_true 开关
         # 旗标 —— 只发旗标本身, 绝不把 Python bool 当值塞进 argv。
@@ -244,6 +255,7 @@ def plan_tool_call(tool_name: str, arguments: dict | None) -> dict:
             f"白名单: {', '.join(sorted(tool['params'])) or '(无)'}")
 
     stdin_text = None
+    positional_pieces = []
     stdin_param = tool.get("stdin_param")
     for p_name, p_spec in tool["params"].items():
         if p_name not in arguments:
@@ -256,7 +268,17 @@ def plan_tool_call(tool_name: str, arguments: dict | None) -> dict:
                     f"{tool_name}.{p_name} 超长 ({len(stdin_text)} > "
                     f"{tool['max_stdin_chars']} 字符)")
             continue
+        if p_spec[2] is None:
+            # F-183 (GAP-F-7 裁决): 无旗标片段 = **位置片段** (`_validate_param`
+            # 返 `[str(value)]`)。按**注册顺序**收集, 统一追加到 argv **尾部**
+            # (旗标片段流之后) —— 位置参数与旗标混排时尾部才是 CLI 的位置语义
+            # (`rm_lookup.py --json --recipe I2C GPIOA`), 且末位恒为该参数值。
+            # 当前唯一命中 rm_lookup.query; 多值/选项扩展另设计 (GAP-F-12)。
+            positional_pieces.extend(pieces)
+            continue
         argv.extend(pieces)
+
+    argv.extend(positional_pieces)
 
     missing = [r for r in tool.get("required_params", ()) if r not in arguments]
     if missing:
@@ -307,9 +329,12 @@ def tool_input_schema(tool_name: str) -> dict:
     tool = _TOOL_REGISTRY[tool_name]
     props = {}
     if tool.get("requires_project"):
+        # F-183 (WB-20260921-04, GAP-F-8): 尾逗号曾使 RHS 成 1-元 tuple →
+        # inputSchema 的 `properties.project` 被 JSON 序列化为**数组**而非对象
+        # (对 MCP 客户端即畸形 schema)。RHS 必须是 dict。
         props["project"] = {
             "type": "string",
-            "description": "固件工程根目录 (须含 .workbench/config.json)"},
+            "description": "固件工程根目录 (须含 .workbench/config.json)"}
     for p_name, p_spec in tool["params"].items():
         schema_type, _checker, _flag, desc = p_spec
         props[p_name] = {"type": schema_type, "description": desc}
