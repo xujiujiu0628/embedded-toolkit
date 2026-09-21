@@ -3444,3 +3444,103 @@
   为准，再直写松散 ref + 同步 `packed-refs`（`git cat-file -t` 已实证对象真实）。
   本单**未执行 `git rebase`**（该沙箱可复现毁对象库，先例 E-1）。
 
+## Unreleased — 2026-09-21（F-182 测试健壮性包：subprocess 打桩卫生 + sleep 依赖根治 + MCP 注册表守卫，WB-20260921-03，分支 wb/f182-test-robustness-20260921，未合入）
+
+> 来源：WB-20260920-04 §六 **GAP-ENV-1**（全局 subprocess 打桩劫持，5 例假红）、
+> §六 **GAP-ENV-3**（PATH 缺 coreutils 致 skipped 7↔6 静默漂移）、
+> WB-20260921-01 §6 **GAP-F-3**（无旗标参数值静默丢弃）+ **GAP-F-6**（schema_type 无白名单）。
+> 四笔"防复发"钉**全部落在 `tests/**`**，host 可验、不碰硬件。
+> 基线 `1122803`，全量 **1070 例 OK (skipped=6)**（简报 §3① 判据逐字吻合）；
+> 收单全量 **1080 例**（1070 基线 + 10 新增）。
+
+- **F-182 (test, `tests/test_openocd_n3_marker.py`) 全局 subprocess 打桩劫持（GAP-ENV-1）**:
+  根因：`mock.patch.object(openocd_run.subprocess, "run", …)` —— `openocd_run.subprocess`
+  **就是全局 `subprocess` 模块**，故打桩窗口内**一切** `subprocess.run`（含 safe-delete shim
+  内部 spawn 的回收站进程）都被 fake 吞走（04 报告 §3.2 里 5 例假红即此病）。
+  改法（简报三选一中取"替换模块引用"）：`mock.patch.object(openocd_run, "subprocess",
+  SimpleNamespace(run=…, TimeoutExpired=…, CompletedProcess=…))` —— 只换 `openocd_run`
+  自己的属性，全局 `subprocess.run` 原样可跑；stub 属性集**收窄**故 fail-closed
+  （`openocd_run` 若用到别的 subprocess 属性会直接 `AttributeError` 报出，不静默放行）。
+  **自证钉** `StubIsolationTests`（打桩窗口内主动跑一次第三方
+  `subprocess.run([sys.executable, "-c", "pass"])`）：
+  · 断言 A 真实性 —— rc==0 **且** `CompletedProcess.args` 回填为探针 argv、stdout 为空。
+    ⚠ **判据修正（如实披露）**：简报写的"断言 A：rc==0"**单独不可判别** —— fake 恒返回
+    `returncode=0`，故劫持与未劫持两种情况下 rc 同为 0（实测：修前 A1 绿、A2/A2b 红）。
+    故 A 以 `args`/`stdout` 为真实性判据，rc==0 保留作佐证。
+  · 断言 B —— fake 的**捕获序列**不含探针 argv。
+  **红→绿**：修前 `Ran 11 tests … FAILED (failures=3)`（A2 `args=[] != [python, -c, pass]`
+  / A2b `stdout='FAKE'` / B `[python, -c, pass] unexpectedly found in [...]`）；
+  修后同模块 `Ran 11 tests … OK`。
+  **既有 n3 标记断言（exit 门闩 / 标记序 / 措辞留痕）一字未动、逐条全绿** ——
+  全文件 diff **仅 1 行删除**（即那行 `mock.patch.object(...)`）。
+- **F-182 (test, `tests/test_serial_mux_lifecycle.py`) 静默 skip 的 PATH 漂移（GAP-ENV-3）**:
+  根因：用例开头 `if os.name != "posix" and shutil.which("sleep") is None: self.skipTest(...)`
+  —— PATH 无 coreutils 时**整例静默跳过**，使"全绿"口径在 skipped 7↔6 间漂移而不自知；
+  而用例体**早已**用 `sys.executable -c "import time; time.sleep(30)"` 做占位进程
+  （与外部 `sleep` 无关）—— 该守卫是**无消费者的遗留**。
+  处置：**删除守卫**；占位进程提为模块级 `_spawn_placeholder()`（解释器自身长睡 60s，
+  零外部命令依赖）；收尾提为 `_reap()`（`terminate` → `wait(5)` → 超时兜底 `kill`），
+  不残留孤儿；`_REAL_POPEN` 在 **import 期**捕获真实句柄（规避本文件既有的全局 `Popen`
+  打桩，见 GAP-F-9）；未用 `import shutil` 一并移除。**4 条既有断言逐字未动**。
+
+  **占位进程 PATH 形态对照**（`tests.test_serial_mux_lifecycle` 定向跑）：
+
+  | PATH 形态 | `shutil.which("sleep")` | 修改前 | 修改后 |
+  |---|---|---|---|
+  | 默认沙箱 PATH（无 coreutils、无 Git bash） | `None` | **skipped** | ok（实跑） |
+  | 只 `Git/bin`（有 bash、无 coreutils） | `None` | **skipped** | ok（实跑） |
+  | 简报 §3 前置（`Git/bin` + `Git/usr/bin`） | 命中 | ok | ok |
+
+  **全量收单口径（两形态互证）**：
+  · 简报 §3 前置形态（有 coreutils）：`Ran 1080 tests in …` → **OK (skipped=6)**；
+  · 同 PATH 去掉 `Git/usr/bin`（有 bash、**无 coreutils**，其余环境项保留）：
+    `Ran 1080 tests …` → **OK (skipped=6)**。
+  两形态唯一差异 = coreutils 在场与否 → **skip 数与 coreutils 无关**。
+  另两次"替换 PATH"形态（丢 arm-none-eabi-gcc 目录）为 1080 OK (skipped=7)，
+  二者 skip 明细逐条相同 —— 亦证 coreutils 不参与计数；
+  该 +1 差异归因**环境项（arm-gcc 缺席）**而非本单改动（04/01 报告同款环境归因口径）。
+- **F-182 (test, 新增 `tests/test_mcp_registry_shape.py`) 注册表形态守卫（GAP-F-3 / GAP-F-6）+ GAP-F-8**:
+  **守卫只报警、不修本体**（`scripts/mcp_server.py` **零改动**）。
+  · **无旗标参数快照钉**：`flag is None` 全集快照 =
+    `{(diagnose_hardfault, text), (rm_lookup, query)}`；其中"**非 stdin 通道**"子集
+    （= 唯一会**静默丢值**的危险面）= `{(rm_lookup, query)}`。
+    ⚠ 与简报的差异**如实披露**：T3 文案括注"现场盘点应为 {query, text}"指的是
+    **flag=None 全集**；按同句限定词"非 stdin 通道"过滤后为 `{query}`
+    （`text` 是 `diagnose_hardfault.stdin_param`）。**两个集合都钉** —— 互相覆盖两种读法，
+    判据只强不弱；另加"stdin 通道必须被排除在危险面之外"的反向钉。
+  · **`schema_type` 白名单钉**：全注册表 ∈ `{string, integer, boolean}`；实测 histogram
+    `string 10 / integer 6 / boolean 2`（快照写进测试常量，分布变化即红）；
+    另加"注册表 → MCP inputSchema 的 properties.type"端到端同白名单钉。
+  · **`project` 属性形态钉（GAP-F-8，本单新发现）**：`tool_input_schema` 的
+    `props["project"]` 因**尾逗号**被赋成 **1-元 tuple** → `properties.project` 序列化后是
+    JSON **数组**而非对象（对 MCP 客户端是畸形 schema）。既有钉只断言 key 存在，故未捕捉。
+- **契约变更段（WB-20260921-03）**：
+  - **无对外契约变更**。三文件改动全部落在 `tests/**`；`scripts/**`、`data/**`、
+    `hooks/**`、`machine.json`、`examples/**` **零改动**（`git diff 1122803 -- scripts/`
+    输出为空）。
+  - **无-op 声明**：既有断言**零删除零弱化** —— T1 全文件仅删 1 行（打桩入口）；
+    T2 的删除行为 skip 守卫 / 注释 / 未用 import，**4 条断言逐字未动**。
+  - **测试自身的健壮性提升（非契约）**：T1 打桩面收窄后，"打桩窗口内第三方 spawn 被
+    吞走"这一类**假红**在根上消除；T2 删除守卫后全量 `skipped` 不再随 PATH 漂移。
+- **commit 台账（分支 wb/f182-test-robustness-20260921，未 push）**: 钉 `b9fcc22`
+  （T1 红自证 + T3/T4 守卫）/ 修 `efdfb8d`（T1 打桩收窄 + T2）/ docs 本笔（CHANGELOG 账目）。
+- **新发现（只列不改，GAP-F-7 起编）**：
+  · **GAP-F-7**：`rm_lookup.query` **现值即静默丢弃**（实测
+    `plan_tool_call("rm_lookup", {"query": "GPIOA"})` → argv 内**无** `GPIOA`；
+    `rm_lookup.py` 的 `query` 是**位置参数**，而 MCP 层不追加位置参数）—— 即 GAP-F-3
+    不是"未来风险"而是**当下实证**；本单只加钉、不改 `scripts/`。
+  · **GAP-F-8**：`tool_input_schema` 的 `project` 属性为 1-元 tuple（见上）。
+  · **GAP-F-9**：`tests/test_serial_mux_lifecycle.py` 亦用**全局**打桩
+    （`mock.patch.object(serial_mux.subprocess, "Popen", …)` 与 `serial_mux.shutil.which`）
+    且**文件内无自证钉** —— 与 T1 同病（GAP-ENV-1 同族）；本单未改其打桩方式
+    （超出 T2 声明范围），仅登记。
+- **环境适配披露（本单）**：沙箱**再次复现 E-2**（`git commit` rc=0 且对象 / tree / parent
+  均真实写入，但分支 ref 与 `packed-refs` 不落盘、`git log` 仍读旧值）—— 按 01 报告
+  §7.1 更新口径处置：以 **`git commit` 自身输出的 SHA** 为唯一可信源 → `git cat-file -t`
+  实证对象真实 → 直写松散 ref **并同步 `packed-refs`**（脚本按 LF 写入并断言无 CR）。
+  本单**未执行 `git rebase`**（先例 E-1 可复现毁对象库）。
+  另：会话起始 `git fsck` 报 **25 条 `invalid reflog entry`**（**对象库无
+  missing / broken / bad object**）—— 非简报 §4 事故应急触发条件，如实登记。
+- **全量门禁**: 简报 §3 前置形态 `Ran 1080 tests … OK (skipped=6)`；
+  `ruff check scripts tests` → `All checks passed!`；语法地板钉
+  （py3.10，`tests/test_py_floor.py`）**9 例 OK**。
