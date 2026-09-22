@@ -25817,6 +25817,11 @@
    }
   },
   "RTC": {
+   "clock": {
+    "rcc_register": "BDCR",
+    "rcc_bit": 15,
+    "rcc_bit_name": "RTCEN"
+   },
    "irq": {
     "number": 3,
     "name": "RTC_IRQn",
@@ -25824,6 +25829,8 @@
    }
   },
   "EXTI": {
+   "clock": null,
+   "clock_note": "无独立 RCC 使能位, 随 APB2 常供",
    "irq": {
     "number": 6,
     "name": "EXTI0_IRQn",
@@ -25831,6 +25838,11 @@
    }
   },
   "TIM9": {
+   "clock": {
+    "rcc_register": "APB2ENR",
+    "rcc_bit": 19,
+    "rcc_bit_name": "TIM9EN"
+   },
    "irq": {
     "number": 24,
     "name": "TIM1_BRK_TIM9_IRQn",
@@ -25838,6 +25850,11 @@
    }
   },
   "TIM12": {
+   "clock": {
+    "rcc_register": "APB1ENR",
+    "rcc_bit": 6,
+    "rcc_bit_name": "TIM12EN"
+   },
    "irq": {
     "number": 43,
     "name": "TIM8_BRK_TIM12_IRQn",
@@ -25845,6 +25862,11 @@
    }
   },
   "TIM13": {
+   "clock": {
+    "rcc_register": "APB1ENR",
+    "rcc_bit": 7,
+    "rcc_bit_name": "TIM13EN"
+   },
    "irq": {
     "number": 44,
     "name": "TIM8_UP_TIM13_IRQn",
@@ -25852,6 +25874,11 @@
    }
   },
   "TIM14": {
+   "clock": {
+    "rcc_register": "APB1ENR",
+    "rcc_bit": 8,
+    "rcc_bit_name": "TIM14EN"
+   },
    "irq": {
     "number": 45,
     "name": "TIM8_TRG_COM_TIM14_IRQn",
@@ -25859,6 +25886,11 @@
    }
   },
   "TIM5": {
+   "clock": {
+    "rcc_register": "APB1ENR",
+    "rcc_bit": 3,
+    "rcc_bit_name": "TIM5EN"
+   },
    "irq": {
     "number": 50,
     "name": "TIM5_IRQn",
@@ -25866,6 +25898,11 @@
    }
   },
   "TIM6": {
+   "clock": {
+    "rcc_register": "APB1ENR",
+    "rcc_bit": 4,
+    "rcc_bit_name": "TIM6EN"
+   },
    "irq": {
     "number": 54,
     "name": "TIM6_IRQn",
@@ -25873,6 +25910,11 @@
    }
   },
   "TIM7": {
+   "clock": {
+    "rcc_register": "APB1ENR",
+    "rcc_bit": 5,
+    "rcc_bit_name": "TIM7EN"
+   },
    "irq": {
     "number": 55,
     "name": "TIM7_IRQn",
