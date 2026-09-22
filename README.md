@@ -490,7 +490,8 @@ embedded-toolkit/
   ✅ F-177（初代 esp32 真机双 PASS + S3 回归同日补票双 PASS）· Agent 正门与数据
   信任包 ✅ F-178（MCP boolean argv / cube_usercode backup-restore 事务化 /
   spi `write_burst` 排空读 / verify 证据表 `uart` 键）· MCP 正门收口
-  ✅ F-183（rm_lookup 位置投影 / project schema 尾逗号 / mux 打桩收窄 / GAP-F-11 空值口径）· ref.json 数据面收口
+  ✅ F-183（rm_lookup 位置投影 / project schema 尾逗号 / mux 打桩收窄 / GAP-F-11 空值口径）· 打桩卫生收官
+  ✅ F-184（GAP-F-10 os._exit 收窄 / GAP-F-13 全仓清点与"按需收窄"裁决 / GAP-F-14 消音）· ref.json 数据面收口
   ✅ F-179（GAP-D-5 bus 反转 + RCC 位名类级防线 / `_relationships` IRQ 9 条逐条锚
   CMSIS xg.h / `stm32f103-arch-facts.json` 48 条带出处入册 / f103-dbg 样例解锁）· MCP
   整型参数 argv 收口 ✅ F-180（GAP-F-1：非 boolean 参数值一律 str 化入 argv，6 个整型
