@@ -8,7 +8,7 @@ phase_minus_one 的共同上游: RCC 位写错一个 → 生成代码使能错�
   1. _meta.peripheral_count 与实际外设数一致 (漂移即红);
   2. base 地址落在 F103 外设地址空间 (含 GPIO 的多基地址特殊版式);
   3. relationships.clock: rcc_register ∈ 实测合法集 {APB1ENR, APB2ENR,
-     AHBENR}, rcc_bit ∈ [0,32);
+     AHBENR, BDCR}, rcc_bit ∈ [0,32);
   4. relationships.pins: 端口 ∈ A~E, 引脚号 ∈ [0,15];
   5. relationships.irq: number ∈ [0,67] (F103 系外部 IRQ 上限), 名称符合
      CMSIS *_IRQn 命名;
@@ -32,7 +32,9 @@ from wb_common import TOOLKIT_ROOT  # noqa: E402
 REF_PATH = os.path.join(TOOLKIT_ROOT, "data", "stm32f103-ref.json")
 ISSUES_PATH = os.path.join(TOOLKIT_ROOT, "data", "f103_known_issues.json")
 
-_LEGAL_RCC_REGS = {"APB1ENR", "APB2ENR", "AHBENR"}
+# 合法集 F-186 扩 BDCR: RTC 的使能位 RTCEN 在 BDCR bit15（备份域寄存器），
+# 而 _relationships.RTC 本条即指向它 —— 出处 = 本库 peripherals.RCC.registers.BDCR。
+_LEGAL_RCC_REGS = {"APB1ENR", "APB2ENR", "AHBENR", "BDCR"}
 
 
 def _load(path):

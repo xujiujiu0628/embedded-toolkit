@@ -184,3 +184,118 @@ class CoreBlockPeripheralsTests(unittest.TestCase):
                          "核心块外设集合变化须过设计 (更新快照须附出处)")
         for k in core:
             self.assertEqual(ref["peripherals"][k].get("bus"), "core", k)
+
+
+# ---------------------------------------------------------------------------
+# F-186 (GAP-D-8 结案): `_relationships.clock` 类级反向闸
+#
+# 点位补齐只保证"这 9 条对"；本组钉从 ref.json **自身**的 RCC 使能位名反推
+# 「外设→(寄存器, 位号)」期望，逐条比对已声明的 clock —— 下一个同类录入
+# 矛盾必须被咬（防类不防点）。
+#
+# 现场规则（全部输入来自 ref.json 自身，不引外部记忆）：
+#   * 使能位名 == 外设键 + "EN"（如 APB1ENR bit5 `TIM7EN` ↔ 键 `TIM7`）；
+#   * 反查面 = 四个使能寄存器 {APB1ENR, APB2ENR, AHBENR, BDCR}；
+#   * 位表键含**位区间**形态（如 BDCR "8:9"=RTCSEL，非使能位）→ 只收纯
+#     十进制单点键参与反查，区间键天然排除。
+#
+# 三钉：
+#   1. 反推期望集下的逐条一致性（缺 clock 的外设会被推出期望 → 必红）；
+#   2. 显式豁免：clock is None 的集合快照 == {"EXTI"}，且每条须带
+#      clock_note —— 口径明说，不静默缺席；
+#   3. 全量覆盖："clock 字段缺席"是禁止的第三形态。
+# ---------------------------------------------------------------------------
+
+# 无独立 RCC 使能位的外设（显式豁免，新增条目落入本集须过设计）。
+CLOCK_EXEMPTION_SNAPSHOT = {"EXTI"}
+
+# 反查面：使能寄存器全集（与 test_kb_hygiene._LEGAL_RCC_REGS 同源）
+_ENR_REGISTERS = ("APB1ENR", "APB2ENR", "AHBENR", "BDCR")
+
+
+def _single_bit_names(ref, reg):
+    """RCC 某寄存器的 {位号(int): 位名} —— 仅收纯十进制单点位键。
+
+    位区间键（"8:9"）不是单点使能位，故排除在反查之外。
+    """
+    node = (ref["peripherals"]["RCC"]["registers"].get(reg)) or {}
+    out = {}
+    for key, info in (node.get("bits") or {}).items():
+        if not re.fullmatch(r"\d+", str(key)):
+            continue
+        out[int(key)] = info.get("name") if isinstance(info, dict) else info
+    return out
+
+
+def derive_expected_clock(ref):
+    """从 RCC 使能位名反推 {外设键: (寄存器, 位号, 位名原文)}。
+
+    只对 `_relationships` 里已登记的外设出期望：位名去尾 "EN" 得候选键，
+    候选键命中 `_relationships` 即入册。无对应位名的（如 EXTI）自然不出现
+    —— 它们只能走显式豁免通道。
+    """
+    rels = ref.get("_relationships") or {}
+    expected = {}
+    for reg in _ENR_REGISTERS:
+        for bit, name in sorted(_single_bit_names(ref, reg).items()):
+            stem = str(name)
+            if not stem.endswith("EN"):
+                continue
+            key = stem[:-2]
+            if key in rels and key not in expected:
+                expected[key] = (reg, bit, stem)
+    return expected
+
+
+class RelationshipClockCrosscheckTests(unittest.TestCase):
+    """F-186: `_relationships.clock` 与 RCC 位名的类级互证。"""
+
+    def setUp(self):
+        self.ref = _load_ref()
+        self.rels = self.ref.get("_relationships") or {}
+
+    def test_clock_matches_derived_rcc_bit_owner(self):
+        expected = derive_expected_clock(self.ref)
+        self.assertGreaterEqual(
+            len(expected), 15,
+            "由 RCC 使能位名推得的外设数骤减——推导规则或 RCC 位表被改坏")
+        problems = []
+        for periph in sorted(expected):
+            reg, bit, name = expected[periph]
+            clock = self.rels[periph].get("clock")
+            if not isinstance(clock, dict):
+                problems.append(
+                    "{0}: 缺 clock, 但 {1}[{2}]={3} 明确是本外设使能位".format(
+                        periph, reg, bit, name))
+                continue
+            got = (clock.get("rcc_register"), clock.get("rcc_bit"))
+            if got != (reg, bit):
+                problems.append(
+                    "{0}: clock=({1!r}, {2!r}) 但 {3}[{4}]={5}".format(
+                        periph, got[0], got[1], reg, bit, name))
+            if clock.get("rcc_bit_name") != name:
+                problems.append(
+                    "{0}: rcc_bit_name={1!r} 与 {2}[{3}] 位名 {4!r} 不符".format(
+                        periph, clock.get("rcc_bit_name"), reg, bit, name))
+        self.assertEqual(
+            problems, [],
+            "clock 与 RCC 使能位归属矛盾（GAP-D-8 家族）:\n" + "\n".join(problems))
+
+    def test_clock_exemptions_are_declared_not_silent(self):
+        exempt = sorted(k for k, v in self.rels.items()
+                        if v.get("clock", "MISSING") is None)
+        self.assertEqual(
+            set(exempt), CLOCK_EXEMPTION_SNAPSHOT,
+            "clock 显式豁免集变化（新增 clock:null 条目须过设计）: {0}".format(
+                exempt))
+        bad = sorted(k for k in exempt if not self.rels[k].get("clock_note"))
+        self.assertEqual(
+            bad, [],
+            "豁免条目须带 clock_note 说明口径（不许静默缺席）: {0}".format(bad))
+
+    def test_clock_field_never_absent(self):
+        absent = sorted(k for k, v in self.rels.items() if "clock" not in v)
+        self.assertEqual(
+            absent, [],
+            "`_relationships` 条目缺 clock 字段（第三形态: 既非合法 clock "
+            "也非显式豁免）: {0}".format(absent))
