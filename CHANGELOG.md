@@ -3444,7 +3444,7 @@
   回滚），先 `cat-file -t` 实证对象真实，再直写松散 ref **并同步 `packed-refs`**。
   本单**未执行 `git rebase`**（先例 E-1 可复现毁对象库）。
 
-## Unreleased — 2026-09-21（F-182 测试健壮性包：subprocess 打桩卫生 + sleep 依赖根治 + MCP 注册表守卫，WB-20260921-03，分支 wb/f182-test-robustness-20260921，未合入）
+## Unreleased — 2026-09-21（F-182 测试健壮性包：subprocess 打桩卫生 + sleep 依赖根治 + MCP 注册表守卫，WB-20260921-03，分支 wb/f182-test-robustness-20260921，已合入 e714327+73e9bdf）
 
 > 来源：WB-20260920-04 §六 **GAP-ENV-1**（全局 subprocess 打桩劫持，5 例假红）、
 > §六 **GAP-ENV-3**（PATH 缺 coreutils 致 skipped 7↔6 静默漂移）、
@@ -3544,7 +3544,7 @@
 - **全量门禁**: 简报 §3 前置形态 `Ran 1080 tests … OK (skipped=6)`；
   `ruff check scripts tests` → `All checks passed!`；语法地板钉
   （py3.10，`tests/test_py_floor.py`）**9 例 OK**。
-## Unreleased — 2026-09-21（F-183 MCP 正门双缺陷收口 + 打桩收窄：GAP-F-7 位置投影 / GAP-F-8 schema 尾逗号 / GAP-F-9，WB-20260921-04，分支 wb/f183-mcp-positional-20260921，未合入）
+## Unreleased — 2026-09-21（F-183 MCP 正门双缺陷收口 + 打桩收窄：GAP-F-7 位置投影 / GAP-F-8 schema 尾逗号 / GAP-F-9，WB-20260921-04，分支 wb/f183-mcp-positional-20260921，已合入 836415d+869468a）
 
 > 来源：F-182（WB-20260921-03）报告 §六 **GAP-F-7 (Medium) / GAP-F-8 (Medium) /
 > GAP-F-9 (Low)** 三项新发现。本单按维护者裁决收口前两项，并按 F-182 T1 样板收窄第三项。
@@ -3614,6 +3614,8 @@
   的"尾部"取"旗标片段流之后"（见上 GAP-F-7 ② 理由），Brief 所述"顺序问题尚不存在"在本单
   现场被 `{recipe, query}` 并用证伪（旧式就地 extend 会把位置片段插到 `--recipe` 之前）。
 - **F-183 追补 (2026-09-22, Orchestrator 裁决)**: GAP-F-11 口径统一 —— 无旗标参数**空值不发** (`return [str(value)] if value != "" else []`, 与 F-180 早退同式); 新钉 `FlaglessEmptyValueTests` (空 query → argv 无空串片段/尾部不变); GAP-F-11 结案。
+## Unreleased — 2026-09-22（F-184 serial_mux `os._exit` 打桩收窄：GAP-F-10 闭合，WB-20260922-01，分支 wb/f184-mux-exit-narrow-20260922，已合入 7de836f）
+
 - **F-184 (test, `tests/test_serial_mux_lifecycle.py`) GAP-F-10 全局打桩收窄 · `os._exit` 一处**:
   GAP-F-9 的**同族残余**: `mock.patch.object(serial_mux.os, "_exit", …)` 里的 `serial_mux.os`
   **就是全局 `os` 模块对象**, 等于把**全局** `os._exit` 换掉 —— 打桩窗口内任何第三方
@@ -3649,3 +3651,4 @@
   差异来自基座 commit `869468a`(F-183 GAP-F-11 追补, 新增 `FlaglessEmptyValueTests` 1 例),
   非本单改动所致(`git show --stat 869468a` 实证 +1 例 −0 例)。② 本单自证钉**未真调 `os._exit`**:
   判据等价性由"修前红/修后绿"两态实测保证, 而非由真实 exit 行为保证(红线所限, 如实声明)。
+- **F-184 追补 (2026-09-22, Orchestrator 裁决)**: GAP-F-14 授权顺手收 —— `ReadLoopDeathTraceTests` `open(...).read()` 改 with 上下文 (消 ResourceWarning, 6 例复绿)。GAP-F-13 裁决: **不做批量清扫**, 按"实际咬人才收窄"逐点处理 (SAFE_DELETE=0 环境前置已消除主触发面); `test_mux_alive_probe` 的 `os.name` 全局仿真判**接受现状** (有意平台仿真, 不可等价替代); 余 97 处维持登记态。

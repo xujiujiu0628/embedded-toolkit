@@ -223,7 +223,8 @@ class ReadLoopDeathTraceTests(unittest.TestCase):
                          "读循环死亡必须非零退出 (旧版静默 break)")
         self.assertTrue(os.path.exists(self.marker),
                         f"死亡现场未落盘: {self.marker}")
-        content = open(self.marker, encoding="utf-8").read()
+        with open(self.marker, encoding="utf-8") as _fh:
+            content = _fh.read()
         self.assertIn("device disconnected", content)
 
     def test_normal_stop_does_not_exit_1(self):
