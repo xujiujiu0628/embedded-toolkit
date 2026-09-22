@@ -3666,3 +3666,47 @@
 - **GAP-P-2 (adjudicated-accept)**: `--pclk*` 维持整数 MHz 前提（小数涟漪 BRR/CCR 全链整型算术；
   常用 hclk 均偶数链）；结案。
 - **GAP-F-13 (ratified)**: 用户追认"不批量清扫、按需收窄"与 `os.name` 平台仿真接受现状。
+
+## Unreleased — 2026-09-22（F-186 GAP-D-8 结案：`_relationships.clock` 补齐 8 条 + 合法集扩 BDCR）
+
+- **T1 (test)**: `test_kb_hygiene._LEGAL_RCC_REGS` 增 `BDCR` —— RTC 的使能位
+  `RTCEN` 在 `BDCR` bit15，出处 = 本库 `peripherals.RCC.registers.BDCR`。
+  **判据不变**（`rcc_bit ∈ [0,32)`）；模块 docstring 的合法集原文同步随动。
+- **T2 (data)**: `_relationships` 8 条补 `clock`（RTC / TIM5 / TIM6 / TIM7 /
+  TIM9 / TIM12 / TIM13 / TIM14）。值**一律从 ref.json 自身 RCC 位名反查**得出
+  （禁外部记忆填数），四元组 `外设 → 寄存器 → 位号 → 位名原文`：
+  `RTC→BDCR[15]=RTCEN`、`TIM5→APB1ENR[3]=TIM5EN`、`TIM6→APB1ENR[4]=TIM6EN`、
+  `TIM7→APB1ENR[5]=TIM7EN`、`TIM9→APB2ENR[19]=TIM9EN`、`TIM12→APB1ENR[6]=TIM12EN`、
+  `TIM13→APB1ENR[7]=TIM13EN`、`TIM14→APB1ENR[8]=TIM14EN`。
+  `EXTI` 无独立使能位 → 显式豁免 `clock: null` + `clock_note`（口径明说，
+  不静默缺席）。改法 = **定点文本替换**；`git diff --stat` = 42 insertions(+),
+  0 deletions(-)，零重排（F-185 教训：`json.dumps` 重排造 26k 行 diff 不可审）。
+- **T3 (test)**: `test_ref_bus_crosscheck` 增 `RelationshipClockCrosscheckTests`
+  三钉（防类不防点）：① 由 RCC 使能位名反推期望 `(寄存器, 位号, 位名)` 逐条
+  比对已声明 clock（反查面含 BDCR；位表位区间键 `BDCR "8:9"=RTCSEL` 排除在
+  单点反查外）；② `clock: null` 豁免集快照 == `{EXTI}` 且每条须带 `clock_note`；
+  ③ 全量覆盖 —— "clock 字段缺席"是禁止的第三形态。红态 `Ran 16 / failures=3`
+  （8 条缺 clock + EXTI 未豁免；本单前既有 13 例零波及）→ 补数据后 16/16 绿。
+- **P2 反向闸体检**：反推期望 21 条、**矛盾数 0** —— 既有带 clock 的 13 条
+  （实测口径；简报口述为 12 条）与 T3 新闸**无历史形态冲突**，故未触发停报。
+- **门禁**: 基线 `Ran 1097 tests in 776.652s → OK (skipped=6)` → 终态
+  `Ran 1100 tests in 767.707s → OK (skipped=6)`（**+3 = 本单新增三钉**；
+  skipped 恒 6）；`ruff check tests` → `All checks passed!`；语法地板
+  `tests.test_py_floor` **9 例 OK**。
+- **新登记（只列不改，GAP-F-16 起编；GAP-F-15 由本单预留位占用）**:
+  - **GAP-F-16 (High)**: `scripts/gen_periph.py:982` 的 ENR 归一化
+    （`if not str(reg).endswith("ENR"): reg += "ENR"`）对 `BDCR` 成立 →
+    产出 **`RCC_BDCRENR`**（不存在的宏）落进生成文档，AI 照抄即编译失败。
+    系 F-074 修过的 `RCC_APB1ENRENR` **同族未覆盖面**（F-074 只覆盖了以
+    `ENR` 结尾的族）。本单新数据**激活**了该潜伏路径（此前 `_relationships`
+    无法指向 BDCR）。复现：合成 `_relationships.RTC` 带
+    `clock.rcc_register="BDCR"` 调 `gen_periph.gen_doc("RTC", tmp)` →
+    `- Clock: RCC_BDCRENR bit 15 (RTCEN)`。**`scripts/**` 属本单禁区，未改**，
+    建议维护者裁决（白名单式 `endswith(("ENR","BDCR"))` 或直接信任原值）。
+  - **GAP-F-17 (Low)**: `CHANGELOG.md` 第 6 行与第 8 行 `## Unreleased — 0.6
+    封袋后新账（F-173 起）` **标题重复**，疑为合入残留。本单白名单只许改
+    文末 F-186 节，未动。
+  - **GAP-F-18 (Low)**: RCC 位表**键形态无判据** —— `test_kb_hygiene` 校验
+    `registers.offset` 却未校验 `bits` 的键（现场存在位区间键 `"8:9"`，
+    `BDCR.RTCSEL`）。录入非法键（如 `"0x0F"`、`"1 4"`）无测试拦截，而
+    `gen_periph` 的寄存器摘要表按 `list(bits.values())[:5]` 取值 → 影响可观。
