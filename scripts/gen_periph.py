@@ -1189,6 +1189,12 @@ GPIO 模式 (F-103: 由 --mode choices 强制, 未知模式报错):
                       args.pclk1))
 
     elif args.type == "spi":
+        # F-185 (P-3, WB-20260919-05 审查 M-2 伴生项): 非法 --baud-div 静默回落
+        # /16 违反 F-103 "非法值禁止静默回落默认" 统一纪律 —— 改显式 ERROR→rc=1,
+        # 复用 _emit 的 "/* ERROR" 出口 (机器消费方按退出码判失败)。
+        if args.baud_div not in SPI_BAUD_DIV:
+            _emit("/* ERROR: 非法 --baud-div %r, 合法值: %s */"
+                  % (args.baud_div, sorted(SPI_BAUD_DIV)))
         _emit(gen_spi(args.spi, args.spi_mode, args.nss, args.sck,
                       args.miso, args.mosi, args.baud_div, args.hclk,
                       args.pclk1, args.pclk2))

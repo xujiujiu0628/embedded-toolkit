@@ -16,6 +16,7 @@ peripherals.TIM12/13/14.bus=APB2 而 APB1ENR bits 6/7/8=TIM12/13/14EN。
 前两源=工厂状态文档 GAP-D-5 取证 + 样例侧 f103-tim9-14 注释）。
 """
 import json
+import re
 import os
 import sys
 import unittest
@@ -154,3 +155,32 @@ class IrqNumberUniquenessTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class CoreBlockPeripheralsTests(unittest.TestCase):
+    """F-185 (GAP-D-6 裁决): 核心块外设的 bus 口径 = "core", 且全表 bus 封闭。"""
+
+    CORE_BASE_RE = (0xE0000000, 0xE0100000)
+    # 现场快照 (2026-09-22, F-179 后): 基址落核心块区间的外设
+    CORE_SNAPSHOT = {"NVIC", "SysTick", "DBG"}
+
+    def test_all_peripheral_bus_values_are_closed_set(self):
+        ref = _load_ref()
+        bad = {k: v.get("bus") for k, v in ref["peripherals"].items()
+               if v.get("bus") not in ("APB1", "APB2", "AHB", "core")}
+        self.assertEqual(bad, {}, "存在 bus 取值越界的外设 (F-103 口径禁止敷衍值): %r" % bad)
+
+    def test_core_block_peripherals_declare_core_bus(self):
+        ref = _load_ref()
+        lo, hi = self.CORE_BASE_RE
+        core = set()
+        for k, v in ref["peripherals"].items():
+            base = v.get("base")
+            # 仅纯十六进制形态参与判定; 多实例串 (如 GPIO "A:0x.. B:0x..") 非核心块
+            if isinstance(base, str) and re.fullmatch(r"0x[0-9A-Fa-f]+", base):
+                if lo <= int(base, 16) < hi:
+                    core.add(k)
+        self.assertEqual(core, self.CORE_SNAPSHOT,
+                         "核心块外设集合变化须过设计 (更新快照须附出处)")
+        for k in core:
+            self.assertEqual(ref["peripherals"][k].get("bus"), "core", k)
