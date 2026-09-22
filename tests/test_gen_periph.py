@@ -20,6 +20,7 @@ import io
 import json
 import os
 import shutil
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -632,3 +633,27 @@ class MainCliDispatchTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+class BaudDivValidationTests(unittest.TestCase):
+    """F-185 (P-3): 非法 --baud-div 禁止静默回落 /16, 必须 ERROR→rc=1
+    (F-103 统一纪律; 合法集 {2,4,...,256} 边界各钉一例)。"""
+
+    def _run(self, div):
+        return subprocess.run(
+            [sys.executable, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+             "scripts", "gen_periph.py"),
+             "--type", "spi", "--sck", "PA5", "--miso", "PA6",
+             "--mosi", "PA7", "--nss", "PA4", "--baud-div", str(div)],
+            capture_output=True, text=True, encoding="utf-8",
+            errors="replace", timeout=60)
+
+    def test_illegal_div_exits_one_with_error(self):
+        r = self._run(3)
+        self.assertEqual(r.returncode, 1, r.stdout[-200:])
+        self.assertIn("ERROR", r.stdout, "须走 /* ERROR */ 出口 (机器按 rc 判)")
+
+    def test_legal_div_bounds_still_zero(self):
+        for div in (2, 256):
+            with self.subTest(div=div):
+                r = self._run(div)
+                self.assertEqual(r.returncode, 0, r.stdout[-200:])

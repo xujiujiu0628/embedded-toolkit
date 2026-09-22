@@ -2070,6 +2070,7 @@
   },
   "NVIC": {
    "base": "0xE000E100",
+   "bus": "core",
    "desc": "Nested Vectored Interrupt Controller",
    "registers": {
     "ISER": {
@@ -2129,6 +2130,7 @@
   },
   "SysTick": {
    "base": "0xE000E010",
+   "bus": "core",
    "desc": "24-bit system tick timer (Cortex-M3 core)",
    "registers": {
     "CTRL": {
@@ -9089,7 +9091,7 @@
   },
   "DBG": {
    "base": "0xE0042000",
-   "bus": "?",
+   "bus": "core",
    "desc": "Debug support",
    "registers": {
     "IDCODE": {

@@ -3652,3 +3652,17 @@
   非本单改动所致(`git show --stat 869468a` 实证 +1 例 −0 例)。② 本单自证钉**未真调 `os._exit`**:
   判据等价性由"修前红/修后绿"两态实测保证, 而非由真实 exit 行为保证(红线所限, 如实声明)。
 - **F-184 追补 (2026-09-22, Orchestrator 裁决)**: GAP-F-14 授权顺手收 —— `ReadLoopDeathTraceTests` `open(...).read()` 改 with 上下文 (消 ResourceWarning, 6 例复绿)。GAP-F-13 裁决: **不做批量清扫**, 按"实际咬人才收窄"逐点处理 (SAFE_DELETE=0 环境前置已消除主触发面); `test_mux_alive_probe` 的 `os.name` 全局仿真判**接受现状** (有意平台仿真, 不可等价替代); 余 97 处维持登记态。
+
+## Unreleased — 2026-09-22（F-185 拍板批落地：GAP-P-1/2 接受结案 · P-3/D-6 修复 · F-13 追认，Orchestrator 本地）
+
+- **GAP-P-3 (fix, gen_periph)**: 非法 `--baud-div` 由静默回落 /16 改为 `/* ERROR */`→rc=1
+  （F-103 统一纪律补漏；合法边界 2/256 零回归钉 + 非法 3 必红钉落 `test_gen_periph.py`）。
+- **GAP-D-6 (data+test)**: 核心块三外设 bus 口径归一 `"core"`（NVIC/SysTick 补键、DBG `"?"`→`"core"`），
+  `test_ref_bus_crosscheck.py` 增类级规则：全表 bus 封闭集 {APB1,APB2,AHB,core} + 核心块
+  (基址 0xE0000000–0xE0100000 纯十六进制形态) 外设集快照 {NVIC,SysTick,DBG} 与 bus=="core" 互证；
+  多实例 base 串 (GPIO "A:0x.. B:..") 显式跳过核心判定。
+- **GAP-P-1 (adjudicated-accept)**: TIM1 内核×pclk2 的 ×2 耦合不建模——与 APB1 同款"显式分频值
+  推不出分频器原值"的物理限制，逃生门 `--tim-clk`+前提注记已在；结案。
+- **GAP-P-2 (adjudicated-accept)**: `--pclk*` 维持整数 MHz 前提（小数涟漪 BRR/CCR 全链整型算术；
+  常用 hclk 均偶数链）；结案。
+- **GAP-F-13 (ratified)**: 用户追认"不批量清扫、按需收窄"与 `os.name` 平台仿真接受现状。
