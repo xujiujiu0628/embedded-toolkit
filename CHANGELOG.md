@@ -3710,3 +3710,12 @@
     `registers.offset` 却未校验 `bits` 的键（现场存在位区间键 `"8:9"`，
     `BDCR.RTCSEL`）。录入非法键（如 `"0x0F"`、`"1 4"`）无测试拦截，而
     `gen_periph` 的寄存器摘要表按 `list(bits.values())[:5]` 取值 → 影响可观。
+
+## Unreleased — 2026-09-22（F-187 gen_doc BDCR 宏名修复：GAP-F-16 闭合，Orchestrator 本地）
+
+- **F-187 (fix, gen_periph)**: F-074 的 clock 宏名归一化在 `BDCR` 上破口（补出
+  `RCC_BDCRENR` 不存在的宏），由 F-186 的 RTC clock 数据激活（GAP-F-16，
+  WB-20260922-02 取证含合成复现）。根治 = 以 KB 自身 `RCC.registers` 键表为事实源:
+  表内寄存器名原样信任，仅"非表内且不以 ENR 结尾"的词干补 ENR（F-074 防御意图保留）。
+  钉 2 例: `GenDocClockMacroTests`（RTC→RCC_BDCR bit 15 且无 BDCRENR / TIM5→RCC_APB1ENR 路径不变）。
+- **GAP-F-17/F-18**: 追认登记态（CHANGELOG 标题重复与 RCC 位表键形态判据缺位），不立项。

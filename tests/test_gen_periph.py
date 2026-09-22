@@ -657,3 +657,31 @@ class BaudDivValidationTests(unittest.TestCase):
             with self.subTest(div=div):
                 r = self._run(div)
                 self.assertEqual(r.returncode, 0, r.stdout[-200:])
+
+class GenDocClockMacroTests(unittest.TestCase):
+    """F-187 (GAP-F-16): gen_doc 的 Clock 行宏名必须真实存在——
+    BDCR 不得被拼成 RCC_BDCRENR (F-074 同族未覆盖面, F-186 新数据激活)。"""
+
+    def _doc(self, name):
+        sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(
+            os.path.abspath(__file__))), "scripts"))
+        import gen_periph
+        with tempfile.TemporaryDirectory() as td:
+            ret = gen_periph.gen_doc(name, td)
+            if not ret.startswith("Error"):
+                import glob
+                md = [f for f in glob.glob(os.path.join(td, "*.md"))]
+                self.assertEqual(len(md), 1, ret)
+                with open(md[0], encoding="utf-8") as fh:
+                    return fh.read()
+        return ret
+
+    def test_bdc_clock_macro_not_enr_mangled(self):
+        doc = self._doc("RTC")
+        self.assertIn("RCC_BDCR bit 15", doc, doc[-400:])
+        self.assertNotIn("BDCRENR", doc, "拼出不存在的宏 (GAP-F-16 回潮)")
+
+    def test_enr_register_path_preserved(self):
+        doc = self._doc("TIM5")
+        self.assertIn("RCC_APB1ENR bit 3", doc, doc[-400:])
+        self.assertNotIn("APB1ENRENR", doc)
