@@ -978,8 +978,15 @@ def gen_doc(periph_name: str, out_dir: str = "") -> str:
             # 实测全表 55 外设无一例外), 旧拼接再补 ENR 会产出 RCC_APB1ENRENR
             # 这种不存在的宏, AI 照抄进 C 代码即编译失败。防御式归一化:
             # 未来 KB 条目若只写 "APB1" 也能拼出合法宏名。
-            reg = clock_info.get('rcc_register', '?')
-            if not str(reg).endswith("ENR"):
+            reg = str(clock_info.get('rcc_register', '?'))
+            # F-187 (GAP-F-16, WB-20260922-02 取证): F-074 的"补 ENR"归一化隐含
+            # "寄存器名要么以 ENR 结尾要么是可补后缀的词干"前提, BDCR 破口——
+            # "BDCR" 补出 RCC_BDCRENR 这种不存在的宏 (F-074 同族未覆盖面)。
+            # 根治 = 以 KB 自身 RCC.registers 键表为事实源: 表内寄存器名(BDCR/CSR/
+            # CIR/各ENR)一律原样信任; 仅"非表内且不以 ENR 结尾"的词干才补 ENR
+            # (保留 F-074 对 "APB1" 形态的防御意图)。
+            _rcc_regs = ref.get("peripherals", {}).get("RCC", {}).get("registers", {})
+            if not reg.endswith("ENR") and reg not in _rcc_regs:
                 reg = f"{reg}ENR"
             deps.append(f"- Clock: RCC_{reg} bit {clock_info.get('rcc_bit', '?')} ({clock_info.get('rcc_bit_name', '?')})")
         pins = rel_data.get("pins", {})
