@@ -176,18 +176,26 @@ class PhysicalGateEspGateTests(_MainFlowHarness):
         return result, popen
 
     def test_esp_run_skips_physical_gate(self):
+        # F-190/T3 随动: 本类原用 capture_only/builder_only/flash_only 三种
+        # 单标记混配夹具驱动主流程——GAP-F-19 裁定混配 = fail-fast 对象
+        # (在 _prepare_context 即 exit 1, 夹具不再可达管线), 该保护面已由
+        # test_esp_config_failfast.MixedConfigFailFastTests 钉死 (更强:
+        # 任何动作之前退 1)。此处改用三键齐的合法 ESP 变体, 断言实质
+        # (ESP 运行 + enable=true → Popen 零调用 + skipped+reason) 原样保留。
         esp_full = dict(ESP_CONFIG, physical_gate={"enable": True})
-        capture_only = {"toolkit_min_version": "0.1",
-                        "capture": {"backend": "uart", "port": "COM3",
-                                    "settle_sec": 0.0, "duration_sec": 15},
-                        "physical_gate": {"enable": True}}
-        builder_only = {"toolkit_min_version": "0.1", "builder": "idf",
-                        "idf": {"build_timeout": 900},
-                        "physical_gate": {"enable": True}}
-        flash_only = {"toolkit_min_version": "0.1",
-                      "flash": {"backend": "esptool", "port": "COM3"},
-                      "physical_gate": {"enable": True}}
-        for cfg in (esp_full, capture_only, builder_only, flash_only):
+        esp_min = {"toolkit_min_version": "0.1",
+                   "builder": "idf", "idf": {"build_timeout": 900},
+                   "flash": {"backend": "esptool", "port": "COM9"},
+                   "capture": {"backend": "uart", "port": "COM9",
+                               "settle_sec": 0.0, "duration_sec": 15},
+                   "physical_gate": {"enable": True}}
+        esp_no_baud = {"toolkit_min_version": "0.1",
+                       "builder": "idf",
+                       "flash": {"backend": "esptool", "port": "COM5"},
+                       "capture": {"backend": "uart", "port": "COM5",
+                                   "duration_sec": 15},
+                       "physical_gate": {"enable": True}}
+        for cfg in (esp_full, esp_min, esp_no_baud):
             with self.subTest(cfg=cfg):
                 result, popen = self._run_with_popen_guard(cfg)
                 pg = result["steps"]["physical_gate"]
