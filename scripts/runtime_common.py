@@ -371,6 +371,28 @@ def update_state_entry(category: str, record: dict, workspace: str | None = None
     }
 
 
+# ── ESP 后端判据 (F-190/M-1: 三标记 OR 单一事实源) ─────────────────────
+# 原 verify.py 私有 _esp_backend_mode 上收: verify import 再导出 (F-057
+# 形态, 调用面不变), release G0.5 闸同源消费——两份 OR 逻辑副本即分层违例
+# (test_f190_release_chain.T2SingleSourceTests 钉 identity)。
+
+def esp_backend_mode(config) -> bool:
+    """F-174/I-1 (终审#2): ESP 后端判据——OpenOCD/ST-Link 专属动作的闸根。
+
+    builder=idf / flash.backend=esptool / capture.backend=uart 任一在场
+    即为 ESP 运行: post_reset 与 hardfault 层 2 都是占 ST-Link 的 Cortex-M
+    动作, 必须整体抑制。三标记 OR 而非 AND: 混配 (漏写其一) 时宁可停
+    Cortex 动作, 也不能拿 ESP 目标去跑 OpenOCD。"""
+    cfg = config or {}
+    if cfg.get("builder") == "idf":
+        return True
+    if (cfg.get("flash") or {}).get("backend") == "esptool":
+        return True
+    if (cfg.get("capture") or {}).get("backend") == "uart":
+        return True
+    return False
+
+
 # ── 工程配置读写族 (F-029 T5) ──────────────────────────────────────
 # 路径策略实测一致 (ws/.workbench/config.json)、读段/读改写体同源 → 上提规范版,
 # runtime 侧退为薄壳 (段名/skill 参数、values=None 语义、返回形态按族保留 —

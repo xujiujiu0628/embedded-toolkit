@@ -23,8 +23,22 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from wb_common import (TOOLKIT_ROOT, atomic_write_json, find_project_root,  # noqa: E402
                        load_machine, sha256_file, toolkit_version)
 from openocd_runtime import swd_probe  # noqa: E402  (F-041: 下沉共享层, doctor 与 G0.5 同源)
+from runtime_common import esp_backend_mode, load_json_file  # noqa: E402  (F-190/M-1: 后端判据单一事实源; config 只读窥视)
 
 VERIFY = os.path.join(TOOLKIT_ROOT, "scripts", "verify.py")
+
+# F-190/M-1: G0.5 swd_probe 经 OpenOCD 探 ST-Link, 语义仅 Cortex-M — ESP 模式
+# 步骤抑制并落可机检 skipped 痕 (status/reason 形态对齐 F-188 N-4 /
+# F-150 sim skip)。run_gates 与 build_record 共用同一常量。
+_G05_ESP_SKIP_REASON = ("F-190/M-1 ESP 后端: G0.5 swd_probe 经 OpenOCD 探 "
+                        "ST-Link, 不在 ESP 链路 (F-188/N-4 同构), 步骤抑制")
+
+
+def _project_config(ws):
+    """工程 config 只读窥视 (release 主流程此前不读 config)。缺失/损坏 →
+    {}: 按 STM32 缺省语义走原 G0.5 (与修前逐字节同); 损坏 config 会在
+    G1 verify 内 fail-closed, 不在此处扩权。"""
+    return load_json_file(os.path.join(ws, ".workbench", "config.json"))
 
 
 def _git(args_, cwd):
@@ -104,9 +118,17 @@ def run_gates(ws, tag, allow_xfail, timeout, openocd_exe,
     errs = g0_checks(ws, tag)
     if errs:
         return False, "G0 失败:\n  " + "\n  ".join(errs), {}
-    ok, msg = swd_probe(openocd_exe)
-    if not ok:
-        return False, f"G0.5 SWD 预检失败 (环境未备?): {msg}", {}
+    # F-190/M-1: G0.5 入 ESP 后端闸——ESP 模式不执行 swd_probe (否则无
+    # ST-Link 时被与目标族无关的预检拦死 / 有 ST-Link 时探错目标放行),
+    # 放行 + skipped 痕随 ctx 入档; STM32 模式逐字节不变。
+    is_esp = esp_backend_mode(_project_config(ws))
+    g0_5 = None
+    if is_esp:
+        g0_5 = {"status": "skipped", "reason": _G05_ESP_SKIP_REASON}
+    else:
+        ok, msg = swd_probe(openocd_exe)
+        if not ok:
+            return False, f"G0.5 SWD 预检失败 (环境未备?): {msg}", {}
     res = gate1(ws, timeout)
     if res.get("status") != "ok":
         return False, (f"G1 verify 未绿: {res.get('error', res.get('status'))}\n"
@@ -134,7 +156,8 @@ def run_gates(ws, tag, allow_xfail, timeout, openocd_exe,
     return True, "G0~G2 全过", {"verify_result": res, "results": results,
                                 "waived": waived, "evidence": evidence,
                                 "evidence_waiver": bool(
-                                    evidence != "hardware_validated")}
+                                    evidence != "hardware_validated"),
+                                **({"g0_5": g0_5} if g0_5 else {})}
 
 
 # F-146: 各证据等级的 fidelity 边界声明 (AEL claim+fidelity 的落档形态) —
@@ -167,6 +190,10 @@ def build_record(ws, tag, results, waived, contracts=None, evidence="static",
                 arts = json.load(f).get("last_build", {}).get("artifacts", {})
         except Exception:
             arts = {}
+    # F-190/M-1: 记录面同源分流——ESP 模式落 G0.5 skipped 痕, tools.gcc
+    # 不探 arm-none-eabi-gcc (STM32 专属工具链), 记 not_applicable;
+    # IDF 版本采集系真机/环境依赖, 不在本单范围 (遗留登记)。
+    is_esp = esp_backend_mode(_project_config(ws))
     for key in ("hex_file", "elf_file"):
         rel = arts.get(key, "")
         abs_p = os.path.join(ws, rel) if rel else ""
@@ -175,7 +202,7 @@ def build_record(ws, tag, results, waived, contracts=None, evidence="static",
                 "path": rel, "sha256": sha256_file(abs_p)}
     _, head, _ = _git(["rev-parse", "HEAD"], ws)
     _, branch, _ = _git(["rev-parse", "--abbrev-ref", "HEAD"], ws)
-    return {
+    record = {
         "tag": tag,
         "git_head": head,
         "branch": branch or "?",
@@ -198,8 +225,12 @@ def build_record(ws, tag, results, waived, contracts=None, evidence="static",
         **({"evidence_waiver": True} if evidence_waiver else {}),
         "tools": {"toolkit": toolkit_version(),
                   "python": sys.version.split()[0],
-                  "gcc": _gcc_version()},
+                  "gcc": ("not_applicable(esp-idf project)" if is_esp
+                          else _gcc_version())},
     }
+    if is_esp:
+        record["g0_5"] = {"status": "skipped", "reason": _G05_ESP_SKIP_REASON}
+    return record
 
 
 def finalize(ws, tag, record):
@@ -292,6 +323,7 @@ def main():
               f"xfail_waived={record['xfail_waived']}, "
               f"evidence={record['evidence']}"
               + (", evidence_waiver=True" if record.get("evidence_waiver") else "")
+              + (f", g0_5={record['g0_5']['status']}" if "g0_5" in record else "")
               + f", artifacts={list(record['artifacts'])}")
         sys.exit(0)
 
