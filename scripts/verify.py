@@ -50,6 +50,7 @@ def _openocd_exe() -> str:
 from runtime_common import now_iso, output_json  # noqa: E402  (F-041: doctor --json 复用共享层; F-157: now_iso 收编)
 from runtime_common import OpenocdCfgError, resolve_openocd_cfg  # noqa: E402  (WB-20260919-06: cfg 组装单一事实源)
 from runtime_common import (esp_backend_mode as _esp_backend_mode)  # noqa: E402  (F-190/M-1: 三标记 OR 上收单一事实源, F-057 再导出形态——release G0.5 同源消费)
+from runtime_common import esp_backend_config_errors  # noqa: E402  (F-190/T3: GAP-F-19 混配 fail-fast 规则单一事实源)
 from openocd_runtime import reset_target, swd_probe  # noqa: E402,F401  (F-041: SWD 探测与 release G0.5 同源; F-129: 判定后复位)
 from openocd_run import ACTION_DONE_CMD, marker_present  # noqa: E402  (F-163: N-3 标记共享件)
 import hw_lease  # noqa: E402  (F-145: flash+capture 段机器级设备锁)
@@ -572,6 +573,21 @@ def _prepare_context(args):
         config = load_config(WORKSPACE)
     except ConfigError as e:
         print(f"错误: 工程配置非法: {e}", file=sys.stderr)
+        sys.exit(1)
+    # GAP-F-19 (F-190/T3, 维护者裁定 fail-fast): 三标记任一在场而三键不齐/
+    # 取值非法的混配工程, 在任何构建/烧录动作之前显式报错退 1——宁可停也
+    # 不许拿缺省派发面 (openocd/semihosting) 去 ESP 工程上跑 (F-188"只列
+    # 不改"面的收口)。规则本体在 runtime_common (单一事实源)。
+    problems = esp_backend_config_errors(config)
+    if problems:
+        print("错误: ESP 后端配置混配 (GAP-F-19 fail-fast): 检出 ESP 标记, "
+              "但 builder / flash.backend / capture.backend 三键必须齐且"
+              "取值在 ESP 合法集:", file=sys.stderr)
+        for p in problems:
+            print("  - " + p, file=sys.stderr)
+        print('  正确配法示例: {"builder": "idf", "flash": {"backend": '
+              '"esptool", "port": "COM3"}, "capture": {"backend": "uart", '
+              '"port": "COM3"}}', file=sys.stderr)
         sys.exit(1)
     builder = config.get("builder", "gcc")   # 构建后端 (gcc | keil[legacy], 2026-08-28 默认翻转为 gcc)
 

@@ -393,6 +393,38 @@ def esp_backend_mode(config) -> bool:
     return False
 
 
+def esp_backend_config_errors(config) -> list:
+    """GAP-F-19 (维护者裁定 fail-fast, F-190/T3): ESP 混配配置校验。
+
+    规则: 三标记任一在场 (判定根 = esp_backend_mode, 不变) → builder、
+    flash.backend、capture.backend 三键必须齐且取值在 ESP 合法集
+    (builder=idf / flash.backend=esptool / capture.backend∈{uart})。
+    合规返回 []; 违规返回逐条人读项 (点名键 + 当前值——键缺席时报缺省
+    派发值 + 正确取值), 调用方须在任何构建/烧录动作之前显式报错退出。
+    无标记 (STM32 缺省) 恒 []——缺省路径零触碰。"""
+
+    def _current(value, default):
+        return repr(value) if value is not None else "缺省 %r" % default
+
+    cfg = config or {}
+    if not esp_backend_mode(cfg):
+        return []
+    errs = []
+    builder = cfg.get("builder")
+    if builder != "idf":
+        errs.append('builder: 当前 %s — 需 "builder": "idf"'
+                    % _current(builder, "gcc"))
+    flash_backend = (cfg.get("flash") or {}).get("backend")
+    if flash_backend != "esptool":
+        errs.append('flash.backend: 当前 %s — 需 "flash": {"backend": "esptool"}'
+                    % _current(flash_backend, "openocd"))
+    capture_backend = (cfg.get("capture") or {}).get("backend")
+    if capture_backend != "uart":
+        errs.append('capture.backend: 当前 %s — 需 "capture": {"backend": "uart"}'
+                    % _current(capture_backend, "semihosting"))
+    return errs
+
+
 # ── 工程配置读写族 (F-029 T5) ──────────────────────────────────────
 # 路径策略实测一致 (ws/.workbench/config.json)、读段/读改写体同源 → 上提规范版,
 # runtime 侧退为薄壳 (段名/skill 参数、values=None 语义、返回形态按族保留 —
