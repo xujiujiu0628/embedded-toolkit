@@ -455,6 +455,12 @@ embedded-toolkit/
   兜底文案按 `_esp_backend_mode` 分流（ESP 口径=串口/波特率/复位窗，manifest/legacy
   两处）· N-4 `physical_gate` 入后端闸（ESP 下 skipped+reason，闸在 verify.py 调用
   侧）；F-174a/F-174b 两笔"可留"维持原判。详情：CHANGELOG F-188 节。
+  **2026-09-26 订正（✅ F-190，WB-20260926-01）**：F-174a 已随 H-1 闭合——
+  `_write_last_build` 改调 `runtime_common.update_state_entry`，实读源码核实其锁
+  语义覆盖原判四病中的三病（无锁 RMW→持锁读改写 F-127 · truncate 非原子→.tmp+
+  os.replace 原子替换 F-020 · 损坏清空→.corrupt 隔离 F-019），第四病（嵌套
+  `artifacts` 键缺失=H-1 病灶）同单修除；F-174b（bin glob 双 OTA 分区表选错展示
+  值）"可留"维持原判。详情：CHANGELOG F-190 节。
 - **GAP-F-19（2026-09-25 登记，暂缓）**：capture/flash 两处 backend 派发缺省值
   （`cap_backend` 缺省 semihosting、`flash.backend` 缺省 openocd）不受
   `_esp_backend_mode` 约束——builder=idf 而漏配 backend 键的混配工程仍会走
@@ -462,6 +468,12 @@ embedded-toolkit/
   F-007 守卫在烧录前拦截无 hex 场景），非紧急。裁定=暂缓登记，
   **唤起条件 = WB-20260925-01 整批复审报告落账**（若带出更多同类缺省派发面，
   合并一次裁决收口票；否则单独立项）。出处：CHANGELOG F-188 节"只列不改"。
+  **2026-09-26 收口（✅ F-190，WB-20260926-01）**：维护者裁定 fail-fast 落地——
+  三标记任一在场而 builder / flash.backend / capture.backend 三键不齐或取值非法，
+  verify 在任何构建/烧录动作之前 ERROR→exit 1（规则本体
+  `runtime_common.esp_backend_config_errors`，与 `esp_backend_mode` 同源单一事实）；
+  复审带出的 release G0.5 swd_probe 漏闸（M-1）同票合并收口。四存量 ESP 工程
+  （esp32-hello / esp32s3-hello / s3-voice / cam-eye）三键全显式，实跑零存量破坏。
 - **ref.json 数据面 GAP-D 收口状态（F-179，WB-20260920-05）**
   影响：`data/stm32f103-ref.json` 的 `bus` 字段曾与外设 RCC 使能位归属相反
   （TIM9 记 APB1、TIM12/13/14 记 APB2）；`_relationships` 的 IRQ 号只覆盖 12 个外设；

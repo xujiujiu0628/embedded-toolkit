@@ -3753,3 +3753,90 @@
   - **GAP-F-19 登记（维护者裁定 2026-09-25）**: 上述"只列不改"面正式入账
     GAP-F-19，处置=暂缓，唤起条件=WB-20260925-01 整批复审报告落账（同类面
     合并裁决）。README 已知遗留同步登记。
+
+## Unreleased — 2026-09-26（F-190 ESP 发布链收口：H-1 artifacts 错配 + M-1 G0.5 无闸 + GAP-F-19 fail-fast + _gcc_version 面，WB-20260926-01）
+
+> 基线 afe6bf0（F-188 后），分支 wb/f190-esp-release-chain-20260926，永不 push。
+> F 号注记：F-189 预留给补源单（WB-20260925-03），本单按开单序入册 F-190。
+
+- **F-190 T1 / H-1 (fix, esp_runtime)**: ESP 发布链在 release 落记录处 100% 中断
+  的病根修除——`_write_last_build` 只写平铺键而 `release.build_record` 只认嵌套
+  `last_build.artifacts`（release.py:167），G0~G2 全绿后恒死于 "缺 hex 哈希证据"
+  硬拒（WB-20260925-01 报告 §一 H-1）。修法 = 改调
+  `runtime_common.update_state_entry`，写入形态与 `gcc_build.py:265-281` 逐键对齐：
+  **嵌套 artifacts + 平铺键双形态**（平铺键名 hex_file/bin_file/elf_file 不变，
+  verify.py:805 --no-build 回读回归钉护）；hex_file 键复用 .bin 路径（F-174 既有
+  约定）；sha256 仍由 release 现场计算（hex=bin、elf 各自哈希），state 只落路径
+  不落哈希，同 gcc_build 现场，零自创。发布链端到端钉：合成产物 fixture →
+  `build_record` 产物含 {"hex": {"sha256": ...}}；release 主流程 mock 断到
+  "hex 在场放行"（dry-run，不打真 tag）。
+  - **F-174a 随此闭合（锁证据=实读源码）**：`update_state_entry` 持
+    `state_write_lock`（进程内 threading.Lock + 跨进程 O_CREAT|O_EXCL lockfile
+    + 陈旧回收 + finally 删锁，F-127）→ 无锁 RMW 病闭合；`save_json_file`
+    .tmp + os.replace 原子替换（F-020，newline=LF F-157）→ truncate 非原子病闭合；
+    `load_workspace_state_for_update` 损坏 .corrupt 隔离重建（F-019）→ 损坏清空
+    病闭合；第四病（artifacts 键缺失=H-1 本体）同 commit 修除。旧行为差异如实
+    登记：state 条目时间戳键 "ts"→"timestamp"（now_iso 带时区），全仓无 "ts"
+    消费方（grep 取证）。
+- **F-190 T2 / M-1 (fix, release+runtime_common)**: release.py G0.5 `swd_probe`
+  无后端闸修除（复审带出的 verify.py 之外第五个 OpenOCD 专属动作）——
+  `_esp_backend_mode` 三标记 OR 判据上收 `runtime_common.esp_backend_mode`
+  **单一事实源**，verify.py 改 import+再导出（F-057 形态，调用面不变，
+  T2SingleSourceTests 钉 identity 防 OR 副本）；release 消费同一原件：
+  ESP 模式 → swd_probe 不执行，放行 + 可机检 skipped 痕（ctx 与发布记录
+  `g0_5={status,reason}`，形态对齐 F-188 N-4 / F-150 sim skip，dry-run 输出同步
+  带 g0_5=skipped）；STM32 模式逐字节不变（双向钉：照探一次/失败拦死文案原样/
+  记录无 g0_5 键）。
+  - **_gcc_version 同面分流**：ESP 模式不探测 arm-none-eabi-gcc，记录
+    tools.gcc = "not_applicable(esp-idf project)"；IDF 版本采集系真机/环境依赖
+    出范围，登记遗留（见只列不改）。
+- **F-190 T3 / GAP-F-19 (fix, verify+runtime_common)**: 混配 fail-fast 落地
+  （维护者裁定 2026-09-25，唤起条件=WB-20260925-01 报告落账，本单即收口票）。
+  规则：三标记任一在场（判定根=esp_backend_mode，不变）→ builder、
+  flash.backend、capture.backend 三键必须齐且取值在 ESP 合法集（builder=idf /
+  flash.backend=esptool / capture.backend∈{uart}），否则 verify 在任何构建/烧录
+  动作之前 ERROR→exit 1，文案逐条点名键+当前值（键缺席报缺省派发值）+正确配法
+  示例。规则本体 `runtime_common.esp_backend_config_errors`（与判据同层单一事实），
+  消费点 verify._prepare_context（load_config 之后——管线一切动作之前）。
+  **四存量 ESP 工程（esp32-hello / esp32s3-hello / s3-voice / cam-eye）三键全
+  显式**，经 verify._parse_args+_prepare_context 真代码路径实跑 rc=0 / problems=[]
+  （零构建零烧录纯配置判定面），零存量破坏；阴性对照（真实 config 去
+  capture.backend 合成于 TEMP）rc=1 文案按预期拦截。
+- **F-190 夹具随动（tests/test_esp_backend_gate.py，1 处）**:
+  PhysicalGateEspGateTests 的 capture_only/builder_only/flash_only 三种单标记
+  主流程夹具在 fail-fast 裁定后不可达管线，改用三键齐合法 ESP 变体 ×3；断言
+  实质（ESP 运行+enable=true → Popen 零调用+skipped+reason）原样保留，旧保护面
+  由 test_esp_config_failfast.MixedConfigFailFastTests 以更强形态（动作前退 1）
+  接管。既有断言零删零弱（金样+保持钉全程绿）。
+- **钉 23 例**（tests/test_f190_release_chain.py 14 例 + tests/test_esp_config_failfast.py
+  9 例）：T1① 合成 state 链路钉 ×2（build_record hex sha256 / 主流程 dry-run 放行）+
+  平铺键红绿对（绿腿=--no-build 回读契约、红腿=嵌套 artifacts）+ 既有 state 存活钉；
+  T2 双向闸钉 ×4（ESP 零调用+痕 / STM32 照探 / 探活失败文案 / 无 config 缺省）+
+  记录面钉 ×3（g0_5 痕 / tools.gcc not_applicable / STM32 双向不变）+ 单一事实源
+  identity 钉 ×2；T3 单元钉 ×5（无标记零触发 / 全配合规 / 单标记点名 / 非法值带
+  当前值 / 缺席报缺省派发值）+ 主流程 fail-fast 钉 ×2 + 金比对钉 ×2（ESP 全配 /
+  STM32 缺省，修前实测剔时变字段落 GOLDEN，特征钉形态）。
+- **红绿三态**：基线 `Ran 1108 / OK (skipped=6)`（补 Git PATH 后与 F-188 账面
+  对齐；不补则 bash 探针 8 例 skip → skipped=14，环境差异如实登记）→ 钉(红)
+  `Ran 23 / FAILED (failures=8, errors=11)`（T1①/T2/T3① 全红，金样+保持钉 10 绿，
+  既有 1108 零波及）→ 修后全量 `Ran 1131 / OK (skipped=6)`（+23=新钉数，
+  skipped 恒 6）；ruff check 全绿；test_layering_gates 3 例绿（release 不 import
+  verify 自证合规）。
+- **撤销实验×3**（各精确红→还原绿，还原后 porcelain 零残留）：① 拆
+  _write_last_build artifacts 键 → T1① 3 例红（平铺键钉绿）→ 复绿；
+  ② 拆 G0.5 闸（一律照探）→ T2① 1 例红（STM32 双向钉绿）→ 复绿；
+  ③ 拆 verify 校验 → T3① 4 subTest 红 → 复绿。
+- **白名单自证**：`git diff --name-only afe6bf0...HEAD` = scripts/{esp_runtime,
+  release,runtime_common,verify}.py + tests/{test_esp_backend_gate(随动),
+  test_esp_config_failfast(新), test_f190_release_chain(新)}.py + CHANGELOG/README
+  （docs 笔），零越界。verify.py 触面=T2 再导出 + T3 消费点（均为简报任务正文
+  授权面）。
+- **只列不改（P，遗留登记）**：① release.py main() 的 `load_machine()
+  ["openocd_exe"]` 对 ESP 工程仍硬性要求 machine.json 含 openocd_exe 键——纯
+  ESP 机器缺键会 KeyError，属 G0.5 闸后的下一个 OpenOCD 触点；② hw_lease 的
+  ESP 语义——设备锁 purpose/文档以 stlink 措辞为主（F-174 起 ESP 运行同样持
+  锁，行为正确但语义命名未分流）；③ IDF 版本采集（tools.idf）出范围，真机/
+  环境依赖；④ esp_runtime._write_last_build 调用点仅 step_build_idf，flash/
+  capture 失败路径不写 state（维持现状，--no-build 回读依赖上次成功构建语义）。
+- **未完成清单**：无（T1+T2+T3 全收）。合入门禁建议=维护者真机走一次 ESP
+  发布链（G0~G3 + release_audit），artifacts 端到端形态最终以真发布记录为准。
