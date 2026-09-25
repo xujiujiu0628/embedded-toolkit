@@ -455,6 +455,13 @@ embedded-toolkit/
   兜底文案按 `_esp_backend_mode` 分流（ESP 口径=串口/波特率/复位窗，manifest/legacy
   两处）· N-4 `physical_gate` 入后端闸（ESP 下 skipped+reason，闸在 verify.py 调用
   侧）；F-174a/F-174b 两笔"可留"维持原判。详情：CHANGELOG F-188 节。
+- **GAP-F-19（2026-09-25 登记，暂缓）**：capture/flash 两处 backend 派发缺省值
+  （`cap_backend` 缺省 semihosting、`flash.backend` 缺省 openocd）不受
+  `_esp_backend_mode` 约束——builder=idf 而漏配 backend 键的混配工程仍会走
+  OpenOCD 路径。定性=F-174"按 backend 键分流"的设计面（非 I-1 类无条件步骤，
+  F-007 守卫在烧录前拦截无 hex 场景），非紧急。裁定=暂缓登记，
+  **唤起条件 = WB-20260925-01 整批复审报告落账**（若带出更多同类缺省派发面，
+  合并一次裁决收口票；否则单独立项）。出处：CHANGELOG F-188 节"只列不改"。
 - **ref.json 数据面 GAP-D 收口状态（F-179，WB-20260920-05）**
   影响：`data/stm32f103-ref.json` 的 `bus` 字段曾与外设 RCC 使能位归属相反
   （TIM9 记 APB1、TIM12/13/14 记 APB2）；`_relationships` 的 IRQ 号只覆盖 12 个外设；
