@@ -366,6 +366,17 @@ def _esp_backend_mode(config) -> bool:
     return False
 
 
+def _empty_capture_note(config) -> str:
+    """F-188/N-3: capture 空兜底提示语按后端分流 (manifest/legacy 共用)。
+
+    STM32 原文案逐字节不变; ESP 侧 HardFault 是 Cortex-M 概念, 空捕获归因
+    串口/波特率/复位窗 (F-174/I-1 注释口径), 提示不出现 HardFault 字样。"""
+    if _esp_backend_mode(config):
+        return ("程序无输出（ESP 后端: 排查串口连接、波特率与复位窗"
+                "是否覆盖启动输出）: ")
+    return "程序无输出（无 HardFault 迹象）: "
+
+
 def _step_durations_from(result: dict) -> tuple[list, dict]:
     """F-050 时长画像样本组装 (F-085 提取为共享 helper)。
 
@@ -1142,7 +1153,18 @@ def _run_judgement(args, config, result, captured_text, captured_lines,
 
     # ---- Step 4c: 物理层门控 (TIMING_FAIL) ----
     # GPIO Toggle 频率检测: 验证时序正确性 (代码在正确的时间做了该做的事)
-    physical = step_physical_gate(config.get("physical_gate", {}), timeout=capture_timeout, workspace=WORKSPACE)
+    # F-188/N-4: physical_gate 经 OpenOCD 采 GPIO, 语义仅 Cortex-M — I-1 同构
+    # 第三处 (hardfault 层 2 / post_reset 之后), 闸打在调用侧,
+    # scripts/physical_gate.py 本体零触碰。skipped+reason 形态对齐
+    # F-150 sim flash skip (verify.py "F-150 sim 后端" 分支)。
+    if _esp_backend_mode(config):
+        physical = {
+            "status": "skipped",
+            "reason": ("F-188/N-4 ESP 后端: physical_gate 经 OpenOCD 采 "
+                       "GPIO, OpenOCD/ST-Link 不在 ESP 链路, 步骤抑制"),
+        }
+    else:
+        physical = step_physical_gate(config.get("physical_gate", {}), timeout=capture_timeout, workspace=WORKSPACE)
     result["steps"]["physical_gate"] = physical
 
     # ---- Step 5: Verify ----
@@ -1183,10 +1205,10 @@ def _run_judgement(args, config, result, captured_text, captured_lines,
         # F-148 ③: record 命名捕获组的提取值 — 顶层 records 数组
         # ([{id, 组名: 值}, ...] 平铺; 行级明细在 steps.verify.results[*].records)
         result["records"] = ev["records"]
-        # capture 空兜底 (与 legacy 同款归因)
+        # capture 空兜底 (与 legacy 同款归因; 文案按后端分流 F-188/N-3)
         if capture_empty and flash_ran:
             verification_result["description"] = (
-                "程序无输出（无 HardFault 迹象）: "
+                _empty_capture_note(config)
                 + verification_result.get("description", "")
             )
     else:
@@ -1196,10 +1218,10 @@ def _run_judgement(args, config, result, captured_text, captured_lines,
             expect_patterns.append(r"TGL \d+")
         verification_result = verify(captured_text, expect, description,
                                      expect_patterns=expect_patterns or None)
-        # capture 空兜底: 确实烧录过但无输出且无 HardFault 迹象 → 归因准确
+        # capture 空兜底: 确实烧录过但无输出 → 归因文案按后端分流 (F-188/N-3)
         if capture_empty and flash_ran:
             verification_result["description"] = (
-                "程序无输出（无 HardFault 迹象）: "
+                _empty_capture_note(config)
                 + verification_result.get("description", "")
             )
     result["steps"]["verify"] = verification_result
