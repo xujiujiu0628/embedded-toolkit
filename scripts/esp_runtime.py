@@ -8,12 +8,12 @@
   (PowerShell 会话内 source 后顺序执行, 逐命令 $LASTEXITCODE 门闩传播退出码)。
 """
 import glob
-import json
 import os
 import re
 import subprocess
 import time
 
+from runtime_common import update_state_entry  # noqa: E402  (F-190/H-1: last_build 经共享层持锁读改写)
 from wb_common import load_machine
 
 _PANIC_MARKERS = ("Guru Meditation", "Backtrace:", "abort() was called",
@@ -276,20 +276,19 @@ def step_capture_uart(timeout_s: int, cap_cfg: dict,
 
 
 def _write_last_build(ws: str, bin_rel: str, elf_rel: str) -> None:
-    """state.json last_build (verify --no-build 回读契约, 与 gcc_build 同构)。
+    """state.json last_build — 经 runtime_common.update_state_entry (F-190/H-1)。
 
-    hex_file 键复用 = .bin 路径: step_flash 的存在性检查与 --no-build
-    读取逻辑零改动即可走通 esptool 后端。"""
-    state_path = os.path.join(ws, ".workbench", "state.json")
-    state = {}
-    if os.path.isfile(state_path):
-        try:
-            with open(state_path, encoding="utf-8") as f:
-                state = json.load(f)
-        except (json.JSONDecodeError, OSError):
-            state = {}
-    state["last_build"] = {"provider": "idf", "hex_file": bin_rel,
-                           "bin_file": bin_rel, "elf_file": elf_rel,
-                           "ts": time.strftime("%Y-%m-%dT%H:%M:%S")}
-    with open(state_path, "w", encoding="utf-8") as f:
-        json.dump(state, f, ensure_ascii=False, indent=2)
+    写入形态与 gcc_build 现场 (gcc_build.py:265-281) 逐键对齐: **嵌套
+    artifacts + 平铺键双形态**——嵌套键供 release.build_record 消费
+    (release.py:167, H-1 病灶: 旧版只写平铺键致 ESP 发布链在 hex 哈希门
+    100% 硬拒), 平铺键供 verify --no-build 回读 (verify.py:805, 回归钉护)。
+    hex_file 键复用 = .bin 路径 (F-174 既有约定); 哈希仍由 release 现场
+    计算 (hex=bin、elf 各自 sha256), state 只落路径不落哈希 (同 gcc)。
+    F-174a 随此闭合: update_state_entry 持锁读改写 (F-127) + 损坏隔离
+    (.corrupt, F-019) + 原子替换 (F-020), 旧实现的无锁 RMW/损坏清空不再。"""
+    artifacts = {"hex_file": bin_rel, "bin_file": bin_rel,
+                 "elf_file": elf_rel}
+    update_state_entry("last_build",
+                       {"provider": "idf", "artifacts": dict(artifacts),
+                        **artifacts},
+                       ws)
