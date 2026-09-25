@@ -3719,3 +3719,34 @@
   表内寄存器名原样信任，仅"非表内且不以 ENR 结尾"的词干补 ENR（F-074 防御意图保留）。
   钉 2 例: `GenDocClockMacroTests`（RTC→RCC_BDCR bit 15 且无 BDCRENR / TIM5→RCC_APB1ENR 路径不变）。
 - **GAP-F-17/F-18**: 追认登记态（CHANGELOG 标题重复与 RCC 位表键形态判据缺位），不立项。
+
+## Unreleased — 2026-09-25（F-188 F-174 后续票收口：N-3 空捕获文案分流 + N-4 physical_gate 入后端闸，WB-20260925-02）
+
+- **F-188 (fix, verify)**: F-174 终审两张后续票（N-3/N-4）收口，先钉后修 + 双向钉 +
+  撤销实验；`scripts/physical_gate.py` 本体、`data/**`、既有断言零触碰（闸打在
+  调用侧 verify.py，与被闸对象解耦——I-1 构造）。
+  - **N-4**: Step 4c `step_physical_gate` 调用点入 `_esp_backend_mode` 闸（verify.py
+    1160）——I-1 同构第三处（hardfault 层 2 / post_reset 之后）。ESP 三标记任一在
+    场 + enable=true → 步骤不执行，入账 `status="skipped"` + `reason`（可机检；形态
+    对齐 F-150 sim flash skip 的 skipped+reason）；STM32 配置下调用表达式逐字节
+    不变。
+  - **N-3**: capture 空兜底文案按后端分流——新 helper `_empty_capture_note(config)`
+    （verify.py:369）manifest/legacy 两处共用：STM32 返回原文案逐字节不变；ESP 返回
+    "程序无输出（ESP 后端: 排查串口连接、波特率与复位窗是否覆盖启动输出）: "
+    （不出现 HardFault 字样——HardFault 是 Cortex-M 概念，F-174/I-1 注释口径）。
+  - **钉 6 例**（`tests/test_esp_backend_gate.py` +2 类，双向）:
+    `PhysicalGateEspGateTests`——① ESP 三标记各别 + enable=true → Popen 零调用 +
+    skipped+reason；② STM32 + enable=true → 原调用 mock 断言。
+    `EmptyCaptureNoteTests`——manifest/legacy × ESP/STM32 四象限（ESP 提示含
+    "串口"且无"HardFault"；STM32 前缀等值）。
+  - **红绿三态**: 未修先红 `Ran 20 / FAILED (failures=2, errors=4)`（既有 14 例零
+    波及）→ 修后模块 `Ran 20 / OK`；撤销实验拆闸 T1① 精确红（4 subTest ERROR，
+    STM32 钉保持绿）→ 还原复绿。基线 `Ran 1102 in 122.1s / OK (skipped=6)` →
+    终态 `Ran 1108 in 118.6s / OK (skipped=6)`（+6 = 本单新钉，skipped 恒 6）；
+    `ruff check .` 全绿（ruff 0.16.7）。
+  - **只列不改**: capture/flash 两处 backend 派发缺省值（`cap_backend` 缺省
+    "semihosting"（verify.py:666）、`flash.backend` 缺省 "openocd"（verify.py:236））
+    不受 `_esp_backend_mode` 约束——builder=idf 而漏配 capture/flash backend 的
+    混配工程仍会走 OpenOCD 路径（09-16 "ST-Link 失联碰巧无害"同款暴露面）。属
+    F-174 三派发点"按 backend 键分流"的设计面，非 I-1 类无条件步骤，是否收口
+    留维护者裁决。
