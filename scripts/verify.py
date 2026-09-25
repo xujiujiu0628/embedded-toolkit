@@ -49,6 +49,7 @@ def _openocd_exe() -> str:
 
 from runtime_common import now_iso, output_json  # noqa: E402  (F-041: doctor --json 复用共享层; F-157: now_iso 收编)
 from runtime_common import OpenocdCfgError, resolve_openocd_cfg  # noqa: E402  (WB-20260919-06: cfg 组装单一事实源)
+from runtime_common import (esp_backend_mode as _esp_backend_mode)  # noqa: E402  (F-190/M-1: 三标记 OR 上收单一事实源, F-057 再导出形态——release G0.5 同源消费)
 from openocd_runtime import reset_target, swd_probe  # noqa: E402,F401  (F-041: SWD 探测与 release G0.5 同源; F-129: 判定后复位)
 from openocd_run import ACTION_DONE_CMD, marker_present  # noqa: E402  (F-163: N-3 标记共享件)
 import hw_lease  # noqa: E402  (F-145: flash+capture 段机器级设备锁)
@@ -349,21 +350,9 @@ def _hardfault_trigger(captured_text, capture_empty, flash_ran):
     return None
 
 
-def _esp_backend_mode(config) -> bool:
-    """F-174/I-1 (终审#2): ESP 后端判据——OpenOCD/ST-Link 专属动作的闸根。
-
-    builder=idf / flash.backend=esptool / capture.backend=uart 任一在场
-    即为 ESP 运行: post_reset 与 hardfault 层 2 都是占 ST-Link 的 Cortex-M
-    动作, 必须整体抑制。三标记 OR 而非 AND: 混配 (漏写其一) 时宁可停
-    Cortex 动作, 也不能拿 ESP 目标去跑 OpenOCD。"""
-    cfg = config or {}
-    if cfg.get("builder") == "idf":
-        return True
-    if (cfg.get("flash") or {}).get("backend") == "esptool":
-        return True
-    if (cfg.get("capture") or {}).get("backend") == "uart":
-        return True
-    return False
+# F-190/M-1: _esp_backend_mode 本体上收 runtime_common (单一事实源),
+# 上方 import 再导出保持 verify._esp_backend_mode 调用面不变 (F-057 形态)——
+# release.py G0.5 闸消费同一原件, 两份 OR 逻辑副本被 T2SingleSourceTests 钉死。
 
 
 def _empty_capture_note(config) -> str:
