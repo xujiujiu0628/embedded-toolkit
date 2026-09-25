@@ -451,6 +451,10 @@ embedded-toolkit/
   值，烧录不受影响）终审全裁"可留"；后续票两张——终审波 N-3（ESP 空捕获提示
   语换串口/波特率/复位窗口径）/ N-4（`physical_gate` 纳入后端闸，现默认关断
   无实害）。详情：CHANGELOG F-174 收口段。
+  **2026-09-25 订正（✅ F-188，WB-20260925-02）**：后续票两张已收口——N-3 空捕获
+  兜底文案按 `_esp_backend_mode` 分流（ESP 口径=串口/波特率/复位窗，manifest/legacy
+  两处）· N-4 `physical_gate` 入后端闸（ESP 下 skipped+reason，闸在 verify.py 调用
+  侧）；F-174a/F-174b 两笔"可留"维持原判。详情：CHANGELOG F-188 节。
 - **ref.json 数据面 GAP-D 收口状态（F-179，WB-20260920-05）**
   影响：`data/stm32f103-ref.json` 的 `bus` 字段曾与外设 RCC 使能位归属相反
   （TIM9 记 APB1、TIM12/13/14 记 APB2）；`_relationships` 的 IRQ 号只覆盖 12 个外设；
@@ -494,6 +498,7 @@ embedded-toolkit/
   ✅ F-184（GAP-F-10 os._exit 收窄 / GAP-F-13 全仓清点与"按需收窄"裁决 / GAP-F-14 消音）· 拍板批落地
   ✅ F-185（P-3 ERROR→rc=1 / D-6 核心块 bus="core"+封闭集钉 / P-1·P-2·F-13 结案追认）· clock 宏名根治
   ✅ F-187（GAP-F-16 BDCR 不存在的宏 → KB 键表事实源；F-186 数据激活，取证于 WB-20260922-02）· ref.json 数据面收口
+  ✅ F-188（N-3 ESP 空捕获文案按后端分流 / N-4 `physical_gate` 入 `_esp_backend_mode` 闸）· F-174 后续票收口
   ✅ F-179（GAP-D-5 bus 反转 + RCC 位名类级防线 / `_relationships` IRQ 9 条逐条锚
   CMSIS xg.h / `stm32f103-arch-facts.json` 48 条带出处入册 / f103-dbg 样例解锁）· MCP
   整型参数 argv 收口 ✅ F-180（GAP-F-1：非 boolean 参数值一律 str 化入 argv，6 个整型
