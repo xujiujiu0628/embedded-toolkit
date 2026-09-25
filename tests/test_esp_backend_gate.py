@@ -16,6 +16,12 @@ ESP 侧复位职责归 capture 起点 (esptool chip_id --after hard_reset), pani
   5. port/chip 白名单: port 注入 PowerShell 命令串 (run_idf), 只收
      COMn / /dev/ttyUSB* / /dev/ttyACM* / /dev/cu.*; chip 有限白名单
      (大小写归一); 校验不过不启动 run_idf。
+  6. F-188/N-4: physical_gate 步骤入 _esp_backend_mode 闸 (I-1 同构
+     第三处): ESP 三标记任一在场 + enable=true → 步骤不执行 (Popen 零
+     调用), steps.physical_gate = {status: "skipped", reason: ...};
+     STM32 配置 + enable=true → 原调用路径不变 (mock 调用断言)。
+  7. F-188/N-3: 空捕获兜底文案按后端分流 (manifest/legacy 两处都钉) —
+     ESP 提示含"串口"且不出现"HardFault"; STM32 原文案逐字节不变。
 """
 import io
 import json
@@ -33,6 +39,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(
 
 import esp_runtime  # noqa: E402
 import hw_lease  # noqa: E402
+import physical_gate  # noqa: E402
 import verify  # noqa: E402
 
 ESP_CONFIG = {"toolkit_min_version": "0.1", "builder": "idf",
@@ -153,6 +160,90 @@ class HardfaultGateTests(_MainFlowHarness):
         self.assertEqual(hf_calls, [])  # 有输出无标记 → 本就不触发
         result, _, hf_calls = self._run(STM32_CONFIG, capture_text="")
         self.assertEqual(len(hf_calls), 1)
+
+
+class PhysicalGateEspGateTests(_MainFlowHarness):
+    """F-188/N-4: physical_gate 入 _esp_backend_mode 闸 (I-1 同构第三处)。
+
+    双向钉: ① ESP 三标记任一在场 + enable=true → step_physical_gate 不
+    执行 (Popen 零调用), steps.physical_gate = {status: "skipped",
+    reason: ...}; ② STM32 配置 + enable=true → 原调用路径不变 (mock
+    调用断言)。撤销实验: 拆闸 → ① 必红。"""
+
+    def _run_with_popen_guard(self, config):
+        with mock.patch.object(physical_gate.subprocess, "Popen") as popen:
+            result, reset_mock, hf_calls = self._run(config)
+        return result, popen
+
+    def test_esp_run_skips_physical_gate(self):
+        esp_full = dict(ESP_CONFIG, physical_gate={"enable": True})
+        capture_only = {"toolkit_min_version": "0.1",
+                        "capture": {"backend": "uart", "port": "COM3",
+                                    "settle_sec": 0.0, "duration_sec": 15},
+                        "physical_gate": {"enable": True}}
+        builder_only = {"toolkit_min_version": "0.1", "builder": "idf",
+                        "idf": {"build_timeout": 900},
+                        "physical_gate": {"enable": True}}
+        flash_only = {"toolkit_min_version": "0.1",
+                      "flash": {"backend": "esptool", "port": "COM3"},
+                      "physical_gate": {"enable": True}}
+        for cfg in (esp_full, capture_only, builder_only, flash_only):
+            with self.subTest(cfg=cfg):
+                result, popen = self._run_with_popen_guard(cfg)
+                pg = result["steps"]["physical_gate"]
+                self.assertEqual(pg["status"], "skipped", cfg)
+                self.assertIn("ESP", pg["reason"], cfg)
+                popen.assert_not_called()
+
+    def test_stm32_run_keeps_physical_gate_call(self):
+        cfg = dict(STM32_CONFIG, physical_gate={"enable": True})
+        pg_mock = mock.Mock(return_value={"status": "skipped",
+                                          "reason": "mock"})
+        with mock.patch.object(verify, "step_physical_gate", pg_mock):
+            result, _, _ = self._run(cfg)
+        pg_mock.assert_called_once()
+        args, kwargs = pg_mock.call_args
+        self.assertEqual(args[0], {"enable": True})
+        self.assertEqual(set(kwargs), {"timeout", "workspace"})
+        self.assertEqual(result["steps"]["physical_gate"],
+                         {"status": "skipped", "reason": "mock"})
+
+
+class EmptyCaptureNoteTests(_MainFlowHarness):
+    """F-188/N-3: 空捕获兜底提示语按后端分流 (manifest/legacy 两处都钉)。
+
+    ESP: 提示含"串口"且不出现"HardFault"——HardFault 是 Cortex-M 概念,
+    ESP 空捕获归因串口/波特率/复位窗 (F-174/I-1 口径); STM32: 原文案
+    逐字节不变 (前缀等值断言)。"""
+
+    NOTE_STM32 = "程序无输出（无 HardFault 迹象）: "
+
+    def _desc(self, config, capture_text="", manifest=True):
+        if not manifest:
+            os.remove(os.path.join(self.ws, ".workbench",
+                                   "expectations.json"))
+        result, _, _ = self._run(config, capture_text=capture_text)
+        return result["steps"]["verify"]["description"]
+
+    def test_esp_manifest_note_points_to_uart(self):
+        desc = self._desc(ESP_CONFIG, capture_text="")
+        self.assertIn("串口", desc)
+        self.assertIn("波特率", desc)
+        self.assertIn("复位窗", desc)
+        self.assertNotIn("HardFault", desc)
+
+    def test_stm32_manifest_note_unchanged(self):
+        desc = self._desc(STM32_CONFIG, capture_text="")
+        self.assertTrue(desc.startswith(self.NOTE_STM32), desc)
+
+    def test_esp_legacy_note_points_to_uart(self):
+        desc = self._desc(ESP_CONFIG, capture_text="", manifest=False)
+        self.assertIn("串口", desc)
+        self.assertNotIn("HardFault", desc)
+
+    def test_stm32_legacy_note_unchanged(self):
+        desc = self._desc(STM32_CONFIG, capture_text="", manifest=False)
+        self.assertTrue(desc.startswith(self.NOTE_STM32), desc)
 
 
 class PortChipWhitelistTests(unittest.TestCase):
