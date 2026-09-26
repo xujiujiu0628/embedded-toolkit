@@ -4062,3 +4062,62 @@ RM0008 Rev 21（2021-02）与 DS5319 Rev 18 原文（直连 567 拦截，经 web
 - **T2 提案批准注记**: F-189 的 pin-mapping 格式提案 + DS5318 授权已获维护者批准
   （2026-09-26），执行单 WB-20260927-01（F-193）在途——本注记替代 CHANGELOG F-189
   节"落盘待批"状态，F-193 收口时正式订正。
+
+## F-193 — pin-mapping 落盘：CAN 四行入册 + 三面完备钉（WB-20260927-01，2026-09-26）
+
+F-189 §3 格式提案（维护者 2026-09-26 批准，见上节批准注记）落地 + DS5318 授权面
+处置。新档 `data/pin-mapping-f103.json`（**LQFP48/xB 封装切片**）+ 新钉
+`tests/test_pin_mapping.py`（独立成测，不并入 arch-facts——F-189 §3.2 论证）。
+全程未 push。
+
+- **CAN 四行入册**：PA11=CAN_RX、PA12=CAN_TX（alternate，复位态列）+
+  PB8=CAN_RX、PB9=CAN_TX（additional，AFIO 重映射态列）；source 到页级：
+  `web:DS5319:§3:Table 5:p31`（PA11/PA12 行）/ `web:DS5319:§3:Table 5:p33`
+  （PB8/PB9 行）。
+- **锚点随 DS5319 升版订正（诚实优先）**：st.com 今日（2026-09-26）直抓为
+  **Rev 20（2025-07）**，Table 5 已重排为多封装宽表（7 封装列 × Default/Remap
+  两列；Rev 18 更新记录自述 "Updated Table 5"）。F-189 §2.4 三处旧锚据此订正：
+  ①节号 §8→**§3**（Pinouts and pin description）；②页位 p27/p28→**p31/p33**
+  （逐页脚标记核对）；③PA11/PA12 的 LQFP48 物理脚号 33/34→**32/33**（Rev 20
+  Table 5 LQFP48/UFQFPN48 列 + Figure 8 引脚图双重一致，F-189 旧引文疑列读串）。
+  CAN 功能/列位语义不受影响；Rev 20 表内拼写 CANRX/CANTX（同格 USART1_CTS
+  保留下划线，系表内风格），入册值维持规范名 CAN_RX/CAN_TX（§5.3.17 prose 同形）。
+- **T3 授权面处置（授权已用，结论=7 外设查无此脚，弃登维持）**：高密度数据
+  手册实为 **DS5792**（stm32f103rc.pdf 自标识 Rev 13；简报/F-189 所称
+  "DS5318 高密度手册" 系文档号误记）。DS5792 Table 5 封装列=LFBGA144/LFBGA100/
+  WLCSP64/LQFP64/LQFP100/LQFP144，§2.1 逐字 "family offers devices in six
+  different package types: from 64 pins to 144 pins"——**高密度无 48 脚封装**：
+  ADC3=PF6-PF10、TIM8/SDIO=PC6-PC12+PD2、FSMC=PE-PG（Table 6 专表，注 11 逐字
+  "For devices delivered in LQFP64 packages, the FSMC function is not
+  available."）信号脚均不在 LQFP48；TIM5 信号脚（PA0-PA3，Table 5 Remap 列）
+  虽在 LQFP48 存在，但无任何 HD 器件以 48 脚封装出货，官方表无 LQFP48×TIM5 行
+  不硬造；DMA2 无外引脚，引脚映射维度不适用。LQFP48 切片锁定维持；source
+  前缀封闭集 {DS5319, DS5318} 按简报保留（DS5792 未进集——零行入册，未来 HD
+  行入册须扩集=钉面变更另单）。
+- **三面钉**：①结构钉（顶层块 ∈ {_meta}∪对账常量外设集；脚条目键集恰为
+  {function, column, source}；column ∈ {main, alternate, additional} 封闭集）；
+  ②source 前缀钉（全形 `web:DS<号>:§<节>:Table <表>:p<页>`，DS 号限 5319/5318，
+  缺/歪必红）；③行数完备钉（内嵌引文对账常量：外设→行数→sha256 行集合指纹，
+  canonical=sorted("脚|功能|列位|source")——新增行不带引文=红 / 删行不动常量=红 /
+  列位或出处篡改=指纹红，封闭集拦不住的语义篡改由指纹兜底）。零 mock/patch，
+  不触 test_stub_ratchet 判据面（F-192 护栏零新增）。
+- **红绿三态**：基线 `Ran 1173 / OK (skipped=14)`（4c8f9d2）→ 钉(红) 8 红
+  （文件未落盘态，全部 FAIL 带"未落盘"指认）→ 落盘后模块 8/8 绿 + JSON-OK
+  → 全量 `Ran 1181 / OK (skipped=14)`（+8=新钉数，skipped 恒等）。
+- **变异自证（三枪）**：M1 PA12 column alternate→main（封闭集内合法值）→
+  指纹钉红；M2 删 CAN.PB9 → 完备钉+结构钉双红；M3 PA11 source 前缀
+  DS5319→DS9999 → 前缀钉红；还原字节级一致（RESTORED-BYTES-OK）后终态 OK。
+- **白名单自证**：diff 仅 data/pin-mapping-f103.json + tests/test_pin_mapping.py
+  + CHANGELOG.md + README.md；data/ 其余（arch-facts/ref/gen-maps）、
+  scripts/**、hooks/**、examples/**、machine.json 零触碰。
+- **P 面（只列不改）**：①arch-facts 与 pin-mapping 各自登记 web 型描述符
+  （泛形 `web:<文档号>:<节/表号>:<页>` vs 具形 `web:DS5319:§3:Table 5:<页>`），
+  统一=双档双钉随动；②test_stub_ratchet 扫描面非递归 tests/*.py 顶层
+  （F-192 P-③已知边界，本单新文件在顶层、零新增桩）；③DS5319 Rev 20 表内
+  拼写 CANRX/CANTX 与 prose CAN_RX/CAN_TX 并存——消费方字符串直配需注意；
+  ④前缀集内 "DS5318" 的文档号语义待未来真实使用时核验（本单已证 DS5318 ≠
+  F103 高密度册）；⑤DBG_CAN2_STOP(bit21) 维持 arch-facts `cr_bits_unanchored`
+  弃登（F-189 §5 ⑤ 同判，本单未触）。
+- **未完成清单**：多封装维度（LQFP64/100/144、WLCSP64 等）入册=结构变更，
+  另单提案；RM0008 AFIO_MAPR 重映射值域（CAN 重映射 Table 34 域）未入册
+  （另锚另议，F-189 §3.1 即声明不混装）。
