@@ -375,6 +375,63 @@ class StepCaptureUartTests(unittest.TestCase):
         self.assertEqual(r["status"], "ok")
         self.assertEqual(r["_text"], "tick 0")
 
+    def test_serialexception_keeps_partial_lines(self):
+        """F-192/N-5 (WB-20260926-03 T4): SerialException 路径携带已收行
+        入账 — 形态对齐 F-003 超时路径的部分输出信封 (lines 计数 +
+        partial_output), status 仍 fail-closed; esp_panic 标记随部分输出
+        保留 (定性交 AI judge, 不因采集故障翻绿)。
+
+        打桩形态注: esp_runtime 的 serial 是函数内 import (无模块级引用
+        可替换), 且 test_stub_ratchet 棘轮禁新增 mock.patch("serial.Serial")
+        全局桩 — 故走 patch.dict(sys.modules) 注入假 serial 模块
+        (保存/恢复式, F-184 模块引用替换哲学在 import 缝上的形态)。"""
+        class FakeSerialError(Exception):
+            pass
+
+        class BoomAfter3:
+            def __init__(self, *a, **kw):
+                self.n = 0
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                pass
+
+            def readline(self):
+                self.n += 1
+                if self.n == 1:
+                    return b"ESP-BOOT ok\n"
+                if self.n == 2:
+                    return b"Guru Meditation Error: Core 0 panic'ed\n"
+                if self.n == 3:
+                    return b"tick=2\n"
+                raise FakeSerialError("device returned no data")
+
+        fake_serial = SimpleNamespace(Serial=BoomAfter3,
+                                      SerialException=FakeSerialError)
+        fake_time = iter([0, 0, 0, 1, 2, 3, 4, 5, 6, 6])
+        with mock.patch.dict(sys.modules, {"serial": fake_serial}), \
+             mock.patch.object(esp_runtime.time, "sleep"), \
+             mock.patch.object(esp_runtime.time, "time",
+                               lambda: next(fake_time)):
+            r = esp_runtime.step_capture_uart(
+                5, {"port": "COM3", "settle_sec": 0}, workspace="W:",
+                _run_idf=lambda c, **kw: {"status": "ok", "returncode": 0,
+                                          "output": ""})
+        # fail-closed 不翻绿: status error (verify 侧 capture_failed 语义不变)
+        self.assertEqual(r["status"], "error")
+        self.assertIn("COM3", r["error"])
+        self.assertIn("device returned no data", r["error"])
+        # 已收 3 行入账 (修前丢弃 → 红)
+        self.assertEqual(r["lines"], 3)
+        self.assertIn("ESP-BOOT ok", r["partial_output"])
+        self.assertIn("tick=2", r["partial_output"])
+        # panic 标记随部分输出保留
+        self.assertTrue(r["esp_panic"])
+        # 信封形态对齐 F-003: 错误面走 partial_output, 不带 _text 私有键
+        self.assertNotIn("_text", r)
+
 
 if __name__ == "__main__":
     unittest.main()

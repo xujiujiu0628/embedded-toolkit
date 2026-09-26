@@ -17,6 +17,7 @@ import contextlib
 import io
 import json
 import os
+import subprocess
 import sys
 import unittest
 from unittest import mock
@@ -105,6 +106,74 @@ class JsonModeRegressionPins(unittest.TestCase):
         self.assertEqual(result["peripherals"][0]["name"], "RCC")
         want = self.ref["peripherals"]["RCC"]["desc"]
         self.assertEqual(result["peripherals"][0]["data"]["desc"], want)
+
+
+class RecipeHumanPathPins(unittest.TestCase):
+    """--recipe 人读路径收口钉 (P-2, WB-20260926-03 T2)。
+
+    病灶: format_result 裸下标 result["peripherals"]/["registers"]/
+    ["bits"]/["recipes"] 四键, 而 --recipe 分支只构造 {query, recipes}
+    → 人读 `rm_lookup.py --recipe PWM` 崩 KeyError (WB-20260926-02
+    报告 §六-2: main → format_result, Orchestrator 亲复现)。
+    修法: format_result 四键改 .get 缺省空列表 — 分支构造不动,
+    JSON/MCP 面零变化 (逐字段回归钉护)。
+
+    查询词反查 (F-186 纪律, 简报示例词与数据面不符的如实处置):
+    ref.json 配方共 8 条, 无任何 "PWM" 命中 — 真实命中词取 "BSRR"
+    (GPIO 'Atomic output via BSRR/BRR'), "PWM" 按"空命中面"钉
+    (修后走兜底提示, rc=0)。
+    """
+
+    def setUp(self):
+        self.ref = _load_ref()
+
+    def test_recipe_query_premise(self):
+        """钉前提: 命中词/空命中词都从数据面反查证实 (期望值不写死)。"""
+        self.assertTrue(rm_lookup.search_recipe("BSRR", self.ref),
+                        "BSRR 配方为空 — 钉前提失效")
+        self.assertEqual(rm_lookup.search_recipe("PWM", self.ref), [],
+                         "PWM 有命中 — 空命中面前提失效, 钉需随数据面改")
+
+    def test_recipe_human_output_shows_recipes(self):
+        """人读 --recipe BSRR: 配方节 + 数据面原文 (修前 KeyError 红)。"""
+        recipes = rm_lookup.search_recipe("BSRR", self.ref)
+        out = _run_cli(["--recipe", "BSRR"])
+        self.assertIn("> 配方:", out)
+        self.assertIn(recipes[0]["title"], out)
+
+    def test_recipe_human_nomatch_falls_back_to_hint(self):
+        """空命中 (简报字面词 PWM): 走兜底提示分支, 不崩 (修前 KeyError 红)。"""
+        out = _run_cli(["--recipe", "PWM"])
+        self.assertIn("未找到精确匹配", out)
+
+    def test_recipe_json_regression_field_by_field(self):
+        """JSON 面零变化: 键集 {query, recipes}, 内容逐字段 ==
+        search_recipe 直查 (人读修不得外溢)。"""
+        out = _run_cli(["--recipe", "BSRR", "--json"])
+        result = json.loads(out)
+        self.assertEqual(set(result), {"query", "recipes"})
+        self.assertEqual(result["query"], "BSRR")
+        self.assertEqual(result["recipes"],
+                         rm_lookup.search_recipe("BSRR", self.ref))
+
+    def test_recipe_json_empty_match(self):
+        out = _run_cli(["--recipe", "PWM", "--json"])
+        result = json.loads(out)
+        self.assertEqual(set(result), {"query", "recipes"})
+        self.assertEqual(result["recipes"], [])
+
+    def test_recipe_rc_zero_in_real_process(self):
+        """真进程 rc 钉 (简报字面命令): `--recipe PWM` rc=0
+        (修前裸 traceback → rc=1), 输出走兜底提示。"""
+        script = os.path.join(os.path.dirname(os.path.dirname(
+            os.path.abspath(__file__))), "scripts", "rm_lookup.py")
+        r = subprocess.run([sys.executable, "-X", "utf8", script,
+                            "--recipe", "PWM"],
+                           capture_output=True, timeout=60,
+                           encoding="utf-8", errors="replace")
+        self.assertEqual(r.returncode, 0,
+                         f"rc={r.returncode}\n{r.stderr[-500:]}")
+        self.assertIn("未找到精确匹配", r.stdout)
 
 
 if __name__ == "__main__":
