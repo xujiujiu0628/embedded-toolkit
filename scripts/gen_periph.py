@@ -377,6 +377,11 @@ def gen_usart(usart: str, baud: int, tx: str, rx: str,
     # 死代码)。改 newlib 系统桩 _write: printf/puts 最终都走 write(fd,buf,len)。
     lines.append("/* 4. printf 重定向 (GCC/newlib-nano 系统桩 _write; Keil Microlib 的 fputc 在此链不生效) */")
     lines.append("#include <unistd.h>")
+    # F-195 T6 (F-194 P-2 同族补面): 帮手用 uint8_t 而从不发射 stdint —
+    # F-078 烟测 stub 恰好预置 #include <stdint.h> 掩盖自足缺口, 照抄即
+    # 编译失败。自发射仿 F-131 unistd 先例; 已含则不重复。
+    if "#include <stdint.h>" not in lines:
+        lines.append("#include <stdint.h>")
     lines.append("int _write(int fd, char *buf, int len) {")
     lines.append("    for (int i = 0; i < len; i++) {")
     lines.append(f"        while (!({usart}->SR & (1UL<<7)));  // wait TXE")
@@ -916,6 +921,9 @@ def gen_spi(spi_periph: str, mode: int, nss: str, sck: str,
     lines.append(f"#define SPI{spi_n}_CS_HIGH() GPIO{pin_port(nss)}->BSRR = (1UL << {pin_num(nss)})")
     lines.append("")
     lines.append("/* 5. Poll transfer */")
+    if "#include <stdint.h>" not in lines:
+        # F-195 T6 (F-194 P-2): uint8_t 自足, 与 gen_usart 修法对齐
+        lines.append("#include <stdint.h>")
     lines.append(f"static uint8_t spi{spi_n}_transfer(uint8_t tx_byte) {{")
     lines.append(f"    while (!({spi_periph}->SR & (1<<1)));  // wait TXE")
     lines.append(f"    {spi_periph}->DR = tx_byte;")
