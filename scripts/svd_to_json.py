@@ -362,17 +362,40 @@ def extract_all(peripherals_elem):
 
 
 def extract_single(svd_path, target_periph):
-    """Extract a single peripheral (streaming parse for large files)."""
+    """Extract a single peripheral (streaming parse for large files).
+
+    F-195 T4 (M-8): 流式路径补 peripheral 级 derivedFrom — 复用与
+    extract_all 同源的 extract_peripheral 解析路径 (:173 已有能力,
+    喂名表即可)。旧实现不传名表, --periph 派生外设出空寄存器表且与
+    --all 劈叉、零告警。iterparse 单遍里基外设可能在 target 之前或
+    之后, 故带 derivedFrom 的 target 不提前 clear (名表收齐后再统一
+    clear); 无 derivedFrom 维持旧流式早退语义。基外设不在名表 (SVD
+    缺定义) 时响亮告警 stderr, 不再静默回空表。"""
+    name_map = {}
+    target_elem = None
     for event, elem in ET.iterparse(svd_path, events=('end',)):
-        if elem.tag == 'peripheral':
-            name_elem = elem.find('name')
-            if name_elem is not None and name_elem.text:
-                if name_elem.text.upper() == target_periph.upper():
-                    name, data = extract_peripheral(elem)
-                    elem.clear()
-                    return name, data
-            elem.clear()
-    return None, None
+        if elem.tag != 'peripheral':
+            continue
+        name_elem = elem.find('name')
+        if name_elem is None or not name_elem.text:
+            continue
+        name_map[name_elem.text] = elem
+        if target_elem is None and \
+                name_elem.text.upper() == target_periph.upper():
+            target_elem = elem
+            if elem.get('derivedFrom') is None:
+                break   # 无 derivedFrom: 无需名表, 维持旧流式早退语义
+    if target_elem is None:
+        return None, None
+    derived = target_elem.get('derivedFrom')
+    if derived is not None and derived not in name_map:
+        print(f"WARNING: --periph {target_periph}: derivedFrom='{derived}' "
+              "在 SVD 中无此基外设 — 寄存器表将为空 (流式上下文无法解析, "
+              "请核对 SVD 或改走 --all)", file=sys.stderr)
+    name, data = extract_peripheral(target_elem, name_map)
+    for e in name_map.values():
+        e.clear()
+    return name, data
 
 
 def list_peripherals(svd_path):
