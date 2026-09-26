@@ -474,6 +474,15 @@ embedded-toolkit/
   `runtime_common.esp_backend_config_errors`，与 `esp_backend_mode` 同源单一事实）；
   复审带出的 release G0.5 swd_probe 漏闸（M-1）同票合并收口。四存量 ESP 工程
   （esp32-hello / esp32s3-hello / s3-voice / cam-eye）三键全显式，实跑零存量破坏。
+- **GAP-F-20（2026-09-26 登记，暂缓）**：共享向量 TIM 的 ISR 名生成面——
+  `gen_periph.py` 向量名逻辑仅对 TIM1 特判，TIM9/12/13/14 等共享向量外设生成的
+  `TIM9_IRQHandler`/`TIM9_IRQn` 等**不是 CMSIS 实名**（`TIM1_BRK_TIM9_*` 族），
+  按生成物定义的 ISR 不会接进向量表——**F-086 同族 B 类静默**（编译链接全绿、
+  ISR 永不执行）。ISER 位号面已由 F-191 修对，本条只剩**向量命名域**。危害面以
+  "非 C8 目标 + 手工取用生成物"为界（TIM8~14 均 `available_on_c8=False`）。
+  修法需 gen-maps 增 irq-name 域 + vec 命名逻辑改造，非杂项量级。
+  裁定=暂缓，**唤起条件 = 样例工厂二期 / 非 C8 目标立项 / 下次动 gen-maps irq 域设计**。
+  出处：CHANGELOG F-191 节 P 面（WB-20260926-02 §六 P-1）。
 - **ref.json 数据面 GAP-D 收口状态（F-179，WB-20260920-05）**
   影响：`data/stm32f103-ref.json` 的 `bus` 字段曾与外设 RCC 使能位归属相反
   （TIM9 记 APB1、TIM12/13/14 记 APB2）；`_relationships` 的 IRQ 号只覆盖 12 个外设；
