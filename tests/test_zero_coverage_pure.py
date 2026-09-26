@@ -20,6 +20,9 @@ import svd_to_json  # noqa: E402
 MIN_REF = {
     "peripherals": {
         "I2C1": {
+            # F-194: 合成夹具随动补 available_on_c8 (check_chip_support 现消费
+            # 三态, 缺字段且不在系统外设白名单 → WARN; 断言本身未动)
+            "available_on_c8": True,
             "registers": {
                 "CR1": {"bits": {"1": {"name": "SMBALERT", "desc": "SMBus alert"},
                                  "PE": {"name": "PE", "desc": "enable"}}},

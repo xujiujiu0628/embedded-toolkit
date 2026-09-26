@@ -48,12 +48,40 @@ def load_issues():
         return json.load(f)
 
 
+# F-194 (WB-20260927-02 T1): available_on_c8 字段缺失时的白名单封闭集 —
+# 55 外设 = 30 true / 22 false / 3 缺字段, 缺者皆核心系统外设 (GPIO 外设
+# 集族/NVIC/SysTick), C8 定义上可用。显式豁免纪律 (F-186 先例 =
+# test_ref_bus_crosscheck CLOCK_EXEMPTION_SNAPSHOT): 新成员入场 = 过设计
+# (改本集 + 同步 tests 钉快照), 数据侧缺字段集与本集双向互证 (钉两面)。
+SYSTEM_PERIPHERALS = frozenset({"GPIO", "NVIC", "SysTick"})
+
+
 def check_chip_support(peripheral, ref):
-    """检查 F103 是否有此外设"""
+    """检查 F103 是否有此外设 (F-194: 消费 available_on_c8 三态)
+
+    三态: is False → UNAVAILABLE (不在目标芯片, verdict BLOCKED — C8 工程
+    真用 TIM5 是死路, 前置闸拦下胜过 WARN 放行白耗 HIL); is True → OK
+    逐字节不变; 字段缺失 → 白名单集内 OK+注记, 集外单列 WARN 不静默。
+    """
     rels = ref.get("_relationships", {})
     periphs = ref.get("peripherals", {})
 
     if peripheral in periphs:
+        avail = periphs[peripheral].get("available_on_c8")
+        if avail is False:
+            return {"status": "UNAVAILABLE",
+                    "detail": (f"{peripheral} not available on STM32F103C8T6 "
+                               f"(available_on_c8=false in KB)")}
+        if avail is None:
+            if peripheral in SYSTEM_PERIPHERALS:
+                return {"status": "OK",
+                        "detail": (f"{peripheral} in knowledge base "
+                                   f"(FULL coverage) — "
+                                   "system-peripheral, field absent")}
+            return {"status": "WARN",
+                    "detail": (f"{peripheral} available_on_c8 field absent "
+                               "and not in system-peripheral whitelist — "
+                               "verify F103 datasheet")}
         return {"status": "OK", "detail": f"{peripheral} in knowledge base (FULL coverage)"}
     elif peripheral in rels:
         return {"status": "OK", "detail": f"{peripheral} available on F103 (PARTIAL KB coverage)"}
@@ -157,9 +185,10 @@ def check_known_issues(peripheral, issues):
 
 
 def compute_verdict(checks):
-    """综合所有检查 → 最终裁定"""
+    """综合所有检查 → 最终裁定 (F-194: UNAVAILABLE 与 CONFLICT/UNKNOWN 同级
+    参与 BLOCKED — 不在目标芯片的外设是死路, 不许以 WARN 面放行)"""
     statuses = [c.get("status", "OK") for c in checks.values()]
-    if "CONFLICT" in statuses or "UNKNOWN" in statuses:
+    if "CONFLICT" in statuses or "UNKNOWN" in statuses or "UNAVAILABLE" in statuses:
         return "BLOCKED"
     if "WARN" in statuses or "PARTIAL" in statuses or "NONE" in statuses:
         return "OK_WITH_WARNINGS"
@@ -182,7 +211,13 @@ def run_check(peripheral, pins, target_desc="", workspace=None):
     }
 
     recommendations = []
-    if checks["chip_support"]["status"] != "OK":
+    cs_status = checks["chip_support"]["status"]
+    if cs_status == "UNAVAILABLE":
+        # F-194: 已知不可用 → 泛化的"查数据手册"建议是错话, 给行动指向
+        recommendations.append(
+            f"{peripheral} is not available on STM32F103C8T6 — pick a "
+            "different peripheral or target chip (available_on_c8=false)")
+    elif cs_status != "OK":
         recommendations.append("Verify peripheral availability in STM32F103 datasheet")
     if checks["kb_coverage"]["status"] in ("PARTIAL", "NONE"):
         recommendations.append(
@@ -261,6 +296,7 @@ def main():
         print(f"\n=== Phase -1: {result['target']} ===\n")
         for name, check in result["checks"].items():
             icon = {"OK": "PASS", "WARN": "WARN", "CONFLICT": "FAIL", "UNKNOWN": "????",
+                    "UNAVAILABLE": "UNAV",
                     "FULL": "FULL", "PARTIAL": "PART", "NONE": "NONE"}.get(check["status"], check["status"])
             print(f"  [{icon:4s}] {name}: {check['detail']}")
             if "shared" in check and check["shared"]:
