@@ -483,6 +483,45 @@ embedded-toolkit/
   修法需 gen-maps 增 irq-name 域 + vec 命名逻辑改造，非杂项量级。
   裁定=暂缓，**唤起条件 = 样例工厂二期 / 非 C8 目标立项 / 下次动 gen-maps irq 域设计**。
   出处：CHANGELOG F-191 节 P 面（WB-20260926-02 §六 P-1）。
+- **WB-05 审查残量·生成器与数据面（2026-09-26 对账确认仍在，M/L 各一包；
+  对账=WB-20260926-04 报告 §一，入册经维护者批准）**
+  影响：① `phase_minus_one` 芯片支持检查不消费 `available_on_c8`——C8T6 不可用
+  的 22 个 KB 外设（TIM5/8/9、ADC3、DMA2、FSMC、SDIO 等）前置闸假 OK，白耗一轮
+  HIL（WB-05 M-1）；② `gen_periph` 引脚零校验（PA20/PA12 同半字节静默碰撞、
+  `--pin P` 裸 IndexError、小写 pa0 产 IOPaEN，WB-05 L-1）；③ 生成的 i2c 帮手
+  引用 `error_chain_t/ERR_PLAIN` 但不发射定义，照抄即编译失败（WB-05 L-4）；
+  ④ `svd_to_json --periph` 流式路径不解析 peripheral 级 derivedFrom（CMSIS 属性
+  风格），寄存器表空且与 `--all` 劈叉、零告警（WB-05 M-8）；⑤ `svd_to_json
+  merge_into_ref` 对 KB 主文件截断式裸写，中途失败即损坏 `data/stm32f103-ref.json`
+  （WB-05 M-9）；⑥ SVD 位域 lsb/msb 风格静默丢弃、基字段回填不认 bitRange
+  （WB-05 L-3）。规避：Drafter 前置闸结果人工复核 `available_on_c8`；生成物人工
+  过目；SVD 导入一律走 `--all` 并人工抽查 derivedFrom 外设；merge 前手动备份
+  ref.json。详情：WB-20260919-05 报告 §一；对账单报告 §一（现树行号）。
+- **WB-05 审查残量·健壮性与防篡改面（2026-09-26 对账确认仍在）**
+  影响：① 管道编码漏网三处——`hardfault.py`/`handoff_guard.py`/`release_audit.py`
+  输出无 force_utf8（cp936 控制台下 hardfault 步骤 diagnosis 乱码实测复现）
+  （WB-05 M-4）；② `junit_xml` 不净化 XML 1.0 非法控制字符，脏 detail 产出非法
+  XML 且信封 ok=True（WB-05 M-5）；③ `release_audit` R8 只查批准时间戳非空
+  （手工填值即过）、R6 不查工作树脏状态——与头注"手工改值视同篡改"承诺不符
+  （WB-05 M-6）；④ `evidence_export` 对改坏的发布记录抛未捕获 AttributeError，
+  CI `if: always()` 步骤假红（WB-05 M-7）；⑤ `release.py _gcc_version` 配了
+  `gcc_path` 即拼 `arm-none-eabi-gcc.exe`，Linux 上恒 unknown（WB-05 L-7，
+  F-190 只分流了 ESP 面）；⑥ `mcp_server.resolve_project` 对库根本身不设防
+  （下游 preflight 兜底，无实害语义落空）（WB-05 L-8）；⑦ `doctor` fixture 漂移
+  哈希经解码-再编码往返，非法 UTF-8 误报漂移（WB-05 L-9）；⑧ `handoff_guard`
+  L2 豁免按任意层目录名匹配，`docs/tests/x.py` 全豁免（WB-05 L-10）；
+  ⑨ `fsd_coverage` config 损坏静默回退默认 FSD 且 notes 人读不可见（WB-05 L-11）；
+  ⑩ `phase_minus_one` fixed_pins 损坏谎报"没有占用表"（fail-open）、BLOCKED
+  退出码恒 0（WB-05 L-2）。规避：中文 Windows 下以 UTF-8 模式跑 verify；发布
+  记录不手工编辑；Linux 发布机 machine.json 留空 gcc_path。
+- **Note 面留档（2026-09-26 对账）**：`feedback_db` 多进程 RMW 无锁（单会话假设
+  维持，WB-05 N-1）；`serial_send` hex 模式 `A0xB` 类输入剥转损坏（WB-05 N-3）。
+  引用防呆：WB-05 与 01 报告存在**同号异病**（M-1/H-1/L-2/N-3/N-4 五对），引用
+  必须带报告名前缀（对账单 §六）。
+- **GAP-F-13 现势口径订正（2026-09-26，对账单 §三建议采纳）**：全局打桩计数现势
+  一律以 `tests/test_stub_ratchet.py` BASELINE 为唯一事实源（**73 键/157 处/38 文件**，
+  AST 判据、机检守卫）；历史口径 98 处/22 文件（F-184）与 102 处/23 文件（01 报告
+  粗扫）退役为史料。"按需收窄、不批量清扫"裁决维持。
 - **ref.json 数据面 GAP-D 收口状态（F-179，WB-20260920-05）**
   影响：`data/stm32f103-ref.json` 的 `bus` 字段曾与外设 RCC 使能位归属相反
   （TIM9 记 APB1、TIM12/13/14 记 APB2）；`_relationships` 的 IRQ 号只覆盖 12 个外设；
