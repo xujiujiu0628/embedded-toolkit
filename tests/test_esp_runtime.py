@@ -410,11 +410,9 @@ class StepCaptureUartTests(unittest.TestCase):
 
         fake_serial = SimpleNamespace(Serial=BoomAfter3,
                                       SerialException=FakeSerialError)
-        fake_time = iter([0, 0, 0, 1, 2, 3, 4, 5, 6, 6])
-        with mock.patch.dict(sys.modules, {"serial": fake_serial}), \
-             mock.patch.object(esp_runtime.time, "sleep"), \
-             mock.patch.object(esp_runtime.time, "time",
-                               lambda: next(fake_time)):
+        # 注: 不 fake 时钟 — 假串口第 4 次 readline 即抛, deadline 循环
+        # 毫秒级触发异常 (且 esp_runtime.time 全局桩被 T1 棘轮禁新增)。
+        with mock.patch.dict(sys.modules, {"serial": fake_serial}):
             r = esp_runtime.step_capture_uart(
                 5, {"port": "COM3", "settle_sec": 0}, workspace="W:",
                 _run_idf=lambda c, **kw: {"status": "ok", "returncode": 0,
