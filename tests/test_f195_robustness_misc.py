@@ -58,7 +58,8 @@ class ForceUtf8HardfaultTests(unittest.TestCase):
         self.addCleanup(shutil.rmtree, ws, ignore_errors=True)
         hf = os.path.join(ws, "capture.txt")
         with open(hf, "w", encoding="utf-8") as f:
-            f.write("[初始化] boot ok\n[HF] PC=0x08001234 LR=0x08005678\n")
+            # [HF] 模板契约: 8 位大写十六进制无 0x 前缀 (_HF_SITE_RE)
+            f.write("[初始化] boot ok\n[HF] PC=08001234 LR=08005678\n")
         r = _run_cp936("hardfault.py",
                        ["--no-probe", "--json", "--fault-text", hf], cwd=ws)
         self.assertEqual(r.returncode, 0,

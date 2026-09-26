@@ -36,7 +36,7 @@ import subprocess
 import sys
 
 from runtime_common import now_iso, save_json_file
-from wb_common import find_project_root, sha256_file
+from wb_common import find_project_root, force_utf8_streams, sha256_file
 
 REQUIRED_KEYS = ("tag", "git_head", "timestamp", "build_mode", "artifacts",
                  "results", "xfail_waived", "tools")
@@ -305,6 +305,7 @@ def approve_record(ws, tag):
 
 
 def main():
+    force_utf8_streams()   # F-195 T1 (M-4): UTF-8 咒语收编 wb_common (F-157 先例)
     ap = argparse.ArgumentParser(
         description="发布记录事后审计 (默认只读; --approve 为唯一写路径)")
     ap.add_argument("--project", default=None, help="工程根目录 (默认 cwd 向上发现)")

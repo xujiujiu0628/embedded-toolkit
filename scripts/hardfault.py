@@ -29,7 +29,7 @@ import subprocess
 import sys
 import time
 
-from wb_common import find_project_root, load_machine
+from wb_common import find_project_root, force_utf8_streams, load_machine
 from runtime_common import OpenocdCfgError, now_iso, resolve_openocd_cfg  # F-157 收编 + WB-20260919-06 cfg 单一事实源
 
 
@@ -577,6 +577,7 @@ def _default_map_path() -> str:
 
 
 def main():
+    force_utf8_streams()   # F-195 T1 (M-4): UTF-8 咒语收编 wb_common (F-157 先例)
     parser = argparse.ArgumentParser(description="HardFault 自动诊断器")
     parser.add_argument("--map", default=None,
                         help=".map 文件路径 (默认: cwd 向上发现工程 lst/*.map, F-005)")

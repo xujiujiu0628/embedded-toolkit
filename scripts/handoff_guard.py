@@ -21,6 +21,8 @@ import re
 import subprocess
 import sys
 
+from wb_common import force_utf8_streams
+
 # ---------- L1：文件禁线 ----------
 FORBIDDEN_EXACT = {"machine.json", "scripts/handoff_guard.py"}
 FORBIDDEN_PREFIX = ("hooks/",)
@@ -170,6 +172,7 @@ def guard(repo, branch, base="master"):
 
 
 def main(argv=None):
+    force_utf8_streams()   # F-195 T1 (M-4): UTF-8 咒语收编 wb_common (F-157 先例)
     ap = argparse.ArgumentParser(description="handoff 分支沙盒禁线扫描（换回协议第一步）")
     ap.add_argument("--repo", default=".", help="仓库路径（默认 cwd）")
     ap.add_argument("--branch", required=True, help="handoff/* 分支")
