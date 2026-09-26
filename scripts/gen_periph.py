@@ -16,6 +16,7 @@ STM32F103 外设代码生成器 — 参数 → 寄存器级 C init 代码
 import argparse
 import json
 import os
+import re
 import sys
 
 from wb_common import TOOLKIT_ROOT, find_project_root, load_ref  # F-157: 三份 load_ref 收编
@@ -184,6 +185,12 @@ def _hclk_precondition_note(hclk_mhz: int, pclk1_mhz: int | None = None,
     return lines
 
 # ---- 引脚号提取 ----
+# F-194 (WB-20260927-02 T2, 销 WB-05 L-1): --pin 域正则 — 大写严格,
+# 端口 A~G, 引脚 0~15。CLI 入口单点校验 (main), 库态 pin_port/pin_num
+# 等提取函数宽松语义不动 (F-185 P-3 先例: CLI 收口库态宽)。
+_PIN_RE = re.compile(r"P[A-G](1[0-5]|[0-9])")
+
+
 def pin_port(pin: str) -> str:
     """PA0 → A, PC13 → C"""
     return pin[1] if pin[1].isdigit() else pin[1:2]
@@ -1151,6 +1158,15 @@ GPIO 模式 (F-103: 由 --mode choices 强制, 未知模式报错):
     parser.add_argument("--out-dir", default="", help="文档输出目录")
 
     args = parser.parse_args()
+
+    # F-194 (WB-20260927-02 T2): --pin 入口单点校验 (大写严格)。旧行为三病:
+    # `--pin P` 裸 IndexError traceback (pin_port 切片); `--pin PA20` 与
+    # PA12 同半字节 (CRH<<16) 静默碰撞; `--pin pa0` 直落 IOPaEN/GPIOa
+    # 垃圾寄存器名。显式优于隐式: 小写拒绝不归一; 走 _emit 统一 ERROR
+    # →rc=1 出口 (F-103 纪律), 文案点名当前值与合法形态。
+    if args.pin and not _PIN_RE.fullmatch(args.pin):
+        _emit(f"/* ERROR: 非法 --pin {args.pin!r} — 合法形态 P[A-G]0~15 "
+              f"(如 PA0/PC13), 大写严格; 小写不归一, 显式拒绝。*/")
 
     # F-110: hclk 域校验前置 (仅时钟相关 type; gpio/doc 不涉及时钟)。
     # 越界走 _emit 统一 ERROR→exit 1 (F-103 边界纪律)。
