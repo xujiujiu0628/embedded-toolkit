@@ -1,0 +1,16 @@
+{
+  "_meta": {
+    "version": "1.0.0",
+    "chip": "STM32F103C8T6",
+    "package": "LQFP48",
+    "source_types": ["web:DS5319:§3:Table 5:<页>"],
+    "policy": "只收 DS5319 官方引脚表列出的脚；每行必带 source；1:N 关系不进 arch-facts（见 §3.2）",
+    "applicability": "本文件为 LQFP48/xB 封装切片（DS5319 覆盖域=STM32F103x8/xB 中密度器件）；高密度外设引脚增补属另册另单——多封装维度=结构变更，WB-20260927-01 T3 已核（2026-09-26）：高密度数据手册 DS5792 无 48 脚封装，TIM5/ADC3/TIM8/TIM9/SDIO/FSMC/DMA2 查无此脚，弃登维持。"
+  },
+  "CAN": {
+    "PA11": {"function": "CAN_RX", "column": "alternate", "source": "web:DS5319:§3:Table 5:p31"},
+    "PA12": {"function": "CAN_TX", "column": "alternate", "source": "web:DS5319:§3:Table 5:p31"},
+    "PB8": {"function": "CAN_RX", "column": "additional", "source": "web:DS5319:§3:Table 5:p33"},
+    "PB9": {"function": "CAN_TX", "column": "additional", "source": "web:DS5319:§3:Table 5:p33"}
+  }
+}
