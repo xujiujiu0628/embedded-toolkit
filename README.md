@@ -497,6 +497,13 @@ embedded-toolkit/
   （WB-05 L-3）。规避：Drafter 前置闸结果人工复核 `available_on_c8`；生成物人工
   过目；SVD 导入一律走 `--all` 并人工抽查 derivedFrom 外设；merge 前手动备份
   ref.json。详情：WB-20260919-05 报告 §一；对账单报告 §一（现树行号）。
+  **划修（2026-09-27，F-194 / WB-20260927-02）**：① M-1 已修——`phase_minus_one`
+  消费 `available_on_c8` 三态（false→UNAVAILABLE/BLOCKED；缺字段白名单封闭集
+  {GPIO, NVIC, SysTick}），前置闸假 OK 消失，规避句"Drafter 前置闸结果人工复核
+  available_on_c8"退役；② L-1 已修——`gen_periph --pin` 入口校验（大写严格，
+  IndexError/半字节碰撞/垃圾名三病收口）；③ L-4 已修——i2c 帮手自足（int 返回 +
+  stdint include，error-chain 幽灵引用清零），"生成物人工过目"的 i2c 编译失败面
+  随之退役；④⑤⑥（M-8/M-9/L-3）仍在，SVD 两句规避维持。
 - **WB-05 审查残量·健壮性与防篡改面（2026-09-26 对账确认仍在）**
   影响：① 管道编码漏网三处——`hardfault.py`/`handoff_guard.py`/`release_audit.py`
   输出无 force_utf8（cp936 控制台下 hardfault 步骤 diagnosis 乱码实测复现）
