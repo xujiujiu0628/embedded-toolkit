@@ -403,7 +403,9 @@ class GenI2cTests(unittest.TestCase):
         self.assertIn("I2C1->TRISE = 37;", out)
         self.assertIn("I2C1->CR1 = 1;", out)
         self.assertIn("GPIOB->CRL |=  (0xFUL << 24);", out)  # PB6 AF-OD
-        self.assertIn("static error_chain_t i2c1_write(", out)
+        # F-194 (WB-20260927-02 T3): 帮手降级 int 返回, 不依赖 error_chain
+        # (旧 error_chain_t 引用无定义面, 照抄即编译失败)
+        self.assertIn("static int i2c1_write(", out)
 
     def test_fast_mode_400k_sets_fs_bit_and_shorter_trise(self):
         out = gen_periph.gen_i2c("I2C2", 400000, "PB10", "PB11")
