@@ -4192,3 +4192,88 @@ WB-05 残量三笔（M-1/L-1/L-4，对账=WB-20260926-04 报告 §一）先钉�
   chip_support 消费）。
 - **未完成清单**：无（T1~T3 全收；README 入册条目三笔划修 + 规避句退役随
   本 docs 笔）。
+
+## F-195 — 健壮面修复：编码收编 / XML 净化 / 类型守卫 / SVD derivedFrom 与原子写 / stdint 自足（WB-20260927-03，2026-09-27）
+
+WB-05 残量五笔（M-4/M-5/M-7/M-8/M-9，对账=WB-20260926-04 报告 §一）+
+F-194 P-2，六件独立先钉后修收口。全程未 push，data/** 零写。
+
+- **T1 force_utf8_streams 收编三漏网（M-4）**：hardfault/handoff_guard/
+  release_audit 三脚本 main 入口调 `wb_common.force_utf8_streams()`
+  （F-157 同点同款，第五处收编后的漏网家族）。cp936 子进程伪环境
+  （PYTHONIOENCODING=cp936 + PYTHONUTF8=0）真子进程钉：修前 diagnosis/
+  L3 note/error 中文 JSON 出 GBK 字节流父端解码即 U+FFFD 实锤，修后干净。
+  修法单点（main 入口）不动任何输出形态。
+- **T2 junit_xml 净化 XML 1.0 非法控制字符（M-5）**：render_xml 属性面
+  （name/classname/failure_type/message）过 `_xml_safe`：#x00-#x08/
+  #x0B/#x0C/#x0E-#x1F → U+FFFD。选替换非转义的论证：字符引用 `&#x01;`
+  在 XML 1.0 同样非法（Char 产生式外，解析器即 ParseError），转义保不住
+  合法性；U+FFFD 与管道 errors="replace" 口径一致。合法字符（含
+  \t\n\r/中文）逐字节不动（金比对反向钉两侧绿）。修前脏 message 产非法
+  XML 且信封 ok=True 假绿——信封 ok 语义与内容合法性重新绑定（ok=True
+  蕴含落盘文件可 ET.parse）。
+- **T3 evidence_export 薄型校验 fail-soft（M-7）**：render_verify_summary/
+  render_release_summary 六个迭代/切片缝（results×2/records/
+  captured_output/xfail_waived/boundaries/limitations）+ steps 分级 dict
+  访问加 isinstance 守卫：非预期类型的真值（改坏记录）→ `_bad_type_note`
+  留痕行渲染跳过，不再抛未捕获 AttributeError（CI `if: always()` 步骤
+  假红根因）；main() 捕 AttributeError/TypeError 并入既有 ValueError/
+  OSError 处置（exit 2）作第二道兜底。正常记录渲染逐字节不变（双渲染面
+  金比对）。
+- **T4 svd --periph 流式补 derivedFrom 名表解析（M-8）**：extract_single
+  复用与 extract_all 同源的 `extract_peripheral(elem, name_map)` 路径
+  （:173 已有能力，喂名表即可）：iterparse 单遍收名表，带 derivedFrom 的
+  target 不提前 clear（基外设可能在前/在后），无 derivedFrom 维持旧流式
+  早退语义。基外设不在名表 → 响亮 stderr 告警点名 derivedFrom 值，不再
+  静默回空表。`--periph USART2` 与 `--all` 劈叉消失（钉：registers 全等）。
+- **T5 merge_into_ref 原子写 + _meta 缺键守卫（M-9）**：截断式
+  open('w')+json.dump 裸写 KB 主文件改 `wb_common.atomic_write_json`
+  （F-020/F-127 基建）：dump 中途失败原文件逐字节完好（tempdir 副本
+  实证：修前 set 注入半途抛错即截断损坏）。金口径=新旧输出 newline 归一
+  后逐字节同——旧 open('w') 在 Windows 附带 \n→CRLF 翻译（与盘上
+  ref.json 的 LF 形态相悖的偶然产物），原子写强制 LF 顺路纠偏，钉分两侧
+  断言（归一逐字节同 + LF-only）。`ref["_meta"]["peripheral_count"]`
+  双下标改缺键/非对象 → 显式 ValueError（修前裸 KeyError）。库态签名
+  `(all_data, ref_path)->(added, total)` 不变；merge 逻辑改动全部
+  tempdir 副本验证，data/stm32f103-ref.json 本体零写（sha256 前后同）。
+- **T6 gen_usart/gen_spi 帮手 stdint 自足（F-194 P-2）**：usart 帮手
+  _write 块（unistd 后）与 spi 帮手 transfer 前自发射
+  `#include <stdint.h>`（若已含则不重复），与 gen_i2c F-194 T3 修法对齐
+  （仿 F-131 unistd 自足先例）。随动（F-194 先例）：pclk 金矩阵 usart×6+
+  spi×3 九条重基线（`_rebased_f195` 注记），重捕获脚本自证每条 diff 恰
+  +1 行 include 其余逐字节不动；gpio/pwm/adc/timer-int/i2c/systick 18 条
+  c0df0c6 原样（其它型不随动=金比对）。
+- **红绿三态**：基线 `Ran 1197 / OK (skipped=6)`（4fb45f1，Git PATH 补齐
+  口径）→ 钉(红) 17 红条目 + 5 反向金钉绿（tests/test_f195_robustness_misc.py
+  新文件 20 例，零 mock 不入 test_stub_ratchet 判据面；
+  fixtures/gen_periph_golden_f195.json 修前捕获）→ 六笔逐修逐绿 →
+  全量 `Ran 1217 / OK (skipped=6)`（+20=新钉数，skipped 恒等）。
+- **撤销实验×6**：每件 `git stash push -- <file>` 拆修 → 红 → pop 字节
+  还原 → 复绿：T1 三文件拆 → 3 红（U+FFFD 断言咬中 GBK 乱码字节流实锤）；
+  T2 拆 → 2 红（ParseError 双面，反向金钉绿）；T3 拆 → 3 红
+  （AttributeError×2 ERROR + e2e traceback FAIL）；T4 拆 → 2 红（空表 +
+  零告警）；T5 拆 → 3 红（截断损坏 + 裸 KeyError + CRLF）；T6 拆 →
+  4 红条目（include 前置 usart+spi；最小 stub gcc 实红 spi1/spi2——
+  usart 的 gcc 面被 unistd→sys/types.h 传递性覆盖系 newlib 工具链语义，
+  自足性收口照做并登记 P 面）。
+- **白名单自证**：`git diff --name-only 4fb45f1...HEAD`（docs 笔前）=
+  scripts/{hardfault, handoff_guard, release_audit, junit_xml,
+  evidence_export, svd_to_json, gen_periph}.py +
+  tests/{test_f195_robustness_misc(新), fixtures/gen_periph_golden_f195.json(新),
+  fixtures/pclk_golden.json(重基线)}，零越界；data/**（sha256 前后同）、
+  verify.py/release.py/runtime_common.py/esp_runtime.py/phase_minus_one.py、
+  hooks/**、examples/**、machine.json 未触。
+- **P 面（只列不改）**：① gen_systick（uint32_t×3，:286/294/295）与
+  gen_adc（uint16_t/uint32_t×3，:583/590/591）同族"用 uint 不发射 stdint"
+  ——F-078 stub 预置掩盖，本单 T6 简报只授权 usart/spi，登记另修；
+  ② `merge_into_ref` 的 `ref["peripherals"]` 裸下标同族（缺键 KeyError），
+  本单按简报只收 _meta 面；③ atomic_write_json 失败路径残留
+  `{path}.{pid}.tmp`（F-023 家族既有行为，wb_common 非本单白名单）；
+  ④ usart 的 stdint 缺口在 arm-gcc/newlib 下被 unistd 传递性掩盖（gcc
+  实红面仅 spi），自足收口消除该工具链耦合；⑤ T4 流式名表对带
+  derivedFrom 的 target 不提前 clear——超大 SVD 单遍内存与 --all 同量级
+  （语义正确性优先，现库 SVD 量级无实害）；⑥ svd merge 的
+  `_rebased_f195` 与 `ref.json` 盘上 indent=1 形态无关（merge 输出一贯
+  indent=2，金口径系新旧相对一致，见 T5）。
+- **未完成清单**：无（T1~T6 全收；README 两入册条目划修 + 规避句退役随
+  本 docs 笔）。
