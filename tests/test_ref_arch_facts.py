@@ -11,6 +11,8 @@ r"""arch-facts 载入钉 (WB-20260920-05 / F-179, GAP-D-4)。
      以排除"把样例里的数抄两遍自证"（防循环自证）；
   4. 编码表/常量与现场可复核的锚点常数逐条比对（IWDG KR 三键、FLASH KEYR
      两键、PLLMUL 15 行）。
+  5. (WB-20260925-03 T1 扩面) web: 第四出处型登记 + USBPRE/PWRCTRL 值语义
+     + FSMC 位名节的出处与语义钉（缺 web:RM0008 锚或缺语义必红）。
 
 本文件消费方后续单接（简报 §2 T3）；全量回归须证明零既有断言受影响。
 """
@@ -27,7 +29,7 @@ from wb_common import TOOLKIT_ROOT  # noqa: E402
 
 FACTS_PATH = os.path.join(TOOLKIT_ROOT, "data", "stm32f103-arch-facts.json")
 
-_SOURCE_PREFIXES = ("RM0008:", "CMSIS:", "arch-constant:")
+_SOURCE_PREFIXES = ("RM0008:", "CMSIS:", "arch-constant:", "web:")
 
 # 独立演算的已知答案 (WB-20260920-02 §四.1；非运行被检程序所得)
 CRC_VEC_EMPTY = 0xFFFFFFFF
@@ -159,6 +161,125 @@ class ArchFactsCrcCrossCheckTests(unittest.TestCase):
                          CRC_VEC_ONE_WORD)
         self.assertEqual(_crc_model(CRC_PAYLOAD, self.poly, self.init),
                          CRC_VEC_PAYLOAD)
+
+
+class ArchFactsWebAnchoredSemanticsTests(unittest.TestCase):
+    """WB-20260925-03 T1 扩面：值语义补锚（web: 第四出处型）+ FSMC 位名节。
+
+    出处纪律（简报 §2）：web 型必须锚到 ST 官方文档（RM0008/DS5319），
+    格式 `web:<文档号>:<节/表号>:<页>`；语义引文与值对不上=该项弃登。
+    """
+
+    def setUp(self):
+        self.doc = _load()
+
+    def test_web_source_type_registered(self):
+        types = self.doc["_meta"]["source_types"]
+        web = [t for t in types if t.startswith("web:")]
+        self.assertEqual(
+            web, ["web:<文档号>:<节/表号>:<页>"],
+            "_meta.source_types 未按简报登记第四型 web:<文档号>:<节/表号>:<页>")
+
+    def test_usbpre_value_semantics_anchored(self):
+        entry = self.doc["rcc_cfgr"]["cfgr_usbpre_bit"]
+        encoding = entry["encoding"]
+        self.assertEqual(sorted(encoding), ["0b0", "0b1"],
+                         "USBPRE 只有 0/1 两态")
+        self.assertEqual(encoding["0b0"]["divisor"], 1.5,
+                         "USBPRE=0 应为 PLL÷1.5 (RM0008 §7.3.2)")
+        self.assertEqual(encoding["0b1"]["divisor"], 1,
+                         "USBPRE=1 应为 PLL 不分频 (RM0008 §7.3.2)")
+        self.assertEqual(encoding["0b0"]["option"],
+                         "PLL clock is divided by 1.5")
+        self.assertEqual(encoding["0b1"]["option"], "PLL clock is not divided")
+        for code, item in encoding.items():
+            self.assertTrue(item["source"].startswith("web:RM0008:"),
+                            code + " 语义缺 web:RM0008 锚: "
+                            + str(item.get("source")))
+            self.assertTrue(item.get("cmsis_crosscheck", "").startswith("CMSIS:"),
+                            code + " 缺 seed HAL 宏交叉验证标注")
+
+    def test_sdio_pwrctrl_value_semantics_anchored(self):
+        entry = self.doc["sdio"]["power_pwrctrl_bits"]
+        encoding = entry["encoding"]
+        self.assertEqual(sorted(encoding), ["0b00", "0b01", "0b10", "0b11"],
+                         "PWRCTRL 是 2 位四态")
+        self.assertIn("Power-off", encoding["0b00"]["option"],
+                      "0b00 语义应含 Power-off (RM0008 §22.9.1)")
+        self.assertIn("Power-on", encoding["0b11"]["option"],
+                      "0b11 语义应含 Power-on (RM0008 §22.9.1)")
+        self.assertEqual(encoding["0b00"]["state"], "power-off")
+        self.assertEqual(encoding["0b11"]["state"], "power-on")
+        for code, item in encoding.items():
+            self.assertTrue(item["source"].startswith("web:RM0008:"),
+                            code + " 语义缺 web:RM0008 锚")
+
+    # 位名+位置来自 seed stm32f103xg.h（本文件 _meta.anchored_header），
+    # 语义来自 RM0008 §21.5.6；CPSIZE 为 seed 缺席项（0 命中），仅 web 锚。
+    BCR_EXPECT = {
+        "MBKEN": ("bit", 0, "FSMC_BCRx_MBKEN_Pos", 5210),
+        "MUXEN": ("bit", 1, "FSMC_BCRx_MUXEN_Pos", 5213),
+        "MTYP": ("bits", "3:2", "FSMC_BCRx_MTYP_Pos", 5217),
+        "MWID": ("bits", "5:4", "FSMC_BCRx_MWID_Pos", 5223),
+        "FACCEN": ("bit", 6, "FSMC_BCRx_FACCEN_Pos", 5229),
+        "BURSTEN": ("bit", 8, "FSMC_BCRx_BURSTEN_Pos", 5232),
+        "WAITPOL": ("bit", 9, "FSMC_BCRx_WAITPOL_Pos", 5235),
+        "WRAPMOD": ("bit", 10, "FSMC_BCRx_WRAPMOD_Pos", 5238),
+        "WAITCFG": ("bit", 11, "FSMC_BCRx_WAITCFG_Pos", 5241),
+        "WREN": ("bit", 12, "FSMC_BCRx_WREN_Pos", 5244),
+        "WAITEN": ("bit", 13, "FSMC_BCRx_WAITEN_Pos", 5247),
+        "EXTMOD": ("bit", 14, "FSMC_BCRx_EXTMOD_Pos", 5250),
+        "ASYNCWAIT": ("bit", 15, "FSMC_BCRx_ASYNCWAIT_Pos", 5253),
+        "CPSIZE": ("bits", "18:16", None, None),
+        "CBURSTRW": ("bit", 19, "FSMC_BCRx_CBURSTRW_Pos", 5256),
+    }
+    BTR_EXPECT = {
+        "ADDSET": ("3:0", 5261),
+        "ADDHLD": ("7:4", 5269),
+        "DATAST": ("15:8", 5277),
+        "BUSTURN": ("19:16", 5289),
+        "CLKDIV": ("23:20", 5297),
+        "DATLAT": ("27:24", 5305),
+        "ACCMOD": ("29:28", 5313),
+    }
+
+    def test_fsmc_group_bit_names_anchored(self):
+        fsmc = self.doc["fsmc"]
+        bcr = fsmc["bcr_bits"]
+        btr = fsmc["btr_bits"]
+        self.assertEqual(sorted(bcr), sorted(self.BCR_EXPECT),
+                         "BCR 位名集合与 RM0008 §21.5.6 位表不符")
+        self.assertEqual(sorted(btr), sorted(self.BTR_EXPECT),
+                         "BTR 位名集合与 RM0008 §21.5.6 位表不符")
+        for name, (kind, pos, cmsis, line) in self.BCR_EXPECT.items():
+            entry = bcr[name]
+            self.assertEqual(entry.get(kind), pos,
+                             "FSMC BCR {0} {1} != {2}".format(name, kind, pos))
+            self.assertTrue(entry.get("meaning"), name + " 缺语义")
+            self.assertTrue(entry["source"].startswith("web:RM0008:"),
+                            name + " 缺 web:RM0008 锚")
+            if cmsis is None:
+                self.assertNotIn("cmsis_crosscheck", entry,
+                                 name + " seed 已复核 0 命中，不得标注 CMSIS 交叉验证")
+            else:
+                self.assertEqual(entry.get("cmsis_crosscheck"),
+                                 "CMSIS:stm32f103xg.h:{0}:{1}".format(
+                                     line, cmsis),
+                                 name + " cmsis_crosscheck 行号漂移")
+        for name, (pos, _line) in self.BTR_EXPECT.items():
+            entry = btr[name]
+            self.assertEqual(entry.get("bits"), pos,
+                             "FSMC BTR {0} bits != {1}".format(name, pos))
+            self.assertTrue(entry.get("meaning"), name + " 缺语义")
+            self.assertTrue(entry["source"].startswith("web:RM0008:"),
+                            name + " 缺 web:RM0008 锚")
+
+    def test_fsmc_applicability_noted(self):
+        """FSMC 不在 C8T6 上；入册须带适用范围说明并锚到 RM0008 §21。"""
+        note = self.doc["fsmc"]["applicability"]
+        self.assertIn("C8T6", note["note"], "缺 C8T6 不适用说明")
+        self.assertTrue(note["source"].startswith("web:RM0008:"),
+                        "适用范围说明缺 web:RM0008 锚")
 
 
 if __name__ == "__main__":
