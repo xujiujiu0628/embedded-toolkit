@@ -21,12 +21,28 @@ test report 里可见。本模块独立于 verify.py —— verify 只做最小�
 from __future__ import annotations
 
 import os
+import re
 from xml.etree import ElementTree as ET
 
 from expectations import ExpectationError, load_expectations
 
 SUITE_NAME = "embedded-toolkit verify"
 _CLASSNAME = "expectations"
+
+# F-195 T2 (M-5): XML 1.0 非法控制字符 (#x00-#x08 #x0B #x0C #x0E-#x1F)。
+# 注意 #x09/#x0A/#x0D (制表/换行/回车) 合法, 不得误伤。
+_XML1_ILLEGAL_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f]")
+
+
+def _xml_safe(s: str) -> str:
+    """XML 1.0 非法控制字符 → U+FFFD (F-195 T2, 销 WB-05 M-5)。
+
+    选替换而非转义的论证: 字符引用 &#x01; 在 XML 1.0 同样非法
+    (Char 产生式只认 #x9/#xA/#xD/#x20-#xD7FF/..., 解析器对指向非法
+    字符的引用直接 ParseError "reference to invalid character number"),
+    转义路线保不住合法性; U+FFFD 是唯一让输出恒可解析的选择, 且与
+    管道层 errors="replace" 的既有口径一致。合法字符逐字节不动。"""
+    return _XML1_ILLEGAL_RE.sub("\ufffd", s)
 
 
 def build_cases(result: dict, expectation_ids: list[str] | None) -> list[dict]:
@@ -88,19 +104,20 @@ def render_xml(cases: list[dict], suite_time: float | None) -> str:
     suite = ET.Element("testsuite", attrs)
     for c in cases:
         tc = ET.SubElement(suite, "testcase",
-                           {"name": c["name"], "classname": c["classname"]})
+                           {"name": _xml_safe(c["name"]),
+                            "classname": _xml_safe(c["classname"])})
         kind = c.get("kind")
         if kind == "failure":
             ET.SubElement(tc, "failure",
-                          {"type": c.get("failure_type", "fail"),
-                           "message": c.get("message", "")})
+                          {"type": _xml_safe(c.get("failure_type", "fail")),
+                           "message": _xml_safe(c.get("message", ""))})
         elif kind == "preflight_error":
             ET.SubElement(tc, "error",
                           {"type": "preflight",
-                           "message": c.get("message", "")})
+                           "message": _xml_safe(c.get("message", ""))})
         elif kind == "skipped":
             ET.SubElement(tc, "skipped",
-                          {"message": c.get("message", "skipped")})
+                          {"message": _xml_safe(c.get("message", "skipped"))})
     return ('<?xml version="1.0" encoding="UTF-8"?>\n'
             + ET.tostring(suite, encoding="unicode"))
 
