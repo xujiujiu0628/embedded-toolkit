@@ -555,6 +555,20 @@ embedded-toolkit/
   WB-20260925-03 报告 §T2，**待维护者批准后另单落盘**；TIM5/ADC3/TIM8/TIM9/
   SDIO/FSMC/DMA2 在 DS5319 引脚表零行，弃登维持（需高密度数据手册另单）。
   详情：CHANGELOG F-189 / WB-20260925-03 报告。
+  **2026-09-26 落盘订正（✅ F-193，WB-20260927-01）**：三态再更新——
+  **CAN 已入册**：新档 `data/pin-mapping-f103.json`（**LQFP48/xB 封装切片**，
+  `tests/test_pin_mapping.py` 结构/source 前缀/引文对账完备三面钉）收 CAN
+  四行：PA11=CAN_RX、PA12=CAN_TX（alternate）+ PB8=CAN_RX、PB9=CAN_TX
+  （additional=AFIO 重映射态），锚 `web:DS5319:§3:Table 5:p31/p33`；
+  **DS5319 已升版 Rev 18→Rev 20**（Table 5 重排为多封装宽表），F-189 旧锚
+  三处随今日直抓订正：节号 §8→**§3**、页位 p27/p28→**p31/p33**、PA11/PA12
+  的 LQFP48 脚号 33/34→**32/33**（F-189 疑列读串；CAN 功能/列位语义不变）；
+  **DS5318 授权已用、结论=查无此脚**：高密度数据手册实为 **DS5792**
+  （DS5318 系文档号误记），其封装自 64 脚起（§2.1 逐字 from 64 pins to
+  144 pins）、无 48 脚封装表，ADC3/TIM8/SDIO/FSMC 信号脚（PF6-10、PC6-12+
+  PD2、PE-PG，且 Table 6 注 11 明言 LQFP64 亦无 FSMC）不在 LQFP48，TIM5
+  信号脚（PA0-3）在而无 HD 器件以 48 脚封装出货（官方表无行不硬造），DMA2
+  无外引脚——7 外设弃登维持。详情：CHANGELOG F-193 / WB-20260927-01 报告。
 - **py3.10 语法地板（F-181，WB-20260921-02 已加钉）**
   影响：CI 有 py3.10 腿，而 **PEP 701** f-string 写法（3.12 才放宽：表达式区同类
   引号 / 反斜杠 / 跨行与注释）在本机 3.14 全绿、到 3.10 腿上整腿炸。
