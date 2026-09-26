@@ -20,10 +20,16 @@ REPO_ROOT = os.path.dirname(SCRIPTS)
 
 class SwdProbeMoveTests(unittest.TestCase):
     def test_release_gate_and_doctor_share_one_probe(self):
-        """F-041 下沉契约: release G0.5 与 verify--doctor 共用
-        openocd_runtime.swd_probe 同一对象 (防再分叉出两套口径)。"""
+        """F-041 下沉契约: release G0.5 与 doctor 共用
+        openocd_runtime.swd_probe 同一对象 (防再分叉出两套口径)。
+
+        F-192/N-4 (WB-20260926-03 T5) 随动: verify 主链零调用 swd_probe,
+        死名已从 verify 删除 — verify 面旧断言 assertIs(…, verify.swd_probe)
+        改钉 "死名不得回场" (同源防分叉语义由 release 面断言继续持有)。"""
         self.assertIs(openocd_runtime.swd_probe, release.swd_probe)
-        self.assertIs(openocd_runtime.swd_probe, verify.swd_probe)
+        self.assertFalse(hasattr(verify, "swd_probe"),
+                         "F-192/N-4: verify 不得再持有 swd_probe 死名 "
+                         "(G0.5 探测面归 release/doctor 直连 openocd_runtime)")
 
 
 class _FakeProc:

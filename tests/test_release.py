@@ -1,3 +1,5 @@
+import contextlib
+import io
 import json
 import os
 import shutil
@@ -252,3 +254,88 @@ class ReleaseGateTests(unittest.TestCase):
                                     limitations=["单板单次采样"])
         self.assertEqual(rec2["fidelity_boundaries"], ["自定义边界"])
         self.assertEqual(rec2["limitations"], ["单板单次采样"])
+
+    # ── F-190/P-1 (WB-20260926-03 T3): main() 对 machine.json
+    #    openocd_exe 键的读取面双向钉 ──
+    # 病灶: main() 无条件 load_machine()["openocd_exe"] — 纯 ESP 机器缺键
+    # 裸 KeyError (G0.5 已入后端闸但键读取未分流, 01 报告 §八-1)。
+    # 修法: ESP 模式不读该键; STM32 模式缺键 → 友好 ERROR (点名键名) +
+    # exit 1。不真发布、不触真机 (gate1 mock / --dry-run / swd_probe boom)。
+
+    def _write_config(self, cfg):
+        wb = os.path.join(self.ws, ".workbench")
+        os.makedirs(wb, exist_ok=True)
+        with open(os.path.join(wb, "config.json"), "w",
+                  encoding="utf-8") as f:
+            json.dump(cfg, f)
+
+    def _write_state_with_artifacts(self):
+        """state.json + 真实产物文件 — build_record 过 hex 哈希门所需。"""
+        build = os.path.join(self.ws, "build")
+        os.makedirs(build, exist_ok=True)
+        for name in ("fw.bin", "fw.elf"):
+            with open(os.path.join(build, name), "wb") as f:
+                f.write(b"\x00FW")
+        wb = os.path.join(self.ws, ".workbench")
+        os.makedirs(wb, exist_ok=True)
+        with open(os.path.join(wb, "state.json"), "w",
+                  encoding="utf-8") as f:
+            json.dump({"last_build": {"artifacts": {
+                "hex_file": "build/fw.bin", "elf_file": "build/fw.elf"}}}, f)
+
+    @mock.patch.object(release, "swd_probe",
+                       side_effect=AssertionError(
+                           "ESP 模式不得触 swd_probe (F-190/M-1 闸)"))
+    @mock.patch.object(release, "gate1")
+    @mock.patch.object(release, "load_machine", return_value={})
+    def test_esp_mode_missing_openocd_key_does_not_crash(
+            self, _m_machine, m_gate1, _m_probe):
+        """双向钉·ESP 面: machine 无 openocd_exe 键 → 不在读键面裸崩,
+        流程走通到 G0.5 skipped 痕 (dry-run rc=0)。"""
+        self._write_config({"builder": "idf"})
+        self._write_state_with_artifacts()
+        m_gate1.return_value = {"status": "ok",
+                                "steps": {"verify": {"results": []}},
+                                "evidence": "hardware_validated",
+                                "contract_hashes": {}}
+        buf = io.StringIO()
+        with mock.patch.object(sys, "argv",
+                               ["release.py", "--tag", "v9.9.9",
+                                "--project", self.ws, "--dry-run"]), \
+                contextlib.redirect_stdout(buf):
+            with self.assertRaises(SystemExit) as cm:
+                release.main()
+        self.assertEqual(cm.exception.code, 0)
+        self.assertIn("g0_5=skipped", buf.getvalue())
+
+    @mock.patch.object(release, "load_machine", return_value={})
+    def test_stm32_mode_missing_openocd_key_friendly_error(self, _m_machine):
+        """双向钉·STM32 面: 缺键 → 友好 ERROR (文案点名 machine.json 键名
+        openocd_exe) + exit 1, 不再裸 KeyError traceback。"""
+        self._write_config({})   # 非 ESP → STM32 缺省语义
+        err = io.StringIO()
+        with mock.patch.object(sys, "argv",
+                               ["release.py", "--tag", "v9.9.9",
+                                "--project", self.ws]), \
+                contextlib.redirect_stderr(err):
+            with self.assertRaises(SystemExit) as cm:
+                release.main()
+        self.assertEqual(cm.exception.code, 1)
+        self.assertIn("openocd_exe", err.getvalue())
+
+    @mock.patch.object(release, "run_gates",
+                       return_value=(False, "G0 失败:\n  x", {}))
+    @mock.patch.object(release, "load_machine",
+                       return_value={"openocd_exe": "fake-openocd.exe"})
+    def test_stm32_mode_with_key_passthrough_regression(
+            self, _m_machine, m_gates):
+        """回归面: STM32+有键 → openocd_exe 原值透传 run_gates
+        (run_gates 第 5 位参数), 缺键分流不得误伤有键路径。"""
+        self._write_config({})
+        with mock.patch.object(sys, "argv",
+                               ["release.py", "--tag", "v9.9.9",
+                                "--project", self.ws]):
+            with self.assertRaises(SystemExit) as cm:
+                release.main()
+        self.assertEqual(cm.exception.code, 1)   # run_gates 返回 False
+        self.assertEqual(m_gates.call_args[0][4], "fake-openocd.exe")
