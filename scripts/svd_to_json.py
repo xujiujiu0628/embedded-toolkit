@@ -26,6 +26,8 @@ import os
 import sys
 import xml.etree.ElementTree as ET
 
+from wb_common import atomic_write_json
+
 
 def parse_bit_range(bit_range_str):
     """Parse CMSIS SVD bitRange '[msb:lsb]' into (offset, width)."""
@@ -258,7 +260,13 @@ def merge_into_ref(all_data: dict, ref_path: str) -> tuple[int, int]:
     Existing FULL peripherals and _relationships/memory_map are kept
     untouched. New peripherals get available_on_c8 annotation.
     Returns (added, total_after).
-    """
+
+    F-195 T5 (M-9): 截断式裸写改 wb_common.atomic_write_json (F-020/F-127
+    基建, .tmp+os.replace) — dump 中途失败不再损坏 KB 主文件。旧 open('w')
+    在 Windows 还附带 '\n'→CRLF 翻译, 与盘上 ref.json 的 LF 形态相悖,
+    原子写强制 LF 顺路纠偏 (金口径: 新旧输出 newline 归一后逐字节同,
+    见 test_f195_robustness_misc)。_meta 缺键/非对象 → 显式 ValueError,
+    不再裸 KeyError 双下标。"""
     with open(ref_path, 'r', encoding='utf-8') as f:
         ref = json.load(f)
 
@@ -272,12 +280,15 @@ def merge_into_ref(all_data: dict, ref_path: str) -> tuple[int, int]:
         existing[name] = data
         added += 1
 
-    ref["_meta"]["peripheral_count"] = len(existing)
+    meta = ref.get("_meta")
+    if not isinstance(meta, dict):
+        raise ValueError(
+            f"ref 缺 _meta 段 (或非对象), 拒绝 merge 以防写坏 KB: {ref_path}")
+    meta["peripheral_count"] = len(existing)
     # F-133/c: 版本号/updated 不再硬编码覆写 — ref 的语义版本与"是否跑过一次
     # SVD 同步"无关, 现值 (人工维护的演进版本) 必须保留
 
-    with open(ref_path, 'w', encoding='utf-8') as f:
-        json.dump(ref, f, ensure_ascii=False, indent=2)
+    atomic_write_json(ref_path, ref)
     return added, len(existing)
 
 
