@@ -163,10 +163,18 @@ def format_result(result: dict, ref_data: dict):
         print("> 外设:")
         for p in periphs:
             pdata = p["data"]
-            print(f"  {p['name']} — {pdata.get('description','')}")
+            print(f"  {p['name']} — {pdata.get('desc','')}")
             print(f"    基址: {pdata.get('base','')}  总线: {pdata.get('bus','')}")
-            if pdata.get("clock_enable"):
-                print(f"    时钟使能: {pdata['clock_enable']}")
+            # F-191 (WB-20260926-02 T4, 收 L-1): 数据面无 clock_enable 键
+            # (0/55 实测) — 死支改从 _relationships 反查; EXTI 的 clock=null
+            # +clock_note 豁免形态照常呈现 note 文案 (F-186 纪律禁静默)。
+            rel = ref_data.get("_relationships", {}).get(p["name"], {})
+            if isinstance(rel.get("clock"), dict):
+                ck = rel["clock"]
+                print(f"    时钟使能: {ck.get('rcc_register','?')}"
+                      f"[{ck.get('rcc_bit','?')}] {ck.get('rcc_bit_name','?')}")
+            elif rel.get("clock_note"):
+                print(f"    时钟使能: — {rel['clock_note']}")
             # 列出寄存器概要
             regs_summary = list(pdata.get("registers", {}).keys())
             if regs_summary:
@@ -179,7 +187,7 @@ def format_result(result: dict, ref_data: dict):
             rdata = r["data"]
             if isinstance(rdata, dict):
                 print(f"  {r['peripheral']} → {r['register']} ({rdata.get('offset','?')})")
-                print(f"    {rdata.get('description','')}")
+                print(f"    {rdata.get('desc','')}")
                 if rdata.get("formula"):
                     print(f"    公式: {rdata['formula']}")
                 bits_list = rdata.get("bits", {})
@@ -260,7 +268,7 @@ def main():
     if args.list:
         print("\n=== STM32F103 参考手册知识库 ===\n")
         for pname, pdata in ref_data.get("peripherals", {}).items():
-            print(f"[{pname}] {pdata.get('description','')}")
+            print(f"[{pname}] {pdata.get('desc','')}")
             print(f"  基址: {pdata.get('base','')}  总线: {pdata.get('bus','')}")
             avail = pdata.get('available_on_c8')
             if avail is not None:
