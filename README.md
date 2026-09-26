@@ -489,6 +489,12 @@ embedded-toolkit/
   数据手册可锚，宁缺毋滥）：CAN/ADC3/TIM5/TIM8/TIM9/SDIO/FSMC/DMA2 引脚映射、
   FSMC BCR·BTR 位名、USBPRE 与 SDIO PWRCTRL 的值语义。
   详情：CHANGELOG F-179 / WB-20260920-05 报告 §8 弃登清单、§9 新发现缺口。
+  **2026-09-26 订正（✅ F-191，WB-20260926-02）**：F-179 的消费面随动缺口已收口——gen-maps 第二套平行 bus/IRQ 事实源 `tim_bus`/`tim_irq` 补齐
+  `_relationships` 全部 11 个 TIM（值全数 ref.json 反查逐键互证，M-2 实录
+  的 `--timer TIM9` 三层错生成随之修除）+ 类级互证钉
+  `tests/test_genmaps_ref_crosscheck.py` 防同类缺键 + `--timer` 入参收口
+  （未登记名 ERROR→exit 1，合法集随文案，F-185 P-3 同款）。详情：
+  CHANGELOG F-191 节。
 - **py3.10 语法地板（F-181，WB-20260921-02 已加钉）**
   影响：CI 有 py3.10 腿，而 **PEP 701** f-string 写法（3.12 才放宽：表达式区同类
   引号 / 反斜杠 / 跨行与注释）在本机 3.14 全绿、到 3.10 腿上整腿炸。
@@ -523,7 +529,7 @@ embedded-toolkit/
   整型参数 argv 收口 ✅ F-180（GAP-F-1：非 boolean 参数值一律 str 化入 argv，6 个整型
   参数 `run_verify.timeout` + `gen_peripheral` ch/freq/duty/baud/speed 由 100% 不可用转可用）·
   测试卫生包 ✅ F-181（GAP-F-2 py3.10 语法地板钉 + GAP-D-9/D-1 槽位注记随动 +
-  GAP-ENV-2 hooks bash 解析加固 + GAP-ACC-1 backup 交换回滚支补钉）
+  GAP-ENV-2 hooks bash 解析加固 + GAP-ACC-1 backup 交换回滚支补钉）· KB 消费面随动 ✅ F-191（gen-maps tim_bus/tim_irq 补齐 11 TIM + 类级互证钉 + `--timer` 入参收口 / rm_lookup 人读 desc 三处 + clock_enable 死支反查）
   ——证据链
   （run/PR/钉子清单）均在 CHANGELOG 对应票。
 

@@ -3840,3 +3840,69 @@
   capture 失败路径不写 state（维持现状，--no-build 回读依赖上次成功构建语义）。
 - **未完成清单**：无（T1+T2+T3 全收）。合入门禁建议=维护者真机走一次 ESP
   发布链（G0~G3 + release_audit），artifacts 端到端形态最终以真发布记录为准。
+
+## F-191 — KB 消费面随动收口：gen-maps 第二事实源 + rm_lookup 人读键面（WB-20260926-02，2026-09-26）
+
+> 事实源 = WB-20260925-01 整批复审报告 §一 M-2 / L-1 两节（病灶与复现命令照单收口）。
+
+- **F-191 T1+T2 / M-2 (fix, gen-maps)**: `data/stm32f103-gen-maps.json`——与
+  ref.json 平行的第二套 bus/IRQ 事实源，F-179 修正 ref.json 时未随动（tim_bus
+  只有 TIM1=APB2、tim_irq 只有 TIM1~4），`--timer TIM9` 生成三层错代码（错①
+  `RCC_APB1ENR_TIM9EN` 宏在 CMSIS 不存在 / 错② ISER 28 是 TIM2 的 / 错③
+  内核时钟误走 pclk1 分支，`--pclk1` 非缺省组合下 tick 算错）。`tim_bus`/`tim_irq`
+  补齐 `_relationships` 收编的全部 11 个 TIM（+TIM2~7/9/12~14），值全数 ref.json
+  自身反查（F-186 纪律禁外部记忆）：tim_bus 逐键三源互证（peripherals.bus +
+  _relationships.bus + RCC 使能位名的寄存器前缀，APB2ENR[19]=TIM9EN 位级取证）、
+  tim_irq 逐键双源互证（rel.irq.number + peripherals.interrupts 值集）；既有
+  TIM1/TIM1~4 键值一字未动。TIM8/10/11 无 `_relationships` 条目（irq 无源可证）
+  不入册。类级互证钉 `tests/test_genmaps_ref_crosscheck.py` 6 例（F-179 范式
+  防类不防点：_relationships 每个 TIM 必须两域有键，下一笔同类缺键必被咬；
+  tim_clock_bit 位名在位性 + tim_ch_pins 对 rel.pins 随同互证，两域本单不改值）。
+- **F-191 T3 (fix, gen_periph)**: `--timer` 入参收口（销 WB-05 M-2 老账）——
+  未登记名此前被三连 `.get` 缺省（APB1 / 28 / f"{timer}EN"）吞成"看起来合法"
+  的错码。登记集 = tim_bus ∪ tim_irq 键集（11 个，与 _relationships 收编集
+  一致；不取 ref.json TIM 字面全集 14 个——TIM8/10/11 的 irq 无源可证，放行
+  即生成半伪代码，违 F-103 fail-fast）。CLI 层显式校验：pwm / timer-int 消费面
+  ERROR→exit 1 且合法集随文案（F-185 P-3 --baud-div 同款契约）；库态 .get 缺省
+  维持 P-3 先例；`--help` 定时器说明随登记集动态化。
+- **F-191 T4 / L-1 (fix, rm_lookup)**: 人读键面双脱靶收口——format_result 外设
+  （:166）/ 寄存器（:182）/ `--list`（:263）三处 `description`→`desc`（数据面
+  外设 desc=55/description=0、寄存器级 desc=711/description=0，"描述恒空"连同
+  WB-05 M-3 旧账同笔销）；`clock_enable` 死支（0/55）改从 `_relationships` 反查
+  （clock 真 → `时钟使能: APB1ENR[0] TIM2EN` 形态；EXTI 的 clock=null+clock_note
+  显式豁免形态照常呈现 note 文案，F-186 纪律禁静默缺席）；JSON 模式零变化
+  （回归钉）。
+- **旧钉随动（2 处，非删非弱）**: tests/test_gen_periph.py 两处以 TIM9 为
+  "未登记名"替身的旧钉（断言的恰是 M-2 病灶：APB1ENR_TIM9EN 假宏 + ISER 28）
+  替身换 TIM99——库态 .get 缺省语义断言原样保留，TIM9 正行为由 T3 新钉接管。
+- **钉 17 例**（tests/test_genmaps_ref_crosscheck.py 6 + tests/test_gen_timer_entry_gate.py
+  5 + tests/test_rm_lookup_human_output.py 6）：互证 6（bus 三源 / irq 双源 /
+  补齐双向 ×2 / clock_bit 在位 / ch_pins 对 rel.pins）；入口闸 5（TIM9 三处全对
+  ×2 含 `--pclk1 18` 时钟路径判别 / TIM99 timer-int+pwm fail-fast / TIM2 金样）；
+  人读 6（desc 三处 / 时钟使能反查 / EXTI note / JSON 回归）。
+- **红绿三态**：基线 `Ran 1131 / OK (skipped=6)` → 钉(红) 12 红（互证缺键 3 +
+  TIM9 错码态 2 + TIM99 无闸 2 + rm_lookup 死键 5；金样 TIM2 生成 / JSON 模式 /
+  既有 4 键逐键互证 5 绿）→ 修后全量 `Ran 1148 / OK (skipped=6)`（+17=新钉数，
+  skipped 恒 6）；ruff check 全绿。
+- **撤销实验×2**（精确红→还原绿，sha256 逐一吻合，还原后 porcelain 零残留）：
+  ① 变异枪 tim_bus.TIM9→APB1（复演 GAP-D-5）→ 互证钉精确咬中该条且双源指认
+  （peripherals.TIM9.bus='APB2' + APB2ENR[19]=TIM9EN 属 APB2）→ 还原复绿；
+  ② 拆 --timer 闸（条件改 if False）→ TIM99 两钉红（TIM9 生成钉不受影响——
+  归 T1 管辖）→ 还原复绿。
+- **白名单自证**：`git diff --name-only 5160238...HEAD` =
+  data/stm32f103-gen-maps.json + scripts/{gen_periph, rm_lookup}.py +
+  tests/{test_genmaps_ref_crosscheck, test_gen_timer_entry_gate,
+  test_rm_lookup_human_output(均新), test_gen_periph(随动)}.py +
+  CHANGELOG/README（docs 笔），零越界；ref.json 只读未触。
+- **只列不改（P 面，遗留登记）**: ① gen_timer_int 向量名模板只对 TIM1 特判——
+  TIM9/12/13/14 生成 `TIM9_IRQHandler` 等非 CMSIS 共享向量名（修后 ISER 位号
+  已对，但按该名定义的 ISR 不会接进向量表，F-086 同族 B 类静默；TIM9~14 系
+  非 C8 型外设；修需动 vec 命名逻辑 + gen-maps 增 irq name 域，出"--timer 入参
+  收口一处"白名单）；② rm_lookup `--recipe` 人读路径 KeyError（format_result
+  直接下标 result["peripherals"] 等 4 键，--recipe 分支构造的 dict 只带
+  query/recipes，实跑实证崩；JSON 路径与 MCP 消费面不受影响，修需动
+  format_result 签名或分支构造，出 T4 指定行白名单）；③ rm_lookup
+  `--rel "P clock"` 对 clock=null 打印裸 None（01 报告已判化妆品级）；
+  ④ T2 互证未咬出 tim_clock_bit/tim_ch_pins 历史错值（在位性/对 rel.pins 全绿）
+  ——值语义深度（位号对位表 / 引脚复用多解）无独立第二源，深度对账待有源另票。
+- **未完成清单**：无（T1~T4 全收）。
