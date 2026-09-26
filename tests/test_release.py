@@ -294,6 +294,9 @@ class ReleaseGateTests(unittest.TestCase):
         流程走通到 G0.5 skipped 痕 (dry-run rc=0)。"""
         self._write_config({"builder": "idf"})
         self._write_state_with_artifacts()
+        # G0 要求干净树 — 钉夹具 (config/state/build) 先行入库
+        self.git("add", "-A")
+        self.git("commit", "-qm", "artifacts")
         m_gate1.return_value = {"status": "ok",
                                 "steps": {"verify": {"results": []}},
                                 "evidence": "hardware_validated",

@@ -51,7 +51,7 @@ from runtime_common import now_iso, output_json  # noqa: E402  (F-041: doctor --
 from runtime_common import OpenocdCfgError, resolve_openocd_cfg  # noqa: E402  (WB-20260919-06: cfg 组装单一事实源)
 from runtime_common import (esp_backend_mode as _esp_backend_mode)  # noqa: E402  (F-190/M-1: 三标记 OR 上收单一事实源, F-057 再导出形态——release G0.5 同源消费)
 from runtime_common import esp_backend_config_errors  # noqa: E402  (F-190/T3: GAP-F-19 混配 fail-fast 规则单一事实源)
-from openocd_runtime import reset_target, swd_probe  # noqa: E402,F401  (F-041: SWD 探测与 release G0.5 同源; F-129: 判定后复位)
+from openocd_runtime import reset_target  # noqa: E402  (F-041/F-129: 判定后复位; F-192/N-4: swd_probe 死名已删 — verify 主链零调用, G0.5 探测面归 release/doctor 直连 openocd_runtime)
 from openocd_run import ACTION_DONE_CMD, marker_present  # noqa: E402  (F-163: N-3 标记共享件)
 import hw_lease  # noqa: E402  (F-145: flash+capture 段机器级设备锁)
 import junit_xml  # noqa: E402  (F-147: --junit-xml 报告, 生成逻辑在模块内)

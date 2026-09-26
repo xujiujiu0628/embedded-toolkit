@@ -297,7 +297,21 @@ def main():
     if not os.path.isdir(ws):
         print(f"错误: --project 目录不存在: {ws}", file=sys.stderr)
         sys.exit(1)
-    openocd_exe = load_machine()["openocd_exe"]
+    # F-192 (WB-20260926-03 T3, 收 F-190/P-1): openocd_exe 键读取分流 —
+    # ESP 模式不读该键 (纯 ESP 机器缺键不再裸 KeyError); STM32 模式缺键
+    # → 友好 ERROR 点名 machine.json 键名 + exit 1。G0.5 后端闸本身仍由
+    # run_gates 按 esp_backend_mode 分流 (F-190/M-1)。键在场时原值透传,
+    # 行为不变 (含回退模板占位值)。
+    machine = load_machine()
+    if esp_backend_mode(_project_config(ws)):
+        openocd_exe = None
+    else:
+        openocd_exe = machine.get("openocd_exe")
+        if openocd_exe is None:
+            print("错误: machine.json 缺 openocd_exe 键 — STM32 后端 G0.5 "
+                  "SWD 预检必需; ESP 工程 (builder=idf / capture=uart 等) "
+                  "无需此键", file=sys.stderr)
+            sys.exit(1)
 
     ok, msg, ctx = run_gates(ws, args.tag, args.allow_xfail,
                              args.timeout, openocd_exe,
