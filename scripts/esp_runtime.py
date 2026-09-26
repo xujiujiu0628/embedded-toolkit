@@ -262,8 +262,21 @@ def step_capture_uart(timeout_s: int, cap_cfg: dict,
                     lines.append(raw.decode("utf-8", errors="replace")
                                  .rstrip("\r\n"))
     except serial.SerialException as e:
-        return {"status": "error", "method": "uart",
-                "error": f"串口 {port} 采集失败: {e}"}
+        # F-192 (WB-20260926-03 T4, 收 N-5): 已收行入账 — F-003"回收部分
+        # 输出"纪律补齐 uart 异常路径 (此前只做了超时路径), 信封形态对齐
+        # verify._finish_capture_timeout 的部分输出账 (lines 计数 +
+        # partial_output 截断 2000); status 仍 fail-closed, esp_panic
+        # 随部分输出保留 (定性交 AI judge, 采集故障不翻转判定)。
+        text = "\n".join(lines)
+        n_kept = len([ln for ln in lines if ln.strip()])
+        return {
+            "status": "error", "method": "uart", "port": port,
+            "timeout_sec": timeout_s,
+            "lines": n_kept,
+            "esp_panic": detect_esp_panic(text),
+            "error": f"串口 {port} 采集失败 (已收 {n_kept} 行一并入账): {e}",
+            "partial_output": text[:2000],
+        }
     text = "\n".join(lines)
     return {
         "status": "ok", "method": "uart", "port": port,

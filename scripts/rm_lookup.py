@@ -152,10 +152,13 @@ def format_result(result: dict, ref_data: dict):
     """人类可读输出。F-133/d: ref_data 显式入参 — 旧版读模块级全局, 库态
     (未跑 main) 调用即 NameError; 对 peripherals 的裸下标取数同批清除。"""
     query = result["query"]
-    periphs = result["peripherals"]
-    regs = result["registers"]
-    bits = result["bits"]
-    recipes = result["recipes"]
+    # F-192 (WB-20260926-03 T2, 收 P-2): --recipe 分支只构造 {query,
+    # recipes} — 裸下标四键使人读路径必崩 KeyError; 改 .get 缺省空列表,
+    # 分支构造与 JSON 输出零变化 (逐字段回归钉护)。
+    periphs = result.get("peripherals", [])
+    regs = result.get("registers", [])
+    bits = result.get("bits", [])
+    recipes = result.get("recipes", [])
 
     print(f"\n=== 搜索: \"{query}\" ===\n")
 
