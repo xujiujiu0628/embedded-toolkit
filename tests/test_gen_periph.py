@@ -249,8 +249,10 @@ class GenPwmTests(unittest.TestCase):
                       gen_periph.gen_pwm("TIM2", 1, "PC13", 1000, 25))
 
     def test_unknown_timer_falls_back_to_generic_clock_bit_and_crh(self):
-        out = gen_periph.gen_pwm("TIM9", 1, "PC13", 1000, 50)
-        self.assertIn("RCC->APB1ENR |= RCC_APB1ENR_TIM9EN;", out)
+        # F-191 随动: TIM9 已入册 tim_bus=APB2 (ref.json 双源互证), "未登记
+        # 名"替身换 TIM99 — 库态 .get("APB1") 缺省语义本身不变
+        out = gen_periph.gen_pwm("TIM99", 1, "PC13", 1000, 50)
+        self.assertIn("RCC->APB1ENR |= RCC_APB1ENR_TIM99EN;", out)
         self.assertIn("GPIOC->CRH |=  (0xBUL << 20);", out)
 
     def test_tim1_clock_enable_is_on_apb2(self):
@@ -372,9 +374,12 @@ class GenTimerIntTests(unittest.TestCase):
         self.assertIn("NVIC->ISER[0] = (1UL << 30);",
                       gen_periph.gen_timer_int("TIM4", 1, 72))
         # 未知定时器: IRQ 落默认 28, 时钟位按 {timer}EN 模板推导
-        unknown = gen_periph.gen_timer_int("TIM9", 1, 72)
-        self.assertIn("NVIC->ISER[0] = (1UL << 28);  // TIM9_IRQn = 28", unknown)
-        self.assertIn("RCC->APB1ENR |= RCC_APB1ENR_TIM9EN;", unknown)
+        # (F-191 随动: TIM9 已入册 tim_irq=24/tim_bus=APB2, "未登记名"替身
+        # 换 TIM99 — 库态 .get 缺省语义本身不变, CLI 层则被入口闸拒绝)
+        unknown = gen_periph.gen_timer_int("TIM99", 1, 72)
+        self.assertIn("NVIC->ISER[0] = (1UL << 28);  // TIM99_IRQn = 28",
+                      unknown)
+        self.assertIn("RCC->APB1ENR |= RCC_APB1ENR_TIM99EN;", unknown)
 
     def test_tim1_clock_enable_is_on_apb2(self):
         """F-077 修复钉: TIM1 是 APB2 外设 (RM0008), 旧版产出 APB1ENR_TIM1EN

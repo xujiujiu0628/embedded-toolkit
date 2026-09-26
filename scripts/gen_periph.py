@@ -1064,6 +1064,11 @@ def _emit(out: str) -> None:
 
 
 def main():
+    # F-191 (WB-20260926-02 T3, 销 WB-05 M-2): --timer 登记集 = gen-maps
+    # tim_bus ∪ tim_irq 键集 (与 ref.json _relationships 收编的 TIM 全集
+    # 一致, 11 个)。不取 ref.json TIM 字面全集: TIM8/10/11 无
+    # _relationships 条目, tim_irq 无源可互证, 放行即生成半伪代码。
+    registered_timers = sorted(set(TIM_BUS) | set(_GEN_MAPS["tim_irq"]))
     parser = argparse.ArgumentParser(
         description="STM32F103 外设代码生成器",
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -1101,7 +1106,9 @@ GPIO 模式 (F-103: 由 --mode choices 强制, 未知模式报错):
     parser.add_argument("--tx", default="PA9", help="TX 引脚")
     parser.add_argument("--rx", default="PA10", help="RX 引脚")
     # pwm
-    parser.add_argument("--timer", default="TIM2", help="定时器: TIM2/3/4")
+    parser.add_argument("--timer", default="TIM2",
+                        help=f"定时器 (已登记: {', '.join(registered_timers)}; "
+                             f"默认 TIM2)")
     parser.add_argument("--ch", type=int, default=1, help="通道: PWM 1-4 / ADC 0-17 (16/17 内部通道)")
     parser.add_argument("--freq", type=int, default=1000, help="PWM 频率 Hz")
     parser.add_argument("--duty", type=int, default=50, help="占空比 %% (0-100)")
@@ -1156,6 +1163,17 @@ GPIO 模式 (F-103: 由 --mode choices 强制, 未知模式报错):
         pclk_err = _pclk_error(args.hclk, args.pclk1, args.pclk2)
         if pclk_err:
             _emit(pclk_err)
+
+    # F-191 (WB-20260926-02 T3): 未登记名此前被三连 .get 缺省 (APB1 /
+    # 28 / f"{timer}EN") 吞成"看起来合法"的错码 — TIM9 三层错实录
+    # (WB-20260925-01 M-2: APB1ENR_TIM9EN 宏不存在 / ISER 28 是 TIM2 的 /
+    # 内核时钟误走 pclk1 分支)。显式收口 (F-185 P-3 --baud-div 同款契约:
+    # _emit "/* ERROR" → rc=1, 合法集随文案); 库态 .get 缺省维持 P-3
+    # 先例不动 (库调用方域纪律由生成函数 F-111 层管辖)。
+    if (args.type in ("pwm", "timer-int")
+            and args.timer not in registered_timers):
+        _emit("/* ERROR: 非法 --timer %r, 已登记集: %s */"
+              % (args.timer, ", ".join(registered_timers)))
 
     if args.type == "gpio":
         if not args.pin:
