@@ -39,6 +39,12 @@ def redact(text: str, extra_roots: tuple[str, ...] = ()) -> str:
     return text
 
 
+def _bad_type_note(label: str, value) -> str:
+    """F-195 T3 (M-7): 坏类型留痕行 (fail-soft, CI if:always() 不崩红)。"""
+    return (f"- ⚠️ `{label}` 类型异常 ({type(value).__name__} ≠ 预期) — "
+            "渲染跳过 (坏输入留痕)")
+
+
 def render_verify_summary(result: dict) -> str:
     """verify --json 结果 → Markdown 摘要 (四态表 + records + 失败留痕)。"""
     status = result.get("status", "unknown")
@@ -59,22 +65,30 @@ def render_verify_summary(result: dict) -> str:
     if result.get("error"):
         lines.append(f"- **失败**: {result['error']}")
 
-    verify_s = (result.get("steps") or {}).get("verify") or {}
+    steps = result.get("steps")
+    stage = steps.get("verify") if isinstance(steps, dict) else None
+    verify_s = stage if isinstance(stage, dict) else {}
     rows = verify_s.get("results")
-    if rows is not None:
+    if rows is not None and not isinstance(rows, list):
+        lines += ["", _bad_type_note("results", rows)]
+    elif rows is not None:
         lines += ["", "| 期望 | 判定 | 说明 |", "|---|---|---|"]
         for r in rows:
             mark = _STATUS_MARK.get(r.get("status"), r.get("status", "?"))
             detail = str(r.get("detail", "")).replace("|", "\\|")
             lines.append(f"| {r.get('id', '?')} | {mark} | {detail} |")
     records = result.get("records") or []
-    if records:
+    if records and not isinstance(records, list):
+        lines += ["", _bad_type_note("records", records)]
+    elif records:
         kv = ", ".join(
             f"`{k}={v}`" for rec in records
             for k, v in rec.items() if k != "id")
         lines += ["", f"- **record 提取**: {kv}"]
     captured = result.get("captured_output", "")
-    if captured:
+    if captured and not isinstance(captured, str):
+        lines += ["", _bad_type_note("captured_output", captured)]
+    elif captured:
         snippet = captured[:500] + ("…" if len(captured) > 500 else "")
         lines += ["", "<details><summary>采集输出（前 500 字符）</summary>",
                   "", "```text", snippet, "```", "", "</details>"]
@@ -93,17 +107,25 @@ def render_release_summary(record: dict) -> str:
     if record.get("production_approved_at"):
         lines.append(f"- **批准投产**: {record['production_approved_at']}")
     waived = record.get("xfail_waived") or []
-    if waived:
+    if waived and not isinstance(waived, list):
+        lines.append(_bad_type_note("xfail_waived", waived))
+    elif waived:
         lines.append(f"- **xfail 豁免**: {', '.join(waived)}")
     boundaries = record.get("fidelity_boundaries") or []
     limitations = record.get("limitations") or []
-    if boundaries:
+    if boundaries and not isinstance(boundaries, list):
+        lines += ["", _bad_type_note("fidelity_boundaries", boundaries)]
+    elif boundaries:
         lines += ["", "**Fidelity 边界**:"] + \
             [f"- {b}" for b in boundaries]
-    if limitations:
+    if limitations and not isinstance(limitations, list):
+        lines += ["", _bad_type_note("limitations", limitations)]
+    elif limitations:
         lines += ["", "**已知局限**:"] + [f"- {l}" for l in limitations]
     rows = record.get("results") or []
-    if rows:
+    if rows and not isinstance(rows, list):
+        lines += ["", _bad_type_note("results", rows)]
+    elif rows:
         lines += ["", "| 期望 | 判定 |", "|---|---|"]
         for r in rows:
             mark = _STATUS_MARK.get(r.get("status"), r.get("status", "?"))
@@ -175,7 +197,9 @@ def main() -> int:
             md = render_verify_summary(_load_json(args.verify_file))
         else:
             md = render_release_summary(_load_json(args.release_record))
-    except (ValueError, OSError) as e:
+    except (ValueError, OSError, AttributeError, TypeError) as e:
+        # F-195 T3 (M-7): AttributeError/TypeError 并入既有处置路径 —
+        # 改坏记录不再裸 traceback (CI if:always() 步骤假红)。
         print(f"错误: 输入不可用: {e}", file=sys.stderr)
         return 2
 
