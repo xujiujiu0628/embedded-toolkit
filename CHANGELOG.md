@@ -3912,3 +3912,98 @@
   位号面已由 F-191 修对, 余向量命名域需 gen-maps irq-name 域设计）正式入账 GAP-F-20,
   处置=暂缓, 唤起条件=样例工厂二期/非 C8 目标立项/下次动 gen-maps irq 域。README
   已知遗留同步登记。P 面其余：P-2(--recipe KeyError, 已实证)并入 F-192 杂项捆。
+
+## F-192 — 护栏棘轮 + 杂项捆：全局打桩静态棘轮 + 四防御面收口（WB-20260926-03，2026-09-26）
+
+> 事实源 = WB-20260925-01 整批复审报告 §一 L-2 / N-4 / N-5 + WB-20260926-01
+> 报告 §八 P-1 + WB-20260926-02 报告 §六 P-2（五件独立小面捆一单，"护栏补全+
+> 防御面收口"主题）。GAP-F-20（向量命名域）不在本单，暂缓维持。
+
+- **F-192 T1 / L-2 (test, 全局打桩静态棘轮)**: `tests/test_stub_ratchet.py`
+  （新，仿 test_py_floor 机检形态）——三护栏不对称补位：F-181 是机检、
+  F-182/F-184 只是样板，GAP-F-13"按需收窄、不批量清扫"裁决自此有棘轮守。
+  判据（违规 = 对全局模块对象的属性打桩）：全局模块名集 G = scripts/*.py
+  顶层 import 首段并集（树内反查，F-186）− 仓内脚本模块名（scripts/<n>.py
+  存在）∪ {"builtins"}；A 式字符串目标（首段 ∈ G，或 "X.Y.Z" 且 Y ∈ G——
+  穿仓内引用打到全局库对象；两段式 "X.Y" 是 F-184 模块引用替换的字符串
+  形态，合法）；B 式对象目标（patch.object 第一实参为 Name(id ∈ G) 或
+  Attribute 链末端段 ∈ G，如 canonical 的
+  `mock.patch.object(verify.subprocess, "run")`）。`mock.patch.dict`
+  （保存/恢复式）不在判据面。判据边界（P 面①）：仓内共享层模块自身命名
+  空间变异（`hw_lease.DEVICE_LOCK_DIR` / `verify.esp_runtime.step_capture_uart`
+  族）不判违规——F-182 劫持事故类 = 全局库对象被基础设施动态查表，仓内
+  模块无此暴露面；收窄属裁决变更须重建快照。**快照 157 处 / 73 键 / 38
+  文件**（AST 全形态；01 报告 L-2 正则粗扫 102 处的口径差如实声明），含
+  F-188 两处 canonical 与字符串式穿仓新捕获（test_verify_mainflow_retry
+  `"verify.time.sleep"` ×2）。棘轮 = 真树扫描 Counter 与快照**全等**：
+  新增即红（改模块引用替换式或经裁决进 EXEMPTS）、清除须同步缩快照
+  （防"清了就忘"）、次数漂移红；EXEMPTS 显式豁免列表每键必带 note 禁静默
+  （首例 = 本单 T3 钉驱动 release.main() 的 argv 注入 ×3——argparse 直读
+  全局 sys 无仓内替换缝，全仓既有惯用形态的唯一新增）。夹具自证双枪：
+  违规样例 16 必咬 / 合法样例 13 必零报（F-184 钦定形态零误杀）+ A·B 两式
+  各有命中 + 真树等值 + 扫描面哨兵 + 快照总量地板 100（双锁防判据静默
+  收窄）+ 自 dogfood；判定全走 AST 静态节点不依赖 import 期句柄（F-181
+  句柄式假绿教训对位）。**棘轮两度咬中本单作者**（实效实证）：① T4 钉
+  初稿 `mock.patch("serial.Serial")` 全局桩 → 改 patch.dict(sys.modules)
+  注入假 serial（函数内 import 的引用替换哲学形态）；② T4 钉初稿
+  esp_runtime.time 时钟桩（B 式漂移 5→6/4→5 被抓）→ 删除（假串口第 4 次
+  readline 即抛，时钟 faking 本就不必要）。
+- **F-192 T2 / P-2 (fix, rm_lookup)**: `--recipe` 人读路径 KeyError 收口——
+  format_result 四键裸下标改 `.get` 缺省空列表；人读命中词出配方节、空命中
+  走兜底提示、真进程 rc=0；分支构造与 JSON/MCP 面零变化（逐字段回归钉护）。
+  查询词反查披露（F-186）：数据面配方共 8 条**无任何 "PWM" 命中**——02
+  报告 §六-2 复现词与数据面不符，钉取 "BSRR"（GPIO Atomic output via
+  BSRR/BRR）为命中面、"PWM" 为经反查证实的空命中面。
+- **F-192 T3 / F-190 P-1 (fix, release)**: main() 的 `openocd_exe` 键读取
+  分流——ESP 模式（esp_backend_mode，与 run_gates G0.5 闸同源判据）不读该
+  键，纯 ESP 机器缺键不再裸 KeyError；STM32 模式缺键 → 友好 ERROR 点名
+  machine.json `openocd_exe` 键名 + exit 1。键在场时原值透传 run_gates
+  行为不变（含缺失时回退模板占位值路径；machine.example.json 实核含该键）。
+  双向钉：ESP+缺键 dry-run rc=0 + `g0_5=skipped` 痕 + swd_probe boom 守闸；
+  STM32+缺键 rc=1 文案含键名；STM32+有键原值透传回归。不真发布不触真机。
+- **F-192 T4 / N-5 (fix, esp_runtime)**: `step_capture_uart` 的
+  SerialException 路径携带已收行入账——F-003"回收部分输出"纪律补齐 uart
+  异常路径（此前只做了超时路径），信封对齐 `_finish_capture_timeout` 部分
+  输出账形态（lines 计数 + partial_output 截断 2000；未引 _sanitize_text——
+  verify 私有且生产脚本禁 import verify，行已 decode(replace)，截断同上限）；
+  status 仍 fail-closed，esp_panic 随部分输出保留（定性交 AI judge 不翻绿）；
+  verify 侧错误分支拷非 _ 键入 steps.capture，部分输出自动进失败现场。
+- **F-192 T5 / N-4 (fix, verify)**: `:54` 死导入收口——删 `swd_probe` 名
+  （verify 主链零调用），`reset_target` 保留，noqa 注释随动（F401 不再需要）。
+- **既有断言随动（1 处重指向，非删非弱）**: test_doctor SwdProbeMoveTests 的
+  `assertIs(openocd_runtime.swd_probe, verify.swd_probe)` 随 T5 删名改钉
+  `assertFalse(hasattr(verify, "swd_probe"))`（"死名不得回场"）——同源防
+  分叉语义由 `assertIs(…, release.swd_probe)` 继续持有，断言数不减。
+- **钉 20 例**（test_stub_ratchet 10 + test_rm_lookup_human_output 6 +
+  test_release 3 + test_esp_runtime 1）：棘轮 10（真树等值 / 豁免显式且
+  在场 / 扫描面哨兵 / 快照地板 / 自 dogfood / 全局名集地板与边界 2 /
+  违规 16 必咬 / 合法 13 零报 / A·B 各有命中）；recipe 6（命中出配方节 /
+  空命中兜底 / 真进程 rc / JSON 逐字段 ×2 / 钉前提反查）；release 3（ESP
+  缺键不崩 / STM32 缺键友好 rc=1 / 有键透传回归）；uart 1（已收 3 行入账
+  + panic 随行 + 无 _text 信封形态）。
+- **红绿三态**：基线 `Ran 1148 / OK (skipped=6)`（+棘轮文件首跑 1158 全绿
+  同证）→ 钉(红) 7 红（recipe 人读 3 + release 缺键 2 + uart 丢行 1 +
+  doctor 死名在场 1；JSON 逐字段 / 有键透传两回归面如设计保持绿）→ 修后
+  全量 `Ran 1168 / OK (skipped=6)`（+10=新钉数 6+3+1，skipped 恒 6）；
+  ruff check 全绿。
+- **撤销实验×4**（精确红→还原复绿）：① T1 植入枪实弹——test_zero_cov_
+  finish.py 注入 `mock.patch.object(sys, "argv")` → 棘轮红且报文精确指认
+  新增键 → git checkout 还原零残留（合法零报面由夹具 13 例常驻自证）；
+  ②③④ T2/T3/T4 各拆修回红一次（`git stash push -- <file>` 拆修 → 红
+  （T2 3 红 / T3 2 红 KeyError / T4 1 红）→ stash pop 字节还原 → 复绿）。
+- **白名单自证**：`git diff --name-only 5a89ce9...HEAD` =
+  scripts/{rm_lookup, release, esp_runtime, verify}.py +
+  tests/{test_stub_ratchet(新), test_rm_lookup_human_output, test_release,
+  test_esp_runtime, test_doctor(随动)}.py + CHANGELOG/README（docs 笔），
+  零越界；data/**、hooks/**、machine.json、runtime_common.py、
+  physical_gate.py、openocd_runtime.py 未触，GAP-F-20 向量命名域未触碰。
+- **只列不改（P 面，遗留登记）**: ① 仓内共享层模块自身命名空间变异面
+  （`mock.patch.object(hw_lease, "DEVICE_LOCK_DIR", …)` /
+  `mock.patch.object(verify.esp_runtime, "step_capture_uart", …)` /
+  `wb_common.TOOLKIT_ROOT` 族）在棘轮判据边界外——收窄属裁决变更，须改
+  判据 + 重建快照；② `mock.patch.dict(sys.modules)` 系判据面外保存/恢复
+  式，经本单 T4 钉成为"函数内 import 打桩"的推荐形态，若未来被滥用需另立
+  裁决；③ 棘轮扫描面非递归 `tests/*.py` 顶层（test_py_floor N-1 同款边界，
+  子目录扩展即逃逸，现树零逃逸）；④ rm_lookup `--rel "P clock"` 对
+  clock=null 打印裸 None（01 报告已判化妆品级，维持原判）。
+- **未完成清单**：无（T1~T5 全收）。
