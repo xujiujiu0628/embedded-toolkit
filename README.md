@@ -538,7 +538,7 @@ embedded-toolkit/
   整型参数 argv 收口 ✅ F-180（GAP-F-1：非 boolean 参数值一律 str 化入 argv，6 个整型
   参数 `run_verify.timeout` + `gen_peripheral` ch/freq/duty/baud/speed 由 100% 不可用转可用）·
   测试卫生包 ✅ F-181（GAP-F-2 py3.10 语法地板钉 + GAP-D-9/D-1 槽位注记随动 +
-  GAP-ENV-2 hooks bash 解析加固 + GAP-ACC-1 backup 交换回滚支补钉）· KB 消费面随动 ✅ F-191（gen-maps tim_bus/tim_irq 补齐 11 TIM + 类级互证钉 + `--timer` 入参收口 / rm_lookup 人读 desc 三处 + clock_enable 死支反查）
+  GAP-ENV-2 hooks bash 解析加固 + GAP-ACC-1 backup 交换回滚支补钉）· KB 消费面随动 ✅ F-191（gen-maps tim_bus/tim_irq 补齐 11 TIM + 类级互证钉 + `--timer` 入参收口 / rm_lookup 人读 desc 三处 + clock_enable 死支反查） · 护栏棘轮与杂项捆 ✅ F-192（全局打桩静态棘轮 L-2 收口：157 处/73 键快照 + 新增即红 + EXEMPTS+note + 双枪 / rm_lookup `--recipe` 人读 KeyError / release openocd_exe 缺键分流 / uart SerialException 已收行入账 / verify swd_probe 死导入删）
   ——证据链
   （run/PR/钉子清单）均在 CHANGELOG 对应票。
 
