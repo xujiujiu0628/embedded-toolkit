@@ -522,6 +522,13 @@ embedded-toolkit/
   一律以 `tests/test_stub_ratchet.py` BASELINE 为唯一事实源（**73 键/157 处/38 文件**，
   AST 判据、机检守卫）；历史口径 98 处/22 文件（F-184）与 102 处/23 文件（01 报告
   粗扫）退役为史料。"按需收窄、不批量清扫"裁决维持。
+- **GAP-F-21（2026-09-26 登记，暂缓）· pin-mapping 未来维度**：两面同册防丢——
+  ① `tests/test_pin_mapping.py` 前缀封闭集仍含 `DS5318`，而 F-193 已证高密度手册
+  实为 **DS5792**（DS5318 系误记，F-193 报告 E-3）：本次零行以 DS5792 为锚未进集，
+  扩集/改名=钉面变更；② 本档锁 LQFP48 单封装切片，DS5792 的 64/100/144 脚表与
+  arch-facts 格式统一属**结构变更**，另单提案（F-193 报告 §7 P-1/P-3）。
+  裁定=暂缓，**唤起条件 = 下次动 pin-mapping 域**（新封装/新芯片立项，或
+  arch-facts×pin-mapping 格式统一工单）。出处：CHANGELOG F-193 节 P 面。
 - **ref.json 数据面 GAP-D 收口状态（F-179，WB-20260920-05）**
   影响：`data/stm32f103-ref.json` 的 `bus` 字段曾与外设 RCC 使能位归属相反
   （TIM9 记 APB1、TIM12/13/14 记 APB2）；`_relationships` 的 IRQ 号只覆盖 12 个外设；
