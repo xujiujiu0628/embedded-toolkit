@@ -31,14 +31,14 @@ GCC_TIMEOUT = 30
 
 STUB_HEADER = r"""/* 生成器 ↔ CMSIS 接口契约 stub (F-078) — 仅用于 -fsyntax-only 烟测。
  * 成员/宏集合 = 生成器当前可能引用的符号全集; 两头越界都算失败。
- * 地址值无关紧要 (不做代码生成), 只需类型与成员名与 stm32f1x CMSIS 一致。*/
+ * 地址值无关紧要 (不做代码生成), 只需类型与成员名与 stm32f1x CMSIS 一致。
+ * F-194 (WB-20260927-02 T3): error_chain_t/ERR_OK/ERR_PLAIN 定义已移除 —
+ * i2c 帮手降级 int 返回后全仓生成器零引用, 留定义会让"引用幽灵契约"
+ * 的回归静默编译通过 (缺定义即红, 与自足性钉互补)。*/
 #pragma once
 #include <stdint.h>
 #include <stdio.h>
 
-typedef struct { uint16_t code; const char *msg; } error_chain_t;
-#define ERR_OK   ((error_chain_t){0u, (const char *)0})
-#define ERR_PLAIN(code, msg_) ((error_chain_t){(uint16_t)(code), (msg_)})
 #define __DSB() ((void)0)
 
 typedef struct {
