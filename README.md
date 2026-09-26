@@ -504,6 +504,18 @@ embedded-toolkit/
   `tests/test_genmaps_ref_crosscheck.py` 防同类缺键 + `--timer` 入参收口
   （未登记名 ERROR→exit 1，合法集随文案，F-185 P-3 同款）。详情：
   CHANGELOG F-191 节。
+  **2026-09-26 补源订正（F-189，WB-20260925-03）**：弃登清单三态更新——
+  **语义已锚**：USBPRE 值语义（0=PLL÷1.5 / 1=不分频，RM0008 §7.3.2 p102）与
+  SDIO PWRCTRL 四态语义（00=Power-off / 11=Power-on，RM0008 §22.9.1 p607）
+  经 st.com 官方原文逐字引文入册 `arch-facts.json`（出处增第四型
+  `web:<文档号>:<节/表号>:<页>`，seed HAL 宏交叉验证一致）；**FSMC 位名已入册**：
+  新 `fsmc` 节 BCR 15 + BTR 7 位名+语义（RM0008 §21.5.6，逐位标
+  `cmsis_crosscheck`；F-179 时"seed 无 FSMC 位定义"系 grep 漏通配形态的误判，
+  seed 实有 f103xg.h:5210-5317 全套）；**映射仍弃登**：8 项请求外设仅 CAN 在
+  DS5319（F103x8/xB）覆盖内，引脚映射文件格式提案 + CAN 样本四行在
+  WB-20260925-03 报告 §T2，**待维护者批准后另单落盘**；TIM5/ADC3/TIM8/TIM9/
+  SDIO/FSMC/DMA2 在 DS5319 引脚表零行，弃登维持（需高密度数据手册另单）。
+  详情：CHANGELOG F-189 / WB-20260925-03 报告。
 - **py3.10 语法地板（F-181，WB-20260921-02 已加钉）**
   影响：CI 有 py3.10 腿，而 **PEP 701** f-string 写法（3.12 才放宽：表达式区同类
   引号 / 反斜杠 / 跨行与注释）在本机 3.14 全绿、到 3.10 腿上整腿炸。

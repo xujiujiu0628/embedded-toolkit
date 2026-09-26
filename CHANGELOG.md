@@ -4007,3 +4007,47 @@
   子目录扩展即逃逸，现树零逃逸）；④ rm_lookup `--rel "P clock"` 对
   clock=null 打印裸 None（01 报告已判化妆品级，维持原判）。
 - **未完成清单**：无（T1~T5 全收）。
+
+## F-189 — arch-facts 补源：值语义 + FSMC 位名入册（WB-20260925-03，2026-09-26）
+
+F-179 弃登清单（WB-20260920-05 报告 §8）中"可锚部分"补源入册；源=st.com 官方
+RM0008 Rev 21（2021-02）与 DS5319 Rev 18 原文（直连 567 拦截，经 web reader 通道
+全文抓取，逐字引文对照表见 WB-20260925-03 报告）；`_meta.source_types` 增第四型
+`web:<文档号>:<节/表号>:<页>`（钉同 commit 扩面）。全程未 push。
+
+- **USBPRE 值语义入册**：`rcc_cfgr.cfgr_usbpre_bit.encoding` 两态
+  （0=PLL clock is divided by 1.5 / 1=PLL clock is not divided，
+  web:RM0008:§7.3.2:p102），seed HAL 宏双枚交叉验证一致
+  （`RCC_USBCLKSOURCE_PLL_DIV1_5 == 0x00000000U` ↔ 0 态，
+  stm32f1xx_hal_rcc_ex.h:392-393）。
+- **SDIO PWRCTRL 四态语义入册**：`sdio.power_pwrctrl_bits.encoding` 00=Power-off
+  / 01=Reserved / 10=Reserved power-up / 11=Power-on（web:RM0008:§22.9.1:p607）；
+  seed 仅位置/宽度（与原锚一致），值语义无 seed 侧宏可交叉，纯 web 锚。
+- **FSMC 位名新节**（`fsmc`）：BCR 15 位名 + BTR 7 位段名 + 适用范围说明
+  （RM0008 §21 明言仅 high-density/XL-density，C8T6 无 FSMC，家族级参考入册）；
+  语义锚 web:RM0008:§21.5.6，位名/位段逐位标注 `cmsis_crosscheck`
+  （f103xg.h:5210-5317）；CPSIZE 为 seed 缺席项（0 命中）仅 web 锚。
+  **F-179 弃登理由勘误**：当时"seed 未收 FSMC 位定义"系 grep 全名
+  `FSMC_BCR1_MBKEN` 漏掉 `FSMC_BCRx_<名>` 通配形态——本单复核 seed 实有全套
+  位定义，弃登结论按此修正（HANDOFF §5.6 矛盾记录格式）。
+- **T2 引脚映射：仅提案，未落盘**：`data/pin-mapping-f103.json` 新文件格式提案
+  + CAN 样本全量核实（DS5319 Table 5 LQFP48 四行：PA11/PA12 主功能态 +
+  PB8/PB9 重映射态）在报告 §T2 提案，**待维护者批准后另单落盘**；
+  8 项请求外设中仅 CAN 在 DS5319 器件（F103x8/xB）覆盖内，TIM5 与
+  ADC3/TIM8/TIM9/SDIO/FSMC/DMA2 在其引脚表零行，仍弃登（需高密度数据手册另单）。
+- **钉 5 例扩面**（test_ref_arch_facts.py，只扩不削）：web 第四型登记 /
+  USBPRE 两态语义与 HAL 交叉验证标注 / PWRCTRL 四态 / FSMC 位名集合+位段
+  +行号钉死（CPSIZE 不得标交叉验证）/ 适用范围说明——新条目缺
+  `web:RM0008` 锚或缺语义必红。
+- **红绿三态**：基线 `Ran 1168 / OK (skipped=14)` → 钉(红) 5 红
+  （failures=1 + errors=4：encoding×2 / fsmc×2 / source_types 第四型缺席×1）
+  → 数据后 arch-facts 模块 12/12 绿 → 全量 `Ran 1173 / OK (skipped=14)`
+  （+5=新钉数，skipped 与基线恒等；简报写"skipped 恒 6"，实测基线即 14，
+  系跳过型测试随工具链在场状态浮动——F-192 在场环境记 6，本机
+  arm-gcc/bash/pyyaml 组合记 14，前后恒等为准）。
+- **白名单自证**：`git diff --name-only 2a1e1bf...HEAD` =
+  data/stm32f103-arch-facts.json + tests/test_ref_arch_facts.py +
+  CHANGELOG.md + README.md，零越界；ref.json / scripts/** / hooks/** /
+  examples/** / machine.json 未触；pin-mapping-f103.json 未落盘。
+- **未完成清单**：T2 落盘待批（提案+样本=简报 §5 "良好"档交付）；
+  TIM5/ADC3/TIM8/TIM9/SDIO/FSMC/DMA2 引脚映射弃登（源不在 DS5319 覆盖器件）。
