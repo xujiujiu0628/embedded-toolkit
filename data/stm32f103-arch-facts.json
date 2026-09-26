@@ -2,16 +2,17 @@
   "_meta": {
     "version": "1.0.0",
     "chip": "STM32F103C8T6",
-    "updated": "2026-09-21",
-    "task": "WB-20260920-05 / F-179 (GAP-D-4)",
+    "updated": "2026-09-26",
+    "task": "WB-20260920-05 / F-179 (GAP-D-4); 值语义+FSMC 位名补锚 WB-20260925-03 / F-189",
     "scope": "ref.json 未登记、样例与生成器需要的架构常量 / 位域 / 编码表",
     "source_root": "D:\\claude\\vendor\\stm32f103-cmsis-seed",
     "source_types": [
       "RM0008:§节号",
       "CMSIS:<文件>:<行或枚举>",
-      "arch-constant:<依据句>"
+      "arch-constant:<依据句>",
+      "web:<文档号>:<节/表号>:<页>"
     ],
-    "policy": "无出处不入册（宁缺毋滥）；缺项见 WB-20260920-05 报告 §弃登清单",
+    "policy": "无出处不入册（宁缺毋滥）；缺项见 WB-20260920-05 报告 §弃登清单；web 型仅认 ST 官方文档（RM0008 Rev 21 / DS5319 Rev 18，2026-09-26 经 st.com 原文抓取，逐字引文见 WB-20260925-03 报告）",
     "anchored_header": "stm32f103xg.h (XL-density 变体：其 IRQn_Type 枚举直接给出 TIM1_BRK_TIM9/TIM8_BRK_TIM12 类共享向量名，与 ref.json 既有命名一致)"
   },
   "iwdg": {
@@ -146,7 +147,21 @@
       "width": 1,
       "name": "USBPRE",
       "source": "CMSIS:stm32f103xg.h:1473:RCC_CFGR_USBPRE_Pos",
-      "note": "字段名/位置已锚定；**值语义（0/1 对应 1.5/1 分频）无本地文件锚点，按简报『无出处不入册』弃登**，见报告 §弃登清单"
+      "encoding": {
+        "0b0": {
+          "option": "PLL clock is divided by 1.5",
+          "divisor": 1.5,
+          "source": "web:RM0008:§7.3.2:p102",
+          "cmsis_crosscheck": "CMSIS:stm32f1xx_hal_rcc_ex.h:393:RCC_USBCLKSOURCE_PLL_DIV1_5 == 0x00000000U"
+        },
+        "0b1": {
+          "option": "PLL clock is not divided",
+          "divisor": 1,
+          "source": "web:RM0008:§7.3.2:p102",
+          "cmsis_crosscheck": "CMSIS:stm32f1xx_hal_rcc_ex.h:392:RCC_USBCLKSOURCE_PLL == RCC_CFGR_USBPRE"
+        }
+      },
+      "note": "字段名/位置原锚 CMSIS（F-179）；值语义 2026-09-26 由 WB-20260925-03 补锚 RM0008 Rev 21 §7.3.2 p102，HAL 宏两枚交叉验证一致，逐字引文见报告 §引文对照表"
     }
   },
   "sdio": {
@@ -154,8 +169,173 @@
       "bits": "0:1",
       "name": "PWRCTRL",
       "source": "CMSIS:stm32f103xg.h:5593:SDIO_POWER_PWRCTRL_Pos",
-      "note": "字段名/宽度已锚定；值语义（00=掉电 / 11=上电）无本地文件锚点，弃登"
+      "encoding": {
+        "0b00": {
+          "option": "Power-off: the clock to card is stopped.",
+          "state": "power-off",
+          "source": "web:RM0008:§22.9.1:p607"
+        },
+        "0b01": {
+          "option": "Reserved.",
+          "state": "reserved",
+          "source": "web:RM0008:§22.9.1:p607"
+        },
+        "0b10": {
+          "option": "Reserved power-up.",
+          "state": "reserved",
+          "source": "web:RM0008:§22.9.1:p607"
+        },
+        "0b11": {
+          "option": "Power-on: the card is clocked.",
+          "state": "power-on",
+          "source": "web:RM0008:§22.9.1:p607"
+        }
+      },
+      "note": "字段名/宽度原锚 CMSIS（F-179）；四态语义 2026-09-26 由 WB-20260925-03 补锚 RM0008 Rev 21 §22.9.1 p607，逐字引文见报告 §引文对照表"
     }
+  },
+  "fsmc": {
+    "applicability": {
+      "note": "RM0008 §21 开篇明言该章仅适用 high-density/XL-density 器件——本文件 chip 字段所指 STM32F103C8T6 无 FSMC；本节为家族级参考入册（WB-20260925-03 简报 T1 指定），消费方须先验自身型号",
+      "source": "web:RM0008:§21:p523"
+    },
+    "bcr_bits": {
+      "MBKEN": {
+        "bit": 0,
+        "meaning": "Memory bank enable bit",
+        "source": "web:RM0008:§21.5.6:p541-547",
+        "cmsis_crosscheck": "CMSIS:stm32f103xg.h:5210:FSMC_BCRx_MBKEN_Pos"
+      },
+      "MUXEN": {
+        "bit": 1,
+        "meaning": "Address/data multiplexing enable bit",
+        "source": "web:RM0008:§21.5.6:p541-547",
+        "cmsis_crosscheck": "CMSIS:stm32f103xg.h:5213:FSMC_BCRx_MUXEN_Pos"
+      },
+      "MTYP": {
+        "bits": "3:2",
+        "meaning": "Memory type",
+        "source": "web:RM0008:§21.5.6:p541-547",
+        "cmsis_crosscheck": "CMSIS:stm32f103xg.h:5217:FSMC_BCRx_MTYP_Pos"
+      },
+      "MWID": {
+        "bits": "5:4",
+        "meaning": "Memory data bus width",
+        "source": "web:RM0008:§21.5.6:p541-547",
+        "cmsis_crosscheck": "CMSIS:stm32f103xg.h:5223:FSMC_BCRx_MWID_Pos"
+      },
+      "FACCEN": {
+        "bit": 6,
+        "meaning": "Flash access enable bit",
+        "source": "web:RM0008:§21.5.6:p541-547",
+        "cmsis_crosscheck": "CMSIS:stm32f103xg.h:5229:FSMC_BCRx_FACCEN_Pos"
+      },
+      "BURSTEN": {
+        "bit": 8,
+        "meaning": "Burst enable bit",
+        "source": "web:RM0008:§21.5.6:p541-547",
+        "cmsis_crosscheck": "CMSIS:stm32f103xg.h:5232:FSMC_BCRx_BURSTEN_Pos"
+      },
+      "WAITPOL": {
+        "bit": 9,
+        "meaning": "Wait signal polarity bit",
+        "source": "web:RM0008:§21.5.6:p541-547",
+        "cmsis_crosscheck": "CMSIS:stm32f103xg.h:5235:FSMC_BCRx_WAITPOL_Pos"
+      },
+      "WRAPMOD": {
+        "bit": 10,
+        "meaning": "Wrapped burst mode support",
+        "source": "web:RM0008:§21.5.6:p541-547",
+        "cmsis_crosscheck": "CMSIS:stm32f103xg.h:5238:FSMC_BCRx_WRAPMOD_Pos"
+      },
+      "WAITCFG": {
+        "bit": 11,
+        "meaning": "Wait timing configuration",
+        "source": "web:RM0008:§21.5.6:p541-547",
+        "cmsis_crosscheck": "CMSIS:stm32f103xg.h:5241:FSMC_BCRx_WAITCFG_Pos"
+      },
+      "WREN": {
+        "bit": 12,
+        "meaning": "Write enable bit",
+        "source": "web:RM0008:§21.5.6:p541-547",
+        "cmsis_crosscheck": "CMSIS:stm32f103xg.h:5244:FSMC_BCRx_WREN_Pos"
+      },
+      "WAITEN": {
+        "bit": 13,
+        "meaning": "Wait enable bit",
+        "source": "web:RM0008:§21.5.6:p541-547",
+        "cmsis_crosscheck": "CMSIS:stm32f103xg.h:5247:FSMC_BCRx_WAITEN_Pos"
+      },
+      "EXTMOD": {
+        "bit": 14,
+        "meaning": "Extended mode enable",
+        "source": "web:RM0008:§21.5.6:p541-547",
+        "cmsis_crosscheck": "CMSIS:stm32f103xg.h:5250:FSMC_BCRx_EXTMOD_Pos"
+      },
+      "ASYNCWAIT": {
+        "bit": 15,
+        "meaning": "Asynchronous wait",
+        "source": "web:RM0008:§21.5.6:p541-547",
+        "cmsis_crosscheck": "CMSIS:stm32f103xg.h:5253:FSMC_BCRx_ASYNCWAIT_Pos"
+      },
+      "CPSIZE": {
+        "bits": "18:16",
+        "meaning": "CRAM page size",
+        "source": "web:RM0008:§21.5.6:p541-547",
+        "note": "seed stm32f103xg.h 全文 CPSIZE 0 命中（2026-09-26 复核），故无 cmsis_crosscheck，仅 web 锚"
+      },
+      "CBURSTRW": {
+        "bit": 19,
+        "meaning": "Write burst enable",
+        "source": "web:RM0008:§21.5.6:p541-547",
+        "cmsis_crosscheck": "CMSIS:stm32f103xg.h:5256:FSMC_BCRx_CBURSTRW_Pos"
+      }
+    },
+    "btr_bits": {
+      "ADDSET": {
+        "bits": "3:0",
+        "meaning": "Address setup phase duration",
+        "source": "web:RM0008:§21.5.6:p541-547",
+        "cmsis_crosscheck": "CMSIS:stm32f103xg.h:5261:FSMC_BTRx_ADDSET_Pos"
+      },
+      "ADDHLD": {
+        "bits": "7:4",
+        "meaning": "Address-hold phase duration",
+        "source": "web:RM0008:§21.5.6:p541-547",
+        "cmsis_crosscheck": "CMSIS:stm32f103xg.h:5269:FSMC_BTRx_ADDHLD_Pos"
+      },
+      "DATAST": {
+        "bits": "15:8",
+        "meaning": "Data-phase duration",
+        "source": "web:RM0008:§21.5.6:p541-547",
+        "cmsis_crosscheck": "CMSIS:stm32f103xg.h:5277:FSMC_BTRx_DATAST_Pos"
+      },
+      "BUSTURN": {
+        "bits": "19:16",
+        "meaning": "Bus turnaround phase duration",
+        "source": "web:RM0008:§21.5.6:p541-547",
+        "cmsis_crosscheck": "CMSIS:stm32f103xg.h:5289:FSMC_BTRx_BUSTURN_Pos"
+      },
+      "CLKDIV": {
+        "bits": "23:20",
+        "meaning": "Clock divide ratio (for FSMC_CLK signal)",
+        "source": "web:RM0008:§21.5.6:p541-547",
+        "cmsis_crosscheck": "CMSIS:stm32f103xg.h:5297:FSMC_BTRx_CLKDIV_Pos"
+      },
+      "DATLAT": {
+        "bits": "27:24",
+        "meaning": "Data latency for synchronous memory",
+        "source": "web:RM0008:§21.5.6:p541-547",
+        "cmsis_crosscheck": "CMSIS:stm32f103xg.h:5305:FSMC_BTRx_DATLAT_Pos"
+      },
+      "ACCMOD": {
+        "bits": "29:28",
+        "meaning": "Access mode",
+        "source": "web:RM0008:§21.5.6:p541-547",
+        "cmsis_crosscheck": "CMSIS:stm32f103xg.h:5313:FSMC_BTRx_ACCMOD_Pos"
+      }
+    },
+    "note": "位名+语义以 RM0008 Rev 21 §21.5.6 位表入册（WB-20260925-03 T1）；F-179 弃登时『seed 未收 FSMC 位定义』系 grep 全名 FSMC_BCR1_MBKEN 漏掉 FSMC_BCRx_<名> 通配形态——本单复核 seed 实有全套（f103xg.h:5210-5317），已逐位标注 cmsis_crosscheck；只收位名+语义，不收时序常数全表"
   },
   "dbg": {
     "base": {
