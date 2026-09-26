@@ -4126,3 +4126,69 @@ F-189 §3 格式提案（维护者 2026-09-26 批准，见上节批准注记）�
   ①pin-mapping 前缀集 DS5318→DS5792 改名/扩集(钉面变更) ②多封装维度与 arch-facts
   格式统一(结构变更)。处置=暂缓, 唤起条件=下次动 pin-mapping 域。README 已知遗留
   同步登记。出处: WB-20260927-01 报告 §7 P-1/P-3。
+
+## F-194 — 生成器与数据面修复：available_on_c8 三态消费 / --pin 入口校验 / i2c 帮手自足（WB-20260927-02，2026-09-27）
+
+WB-05 残量三笔（M-1/L-1/L-4，对账=WB-20260926-04 报告 §一）先钉后修收口。
+全程未 push。
+
+- **T1 phase_minus_one 消费 available_on_c8 三态（M-1）**：55 外设 = 30 true /
+  22 false / 3 缺字段（GPIO/NVIC/SysTick），数据只读消费不改。false → 新状态
+  **UNAVAILABLE**（verdict BLOCKED）——判例论证：前置闸职责是拦死路，C8 工程
+  真用 TIM5 无解，WARN 面（OK_WITH_WARNINGS）等于放行白耗 HIL；且既有矩阵对
+  "不在 KB"的 UNKNOWN 已判 BLOCKED，已知不可用反而放行属倒挂。recommendations
+  同步给行动指向（换外设/换芯片）而非泛化"查数据手册"。is True → OK 逐字节
+  不变。缺字段 → 代码内白名单封闭集 `SYSTEM_PERIPHERALS = {GPIO, NVIC, SysTick}`
+  （F-186 显式豁免纪律，先例= CLOCK_EXEMPTION_SNAPSHOT）：集内 OK + detail 注记
+  "system-peripheral, field absent"，集外单列 WARN 不静默；封闭集快照钉 + 数据侧
+  缺字段集双向互证（第四成员入场=过设计）。main 退出码语义未动（L-2 "BLOCKED
+  rc=0" 另单勿混）。
+- **T2 gen_periph --pin 入口单点校验（L-1）**：`^P[A-G](1[0-5]|[0-9])$` **大写
+  严格**，main() parse_args 后单点闸、走 _emit 统一 ERROR→rc=1，文案点名当前值
+  与合法形态。旧三病收口：`--pin P` 裸 IndexError traceback / `--pin PA20` 与
+  PA12 同半字节（CRH<<16）静默碰撞 / `--pin pa0` 直落 IOPaEN·GPIOa 垃圾寄存器名。
+  小写显式拒绝不归一（显式优于隐式）；库态 pin_port/pin_num 宽松语义不动
+  （F-185 P-3 CLI 收口库态宽先例）。
+- **T3 i2c 帮手自足性路线 (b)（L-4）**：旧输出 8 处引用 error_chain_t /
+  ERR_PLAIN(×6) / ERR_OK 而零定义零 include，且全仓无该类型定义面（幽灵契约；
+  F-078 烟测 stub 恰好供定义掩盖此病），照抄即编译失败。选 (b) 降级：帮手
+  `static int i2cN_write` 返回 0=OK / 负值=超时码（诊断语义注释化保留），自发射
+  `#include <stdint.h>`（仿 gen_usart unistd 自足先例 F-131）。不选 (a) 自带
+  typedef+宏：仓内无 error-chain 既有契约，发明 {code,msg} 结构体=伪造 ABI，
+  未来真契约入场即双重定义冲突。随动三笔：test_gen_periph 断言随改（强度不减）；
+  F-078 smoke stub 删 error-chain 三定义（收紧契约——引用幽灵契约的回归即编译
+  红）；pclk 金矩阵 i2c 三条重基线（`_rebased_f194` 注记，沿 F-178 `_rebased`
+  先例，逐字节断言强度未变）。
+- **红绿三态**：基线 `Ran 1181 / OK (skipped=6)`（567164e）→ 钉(红) 12 红 +
+  4 守护绿（tests/test_f194_gen_dataface.py 新文件，零 mock 不入
+  test_stub_ratchet 判据面）→ 三笔逐修逐绿 → 全量 `Ran 1197 / OK (skipped=6)`
+  （+16=新钉数，skipped 恒等）。
+- **撤销实验×3**：T1 回退 phase_minus_one.py → 13 条 FAIL/ERROR 行（TIM5 假 OK
+  复现指认在案）→ 还原绿；T2 回退 gen_periph.py → 3 红（`--pin P` IndexError
+  traceback 钉精确咬中）→ 还原绿；T3 回退 gen_periph.py → 4 红（文本探针 +
+  最小 stub 语法双面）→ 还原绿 + smoke 绿。（坑账：cmd 未引 `^` 被吃致
+  `git show 0942538^:` 退化为显示本体 no-op 一轮，加引号重跑方为有效实验；
+  实验①因钉 commit 本身即修前版而侥幸有效。）
+- **金比对**：T1 GPIO/NVIC 修前修后唯一语义差 = detail 注记一行，I2C1 对照
+  逐字节同；CLI 面 `-p SysTick` 因既有 `.upper()` 归一使 `SysTick` 键不可达
+  （修前修后同 UNKNOWN，P 面登记）。T2 PA12/PB6 逐字节同（CLI 取证）。T3 i2c
+  输出 diff 恰 = 帮手块 + include（§1-3 零漂移，IOPBEN 重复 OR 字节原样保留）。
+- **白名单自证**：`git diff --name-only 567164e...HEAD` =
+  scripts/{phase_minus_one, gen_periph}.py + tests/{test_f194_gen_dataface(新),
+  test_zero_coverage_pure(夹具随动), test_gen_periph(断言随动),
+  test_gen_syntax_smoke(stub 收紧), fixtures/pclk_golden.json(重基线)} +
+  CHANGELOG.md + README.md（docs 笔），零越界；data/**（available_on_c8 只读
+  消费）、verify.py / release.py / runtime_common.py / esp_runtime.py、hooks/**、
+  examples/**、machine.json 未触。
+- **P 面（只列不改）**：① gen_periph 其余引脚参数（--tx/--rx/--scl/--sda/
+  --sck/--miso/--mosi/--nss）不在 --pin 单点闸内，小写/越界值仍直落 pin_port；
+  ② gen_usart/gen_spi 用 uint8_t 等而不发射 stdint include（自足性部分缺口；
+  usart 的 unistd 是 F-131 局部先例非通例）；③ i2c 输出 SCL/SDA 同端口时
+  `RCC_APB2ENR_IOPBEN | RCC_APB2ENR_IOPBEN` 重复 OR（无害冗余，金样字节钉死）；
+  ④ phase_minus_one CLI `.upper()` 归一使 `SysTick` 键经 CLI 不可达（库态可达，
+  见金比对）；⑤ cmd_list（--list）不显示 available_on_c8 态，22 个 false 外设
+  仍标 FULL 无不可用角标；⑥ phase_minus_one 其余检查（kb_coverage/
+  known_issues）的 ref 字段消费面未扩（_relationships 的 pins/dma/irq 仍未被
+  chip_support 消费）。
+- **未完成清单**：无（T1~T3 全收；README 入册条目三笔划修 + 规避句退役随
+  本 docs 笔）。
