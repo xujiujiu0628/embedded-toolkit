@@ -580,6 +580,11 @@ embedded-toolkit/
   arch-facts 格式统一属**结构变更**，另单提案（F-193 报告 §7 P-1/P-3）。
   裁定=暂缓，**唤起条件 = 下次动 pin-mapping 域**（新封装/新芯片立项，或
   arch-facts×pin-mapping 格式统一工单）。出处：CHANGELOG F-193 节 P 面。
+  **2026-09-27 ①收口（✅ F-199，WB-20260927-07）**：前缀封闭集 DS5318→DS5792
+  改名落地（`_ALLOWED_DS` 语义更正 + 回滚语义钉；DS5318 系误记由 F-193 T3 实证
+  结案，两号今日均零行入册，纯钉面更正零数据迁移；数据档 sha256 前后同一值），
+  rm_lookup `--pins` 消费面同单接线（CAN 四行查询/未入册指认/缺档显式报错）；
+  **②多封装维度仍暂缓**（唤起条件不变）。
 - **ref.json 数据面 GAP-D 收口状态（F-179，WB-20260920-05）**
   影响：`data/stm32f103-ref.json` 的 `bus` 字段曾与外设 RCC 使能位归属相反
   （TIM9 记 APB1、TIM12/13/14 记 APB2）；`_relationships` 的 IRQ 号只覆盖 12 个外设；
@@ -661,7 +666,7 @@ embedded-toolkit/
   整型参数 argv 收口 ✅ F-180（GAP-F-1：非 boolean 参数值一律 str 化入 argv，6 个整型
   参数 `run_verify.timeout` + `gen_peripheral` ch/freq/duty/baud/speed 由 100% 不可用转可用）·
   测试卫生包 ✅ F-181（GAP-F-2 py3.10 语法地板钉 + GAP-D-9/D-1 槽位注记随动 +
-  GAP-ENV-2 hooks bash 解析加固 + GAP-ACC-1 backup 交换回滚支补钉）· KB 消费面随动 ✅ F-191（gen-maps tim_bus/tim_irq 补齐 11 TIM + 类级互证钉 + `--timer` 入参收口 / rm_lookup 人读 desc 三处 + clock_enable 死支反查） · 护栏棘轮与杂项捆 ✅ F-192（全局打桩静态棘轮 L-2 收口：157 处/73 键快照 + 新增即红 + EXEMPTS+note + 双枪 / rm_lookup `--recipe` 人读 KeyError / release openocd_exe 缺键分流 / uart SerialException 已收行入账 / verify swd_probe 死导入删）
+  GAP-ENV-2 hooks bash 解析加固 + GAP-ACC-1 backup 交换回滚支补钉）· KB 消费面随动 ✅ F-191（gen-maps tim_bus/tim_irq 补齐 11 TIM + 类级互证钉 + `--timer` 入参收口 / rm_lookup 人读 desc 三处 + clock_enable 死支反查） · 护栏棘轮与杂项捆 ✅ F-192（全局打桩静态棘轮 L-2 收口：157 处/73 键快照 + 新增即红 + EXEMPTS+note + 双枪 / rm_lookup `--recipe` 人读 KeyError / release openocd_exe 缺键分流 / uart SerialException 已收行入账 / verify swd_probe 死导入删） · pin-mapping 消费面接线 ✅ F-199（rm_lookup `--pins` 消费面：CAN 四行人读/JSON 双形态逐字金比对 + 反 CANRX 替换钉 / 未入册显式指认+动态入册集 / 缺档损坏点名报错 / GAP-F-21① 前缀封闭集 DS5318→DS5792 改名落地 + 回滚语义钉 / 两档互证恒真钉+双态自证）
   ——证据链
   （run/PR/钉子清单）均在 CHANGELOG 对应票。
 

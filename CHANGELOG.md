@@ -4124,6 +4124,10 @@ F-189 §3 格式提案（维护者 2026-09-26 批准，见上节批准注记）�
   ①pin-mapping 前缀集 DS5318→DS5792 改名/扩集(钉面变更) ②多封装维度与 arch-facts
   格式统一(结构变更)。处置=暂缓, 唤起条件=下次动 pin-mapping 域。README 已知遗留
   同步登记。出处: WB-20260927-01 报告 §7 P-1/P-3。
+  **2026-09-27 ①收口（✅ F-199，WB-20260927-07）**: 前缀封闭集改名落地——
+  `_ALLOWED_DS` ("5319","5318")→("5319","5792") + 回滚语义钉（DS5318 系文档号
+  误记由 F-193 T3 实证结案，本节 P④ 同步结案）；rm_lookup `--pins` 消费面同单
+  接线。②多封装维度仍暂缓（唤起条件不变）。
 
 ## F-194 — 生成器与数据面修复：available_on_c8 三态消费 / --pin 入口校验 / i2c 帮手自足（WB-20260927-02，2026-09-27）
 
@@ -4437,3 +4441,74 @@ F-195 P 面 P-1/P-2/P-3 + WB-05 L-8（对账=WB-20260926-04 报告 §一）四�
   同构；④ F-078 烟测 stub 预置 stdint 的掩盖面在本族第四笔后已全部
   收口，stub 本身保留（合法消费面）。
 - **未完成清单**：无（T1~T4 全收；README L-8 划修随本 docs 笔）。
+
+## F-199 — pin-mapping 消费面接线：rm_lookup --pins / GAP-F-21① 前缀集改名 / 两档互证钉（WB-20260927-07，2026-09-27）
+
+F-193 P 面 ①③④ 兑现单：把已入册数据接上查询工具（T1）+ 钉面语义更正
+（T2，GAP-F-21① 唤起条件"下次动 pin-mapping 域"由本单兑现）+ 两档防劈叉
+互证（T3）。零新增数据行、data/** 零写、零触网，全程未 push。基线
+`2b7465e`（三查 merge-base=master=HEAD，三值相等）。
+
+- **T1 rm_lookup `--pins <PERIPH>` 消费面**：与 --rel/--recipe 同级互斥
+  （命中即 return，分支序 --list/--recipe/--rel/--pins）；读
+  `data/pin-mapping-f103.json` 为唯一事实源（共享层零改动，直接 open）。
+  已入册：人读四列（脚/功能/列位/source）与 JSON rows（{pin, function,
+  column, source}）逐字 == 入册值，F-193 P③ 反替换钉在场（输出禁现表内
+  拼写 CANRX/CANTX，规范名 CAN_RX/CAN_TX 就是入册值）；未入册："未入册"
+  显式指认 + 当前入册集（顶层块键动态导出禁硬编码，构造自证=喂不同
+  dict 验 known 随动）+ CHANGELOG F-189/F-193 指路，exit 0（查询无果不是
+  错误）；查询词 upper() 精确匹配禁模糊（CA 不咬 CAN）；数据档缺失/损坏
+  → PinMappingError 点名文件与原因（F-198 T2 同式；load 层结构守卫：
+  顶层非对象/外设块非对象/脚条目非对象皆点名），CLI rc=1 + stderr Error
+  行禁裸 traceback；JSON 双形态 {query, registered, rows} /
+  {query, registered, known}。测试 `tests/test_rm_lookup_pins.py` 新文件
+  18 例（驱动先例 test_rm_lookup_human_output.py：真进程 subprocess +
+  函数直调，零 mock/零 patch，棘轮 BASELINE 零漂移）。
+- **T2 GAP-F-21① 前缀封闭集改名（钉面变更兑现）**：`tests/
+  test_pin_mapping.py` `_ALLOWED_DS` ("5319","5318")→("5319","5792") +
+  docstring/注释同步；新增回滚语义钉 `set(_ALLOWED_DS) == {"5319",
+  "5792"}`。理据（全部在档）：F-193 T3 已证 DS5318 系文档号误记（本节
+  P④"语义待核验"由本单结案），高密度册真实自标识 = DS5792
+  （stm32f103rc.pdf Rev 13）；DS5318 零行入册 → 改名纯语义更正、零数据
+  迁移；DS5792 今日同样零行（LQFP48 切片锁定维持——高密度无 48 脚封装），
+  进集仅为未来"另册"场景预留真实文档号、堵住"引用不存在的册"的纪律洞。
+  数据档 sha256 改名前后同一值（e61060f7…917af，反向金钉：QUOTE_LEDGER
+  指纹与 CAN 四行全等零翻动）。
+- **T3 两档互证钉（防未来劈叉，F-191 类级防线同族）**：`tests/
+  test_pin_mapping.py` 模块级纯函数 `_pins_crosscheck(mapping, rel)`：
+  对 X ∈ pin-mapping 外设块 ∩ _relationships 键 且 X 带 pins 边者，钉
+  {"P"+port+str(pin)} 集 == pin-mapping 脚键集；真档比对环 + 一致/劈叉
+  两组自建样本双态自证（劈叉样本必咬且方向可辨：rel 独有脚进清单）。
+  **诚实披露**：今日交集 = ∅（CAN 在 _relationships 无键更无 pins 边；
+  rel.pins 12 外设 ADC1/I2C1/I2C2/SPI1/SPI2/TIM1-4/USART1-3 无一入册
+  pin-mapping）→ 恒真绿，禁 skip；另有披露钉：真档交集非空时提示重审
+  恒真绿语句——它的价值在未来任何人给 CAN 补 rel 边、或给既有 rel 外设
+  入册引脚行时两档劈叉必红。
+- **红绿三态**：基线 `Ran 1265 / OK (skipped=6)`（2b7465e，与
+  Orchestrator 实测恒等）→ 钉(红) 18 红（c87334a，--pins 未实现态全
+  FAIL 带"缺 search_pins/load_pin_mapping/format_pins_result/
+  run_pins_mode/PinMappingError"指认）→ 实现后全量 `Ran 1288 / OK
+  (skipped=6)`（1265+18 新文件+5 新钉，skipped 恒等）。自省一笔：互斥
+  契约测试初稿查询词误用零命中词 PWM（人读先例钉已证 PWM 无配方命中），
+  实现 commit 改用真实命中词 BSRR——钉前提反查纪律（F-186）的执行者
+  自身先踩，实录在案。
+- **变异自证（三枪，字节级还原）**：枪A 数据档 CAN_RX→CANRX（2 处）→
+  4 红（人读/JSON 反替换钉 + CLI rc 钉 + QUOTE_LEDGER 指纹钉）→ 还原
+  sha256 复得 e61060f7…（RESTORED-BYTES-OK）；枪B `_ALLOWED_DS` 回滚
+  ("5319","5318") → 恰 1 红（语义钉；其余 12 钉绿 = 改名零数据影响
+  实证）→ 还原树净；枪C T3 劈叉样本喂真比对环 → 非空冲突清单
+  [('USART1', [], ['PA10'])]（一致样本 [] 绿态同场实录）。
+- **白名单自证**：diff 仅 scripts/rm_lookup.py + tests/test_rm_lookup_pins.py
+  (新) + tests/test_pin_mapping.py + CHANGELOG.md + README.md；
+  data/**（含 pin-mapping——本单零数据写）、scripts/wb_common.py、
+  hooks/**、examples/**、machine.json 零触碰。ruff 全仓零告；打桩棘轮
+  10 例绿（BASELINE 73 键/157 处/38 文件零漂移）。
+- **P 面（只列不改）**：①`_meta.source_types` 与 `_ALLOWED_DS` 双处
+  维护面——前者登记"已用型"（今仅 DS5319），后者管"允许集"，语义不同
+  但扩集/另册入册时两处须同步审视；②rel.pins 的 mode 字段（I2C1 SCL=
+  AF_OD 形态）与 pin-mapping 的 column（alternate/additional）是两套
+  口径，CAN 若补 rel.pins 边须先裁 mode 值域再受互证钉约束；③rm_lookup
+  --pins 未提供按脚反查（pin→外设）方向，消费面按需另单；④search_pins
+  对 `_meta` 查询按未入册处理（显式豁免非外设块）。
+- **未完成清单**：GAP-F-21② 多封装维度仍暂缓（唤起条件不变）；
+  RM0008 AFIO_MAPR 重映射值域仍未入册（F-193 未完成清单延续）。
