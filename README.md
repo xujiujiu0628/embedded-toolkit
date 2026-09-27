@@ -552,6 +552,15 @@ embedded-toolkit/
   （不再谎报"没有占用表"）且 BLOCKED 退出码 1。规避句仅余（顺带退役
   "中文 Windows 下以 UTF-8 模式跑 verify"，F-195 已收）：三条全退役。
   ⑥（L-8，mcp_server resolve_project 库根不设防）仍在，属兄弟单/留拍板面。
+  **划修（2026-09-27，F-198 / WB-20260927-05）**：⑥ L-8 已修——
+  `mcp_server.resolve_project` 库根闸前置（realpath+normcase 双归一判
+  TOOLKIT_ROOT，尾斜杠/大小写盘符/相对段同拒），"不要传工具库自身路径"
+  防线兑现且不依赖 F-015 残留是否在场（残留本体零翻动）；同笔顺收
+  F-195 P 面 P-1（`gen_systick`/`gen_adc` 块首自发射 `#include
+  <stdint.h>`，同族第三/四笔，pclk 金矩阵六条重基线 diff 恰 +1 行）、
+  P-2（`merge_into_ref` peripherals 缺键显式 ValueError）、P-3
+  （`atomic_write_json` dump 失败清 .tmp，成功路径逐字节金钉）——
+  **至此 WB-05 对账 21 条账面全部有终态**（N-1 单会话假设维持登记）。
 - **Note 面留档（2026-09-26 对账）**：`feedback_db` 多进程 RMW 无锁（单会话假设
   维持，WB-05 N-1）；`serial_send` hex 模式 `A0xB` 类输入剥转损坏（WB-05 N-3）。
   引用防呆：WB-05 与 01 报告存在**同号异病**（M-1/H-1/L-2/N-3/N-4 五对），引用

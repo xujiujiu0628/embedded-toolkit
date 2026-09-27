@@ -4374,3 +4374,68 @@ WB-05 残量七笔（M-6/L-2/L-7/L-9/L-10/L-11 + N-3，对账=WB-20260926-04 报
   precedence_side 把优先语义钉成契约 (两态各有钉, 语义改动必红)。教训泛化:
   **凡真子进程测被 env 变量分流行为的代码, 夹具必须显式构造两态, 禁止裸继承
   os.environ**——"本地没这个变量"不是测试环境, 是未声明的前提。
+
+
+## F-198 — 同族清尾四件：gen_systick/gen_adc stdint 自足 / merge_into_ref peripherals 裸下标 / mcp 库根闸 / atomic 失败路径清理（WB-20260927-05，2026-09-27）
+
+F-195 P 面 P-1/P-2/P-3 + WB-05 L-8（对账=WB-20260926-04 报告 §一）四件
+独立先钉后修收口；修完 WB-05 对账 21 条账面全部有终态（N-1 单会话假设
+维持登记，本单不碰）。全程未 push，data/** 零触。
+
+- **T1 gen_systick/gen_adc 块首自发射 #include <stdint.h>（F-195 T6
+  同族第三/四笔，销 F-195 P-1）**：两帮手用 uint32_t/uint16_t 而从不
+  发射 stdint，F-078 烟测 stub 预置恰好掩盖（照抄即编译失败）。修法=
+  F-195 T6 同构：块首发射+已含不重复卫语句。钉：include 前置（平台
+  无关）×2 + 无 stdint 预置最小 stub 下 gcc -fsyntax-only ×2（修前红
+  因=纯 unknown type name uintN_t）+ 新形态自有金钉×2（capture-once，
+  == f195 金样 +1 行块首 include 双脚本自证）。pclk 金矩阵六条
+  （systick×3/adc×3）重基线（_rebased_f198 注记，重基线脚本逐条 diff
+  恰 +1 行自证，首捕 \r\n 归一）；其余 21 条 c0df0c6 原样零翻动；
+  adc/systick 两键移出 gen_periph_golden_f195.json（该夹具回归
+  "其它型"纯集：gpio/pwm/timer-int/i2c 四键原样）。
+- **T2 merge_into_ref peripherals 裸下标显式化（销 F-195 P-2）**：
+  svd_to_json.py:273 `ref["peripherals"]` 对缺键骨架合成 dict 即裸
+  KeyError（对 list 骨架 TypeError 深处炸）→ ref.get+isinstance 守卫
+  显式 ValueError（点名键+"带空 peripherals 段的骨架或 --init 语义"
+  提示，与 F-195 T5 _meta 面同式）。正常 merge 金比对逐字节不动
+  （F-195 T5 原子写面四例零扰动）。
+- **T3 mcp resolve_project 库根闸前置（销 WB-05 L-8）**：库根
+  .workbench/config.json 系 F-015 时代残留（165 字节），"不要传工具库
+  自身路径"防线凭"持有 config"漏判落空（下游 verify preflight 兜底，
+  无实害语义落空）。修：resolve_project 前置 realpath+normcase 双归一
+  判 TOOLKIT_ROOT（尾斜杠/"."段/大小写盘符同拒），McpToolError 点名
+  "工程应有自己的 .workbench 与固件源"——不依赖残留是否在场。既有
+  18 例 MCP 钉零扰动，正常工程/不存在路径行为不变；**F-015 残留本体
+  零翻动**（data 面裁决，处置建议见 P 面）。
+- **T4 atomic_write_json 失败路径 .tmp 清理（销 F-195 P-3，F-023 家族
+  既有行为收口）**：dump/序列化中途抛错 → unlink tmp（missing_ok 语义）
+  后原样 raise（except BaseException 覆盖 Ctrl-C 中途；F-133/j runtime
+  侧 save_json_file 同口径——残骸毒化目录扫描类消费方且掩盖失败现场）。
+  **wb_common 共享层第一单入场改，成功路径逐字节反向金钉强制**：正常写
+  产物 == json.dumps(ensure_ascii=False, indent=2) UTF-8/LF 形态
+  （无尾随换行），os.replace 之后语义零动。
+
+- **红绿三态与撤销实验×4**：钉(红) commit 先行——12 例 10F+2E 全红
+  实录（T1×4/T2×2/T3×5/T4×1，反向金钉×4 双态绿常绿）；修后全量
+  1265 绿 skipped=6 恒等（基线 1251+14 新钉）。撤销实验：拆 T1 发射
+  → 12 红（四钉组+pclk 重基线六条，其余 21 条零扰动）→还原绿；拆
+  T2 守卫 → 2 红（正常面绿）→还原绿；拆 T3 闸 → 5 红（反向钉绿）
+  →还原绿；拆 T4 清理 → 1 红（正常路径金钉绿——清理与成功路径隔离
+  实证）→还原绿。
+- **白名单自证**：git diff --name-only 96ca1ff..HEAD = scripts/
+  {gen_periph, svd_to_json, mcp_server, wb_common}.py + tests/{fixtures/
+  pclk_golden.json, fixtures/gen_periph_golden_f195.json,
+  test_f195_robustness_misc.py, test_f198_family_tail.py(新)}，白名单外
+  零输出；禁区（data/**、hooks/**、examples/**、machine.json、既有断言
+  零删零弱）未触。ruff 全仓零告；打桩棘轮 10 例绿（基线零漂移）。
+- **P 面（只列不改）**：① atomic_write_json 的 os.replace 失败面
+  （Windows 目标被锁/盘满）tmp 仍留场——本单按简报只收 dump 路径，
+  runtime 侧 F-133/j 已收、共享层该面未收，属另单面；② 库根
+  .workbench/config.json（F-015 史档，165 字节）处置建议：T3 闸已不
+  依赖其在场，维护者可裁决删除（清史档）或保留（无害，防线不依赖）；
+  ③ gen_systick/gen_adc include 落块首而非帮手引用前（与 usart/spi
+  的引用前形态不同）——两处均语法合法（GNU C 函数内 #include 原地
+  展开），块首形态对"生成物整段贴入 main.c"的消费方式更直读，未强求
+  同构；④ F-078 烟测 stub 预置 stdint 的掩盖面在本族第四笔后已全部
+  收口，stub 本身保留（合法消费面）。
+- **未完成清单**：无（T1~T4 全收；README L-8 划修随本 docs 笔）。
