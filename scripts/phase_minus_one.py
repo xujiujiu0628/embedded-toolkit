@@ -18,17 +18,29 @@ phase_minus_one.py — Drafter 前置兼容性检查
 import argparse
 import json
 import os
+import sys
 
 from wb_common import TOOLKIT_ROOT, find_project_root, load_ref  # F-157: load_ref 收编
 
 ISSUES_PATH = os.path.join(TOOLKIT_ROOT, "data", "f103_known_issues.json")
 
 
+class FixedPinsCorrupt:
+    """F-196 T2 (L-2): 损坏占用表哨兵 — 携带路径供 CORRUPT detail 指认。
+    旧病: 损坏/缺失/无 workspace 三类一律 return None, check 侧谎报
+    "没有占用表" (fail-open)。现缺失仍 None (文案照旧), 损坏显式此态。"""
+
+    def __init__(self, path):
+        self.path = path
+
+
 def load_fixed_pins(workspace):
     """F-158 (P2-4): 固定引脚占用表外置到工程 .workbench/fixed_pins.json —
     仓内硬编码 FIXED_PINS (维护者 adc-oled 专属) 属数据走私, 已删。
     文件形态: {"PC13": "LED heartbeat (GPIO Output)", ...}。
-    缺省 (文件不在场或无 workspace) 返回 None — 冲突检查跳过不报错。"""
+    三态 (F-196 T2/L-2): 无 workspace 或文件不在场 → None — 冲突检查跳过
+    不报错 (文案逐字节不变); 文件在场但不可读/不可解析/非对象 →
+    FixedPinsCorrupt 哨兵 — BLOCKED 参与 verdict (fail-loud); 合法 → dict。"""
     if not workspace:
         return None
     path = os.path.join(workspace, ".workbench", "fixed_pins.json")
@@ -36,9 +48,12 @@ def load_fixed_pins(workspace):
         return None
     try:
         with open(path, encoding="utf-8") as f:
-            return json.load(f)
+            data = json.load(f)
     except (json.JSONDecodeError, UnicodeDecodeError, OSError):
-        return None
+        return FixedPinsCorrupt(path)
+    if not isinstance(data, dict):
+        return FixedPinsCorrupt(path)
+    return data
 
 
 def load_issues():
@@ -92,11 +107,17 @@ def check_chip_support(peripheral, ref):
 
 def check_pin_conflicts(pins, peripheral, fixed_pins):
     """检查目标引脚是否与现有功能冲突 (F-158: 占用表外置, 第三参为
-    load_fixed_pins() 的结果; None = 工程未配置占用表, 跳过不报错)"""
+    load_fixed_pins() 的结果; None = 工程未配置占用表, 跳过不报错;
+    FixedPinsCorrupt = 占用表损坏, 显态 CORRUPT 拒绝放行 — F-196 T2)"""
     if fixed_pins is None:
         return {"status": "OK",
                 "detail": ("No fixed-pins map (.workbench/fixed_pins.json) "
                            "— conflict check skipped")}
+    if isinstance(fixed_pins, FixedPinsCorrupt):
+        return {"status": "CORRUPT",
+                "detail": (f"fixed-pins map 不可解析 ({fixed_pins.path}) — "
+                           "占用表损坏非缺失, 冲突检查拒绝放行 "
+                           "(修复或删除该文件后重跑)")}
     if not pins:
         return {"status": "OK", "detail": "No pins specified"}
 
@@ -186,9 +207,11 @@ def check_known_issues(peripheral, issues):
 
 def compute_verdict(checks):
     """综合所有检查 → 最终裁定 (F-194: UNAVAILABLE 与 CONFLICT/UNKNOWN 同级
-    参与 BLOCKED — 不在目标芯片的外设是死路, 不许以 WARN 面放行)"""
+    参与 BLOCKED — 不在目标芯片的外设是死路, 不许以 WARN 面放行;
+    F-196 T2: CORRUPT 同级 — 损坏占用表下的"无冲突"不可信, 同样 BLOCKED)"""
     statuses = [c.get("status", "OK") for c in checks.values()]
-    if "CONFLICT" in statuses or "UNKNOWN" in statuses or "UNAVAILABLE" in statuses:
+    if ("CONFLICT" in statuses or "UNKNOWN" in statuses
+            or "UNAVAILABLE" in statuses or "CORRUPT" in statuses):
         return "BLOCKED"
     if "WARN" in statuses or "PARTIAL" in statuses or "NONE" in statuses:
         return "OK_WITH_WARNINGS"
@@ -296,7 +319,7 @@ def main():
         print(f"\n=== Phase -1: {result['target']} ===\n")
         for name, check in result["checks"].items():
             icon = {"OK": "PASS", "WARN": "WARN", "CONFLICT": "FAIL", "UNKNOWN": "????",
-                    "UNAVAILABLE": "UNAV",
+                    "UNAVAILABLE": "UNAV", "CORRUPT": "FAIL",
                     "FULL": "FULL", "PARTIAL": "PART", "NONE": "NONE"}.get(check["status"], check["status"])
             print(f"  [{icon:4s}] {name}: {check['detail']}")
             if "shared" in check and check["shared"]:
@@ -309,6 +332,12 @@ def main():
             for r in result["recommendations"]:
                 print(f"    - {r}")
         print()
+
+    # F-196 T2 (L-2): BLOCKED 退出码 1 — 前置闸裁定必须可被脚本消费方感知
+    # (旧病: main 全程无 sys.exit, BLOCKED 也 rc=0)。--list / 无外设帮助
+    # 路径在上方提前 return, 不受影响。
+    if result["verdict"] == "BLOCKED":
+        sys.exit(1)
 
 
 if __name__ == "__main__":
