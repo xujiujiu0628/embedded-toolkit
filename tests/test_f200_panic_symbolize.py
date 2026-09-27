@@ -139,7 +139,7 @@ def _same_path(a, b):
     """路径等值 (F-200 CI 追修, Windows 8.3 短名盲区): 生产侧
     workspace_root().resolve() 在 GH runner 上把 TEMP 短名
     C:\\Users\\RUNNER~1 展开成长名 runneradmin, 而测试期望值是 tempfile
-    原样短名——本地用户名(已脱敏) 无短长名差故跑不出。两侧同过
+    原样短名——本地用户名为短名形态 (无短长名差) 故跑不出。两侧同过
     realpath+normcase 归一, 跨平台一致。"""
     return os.path.normcase(os.path.realpath(a)) == \
         os.path.normcase(os.path.realpath(b))

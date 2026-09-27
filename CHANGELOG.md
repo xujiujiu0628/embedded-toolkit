@@ -5,6 +5,27 @@
 
 ## Unreleased — 0.7 封袋后新账（F-202 起）
 
+- **F-202 (fix+test, hygiene): 公开仓脱敏回归清洗 8 处 + 扫描钉三族扩面 (v0.7 无上下文复审 H-1)**:
+  根因: F-175 自述回归缺口（"守卫只拦提交时点不拦叙述"）复发——09-19 后
+  账目/规格/夹具再带私有工作区根路径 ×4（CHANGELOG F-200 节两处 + 样例
+  工厂状态表两处）、本机用户名叙述 ×1（test_f200 _same_path docstring）、
+  机器绝对路径 ×3（pclk_golden `_meta.cli` 两条 + arch-facts `source_root`
+  + CHANGELOG F-178 节 Python 路径）；F-089 原钉单模式（仅旧工作区根一种
+  形态）且只扫 .py/.md，.json 夹具/数据档面全漏。
+  处置: 8 处中性化为 `<local-workspace>`/`<python>`/`<toolkit>`/
+  `<local-checkout>` 占位——CHANGELOG 三处属**身份碎片隐私例外**：账目
+  本体零删（封袋零删承诺不变），仅机器可识别片段占位，原文以 git 历史
+  f9d0e6d 为锚，本条即留痕；test_source_hygiene_paths 扫描模式扩三族
+  （旧工作区根 F-089 原式 / 私有工作区名路径形态 / 用户主目录用户名形态，
+  后两族 chr 码构造防自扫描命中）+ 扫描面 +.json + 新增 CHANGELOG 身份
+  碎片窄域钉（模式 1 账目豁免不含身份面——账目完整性不构成公开维护者
+  私有布局的理由）。凭证面（token/私钥/内网 IP/非 noreply 邮箱）复审已
+  实证全树+全史零命中，本票不涉。
+  测试: test_source_hygiene_paths 4 例（三族 tracked 扫描 + 豁免最小性 +
+  CHANGELOG 窄域）转绿；test_gen_pclk_param（金矩阵逐字节比对不受 _meta
+  占位影响）/ test_ref_arch_facts / test_f200_panic_symbolize 随动全绿；
+  全树敏感词复扫零命中。
+
 ## 0.7 — 2026-09-27（净仓换血转公开 + ESP 三后端闭环与发布链收口 + 样例工厂二期 + KB 数据面全量修复 + 护栏棘轮与外派 14 单·整批复审两轮）
 
 > 封袋定义: 自 v0.6 标签（commit 9828f9b, 2026-09-15）之后落入本账本的
@@ -3276,7 +3297,7 @@
     （`commit` 报 rc=0 而 ref 不落盘），沿用项目既有绕过法并在本单补强：**直写松散 ref
     并同步 `packed-refs`**（松散 ref 在工具调用边界被回滚，packed 通道持久）；
     ③ 沙箱 PATH 前置的托管 Python **缺 pyserial**，会让基线误判红 8 例，
-    本单全程改用 `<python>`（3.14.3，`import serial` → 3.5）。
+    本单全程改用本机 Python 3.14.3（`import serial` → 3.5）。
 - **契约变更段（WB-20260920-05）**:
   - **新增数据档 `data/stm32f103-arch-facts.json`**（此前无此文件）：顶层 `_meta`
     （version/chip/updated/scope/source_types/policy/anchored_header）+ 分组
@@ -4552,7 +4573,7 @@ F-193 P 面 ①③④ 兑现单：把已入册数据接上查询工具（T1）+ 
 spec §4.3 "panic 检测只做文本级标记……不做符号化"（docs/specs/
 2026-09-16-esp32s3-pilot-design.md:76）的后置票兑现；F-174 非目标清单
 "panic 符号化"项划修（README 多 MCU 节 + 本档 F-174 节"非目标未做"追注）。
-验收口径 = D:\<local-workspace>\embedded-toolkit_F200验收口径草案_20260927.md（v0），
+验收口径 = <local-workspace>\embedded-toolkit_F200验收口径草案_20260927.md（v0），
 §6 五项拍板按建议案执行：② ROM 符号（esp-rom-elfs 在库）本票不做
 （fail-soft+P 面登记）、③ ELF SHA 对账纳入（A1 提取+A5 前缀比对）、
 ④ Registers 行解码不做（P 面）、⑤ Phase A 硬顶 120 轮（实际约 30 轮）；
@@ -4659,7 +4680,7 @@ markers 实为五枚（草案列三枚，另两枚 assert failed / Heap corrupti
   triggered`），panic 复现窗口受供电边际影响——环境噪音，非代码面。
   **证据 8 件**（勘误 2026-09-27：原记 10 件，目录 `ls` 实点 8——双 ESP 各
   run 全文/捕获全文/panic 块摘录 3×2 + STM32 两跑；铁律"例数实跑核对"
-  对证据计数同样成立）：`D:\<local-workspace>\embedded-toolkit_F200_PhaseB_evidence\`。
+  对证据计数同样成立）：`<local-workspace>\embedded-toolkit_F200_PhaseB_evidence\`。
 - **未完成清单**：无——Phase B 全过，F-200 销账（Phase A 三 commit
   `1cb5d3b`/`22264fb`/`e140850` + 本销账 commit；§6 拍板①亦按建议案
   执行完毕，临时分支制未落 examples/）。P 面维持只列不改：②

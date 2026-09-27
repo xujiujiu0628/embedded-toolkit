@@ -5,7 +5,7 @@
     "updated": "2026-09-26",
     "task": "WB-20260920-05 / F-179 (GAP-D-4); 值语义+FSMC 位名补锚 WB-20260925-03 / F-189",
     "scope": "ref.json 未登记、样例与生成器需要的架构常量 / 位域 / 编码表",
-    "source_root": "<d-claude-root>\\vendor\\stm32f103-cmsis-seed",
+    "source_root": "<local-checkout>/stm32f103-cmsis-seed",
     "source_types": [
       "RM0008:§节号",
       "CMSIS:<文件>:<行或枚举>",

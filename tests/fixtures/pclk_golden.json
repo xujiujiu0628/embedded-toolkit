@@ -4,7 +4,7 @@
     "captured_at": "2026-09-20",
     "cli": [
       "<python>",
-      "<d-claude-root>/embedded-toolkit/scripts/gen_periph.py"
+      "<toolkit>/scripts/gen_periph.py"
     ],
     "note": "WB-20260920-01 金矩阵: 基线代码 (无 --pclk1/--pclk2) 上 capture-once。拆分后默认路径 (不传 pclk) 必须逐字节复现本文件全部输出。 (F-178/WB-20260920-04 重基线 3 条 spi 条目, 见 _rebased)",
     "_rebased": {

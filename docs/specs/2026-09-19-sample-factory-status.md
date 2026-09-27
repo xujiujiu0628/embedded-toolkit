@@ -1,6 +1,6 @@
 # F103 外设样例工厂 — 状态表与 GAPREPORT（WB-20260919-04）
 
-> 任务：`D:\<local-workspace>\embedded-toolkit_样例工厂简报_WB-20260919-04.md`
+> 任务：`<local-workspace>\embedded-toolkit_样例工厂简报_WB-20260919-04.md`
 > 基线：`c0df0c6`（v0.6）→ 分支 `wb/f103-sample-factory-20260919`
 > 执行：Z code 定向 Executor，2026-09-19
 > 核对：`python -m unittest tests.test_sample_factory` → **Ran 47 tests OK**
@@ -145,7 +145,7 @@ rc=0 且 ELF+HEX 产出（工厂巡检测试断言）；mock = 目录含 `MOCK` 
 
 ## 七、mock 二期（WB-20260920-02，2026-09-20，分支 wb/f103-mock-round2-20260920）
 
-简报 `D:\<local-workspace>\embedded-toolkit_样例工厂二期mock加深简报_WB-20260920-02.md`。
+简报 `<local-workspace>\embedded-toolkit_样例工厂二期mock加深简报_WB-20260920-02.md`。
 基线 7b56ee5（一期终点），R1→R2→R3 分层收口。核对：工厂巡检
 **Ran 54 tests OK**（40 样例 + 14 mock 子用例）；全量（Git Bash 口径）
 **Ran 960 tests OK (skipped=6)**（953+7）。R1 的"断言组"= 带推导注释
