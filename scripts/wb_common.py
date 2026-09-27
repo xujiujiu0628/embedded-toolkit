@@ -76,14 +76,25 @@ def atomic_write_json(path, data):
     从消费方名单移除。
     tmp 名带 pid = 双进程并发写同一目标不互顶 (F-023, 与 runtime 侧
     save_json_file 同口径; runtime 按脚本自含惯例保留各自拷贝)。
+    F-198 T4: dump/序列化中途抛错 → unlink tmp 后原样 raise (F-133/j
+    runtime 侧同口径; 残骸毒化目录扫描类消费方且掩盖失败现场)。
+    成功路径 os.replace 之后语义零动 (含 replace 失败面, 见 P 面注记)。
     """
     path = str(path)
     d = os.path.dirname(path)
     if d:
         os.makedirs(d, exist_ok=True)
     tmp = f"{path}.{os.getpid()}.tmp"
-    with open(tmp, "w", encoding="utf-8", newline="\n") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
+    try:
+        with open(tmp, "w", encoding="utf-8", newline="\n") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+    except BaseException:
+        # BaseException: Ctrl-C 中途同样不留残骸; 原异常原样上抛不吞不裹。
+        try:
+            os.unlink(tmp)   # missing_ok 语义 (open 未及建文件时吞 FileNotFoundError)
+        except OSError:
+            pass
+        raise
     os.replace(tmp, path)
 
 
