@@ -266,11 +266,17 @@ def merge_into_ref(all_data: dict, ref_path: str) -> tuple[int, int]:
     在 Windows 还附带 '\n'→CRLF 翻译, 与盘上 ref.json 的 LF 形态相悖,
     原子写强制 LF 顺路纠偏 (金口径: 新旧输出 newline 归一后逐字节同,
     见 test_f195_robustness_misc)。_meta 缺键/非对象 → 显式 ValueError,
-    不再裸 KeyError 双下标。"""
+    不再裸 KeyError 双下标。F-198 T2: peripherals 缺键/非对象同式收口
+    (旧裸下标 :273 对缺键即裸 KeyError, 无可行动提示)。"""
     with open(ref_path, 'r', encoding='utf-8') as f:
         ref = json.load(f)
 
-    existing = ref["peripherals"]
+    existing = ref.get("peripherals")
+    if not isinstance(existing, dict):
+        raise ValueError(
+            f"ref 缺 peripherals 段 (或非对象), 拒绝 merge 以防写坏 KB: "
+            f"{ref_path} — 请改用带空 peripherals 段的骨架 ref (或先走 "
+            f"--init 语义初始化) 后重试")
     added = 0
     for name, data in sorted(all_data.items()):
         if name in existing:
