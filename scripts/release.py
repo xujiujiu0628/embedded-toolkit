@@ -15,6 +15,7 @@
 import argparse
 import json
 import os
+import shutil
 import subprocess
 import sys
 from datetime import datetime
@@ -98,10 +99,31 @@ def gate1(ws, timeout):
 
 
 def _gcc_version():
+    """工具链版本首行; 探不到返回 unknown(原因) — F-196 T4 (L-7)。
+
+    F-164 同款平台化探测: 旧形态配了 gcc_path 即硬拼 arm-none-eabi-gcc.exe,
+    Linux 发布机恒 unknown。现 shutil.which 优先 (nt 自动试 PATHEXT/.exe,
+    POSIX 查存在+可执行位; 裸名查 PATH, 带目录查该路径), gcc_path 落空再退
+    PATH; 两处皆探不到仍 unknown 但原因入输出 (记录 tools.gcc 可见)。
+    ESP not_applicable 分流 (F-190/M-1) 在 build_record 侧, 本函数不动。"""
     m = load_machine()
     gcc_path = (m.get("gcc_path") or "").strip()
-    exe = os.path.join(gcc_path, "arm-none-eabi-gcc.exe") if gcc_path \
-        else "arm-none-eabi-gcc"
+    exe = shutil.which("arm-none-eabi-gcc", path=gcc_path) if gcc_path else None
+    if exe is None:
+        exe = shutil.which("arm-none-eabi-gcc")
+    if exe is None:
+        why = (f"gcc_path={gcc_path!r} 与 PATH 均探不到 arm-none-eabi-gcc"
+               if gcc_path else
+               "machine.json 未配 gcc_path 且 PATH 探不到 arm-none-eabi-gcc")
+        return f"unknown ({why})"
+    if os.name == "nt":
+        # which 经 PATHEXT 命中会回传 .EXE 大写形态, 而 gcc 版本行回显
+        # argv[0] 基名 — 归一小写使修前 (硬拼 .exe) 的版本串逐字节不变
+        # (nt 文件名不区分大小写, 同一二进制); 基名本已全小写则原样保留。
+        base = os.path.basename(exe)
+        low = base.lower()
+        if low != base:
+            exe = os.path.join(os.path.dirname(exe), low)
     try:
         r = subprocess.run([exe, "--version"], capture_output=True,
                            text=True, timeout=10)
