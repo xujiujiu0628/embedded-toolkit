@@ -12,13 +12,16 @@ annotated tag 都是本地 git 操作, 无签名 — 事后可被手工篡改而
   R4  results 无 FAIL/XPASS 条目, 且 xfail_waived 与 results 内 XFAIL 集合相等
   R5  记录结构完整性 (tag/git_head/timestamp/build_mode/artifacts/results/
       xfail_waived/tools 必填, tag 字段与文件名一致)
-  R6  记录文件已被 git 提交入库 (未提交 = 警告级)
+  R6  记录文件已被 git 提交入库 (未提交 = 警告级); 已跟踪记录存在未提交
+      变更 (工作树脏) = 警告级 (F-196, 与入库版本可能不一致须显形)
   R7  契约哈希锚点 (F-018): 记录 contracts 的 expectations/config sha256
       与 git show git_head: 重算一致 (不匹配 = fail; 旧记录缺绑定 = 警告)
   R8  证据等级一致性 (F-128/F-146, 命名对齐 AEL): 记录 evidence 必须
       hardware_validated (或缺字段=旧版产物→警告; 非真机证据且无豁免留痕=
       fail; 豁免留痕在册=警告); production_approved 必须携带
-      production_approved_at 批准留痕, 手工改值视同篡改 (fail)
+      production_approved_at 批准留痕且戳有留痕链 (fidelity_boundaries 批准
+      注记) 或 git 入库版本同戳在场 — 手工填戳无链视同篡改 (fail, F-196;
+      历史语义零翻动: 无 evidence 字段的旧档走上方警告分支不进此判)
 
 用法:
   python scripts/release_audit.py --project <工程根> --tag v1.1.0
@@ -44,6 +47,10 @@ REQUIRED_KEYS = ("tag", "git_head", "timestamp", "build_mode", "artifacts",
 # F-146: production_approved 是唯一不由 verify 产出的证据等级 — 只能经
 # 本工具 --approve 在发布后回填, 且必须以 hardware_validated 为底。
 EVIDENCE_APPROVED = "production_approved"
+
+# F-196 T1 (M-6): approve_record 落盘批准注记的主标 — R8 留痕链判据的
+# 单一事实源 (注记与批准戳同笔写入, 戳在注记不在 = 手工填值)。
+APPROVAL_NOTE_MARK = "经 release_audit --approve 人工批准投产"
 
 
 def _git(args_, cwd):
@@ -144,12 +151,20 @@ def audit_record(ws, tag, rel_path):
     else:
         _check(checks, "R5", "pass", "结构完整")
 
-    # R6 记录已入库
-    rc, out, _ = _git(["ls-files", "--", rel_path.replace(os.sep, "/")], ws)
+    # R6 记录已入库 (F-196 T1/M-6: 跟踪态之外加工作树脏检查 — 已跟踪记录
+    # 存在未提交变更 = 与入库版本可能不一致, WARN 显形不拦发布)
+    rel_git = rel_path.replace(os.sep, "/")
+    rc, out, _ = _git(["ls-files", "--", rel_git], ws)
     if rc != 0 or not out.strip():
         _check(checks, "R6", "warn", "发布记录未被 git 跟踪 (发布后未提交)")
     else:
-        _check(checks, "R6", "pass", "记录已入库")
+        rc_d, dirty, _ = _git(["status", "--porcelain", "--", rel_git], ws)
+        if rc_d == 0 and dirty.strip():
+            _check(checks, "R6", "warn",
+                   "记录已跟踪但工作树有未提交变更 — 与入库版本可能不一致 "
+                   "(变更请自行 git 提交后复审)")
+        else:
+            _check(checks, "R6", "pass", "记录已入库")
 
     # R7 契约哈希锚点 (F-018, 2026-08-30 R2): results 由哪份 expectations/config
     # 产生 — G0 保证发布时工作树 clean, 故记录里的哈希必须等于 git_head 处的
@@ -208,15 +223,41 @@ def audit_record(ws, tag, rel_path):
         _check(checks, "R8", "warn",
                "evidence=hardware_validated 但存在豁免留痕 — 字段矛盾, 疑似手工编辑")
     elif evidence == "production_approved":
-        if record.get("production_approved_at"):
-            _check(checks, "R8", "pass",
-                   f"发布证据等级: {evidence} "
-                   f"(批准于 {record.get('production_approved_at')})")
-        else:
+        stamp = record.get("production_approved_at")
+        if not stamp:
             _check(checks, "R8", "fail",
                    "evidence=production_approved 但缺 production_approved_at "
                    "批准留痕 — 该等级只能经 release_audit --approve 产生, "
                    "手工改值视同篡改")
+        else:
+            # F-196 T1 (M-6): 头注"手工改值视同篡改"的可机检兑现 — 批准戳须
+            # ①既有字段链 (approve_record 同笔落的 fidelity_boundaries 批准
+            # 注记) 或 ②git 证据在场 (入库版本含同一批准戳, 事后手填未提交
+            # 即现形) 之一。历史语义零翻动: 真实存量四条真档均无 evidence
+            # 字段, 走上方 warn 分支不进此处; 合法 approve→commit 流两条
+            # 证据天然在场 (F-169 R7 "登记语义不重锚"同分寸)。
+            chain_ok = any(APPROVAL_NOTE_MARK in str(b)
+                           for b in (record.get("fidelity_boundaries") or []))
+            git_ok = False
+            rc_b, blob, _ = _git_bytes(
+                ["show", "HEAD:" + rel_path.replace(os.sep, "/")], ws)
+            if rc_b == 0 and blob:
+                try:
+                    committed = json.loads(blob.decode("utf-8", "replace"))
+                    git_ok = (isinstance(committed, dict) and
+                              committed.get("production_approved_at") == stamp)
+                except json.JSONDecodeError:
+                    git_ok = stamp.encode("utf-8") in blob
+            if chain_ok or git_ok:
+                _check(checks, "R8", "pass",
+                       f"发布证据等级: {evidence} (批准于 {stamp}; 留痕=" +
+                       ("fidelity_boundaries 批准注记" if chain_ok
+                        else "git 入库版本同戳在场") + ")")
+            else:
+                _check(checks, "R8", "fail",
+                       "evidence=production_approved 批准戳无留痕链且 git "
+                       "入库版本无同戳在场 — 手工填戳无链视同篡改; 该等级"
+                       "只能经 release_audit --approve 产生")
     elif evidence != "hardware_validated" and not record.get("evidence_waiver"):
         _check(checks, "R8", "fail",
                f"发布证据等级 {evidence!r} != hardware_validated 且无豁免留痕 — "
@@ -293,8 +334,8 @@ def approve_record(ws, tag):
     record["evidence"] = EVIDENCE_APPROVED
     record["production_approved_at"] = now_iso()
     boundaries = list(record.get("fidelity_boundaries") or [])
-    approval_note = ("production_approved: 经 release_audit --approve 人工"
-                     "批准投产; 底层证据仍以 hardware_validated 运行为准")
+    approval_note = (f"production_approved: {APPROVAL_NOTE_MARK}; "
+                     "底层证据仍以 hardware_validated 运行为准")
     if approval_note not in boundaries:
         boundaries.append(approval_note)
     record["fidelity_boundaries"] = boundaries
