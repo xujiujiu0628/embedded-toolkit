@@ -38,9 +38,10 @@ L2_RULES = [
 ]
 L2_COMPILED = [(name, [re.compile(p, re.I) for p in pats]) for name, pats in L2_RULES]
 
-# 仅这些"代码语境"参与 L2 扫描；其余扩展名（.md/.txt 等 prose）豁免
+# 仅这些"代码语境"参与 L2 扫描；其余扩展名（.md/.txt 等 prose）豁免。
+# L2 目录豁免 (旧 L2_ALLOW_DIRS = {"tests", "fixtures"}) 已由 F-196 T3
+# 收窄为 _in_allowlist 内的仓根相对前缀锚定。
 CODE_EXTS = {".py", ".sh", ".bat", ".cmd", ".c", ".h", ".cpp", ".mk", ".tcl", ".cfg", ".json"}
-L2_ALLOW_DIRS = {"tests", "fixtures"}
 
 # ---------- L3：主流程文件 ----------
 MAIN_FLOW_FILES = {"scripts/verify.py", "scripts/release.py"}
@@ -63,8 +64,14 @@ def _norm(path):
 
 
 def _in_allowlist(path):
-    parts = _norm(path).split("/")
-    return any(p in L2_ALLOW_DIRS for p in parts[:-1])
+    # F-196 T3 (L-10): 豁免语义收窄为仓根相对路径段前缀锚定 (^tests/ 或
+    # ^tests$; fixtures 同) — 旧判据 any(p in L2_ALLOW_DIRS for p in
+    # parts[:-1]) 对任意深度名为 tests/fixtures 的目录全豁免, docs/tests/
+    # x.py 等伪 tests 目录穿透 L2。仓内真实存量仅根级 tests/ 与
+    # tests/fixtures/ 两处 (F-196 报告 §四), 收窄零波及。
+    norm = _norm(path)
+    return (norm == "tests" or norm.startswith("tests/")
+            or norm == "fixtures" or norm.startswith("fixtures/"))
 
 
 def _is_code(path):
