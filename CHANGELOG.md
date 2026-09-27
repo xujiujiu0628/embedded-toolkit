@@ -103,6 +103,18 @@
   修前红实录, 修后绿; _mk_tools 夹具与单版本断言随平台 basename 随动
   (POSIX CI 面对齐, 本机 Windows 仅能实证 L-2 先红, L-3 的 POSIX 红态
   由 CI ubuntu 实证); test_f200_panic_symbolize 40 例全绿, ruff 零告。
+- **F-209 (feat+test, mcp): rm_lookup MCP 面补 pins 参数 — F-199 CLI 消费面进 MCP 注册表 (v0.7 复审 L-9 面滞后收口)**:
+  根因: F-199 接线的 `--pins` CLI 消费面未进 mcp_server 注册表 (仅
+  query/recipe/rel) — README 未承诺故非违约, 属"AI agent 第一接口"面
+  滞后; 本票收口: rm_lookup 工具 += pins 参数 (string, --pins 旗标,
+  上游 _no_leading_dash 白名单拒旗标注入, 与 query/recipe 同式)。
+  随手补一笔 F-206 提示面缺口: 位置参数 query 与 --pins 同给按优先级
+  仅执行 --pins, 修前 query 被静默忽略 — stderr 显式提示 (与
+  --list/--recipe/--rel 同给提示同纪律)。
+  测试: test_mcp_server +2 (pins 计划投影旗标对 / pins 旗标注入拒绝);
+  test_rm_lookup_pins +1 (query+pins 同给提示); test_mcp_registry_shape
+  快照随动 (schema histogram string 10→11, 无旗标快照零变化); MCP 面仍
+  六工具。README MCP 节只列工具名不枚举参数, 无漂移面。
 
 ## 0.7 — 2026-09-27（净仓换血转公开 + ESP 三后端闭环与发布链收口 + 样例工厂二期 + KB 数据面全量修复 + 护栏棘轮与外派 14 单·整批复审两轮）
 

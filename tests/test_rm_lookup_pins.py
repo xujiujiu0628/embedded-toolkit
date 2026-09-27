@@ -327,6 +327,14 @@ class PinsRefDecoupleTests(PinsLandedMixin, unittest.TestCase):
         self.assertIn("--pins 本次未执行", r.stderr)
         self.assertNotIn("CAN_RX", r.stdout)
 
+    def test_query_pins_cogive_explicit_note(self):
+        """F-209: 位置参数 query 与 --pins 同给, 按优先级仅执行 --pins —
+        显式提示 (修前 query 被静默忽略; F-206 提示面未覆盖 query)。"""
+        r = _run_process(["USART1", "--pins", "CAN"])
+        self.assertEqual(r.returncode, 0, r.stderr[-800:])
+        self.assertIn("query 本次未执行", r.stderr)
+        self.assertIn("CAN_RX", r.stdout)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -155,7 +155,8 @@ class SchemaTypeWhitelistTests(unittest.TestCase):
 
     ALLOWED = {"string", "integer", "boolean"}
     # 现场盘点 histogram (2026-09-21): string 10 / integer 6 / boolean 2
-    HISTOGRAM_SNAPSHOT = {"string": 10, "integer": 6, "boolean": 2}
+    # F-209 (2026-09-28): rm_lookup += pins (string) → string 11。
+    HISTOGRAM_SNAPSHOT = {"string": 11, "integer": 6, "boolean": 2}
 
     def test_all_schema_types_in_whitelist(self):
         offenders = {}

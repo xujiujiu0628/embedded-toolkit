@@ -121,7 +121,7 @@ _TOOL_REGISTRY: dict = {
     },
     "rm_lookup": {
         "script": "rm_lookup.py",
-        "description": "查询寄存器知识库 (外设/寄存器/位/配方/关系)。",
+        "description": "查询寄存器知识库 (外设/寄存器/位/配方/关系/引脚映射)。",
         "requires_project": False,
         "fixed_flags": ["--json"],
         "default_timeout": _DEFAULT_TIMEOUT,
@@ -130,6 +130,10 @@ _TOOL_REGISTRY: dict = {
             "recipe": ("string", _no_leading_dash, "--recipe", "仅搜索配方"),
             "rel": ("string", _no_leading_dash, "--rel",
                     "查外设关系 (如 'USART1 DMA', 'I2C1 pins')"),
+            # F-209 (复审 L-9): F-199 CLI --pins 消费面进 MCP 面 — 与 CLI
+            # 同源数据档 (pin-mapping-f103.json), 上游白名单拒旗标注入。
+            "pins": ("string", _no_leading_dash, "--pins",
+                     "查外设引脚映射 (如 CAN; data/pin-mapping-f103.json)"),
         },
     },
     "diagnose_hardfault": {

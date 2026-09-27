@@ -103,6 +103,22 @@ class ParamWhitelistTests(unittest.TestCase):
         with self.assertRaises(mcp_server.McpToolError):
             mcp_server.plan_tool_call("rm_lookup", {"recipe": "-x y"})
 
+    def test_rm_lookup_pins_param_plans_flag(self):
+        """F-209 (复审 L-9): F-199 的 CLI --pins 消费面进 MCP 注册表 —
+        计划层投影 argv 旗标对, 与 --recipe 同式。"""
+        plan = mcp_server.plan_tool_call("rm_lookup", {"pins": "CAN"})
+        argv = plan["argv"]
+        self.assertIn("--pins", argv)
+        self.assertEqual(argv[argv.index("--pins") + 1], "CAN")
+        self.assertEqual(argv.count("--pins"), 1, argv)
+
+    def test_rm_lookup_pins_flag_injection_rejected(self):
+        # pins 值以 "-" 开头 = 注入 CLI 旗标, 白名单层拒绝 (与 query/recipe 同式)
+        with self.assertRaises(mcp_server.McpToolError):
+            mcp_server.plan_tool_call("rm_lookup", {"pins": "--rel"})
+        with self.assertRaises(mcp_server.McpToolError):
+            mcp_server.plan_tool_call("rm_lookup", {"pins": "-x"})
+
     def test_gen_periph_bounds(self):
         for bad in ({"ch": 25}, {"duty": 140}, {"freq": 0},
                     {"type": "gpio; rm"}, {"pin": "PA0; ls"}):

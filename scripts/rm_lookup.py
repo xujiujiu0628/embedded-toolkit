@@ -374,6 +374,11 @@ def main():
     # 不再连带 --pins 不可用 (修前无条件先 load_ref() 再进分支)。同级互斥
     # 语义不变: --list/--recipe/--rel 与 --pins 同给时仍按原序前者优先。
     if args.pins and not (args.list or args.recipe or args.rel):
+        if args.query:
+            # F-209: query 与 --pins 同给按既定优先级仅执行 --pins —
+            # 显式提示 (stderr), 与 --list/--recipe/--rel 同给提示同纪律。
+            print("Note: query 与 --pins 同给, 按优先级仅执行 --pins; "
+                  "query 本次未执行", file=sys.stderr)
         raise SystemExit(run_pins_mode(args.pins, args.json))
 
     if args.pins:
