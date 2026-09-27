@@ -22,6 +22,9 @@ from wb_common import (  # F-157: 三份 load_ref 收编; F-203: UTF-8 咒语收
 
 PIN_MAPPING_PATH = os.path.join(TOOLKIT_ROOT, "data", "pin-mapping-f103.json")
 
+# F-204 (复审 M-3): 消费面 format_pins_result 直取三键 — 载入面校验必需键
+_PIN_REQUIRED_KEYS = ("function", "column", "source")
+
 
 class PinMappingError(Exception):
     """pin-mapping 数据档缺失/损坏 — 显式点名, 禁裸 traceback (F-198 T2 同式)。"""
@@ -56,6 +59,14 @@ def load_pin_mapping(path=None):
                 raise PinMappingError(
                     f"pin-mapping 数据档损坏: {target} "
                     f"({name}.{pin} 条目非对象)")
+            # F-204 (复审 M-3): 缺消费键的潜伏档修前漏到 format 面裸
+            # KeyError (与本模块"禁裸 traceback"自述矛盾, F-192 --recipe
+            # 同族) — 载入面显式点名文件、条目与缺键名 (F-198 T2 同式)。
+            missing = [k for k in _PIN_REQUIRED_KEYS if k not in entry]
+            if missing:
+                raise PinMappingError(
+                    f"pin-mapping 数据档损坏: {target} "
+                    f"({name}.{pin} 缺必需键 {', '.join(missing)})")
     return data
 
 

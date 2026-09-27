@@ -37,6 +37,17 @@
   + JSON source 反查逐字) ×2 + ForceUtf8GenPeriphPipeTests ×1, 修前 3 红
   实录 (U+FFFD 断言), 修后全绿; test_rm_lookup_pins (22) /
   test_gen_periph (65) 零扰动。
+- **F-204 (fix+test, robustness): --pins 载入面必需键校验 — 缺消费键显式点名 (v0.7 复审 M-3)**:
+  根因: `load_pin_mapping` 只校验"条目是 dict", 消费面 `format_pins_result`
+  直取 `row['function'/'column'/'source']` 三键——结构合法但缺键的档
+  (手编/外来/半成品) 修前一路漏到 format 面裸 `KeyError: 'column'`,
+  与本模块"显式点名, 禁裸 traceback"自述矛盾 (F-192 --recipe 同族,
+  F-199 的 18 例测试无此形态); 仓内真档键全在, 属潜伏面。
+  处置: 载入面逐条目校验 `_PIN_REQUIRED_KEYS` 三键, 缺键即
+  `PinMappingError` 点名文件/外设.脚/缺键名 (F-198 T2 同式), CLI 报错面
+  rc=1 Error 行; 真档消费零变化。
+  测试: test_rm_lookup_pins 新增 2 例 (缺 column 载入面点名 / CLI
+  rc=1 无 traceback), 真档过新门 20 例全绿。
 
 ## 0.7 — 2026-09-27（净仓换血转公开 + ESP 三后端闭环与发布链收口 + 样例工厂二期 + KB 数据面全量修复 + 护栏棘轮与外派 14 单·整批复审两轮）
 

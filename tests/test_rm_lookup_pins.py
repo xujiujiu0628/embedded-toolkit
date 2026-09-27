@@ -235,6 +235,36 @@ class MissingOrCorruptDataPins(PinsLandedMixin, unittest.TestCase):
         self.assertNotIn("Traceback", err.getvalue())
         self.assertNotIn("Traceback", out.getvalue())
 
+    def test_missing_required_key_raises_named(self):
+        """F-204 (复审 M-3): 结构合法但缺消费键 → 载入面 PinMappingError
+        点名文件/条目/缺键, 不留到 format 面裸 KeyError (F-192 --recipe
+        同族; 仓内真档键全在, 此为外来/手编档的防波堤)。"""
+        p = os.path.join(self.tmp, "missing-column.json")
+        with open(p, "w", encoding="utf-8") as f:
+            json.dump({"CAN": {"PA11": {"function": "CAN_RX",
+                                        "source": "web:x"}}}, f)
+        with self.assertRaises(rm_lookup.PinMappingError) as ctx:
+            rm_lookup.load_pin_mapping(p)
+        msg = str(ctx.exception)
+        self.assertIn(p, msg)
+        self.assertIn("PA11", msg)
+        self.assertIn("column", msg)
+        self.assertIn("缺必需键", msg)
+
+    def test_missing_key_cli_rc1_no_traceback(self):
+        p = os.path.join(self.tmp, "missing-key.json")
+        with open(p, "w", encoding="utf-8") as f:
+            json.dump({"CAN": {"PA11": {"function": "CAN_RX"}}}, f)
+        out, err = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            rc = rm_lookup.run_pins_mode("CAN", path=p)
+        self.assertEqual(rc, 1)
+        self.assertIn("Error:", err.getvalue())
+        self.assertIn("缺必需键", err.getvalue())
+        self.assertIn("column", err.getvalue())
+        self.assertNotIn("Traceback", err.getvalue())
+        self.assertNotIn("Traceback", out.getvalue())
+
 
 class CliProcessPins(PinsLandedMixin, unittest.TestCase):
     """真进程 CLI 面: rc 契约 + 同级互斥。"""
