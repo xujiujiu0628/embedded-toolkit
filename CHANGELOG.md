@@ -4364,3 +4364,13 @@ WB-05 残量七笔（M-6/L-2/L-7/L-9/L-10/L-11 + N-3，对账=WB-20260926-04 报
   伪造（防糊涂不防蓄意边界，与 R7 同）。
 - **未完成清单**：无（T1~T7 全收；README 健壮面条目划修 + Note 面划修 +
   规避句三连退役随本 docs 笔）。
+
+- **F-197 (fix, test-CI): F-195 e2e 钉的 GITHUB_STEP_SUMMARY 隐性前提升格为双态契约**:
+  F-195 合入 push (@94544a6) 后 CI 五 job 同红——test_main_end_to_end_no_traceback
+  裸继承环境, GHA 步进恒带 GITHUB_STEP_SUMMARY, 被 evidence_export "env 在场优先
+  step-summary、不回落 --out" 的正确语义反向咬空 (FileNotFoundError)——本地无此
+  变量走回落支恒绿, 又一枚"CI 恒真环境=隐性前提"盲点 (F-176 族, F-165 平台内核
+  语义族第三笔)。修: 回落支钉显式 pop 该 env; 新增对偶钉 test_step_summary_
+  precedence_side 把优先语义钉成契约 (两态各有钉, 语义改动必红)。教训泛化:
+  **凡真子进程测被 env 变量分流行为的代码, 夹具必须显式构造两态, 禁止裸继承
+  os.environ**——"本地没这个变量"不是测试环境, 是未声明的前提。

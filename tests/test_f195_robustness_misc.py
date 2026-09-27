@@ -205,15 +205,41 @@ class EvidenceExportTypeGuardTests(unittest.TestCase):
         with open(bad, "w", encoding="utf-8") as f:
             json.dump({"tag": "v1", "results": "abc"}, f)
         out = os.path.join(ws, "summary.md")
+        # F-197 (CI 盲点补钉): GitHub Actions 步进环境恒带 GITHUB_STEP_SUMMARY,
+        # 在场时被测语义 = 优先追加 step-summary、不回落 --out——首跑必须显式
+        # 清场才测得到回落支; 否则本地绿/CI 四腿+coverage-gate 同红 (F-176 同族)。
+        env = dict(os.environ)
+        env.pop("GITHUB_STEP_SUMMARY", None)
         r = subprocess.run(
             [sys.executable, os.path.join(SCRIPTS, "evidence_export.py"),
              "--release-record", bad, "--out", out],
-            capture_output=True, timeout=60)
+            capture_output=True, timeout=60, env=env)
         self.assertEqual(r.returncode, 0, r.stderr.decode("utf-8", "replace"))
         self.assertNotIn(b"Traceback", r.stderr, "CI if:always() 步骤不崩红")
         with open(out, encoding="utf-8") as f:
             body = f.read()
         self.assertIn("results", body, "坏输入记录进摘要留痕")
+
+    def test_step_summary_precedence_side(self):
+        # 对偶钉 (F-197): GITHUB_STEP_SUMMARY 在场 → 追加该文件, 不写 --out。
+        # 把 CI 恒真环境从"隐性前提"升格为契约: 两态各有钉, 语义改动必红。
+        ws = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, ws, ignore_errors=True)
+        bad = os.path.join(ws, "bad.json")
+        with open(bad, "w", encoding="utf-8") as f:
+            json.dump({"tag": "v1", "results": "abc"}, f)
+        gh = os.path.join(ws, "step.md")
+        out = os.path.join(ws, "summary.md")
+        env = dict(os.environ)
+        env["GITHUB_STEP_SUMMARY"] = gh
+        r = subprocess.run(
+            [sys.executable, os.path.join(SCRIPTS, "evidence_export.py"),
+             "--release-record", bad, "--out", out],
+            capture_output=True, timeout=60, env=env)
+        self.assertEqual(r.returncode, 0, r.stderr.decode("utf-8", "replace"))
+        self.assertFalse(os.path.exists(out), "env 在场时 --out 不得被写 (优先语义)")
+        with open(gh, encoding="utf-8") as f:
+            self.assertIn("results", f.read(), "摘要落进 step-summary")
 
     def test_normal_records_byte_identical(self):
         # 反向钉 (金比对): 正常记录修前修后逐字节同 (两渲染面)。
