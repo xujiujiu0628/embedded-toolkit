@@ -730,8 +730,8 @@ Renode 把仿真做成平级判定后端，hardci / jlink-mcp 验证了 MCP 分�
 - **多 MCU（ESP32）**——已落地最小闭环（F-174，09-16 试点 / 09-18 合入）：
   idf/esptool/uart 三后端 + 真机双 PASS + 后端闸与 port/chip 白名单；
   panic 符号化 ✅ F-200（捕获 panic 随链离线 addr2line 解码进台账与解码
-  框——只加信息不改判据；真机终判 Phase B 待板窗）；剩余非目标按立项
-  裁决后置：WiFi/BLE、probe-rs 调试、xiaozhi 类业务工程接入
+  框——只加信息不改判据；真机双板终判 PASS 已销账，09-27 板窗）；剩余
+  非目标按立项裁决后置：WiFi/BLE、probe-rs 调试、xiaozhi 类业务工程接入
 - **分发形态**（PyPI / uvx / Claude Code 插件，"一行安装"）——**暂缓（2026-09-14）**：
   曾立项待做 spike（风险点在 `data/`、`VERSION`、machine.json 的包数据定位
   策略），经评估当前无外部用户、git clone 自用形态够用，且其服务对象"开源

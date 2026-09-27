@@ -4590,10 +4590,34 @@ markers 实为五枚（草案列三枚，另两枚 assert failed / Heap corrupti
   ④Registers 行（_MEPC/EXCVADDR…）机器解码不做（拍板④），AI judge
   读原文；⑤多 Backtrace 行不去重——若真机出现双核重复 backtrace，
   帧账按出现序全量入账（对账锚=pc 回显）。
-- **未完成清单（Phase B，09-28 板窗顺列，全过 = F-200 销账）**：①经典
-  ESP32 与 S3 各触发一次真 panic 走 verify 全链，符号化框须出现 app 帧
-  真实文件:行（触发方式=拍板①建议案：临时分支改 main 解引用零/
-  abort()，验后弃，examples/ 不落 panic 工程）；②钓真机 `ELF file SHA…`
-  行实格式回写 A1/A5 钉；③ROM 帧处置终判；④STM32 缺省路径逐字节回归
-  钉（老规矩）；⑤Phase B 过销账，A 合 B 候 = 台账
-  dispatched-pending-realtest 态（先例：F-174 双挂账补票制）。
+- **Phase B 真机终判（09-27 当日板窗提前兑现，四笔全过 = F-200 销账）**：
+  ①**双板真 panic**（拍板①建议案执行：esp32-hello / esp32s3-hello 各开
+  临时分支 panic-f200-phaseb，app_main 解引用零 → StoreProhibited，验后
+  分支已弃、树已还原 08a191d / a45a14f）——verify 全链 121.1s / 101.4s，
+  符号化框 app 帧真实 `文件:行`（hello_main.c:17 / :15，正是解引用零行），
+  **108/108 帧全解 ×2 板**（15s 窗内 panic→重启循环 36 次 ×3 帧，P⑤ 多
+  Backtrace 行按序拼接形态真机实证）；同一颗 xtensa 统一包 addr2line
+  双芯片通吃（app 帧落 flash 映射 0x4200 区、组件帧在 IRAM，elf 自识别
+  target）。②**ELF file SHA 实格式钓齐（双板同形态）**：panic 期
+  `ELF file SHA256: <9hex>` 为截断形态（非 64 位全量），A1 正则
+  （8~64 hex）提取成功、A5 前缀比对 match=True 字节级确认（esp32:
+  `89d9fd29d` / S3: `3ac907a98` 各为本地 elf sha256 九位前缀）——
+  Phase A "≥8 hex 下限 + 前缀比对"设计被真机格式直接验证正确（下限若
+  定 12/16 即漏）；启动期 app_init 亦打同款截断行（INFO 级，P③ 解除）。
+  ③**ROM 帧终判**：两板真实 panic 的 backtrace 全部止于
+  vPortTaskWrapper，**零 `??` 帧**——ROM 帧在 app panic 形态下不出现，
+  拍板②（esp-rom-elfs 本票不做）维持成立，未解帧账留作唤起锚；S3 复位
+  串形态 `rst:0xc (RTC_SW_CPU_RST)` 与经典板 `SW_CPU_RESET` 差异钉档。
+  ④**STM32 缺省路径回归（老规矩）**：仓外实板 button-toggle 全链
+  **PASS**（Build/Flash/Capture OK + FR-SYS-01/FR-KEY-01 双命中、TGL 47+
+  次、92.1s）——gcc/OpenOCD/RTT/manifest 判据链零回归实证；首跑按键
+  时机岔开 FR-KEY-01 未中、重跑即绿，实录在案。硬件观察一笔：CH340
+  初代板长跑下 BOD 欠压复位环（`E BOD: Brownout detector was
+  triggered`），panic 复现窗口受供电边际影响——环境噪音，非代码面。
+  **证据 10 件**：`D:\<local-workspace>\embedded-toolkit_F200_PhaseB_evidence\`
+  （双 ESP 的 run 全文/捕获全文/panic 块摘录 + STM32 两跑）。
+- **未完成清单**：无——Phase B 全过，F-200 销账（Phase A 三 commit
+  `1cb5d3b`/`22264fb`/`e140850` + 本销账 commit；§6 拍板①亦按建议案
+  执行完毕，临时分支制未落 examples/）。P 面维持只列不改：②
+  internal_error 兜底无直钉（豁免面）；④Registers 行解码不做；①⑤
+  ROM 帧与多行拼接两笔已由本节真机数据定性。
