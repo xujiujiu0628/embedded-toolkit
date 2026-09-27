@@ -5,12 +5,14 @@ timestamp 前缀。串口打开由 mock connect_serial 供给假端口
 (readline 返回预置字节流), 不碰真机 (F-156: 公共骨架接线后 mock 缝
 随之迁到 resolve_serial_config / connect_serial)。
 """
+import io
 import json
 import os
 import sys
 import tempfile
 import time
 import unittest
+from contextlib import redirect_stdout  # F-210: --json 输出面接 stdout
 from unittest import mock
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(
@@ -62,7 +64,10 @@ class SerialLogRecordTests(unittest.TestCase):
                                              "timeout": 1.0}), \
              mock.patch.object(serial_log, "connect_serial",
                                return_value=fake):
-            code = serial_log.main()
+            # F-210 (复审 L-7 同族): --json 走 output_json 打印结果 —
+            # 修前 4 例全部把结果 JSON 漏到真实 stdout (全量跑残留)。
+            with redirect_stdout(io.StringIO()):
+                code = serial_log.main()
         # main() 成功路径无显式 return → None (非 0)
         self.assertIsNone(code)
         return out_path

@@ -115,6 +115,13 @@
   test_rm_lookup_pins +1 (query+pins 同给提示); test_mcp_registry_shape
   快照随动 (schema histogram string 10→11, 无旗标快照零变化); MCP 面仍
   六工具。README MCP 节只列工具名不枚举参数, 无漂移面。
+- **F-210 (fix, test-hygiene): stdout 泄漏同族清尾 — serial_log 四例 (F-207 延伸)**:
+  F-207 定位方法复用 (PYTHONUNBUFFERED=1 保序): 全量跑另见 4 行
+  `"status": "ok"` JSON 残留 — test_serial_log_record._run_log 直调
+  `serial_log.main()` 且带 --json, 输出面漏到真实 stdout。帮手单点
+  redirect_stdout 接住 (一改护四例), 断言面零变化。
+  测试: test_serial_log_record 4 例全绿, ruff 零告; 全量跑真实 stdout
+  零 JSON 残留。
 
 ## 0.7 — 2026-09-27（净仓换血转公开 + ESP 三后端闭环与发布链收口 + 样例工厂二期 + KB 数据面全量修复 + 护栏棘轮与外派 14 单·整批复审两轮）
 
