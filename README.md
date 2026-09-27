@@ -27,7 +27,10 @@ python -m unittest discover -s tests
 无需任何配置与第三方依赖：回归套件是**纯 mock** 的（不碰硬件；仅串口工具族
 可选依赖 pyserial），machine.json 缺失时自动回退 `machine.example.json` 模板
 并给出明确提示——这条命令本身就是"陌生人克隆"路径的机检金丝雀（CI 每次必跑）。
-例数以实跑输出为准（仓库纪律：文档不写死数字）。末行 `OK (skipped=1)` 即通过。
+例数与 skipped 数随环境变化，以实跑输出为准（仓库纪律：文档不写死数字）；
+末行 `OK` 即通过——缺 bash/arm-gcc/coverage/esp 工具链时 skip 增多，样例
+工厂动态生成例在工具链不在场时整类不出现（是"缺席"不是 skip，见
+tests/test_sample_factory.py 模块注记）。
 
 ### Windows PowerShell 首次跑测试的乱码告警
 
@@ -101,8 +104,9 @@ semihosting 收 printf 输出——**和真机路径完全相同的契约、判�
 - **纯 mock 回归套件**：不碰硬件、零第三方依赖（仅串口工具需 pyserial）、
   Windows/Linux 全绿（CI 每跑即验证"陌生人克隆"路径）——例数以
   `python -m unittest discover -s tests` 实跑为准（CONTRIBUTING 约定文档不写死数字）
-- **知识沉淀**：55 外设寄存器知识库 + 寄存器级外设代码生成 + 构建错误知识库
-  自生长（五重门控防污染）
+- **知识沉淀**：55 外设寄存器知识库 + 寄存器级外设代码生成 + 修复事件校准链
+  （feedback_db 落账与准确率校准；Keil 期"构建错误知识库"已随 Keil 退役区
+  拆 archive，现为 archive 唤起形态，见结构节注记）
 
 ## 效果预览
 
@@ -712,7 +716,9 @@ Renode 把仿真做成平级判定后端，hardci / jlink-mcp 验证了 MCP 分�
 4. **反馈校准**（`feedback_db.py`）——修复事件落账，按流水线长出准确率校准
 5. **寄存器知识库 + 代码生成**（`rm_lookup.py` + `gen_periph.py`）——
    55 外设参考数据直接生成寄存器级初始化代码，AI 生成物先过五重门控再进编译
-6. **构建错误知识库**——gcc/ARMCC 错误自生长，修复纪律靠回归测试钉住
+6. **错误知识库（退役挂账形态）**——Keil 期 gcc/ARMCC 错误库已随 Keil 退役
+   区拆 archive（archive 唤起可复用）；现行反馈校准走 feedback_db（第 4 条），
+   修复纪律靠回归测试钉住
 
 ## 路线图
 

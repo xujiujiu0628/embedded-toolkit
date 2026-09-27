@@ -7,13 +7,17 @@ r"""样例工厂巡检测试 (WB-20260919-04) — 自动遍历 examples/f103-*/�
 工具解析链 (与仓内 machine.json 单一来源纪律一致):
   make       = machine.json make_exe (在盘校验) > PATH 上的 make/mingw32-make
   arm-gcc    = machine.json gcc_path > PATH (不在场时整组 skip — 同
-               test_gen_syntax_smoke 的 CI 守卫: CI ubuntu 不装工具链)
+               test_gen_syntax_smoke 的 CI 守卫: CI ubuntu 不装工具链;
+               F-205 注: 类级 skip 只覆盖既有静态用例, 下方 _SKIP_REASON
+               is None 分支动态挂载的逐样例用例在工具链不在场时**整类
+               不出现**——收集面缺席而非 skip, 全量例数随工具链在缺增减)
   host gcc   = PATH 上的 gcc/cc/clang > msys64 常见安装位 (mock 子用例
                解析不到时 skipTest, 不算失败)
 make 的同目录会 prepend 进子进程 PATH — Makefile 配方沿用 sim-demo
 母本的 unix 风格 (mkdir -p / rm -rf), 工具定位统一收口在测试侧。
 
-用例数 == 样例目录数 (+含 MOCK 哨兵的目录数) — 简报 §3① 的数量契约。
+用例数 == 样例目录数 (+含 MOCK 哨兵的目录数) — 简报 §3① 的数量契约
+(工具链在场口径; 不在场时见上注, 缺席面 = 样例数 + MOCK 哨兵数)。
 """
 import os
 import shutil
