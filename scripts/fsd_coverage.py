@@ -225,8 +225,12 @@ def _read_project(project):
             if isinstance(cfg, dict) and isinstance(cfg.get("fsd_path"), str) \
                     and cfg["fsd_path"].strip():
                 fsd_rel = cfg["fsd_path"].strip()      # F-114/M-1
-        except Exception:
-            notes.append("config.json 不可读, fsd_path 走默认 (仅提醒)")
+        except Exception as e:
+            # F-196 T6 (L-11): 回退事实携路径与原因 — 人读输出须响亮
+            # (_print_human 非 skipped 面 [W] 行), 不再仅 JSON notes 可见
+            notes.append(
+                f"config.json 不可读 ({cfg_p}): {e.__class__.__name__} — "
+                f"fsd_path 回退默认 {fsd_rel} (对账仍照常执行)")
     fsd_path = os.path.join(project, fsd_rel)
     if not os.path.isfile(fsd_path):
         notes.append(f"FSD 不存在: {fsd_path}")
@@ -277,6 +281,11 @@ def _print_human(result):
         print(f"  [E] {e}")
     for w in result["warnings"]:
         print(f"  [W] {w}")
+    # F-196 T6 (L-11): notes 人读响亮化 — 损坏回退事实此前仅 JSON 可见。
+    # skipped 面 notes 已以"无对账面"入 warnings (双印即噪声), 只补非 skipped。
+    if result.get("verdict") != "skipped":
+        for n in result.get("notes") or []:
+            print(f"  [W] {n}")
     print("  --- 对照表 (漂移审读面: 一眼扫语义) ---")
     for r in result["table"]:
         if r.get("orphan"):
