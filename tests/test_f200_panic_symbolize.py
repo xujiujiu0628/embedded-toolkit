@@ -454,6 +454,49 @@ class SymbolizeEspPanicTests(SymbolizeLandedMixin, unittest.TestCase):
         self.assertEqual(sym["elf_sha256_captured"], SHA_S3)
         self.assertEqual(len(sym["frames"]), 2)    # 漂移只降参考级, 不删帧
 
+    def test_sha_captured_9hex_prefix_match_true(self):
+        """真机主形态直钉 (F-201 T1, WB-20260927-10; 09 报告 §三 F-200 行
+        "意外绿"盲区): 捕获行 = 本地 elf sha256 前 9 hex 截断 (Phase B 双板
+        实证形态, esp32 89d9fd29d / S3 3ac907a98) → 前缀比对 match=True 且
+        解码框无 "[参考级]"。旧两枚 match 钉输入等长 (全形==全形 /
+        全形≠无关), startswith/==/endswith 三实现无差别 — 本钉与 9hex
+        mismatch 钉补该洞 (变异双枪红实录归 F-201 账)。"""
+        ws = _mk_ws(self._td.name)
+        self.addCleanup(_setenv({
+            "F200_MAP": json.dumps({
+                "0x403765d3": "panic_abort at panic.c:118",
+                "0x40376b95": "esp_restart_noos at panic.c:55"}),
+            "F200_LOG": os.path.join(self._td.name, "calls.log")}))
+        local = _sha256_of(os.path.join(ws, "build", "app.elf"))
+        sym = esp_runtime.symbolize_esp_panic(
+            _s3_text_with_sha(ws, sha=local[:9]), ws,
+            addr2line_exe=self.bat)
+        self.assertTrue(sym["available"])
+        self.assertEqual(sym["elf_sha256_captured"], local[:9])
+        self.assertIs(sym["elf_sha_match"], True)   # 9hex 前缀 vs 全形, 唯前缀比对可判 True
+        self.assertNotIn("[参考级]",
+                         esp_runtime.format_symbol_box(sym))
+
+    def test_sha_captured_9hex_prefix_mismatch_false(self):
+        """9hex 他值前缀 → match=False + 框含 "[参考级]" + 帧不删
+        (F-201 T1)。他值 = 本地前 9 hex 逐位 15 补 — 数据面反查生成
+        (F-186 禁手抄常量), 每位 d→15-d≠d 故恒非本地前缀。"""
+        ws = _mk_ws(self._td.name)
+        self.addCleanup(_setenv({
+            "F200_MAP": json.dumps(
+                {"0x403765d3": "f at f.c:1", "0x40376b95": "g at g.c:2"}),
+            "F200_LOG": os.path.join(self._td.name, "calls.log")}))
+        local = _sha256_of(os.path.join(ws, "build", "app.elf"))
+        other = "".join("%x" % (0xF - int(c, 16)) for c in local[:9])
+        sym = esp_runtime.symbolize_esp_panic(
+            _s3_text_with_sha(ws, sha=other), ws, addr2line_exe=self.bat)
+        self.assertTrue(sym["available"])
+        self.assertEqual(sym["elf_sha256_captured"], other)
+        self.assertIs(sym["elf_sha_match"], False)
+        box = esp_runtime.format_symbol_box(sym)
+        self.assertIn("[参考级]", box)
+        self.assertEqual(len(sym["frames"]), 2)    # 漂移只降参考级, 不删帧
+
     def test_missing_state_json_failsoft(self):
         ws = os.path.join(self._td.name, "empty-ws")
         os.makedirs(ws, exist_ok=True)
