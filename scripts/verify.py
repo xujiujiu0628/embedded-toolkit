@@ -1021,11 +1021,21 @@ def _run_capture_step(args, config, result, lease, sim_mode, cap_backend,
         cap["duration_sec"] = round(time.time() - capture_t0, 1)  # F-050
         result["steps"]["capture"] = cap
         if cap.get("esp_panic"):
-            # ESP panic 只上账文本标记 (spec §4.3); 4b 的 HardFault 归因链是
+            # ESP panic 文本标记上账 (spec §4.3); 4b 的 HardFault 归因链是
             # Cortex-M 专属 (CFSR/OpenOCD 寄存器), 对 ESP 文本天然不触发。
+            # F-200: panic 随链离线符号化 (spec §4.3 后置票) — 只加信息
+            # 不改判据 (status/judge/expect 零动); 全链 fail-soft 不抛穿。
             result["esp_panic"] = True
-            print("[capture] 检出 ESP panic 文本标记 — 符号化解析用 idf.py "
-                  "monitor (另票), 本流程只交 AI judge 定性", file=sys.stderr)
+            print("[capture] 检出 ESP panic 文本标记 — 定性交 AI judge",
+                  file=sys.stderr)
+            sym = esp_runtime.symbolize_esp_panic(captured_text, WORKSPACE)
+            result["esp_panic_symbolized"] = sym
+            if sym.get("available"):
+                print(esp_runtime.format_symbol_box(sym))
+            else:
+                print("[capture] ESP panic 符号化不可用 (%s) — 原文 "
+                      "backtrace 已随捕获文本入账" % sym.get("reason", "?"),
+                      file=sys.stderr)
         append_audit_entry(WORKSPACE, args.task_origin, "capture", "ok",
                            " ".join(sys.argv))
     else:

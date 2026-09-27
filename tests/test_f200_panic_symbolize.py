@@ -218,6 +218,7 @@ class LocateAddr2lineTests(SymbolizeLandedMixin, unittest.TestCase):
 
     def _mk_tools(self, td, versions):
         tools = os.path.join(td, "tools-root")
+        os.makedirs(tools, exist_ok=True)   # 空目录=glob 空形态 (非目录缺)
         for ver in versions:
             bindir = os.path.join(tools, "tools", "xtensa-esp-elf", ver,
                                   "xtensa-esp-elf", "bin")
@@ -411,7 +412,8 @@ class SymbolizeEspPanicTests(SymbolizeLandedMixin, unittest.TestCase):
              "file": "panic.c", "line": 55}])
         self.assertEqual(sym["elf_sha256"],
                          _sha256_of(os.path.join(ws, "build", "app.elf")))
-        self.assertEqual(sym["elf_sha256_captured"], SHA_S3)
+        self.assertEqual(sym["elf_sha256_captured"],
+                         sym["elf_sha256"])   # 文本 SHA 行已换成本地实算值
         self.assertIs(sym["elf_sha_match"], True)
 
     def test_sha_mismatch_marks_reference_grade(self):

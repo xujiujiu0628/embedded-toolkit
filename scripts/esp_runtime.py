@@ -8,12 +8,14 @@
   (PowerShell 会话内 source 后顺序执行, 逐命令 $LASTEXITCODE 门闩传播退出码)。
 """
 import glob
+import hashlib
 import os
 import re
 import subprocess
 import time
 
-from runtime_common import update_state_entry  # noqa: E402  (F-190/H-1: last_build 经共享层持锁读改写)
+from runtime_common import (load_workspace_state, update_state_entry,  # noqa: E402  (F-190/H-1: last_build 经共享层持锁读改写; F-200 A2 嵌套键消费)
+                            workspace_root)
 from wb_common import load_machine
 
 _PANIC_MARKERS = ("Guru Meditation", "Backtrace:", "abort() was called",
@@ -305,3 +307,259 @@ def _write_last_build(ws: str, bin_rel: str, elf_rel: str) -> None:
                        {"provider": "idf", "artifacts": dict(artifacts),
                         **artifacts},
                        ws)
+
+
+# ── ESP panic 符号化面 (F-200, spec §4.3 "符号化解析后置另票" 兑现) ────────
+# 红线: 只加信息不改判据 — 本节全部输出是增量信息账 (result 上的
+# esp_panic_symbolized 字段与 stdout 解码框), status/judge/expect 判据链
+# 零触碰; 每步 fail-soft (reason 点名), 绝不抛穿 verify 主流程。
+# A6 卫生: addr2line 路径与 subprocess 均为注入参数, 零全局打桩。
+# 工具事实 (实测): machine.json esp_tools_dir 下 xtensa 统一包
+# xtensa-esp-elf-addr2line (binutils 2.43.1) elf 自识别 target, 经典
+# ESP32 与 S3 通吃; 实输出三态 — 全解 "0xA: fn at f:L" / 无 DWARF
+# "fn at ??:?" / 未解 "?? ??:0" (无 " at "), 地址回显小写归一 → 解析
+# 按块序 zip, 禁回显匹配。
+_BACKTRACE_PAIR_RE = re.compile(r"(0x[0-9a-fA-F]+):(0x[0-9a-fA-F]+)")
+_ELF_SHA_RE = re.compile(r"ELF file SHA\w*:\s*([0-9a-fA-F]{8,64})")
+_ADDR2LINE_GLOB = os.path.join("tools", "xtensa-esp-elf", "*",
+                               "xtensa-esp-elf", "bin",
+                               "xtensa-esp-elf-addr2line.exe")
+_ADDR_PREFIX_RE = re.compile(r"^0x[0-9a-fA-F]+:\s*")
+_FRAME_SEG_RE = re.compile(r"^(.+?)\s+at\s+(.+):(\d+)$")
+_FRAME_NO_DWARF_RE = re.compile(r"^(.+?)\s+at\s+\?\?:\?$")
+_FRAME_UNKNOWN_RE = re.compile(r"^\?\?\s*(?:\?\?:0)?$")
+_DISCRIMINATOR_RE = re.compile(r"\s*\(discriminator \d+\)\s*$")
+_SYMBOLIZE_TIMEOUT = 60
+
+
+def parse_backtrace(text: str) -> dict:
+    """A1: 提取 Backtrace: 帧对 [(pc, sp)…] 与 ELF file SHA 行 (拍板③)。
+
+    只扫含 "Backtrace:" 的行 (寄存器 dump 的 "REG: 0x…" 形态不误捕);
+    帧分隔容忍空格与旧版 |<-CORRUPTED 尾巴; 多条 Backtrace 行按出现序
+    拼接 (只加信息不去重); abort()/assert 无 backtrace → 空列表不报错。"""
+    frames = []
+    for ln in text.splitlines():
+        if "Backtrace:" not in ln:
+            continue
+        frames.extend(_BACKTRACE_PAIR_RE.findall(ln))
+    sha = _ELF_SHA_RE.search(text)
+    return {"frames": frames, "elf_sha": sha.group(1) if sha else None}
+
+
+def locate_addr2line(tools_dir: str | None) -> tuple[str | None, str | None]:
+    """A3: esp_tools_dir 下定位 xtensa 统一包 addr2line。
+
+    glob tools/xtensa-esp-elf/*/xtensa-esp-elf/bin/xtensa-esp-elf-addr2line.exe;
+    多版本目录取版本段字典序最大 (确定性规则, 版本段 = 日期后缀单调);
+    glob 空/目录缺 → (None, reason 点名)。只做存在性定位, 不校验可执行位
+    (Windows 无此语义)。riscv/esp32ulp 工具链本票不入面 (在册无此类板)。"""
+    if not tools_dir or not os.path.isdir(tools_dir):
+        return None, ("no_tools_dir: esp_tools_dir 未配置或目录不存在 "
+                      "(tools_dir=%r)" % (tools_dir,))
+    hits = glob.glob(os.path.join(tools_dir, _ADDR2LINE_GLOB))
+    if not hits:
+        return None, ("addr2line_not_found: esp_tools_dir 下未找到 "
+                      "xtensa-esp-elf-addr2line (glob tools/xtensa-esp-elf/"
+                      "*/xtensa-esp-elf/bin/, tools_dir=%r)" % (tools_dir,))
+
+    def _ver(hit: str) -> str:
+        return os.path.relpath(hit, tools_dir).split(os.sep)[2]
+
+    best = max(hits, key=lambda h: (_ver(h), h))
+    return best, None
+
+
+def _addr2line_frame(seg: str, pc: str) -> dict:
+    """单段解码 → 帧字典 (A4 三态: 全解 / 无 DWARF / 未解)。"""
+    seg = _DISCRIMINATOR_RE.sub("", seg.strip())
+    m = _FRAME_SEG_RE.match(seg)
+    if m:
+        fn, path, line = m.group(1).strip(), m.group(2), int(m.group(3))
+        if fn == "??" or path == "??":
+            return {"pc": pc, "unresolved": True}
+        return {"pc": pc, "function": fn, "file": path, "line": line}
+    m = _FRAME_NO_DWARF_RE.match(seg)
+    if m:
+        # 符号表有函数名、无 DWARF 行列 (ROM/strip 档形态) — 保留函数名
+        return {"pc": pc, "function": m.group(1).strip(),
+                "file": None, "line": None}
+    return {"pc": pc, "unresolved": True}   # "?? ??:0" 及一切不识别形态
+
+
+def _addr2line_frames(out: str, pcs: list[str]) -> list[dict]:
+    """addr2line 输出 → 帧列表。块序 zip 输入 pc (回显小写归一, 禁回显
+    匹配); (inlined by) 链拆多帧同 pc 回显; 非 pretty 续行容忍; 块数不齐
+    → 余帧补 unresolved 不断链。"""
+    blocks: list[list[str]] = []
+    for ln in out.splitlines():
+        ln = ln.strip()
+        if not ln:
+            continue
+        if ln.startswith("0x") and ":" in ln:
+            blocks.append([ln])
+        elif blocks:
+            blocks[-1].append(ln)      # 旧 binutils 非 pretty 续行
+    frames: list[dict] = []
+    for i, block in enumerate(blocks):
+        if i >= len(pcs):
+            break                      # 输出块多于输入: 丢弃, 不杜撰帧
+        for j, ln in enumerate(block):
+            body = _ADDR_PREFIX_RE.sub("", ln, count=1) if j == 0 else ln
+            for seg in body.split("(inlined by)"):
+                if seg.strip():
+                    frames.append(_addr2line_frame(seg, pcs[i]))
+    if len(blocks) < len(pcs):
+        frames.extend({"pc": pc, "unresolved": True}
+                      for pc in pcs[len(blocks):])
+    return frames
+
+
+def symbolize_frames(pcs: list[str], elf_path: str, addr2line_exe: str,
+                     *, _run=subprocess.run) -> tuple[list[dict] | None,
+                                                      str | None]:
+    """A4: 一次批量调 addr2line -f -i -a -p -e <elf> <pc…>。
+
+    白名单 executable 直调 (无 shell=True, F-174 注入面纪律); 成败只信
+    returncode (F-090)。返回 (frames, None) 或 (None, "tool_error: …");
+    单帧 ?? 只降该帧, 不断链。"""
+    if not pcs:
+        return [], None
+    cmd = [addr2line_exe, "-f", "-i", "-a", "-p", "-e", elf_path] + list(pcs)
+    try:
+        proc = _run(cmd, capture_output=True, text=True, encoding="utf-8",
+                    errors="replace", timeout=_SYMBOLIZE_TIMEOUT)
+    except subprocess.TimeoutExpired:
+        return None, "tool_error: addr2line 超时 (%ds)" % _SYMBOLIZE_TIMEOUT
+    except OSError as e:
+        return None, "tool_error: addr2line 启动失败: %s" % e
+    if proc.returncode != 0:
+        return None, ("tool_error: addr2line rc=%s (stderr: %s)"
+                      % (proc.returncode,
+                         (proc.stderr or "")[-200:].strip()))
+    return _addr2line_frames(proc.stdout or "", list(pcs)), None
+
+
+def _sha256_file(path: str) -> str | None:
+    try:
+        h = hashlib.sha256()
+        with open(path, "rb") as f:
+            for chunk in iter(lambda: f.read(65536), b""):
+                h.update(chunk)
+        return h.hexdigest()
+    except OSError:
+        return None
+
+
+def symbolize_esp_panic(text: str, workspace: str | None = None, *,
+                        addr2line_exe: str | None = None,
+                        tools_dir: str | None = None,
+                        _run=subprocess.run) -> dict:
+    """A1~A5 编排: 捕获文本 → 符号化账, 全程 fail-soft 绝不抛穿。
+
+    生产调用面 = verify uart panic 分支 (零注入): tools_dir 缺省读
+    machine.json esp_tools_dir (只读消费); elf 走 state.json 嵌套键
+    last_build.artifacts.elf_file (release.py:212 同口径, 平铺不兜底)。
+    返回 {"available": true, tool, elf_path, frames[, elf_sha256,
+    elf_sha256_captured, elf_sha_match]} 或 {"available": false,
+    "reason": "<tag>: <点名>"} — 理由码 no_frames / elf_missing_key /
+    elf_not_found / no_tools_dir / addr2line_not_found / tool_error /
+    internal_error。SHA 前缀比对漂移只降"[参考级]" (拍板③), 不删帧。"""
+    try:
+        return _symbolize_impl(text, workspace, addr2line_exe=addr2line_exe,
+                               tools_dir=tools_dir, _run=_run)
+    except Exception as e:   # noqa: BLE001  (fail-soft 兜底: 信息面异常
+        # 绝不许翻转判据, 也不许打断 verify 主流程)
+        return {"available": False,
+                "reason": "internal_error: 符号化编排异常: %r" % (e,)}
+
+
+def _symbolize_impl(text: str, workspace: str | None = None, *,
+                    addr2line_exe: str | None = None,
+                    tools_dir: str | None = None,
+                    _run=subprocess.run) -> dict:
+    parsed = parse_backtrace(text)
+    pcs = [pc for pc, _sp in parsed["frames"]]
+    out: dict = {}
+    if parsed["elf_sha"]:
+        out["elf_sha256_captured"] = parsed["elf_sha"]   # 提取面独立于帧
+    if not pcs:
+        out["available"] = False
+        out["reason"] = ("no_frames: 捕获文本无 Backtrace: 帧 "
+                         "(abort()/assert 形态) — 原文已入账")
+        return out
+    entry = load_workspace_state(workspace).get("last_build")
+    entry = entry if isinstance(entry, dict) else {}
+    arts = entry.get("artifacts")
+    arts = arts if isinstance(arts, dict) else {}
+    rel = arts.get("elf_file")
+    if not isinstance(rel, str) or not rel.strip():
+        out["available"] = False
+        out["reason"] = ("elf_missing_key: state.json 缺 "
+                         "last_build.artifacts.elf_file (未构建/无 elf "
+                         "产出/档缺失均此账; 嵌套键消费不含平铺兜底)")
+        return out
+    elf = os.path.normpath(os.path.join(str(workspace_root(workspace)), rel))
+    out["elf_path"] = elf
+    if not os.path.isfile(elf):
+        out["available"] = False
+        out["reason"] = ("elf_not_found: state.json 记录的 elf 档不存在: "
+                         + elf)
+        return out
+    if addr2line_exe:
+        exe = addr2line_exe
+    else:
+        tools = tools_dir if tools_dir else (load_machine() or {}).get(
+            "esp_tools_dir", "")
+        exe, why = locate_addr2line(tools)
+        if not exe:
+            out["available"] = False
+            out["reason"] = why
+            return out
+    out["tool"] = os.path.basename(exe)
+    frames, why = symbolize_frames(pcs, elf, exe, _run=_run)
+    if frames is None:
+        out["available"] = False
+        out["reason"] = why
+        return out
+    out["available"] = True
+    out["frames"] = frames
+    local_sha = _sha256_file(elf)
+    if local_sha:
+        out["elf_sha256"] = local_sha
+        if parsed["elf_sha"] and len(parsed["elf_sha"]) >= 8:
+            out["elf_sha_match"] = local_sha.startswith(
+                parsed["elf_sha"].lower())
+    return out
+
+
+def format_symbol_box(sym: dict) -> str:
+    """A5: 人类可读解码框 (available → 多行框 / fail-soft → 一行注记)。
+
+    只读渲染不判案 — SHA 漂移打 "[参考级]" 警告行, 判据链不消费本输出。"""
+    if not sym.get("available"):
+        return ("ESP panic 符号化不可用 (%s) — 原文 backtrace 已随捕获文本"
+                "入账, 定性交 AI judge" % sym.get("reason", "?"))
+    lines = ["== ESP panic 符号化 (tool: %s) ==" % sym.get("tool", "?"),
+             "  elf: %s" % sym.get("elf_path", "?")]
+    frames = sym.get("frames") or []
+    solved = 0
+    for i, fr in enumerate(frames):
+        if fr.get("unresolved"):
+            lines.append("  #%d %s  [未解]" % (i, fr.get("pc", "?")))
+            continue
+        solved += 1
+        if fr.get("file") is None:
+            loc = "位置未知"
+        else:
+            loc = "%s:%s" % (fr["file"], fr.get("line", "?"))
+        lines.append("  #%d %s  %s  %s" % (i, fr.get("pc", "?"),
+                                           fr.get("function", "?"), loc))
+    lines.append("  解码 %d/%d 帧 (未解 %d)"
+                 % (solved, len(frames), len(frames) - solved))
+    if sym.get("elf_sha_match") is False:
+        lines.append("  [参考级] ELF SHA 漂移: 捕获 %s… ≠ 本地 %s… — "
+                     "符号化结果可能跨版本, 仅供参考"
+                     % (str(sym.get("elf_sha256_captured", ""))[:12],
+                        str(sym.get("elf_sha256", ""))[:12]))
+    return "\n".join(lines)
