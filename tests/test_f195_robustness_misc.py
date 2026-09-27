@@ -24,6 +24,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(
 import evidence_export  # noqa: E402
 import gen_periph  # noqa: E402
 import junit_xml  # noqa: E402
+import rm_lookup  # noqa: E402  (F-203)
 import svd_to_json  # noqa: E402
 
 TK_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -574,6 +575,61 @@ class GenStdintSelfEmitTests(unittest.TestCase):
         for key, value in current.items():
             with self.subTest(case=key):
                 self.assertEqual(value, golden[key])
+
+
+# ════════════════════════════ F-203 (复审 M-2) ════════════════════════════
+
+class ForceUtf8RmLookupPinsTests(unittest.TestCase):
+    """F-203 (v0.7 复审 M-2, F-195 T1 同族清尾): MCP 信封固定以 utf-8
+    解码子进程输出, rm_lookup 中文管道面 (人读表头/未入册文案 + JSON
+    source 字段的 §) 在 cp936 子进程下修前 GBK 字节 → 父端 U+FFFD 实锤;
+    修后 main 入口 force_utf8_streams 收编 → 干净 (期望值从数据档反查,
+    F-186 纪律)。"""
+
+    def test_pins_human_survives_cp936_pipeline(self):
+        r = _run_cp936("rm_lookup.py", ["--pins", "CAN"], cwd=TK_ROOT)
+        self.assertEqual(r.returncode, 0,
+                         r.stdout.decode("utf-8", "replace")
+                         + r.stderr.decode("utf-8", "replace"))
+        text = r.stdout.decode("utf-8", "replace")
+        self.assertNotIn("\ufffd", text, "cp936 子进程下人读面乱码实锤")
+        self.assertIn("列位", text)
+
+    def test_pins_json_source_field_byte_clean(self):
+        r = _run_cp936("rm_lookup.py", ["--pins", "CAN", "--json"],
+                       cwd=TK_ROOT)
+        self.assertEqual(r.returncode, 0,
+                         r.stdout.decode("utf-8", "replace")
+                         + r.stderr.decode("utf-8", "replace"))
+        text = r.stdout.decode("utf-8", "replace")
+        self.assertNotIn("\ufffd", text, "cp936 子进程下 JSON 字节损坏实锤")
+        result = json.loads(text)
+        self.assertTrue(result["registered"])
+        with open(rm_lookup.PIN_MAPPING_PATH, encoding="utf-8") as f:
+            mapping = json.load(f)
+        for row in result["rows"]:
+            expected = mapping["CAN"][row["pin"]]["source"]
+            self.assertEqual(row["source"], expected,
+                             "source 字段与数据档反查值不符 (§ 字节面损坏?)")
+            self.assertNotIn("\ufffd", row["source"])
+
+
+class ForceUtf8GenPeriphPipeTests(unittest.TestCase):
+    """F-203 同族第二例: gen_periph 生成代码注释含中文 (黄金母版面),
+    cp936 管道下修前 GBK 字节, MCP utf-8 解码即乱码; 修后干净且
+    生成文本不变 (黄金母版契约零扰)。"""
+
+    def test_gen_pwm_chinese_comments_survive_cp936(self):
+        r = _run_cp936("gen_periph.py",
+                       ["--type", "pwm", "--timer", "TIM2", "--ch", "1",
+                        "--pin", "PA0", "--freq", "1000", "--duty", "50"],
+                       cwd=TK_ROOT)
+        self.assertEqual(r.returncode, 0,
+                         r.stdout.decode("utf-8", "replace")
+                         + r.stderr.decode("utf-8", "replace"))
+        text = r.stdout.decode("utf-8", "replace")
+        self.assertNotIn("\ufffd", text, "cp936 子进程下生成面乱码实锤")
+        self.assertIn("时钟使能", text)
 
 
 if __name__ == "__main__":

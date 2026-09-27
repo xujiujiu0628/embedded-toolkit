@@ -17,7 +17,8 @@ import json
 import os
 import sys
 
-from wb_common import TOOLKIT_ROOT, load_ref  # F-157: 三份 load_ref 收编
+from wb_common import (  # F-157: 三份 load_ref 收编; F-203: UTF-8 咒语收编
+    TOOLKIT_ROOT, force_utf8_streams, load_ref)
 
 PIN_MAPPING_PATH = os.path.join(TOOLKIT_ROOT, "data", "pin-mapping-f103.json")
 
@@ -348,6 +349,7 @@ def format_rel_result(result: dict):
 
 
 def main():
+    force_utf8_streams()  # F-203 (复审 M-2): 管道中文/§字节面, F-195 T1 同式
     parser = argparse.ArgumentParser(description="STM32F103 参考手册查询")
     parser.add_argument("query", nargs="?", default="", help="搜索词 (外设名/寄存器名/位名/配方关键词)")
     parser.add_argument("--list", action="store_true", help="列出所有外设和寄存器")

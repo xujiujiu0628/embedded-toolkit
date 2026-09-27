@@ -19,7 +19,8 @@ import os
 import re
 import sys
 
-from wb_common import TOOLKIT_ROOT, find_project_root, load_ref  # F-157: 三份 load_ref 收编
+from wb_common import (  # F-157: 三份 load_ref 收编; F-203: UTF-8 咒语收编
+    TOOLKIT_ROOT, find_project_root, force_utf8_streams, load_ref)
 
 # F-158 (P2-4): 引脚/时钟/中断映射数据外置 data/stm32f103-gen-maps.json —
 # 生成器纯逻辑, 数据单一事实源; 载入后还原为与旧字面量完全相同的内存形态
@@ -1096,6 +1097,7 @@ def _emit(out: str) -> None:
 
 
 def main():
+    force_utf8_streams()  # F-203 (复审 M-2): 管道中文注释字节面, F-195 T1 同式
     # F-191 (WB-20260926-02 T3, 销 WB-05 M-2): --timer 登记集 = gen-maps
     # tim_bus ∪ tim_irq 键集 (与 ref.json _relationships 收编的 TIM 全集
     # 一致, 11 个)。不取 ref.json TIM 字面全集: TIM8/10/11 无

@@ -25,6 +25,18 @@
   CHANGELOG 窄域）转绿；test_gen_pclk_param（金矩阵逐字节比对不受 _meta
   占位影响）/ test_ref_arch_facts / test_f200_panic_symbolize 随动全绿；
   全树敏感词复扫零命中。
+- **F-203 (fix+test, robustness): rm_lookup/gen_periph main 入口 force_utf8_streams 收编 (v0.7 复审 M-2, F-195 T1 同族清尾)**:
+  根因: F-195 修了 hardfault/handoff_guard/release_audit 三处 UTF-8 咒语
+  缺失, 但 MCP 包装的 rm_lookup/gen_periph 未收编——mcp_server.run_planned_call
+  固定以 utf-8 解码子进程输出, 中文 Windows (cp936) 管道下子进程写 GBK
+  字节: `--pins CAN` 人读表头/未入册文案全 U+FFFD, JSON source 字段
+  `web:DS5319:§3:...` 的 § 字节级损坏; gen_periph 生成代码中文注释同病。
+  处置: 两脚本 main() 首行 `force_utf8_streams()` (F-157 收编版, 一行);
+  生成文本/输出内容零变化 (只动编码不动内容, 黄金母版契约零扰)。
+  测试: test_f195_robustness_misc 新增 ForceUtf8RmLookupPinsTests (人读面
+  + JSON source 反查逐字) ×2 + ForceUtf8GenPeriphPipeTests ×1, 修前 3 红
+  实录 (U+FFFD 断言), 修后全绿; test_rm_lookup_pins (22) /
+  test_gen_periph (65) 零扰动。
 
 ## 0.7 — 2026-09-27（净仓换血转公开 + ESP 三后端闭环与发布链收口 + 样例工厂二期 + KB 数据面全量修复 + 护栏棘轮与外派 14 单·整批复审两轮）
 
