@@ -12,7 +12,7 @@
 固件必须在自己板子上打印出符合契约的证据，才有资格打 tag。它解决的核心问题是：
 **LLM 写固件无法自证正确**，而人眼盯串口又慢又漏。
 
-版本线 v0.2 → v0.6（每个 tag 均过 G0~G3 真机门禁 + CI 全绿），逐版变更见
+版本线 v0.2 → v0.7（每个 tag 均过 G0~G3 真机门禁 + CI 全绿），逐版变更见
 [Releases](https://github.com/xujiujiu0628/embedded-toolkit/releases) 与
 [CHANGELOG](CHANGELOG.md)（每条账可对到证据 commit）。
 
@@ -398,7 +398,7 @@ embedded-toolkit/
 ├── templates/          # FSD 需求规格书模板 + RTT 版 HardFault 现场 handler
 ├── machine.json        # 本机工具链路径（不入库；模板 machine.example.json）
 ├── CHANGELOG.md        # 全账本：条目可对到 commit
-└── VERSION             # 当前 0.6（版本唯一事实源 = VERSION 文件，经 wb_common.toolkit_version() 读取）
+└── VERSION             # 当前 0.7（版本唯一事实源 = VERSION 文件，经 wb_common.toolkit_version() 读取）
 ```
 
 ## 质量与验证

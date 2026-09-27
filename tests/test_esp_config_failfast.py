@@ -104,9 +104,15 @@ class EspConfigErrorsUnitTests(unittest.TestCase):
 
 
 def _strip_volatile(node):
-    """金比对归一: 剔时变字段 (时间戳/时长) 与本机路径, 留 wire 形态。"""
+    """金比对归一: 剔时变字段 (时间戳/时长) 与本机路径, 留 wire 形态。
+
+    v0.7 封袋随动: toolkit_version 系"入账时版本" (每 release 必变, 与
+    workspace 同类时变) → 占位归一 <TV>, 键在场合钉保留、版本号不焊死
+    (否则每次封袋都要动金面——封袋定义要求账本零翻动, 两者冲突)。"""
     if isinstance(node, dict):
-        return {k: ("<WS>" if k == "workspace" else _strip_volatile(v))
+        return {k: ("<WS>" if k == "workspace"
+                    else "<TV>" if k == "toolkit_version"
+                    else _strip_volatile(v))
                 for k, v in node.items()
                 if k not in ("elapsed_sec", "duration_sec", "started_at",
                              "finished_at", "timestamp", "ts")}
@@ -252,7 +258,7 @@ class GoldenBehaviorTests(_MainFlowHarness):
     "status": "ok", "xpass_ids": []
    }
   },
-  "toolkit_version": "0.6",
+  "toolkit_version": "<TV>",
   "workspace": "<WS>"
  },
  "stm32_default": {
@@ -292,7 +298,7 @@ class GoldenBehaviorTests(_MainFlowHarness):
     "status": "ok", "xpass_ids": []
    }
   },
-  "toolkit_version": "0.6",
+  "toolkit_version": "<TV>",
   "workspace": "<WS>"
  }
 }""")
