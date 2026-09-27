@@ -4512,3 +4512,88 @@ F-193 P 面 ①③④ 兑现单：把已入册数据接上查询工具（T1）+ 
   对 `_meta` 查询按未入册处理（显式豁免非外设块）。
 - **未完成清单**：GAP-F-21② 多封装维度仍暂缓（唤起条件不变）；
   RM0008 AFIO_MAPR 重映射值域仍未入册（F-193 未完成清单延续）。
+
+## F-200 — ESP panic 符号化随链接线：addr2line 离线解码，只加信息不改判据（WB-20260927-08，2026-09-27）
+
+spec §4.3 "panic 检测只做文本级标记……不做符号化"（docs/specs/
+2026-09-16-esp32s3-pilot-design.md:76）的后置票兑现；F-174 非目标清单
+"panic 符号化"项划修（README 多 MCU 节 + 本档 F-174 节"非目标未做"追注）。
+验收口径 = D:\<local-workspace>\embedded-toolkit_F200验收口径草案_20260927.md（v0），
+§6 五项拍板按建议案执行：② ROM 符号（esp-rom-elfs 在库）本票不做
+（fail-soft+P 面登记）、③ ELF SHA 对账纳入（A1 提取+A5 前缀比对）、
+④ Registers 行解码不做（P 面）、⑤ Phase A 硬顶 120 轮（实际约 30 轮）；
+① 真机触发方式归 Phase B（09-28 板窗）。四块地基全部实锚复核（钩子
+esp_runtime:81 / 上账点 verify:1023 / elf 嵌套键写入链 F-190/H-1 / 工具在库
+xtensa 统一包 + esp-rom-elfs 20241011），草案引文两处行号漂移实证更正：
+非目标真实锚 = README:732 + CHANGELOG:81（草案误记 727/83）；panic
+markers 实为五枚（草案列三枚，另两枚 assert failed / Heap corruption
+不影响本票——解析只认 Backtrace: 行）。基线 `177697c`。
+
+- **T1 符号化面五件（scripts/esp_runtime.py，纯函数+注入，A6 零全局
+  打桩）**：A1 `parse_backtrace`——只扫含 "Backtrace:" 的行（寄存器 dump
+  "REG: 0x…" 形态不误捕），帧分隔容忍空格与旧版 `|<-CORRUPTED` 尾巴，
+  多条 Backtrace 行按序拼接不去重，`ELF file SHA…:` 行一并提取（提取面
+  独立于帧——abort 无 backtrace 但新 IDF 仍打 SHA 行的形态有专钉）；
+  A2 elf 消费——state.json 嵌套 `last_build.artifacts.elf_file`
+  （release.py:212 同口径，**平铺键不兜底**有专钉），缺 state/缺键/空串
+  （`_write_last_build` 无 elf 产出的真实形态）/档不存在四形态 fail-soft，
+  reason 理由码+点名 detail；A3 `locate_addr2line`——esp_tools_dir 下
+  glob `tools/xtensa-esp-elf/*/xtensa-esp-elf/bin/`，多版本目录取版本段
+  字典序最大（确定性规则，日期后缀段单调），riscv/esp32ulp 不入面；
+  A4 `symbolize_frames`——**一次批量**调 `addr2line -f -i -a -p -e`，
+  块序 zip 禁回显匹配（真工具 2.43.1 实测地址回显小写归一），单帧
+  `??` → `{"pc","unresolved":true}` 不断链，无 DWARF（`fn at ??:?`）
+  保留函数名 file/line 置 null，`(inlined by)` 链拆多帧同 pc 回显，
+  `(discriminator N)` 剥离（先剥后解——否则行号被尾巴劫持），块数不齐
+  补 unresolved；白名单 executable 直调无 shell=True（F-174 注入面纪律），
+  成败只信 returncode（F-090）；A5 `format_symbol_box`——available 走
+  stdout 解码框（帧号/pc/函数/文件:行/未解计数），SHA 漂移打"[参考级]"
+  警告行（拍板③：本地 elf sha256 前缀比对，≥8 hex 下限防平凡前缀，
+  漂移只降参考级不删帧）；fail-soft 走一行注记。理由码封闭集：
+  no_frames / elf_missing_key / elf_not_found / no_tools_dir /
+  addr2line_not_found / tool_error / internal_error（末位为编排层
+  兜底，信息面异常绝不抛穿 verify 主流程）。
+- **T2 verify 接线（capture uart panic 分支，上账点原位）**：result 增
+  `esp_panic_symbolized`（frames + elf_path/tool + elf_sha256/
+  elf_sha256_captured/elf_sha_match）；available → stdout 解码框，
+  fail-soft → stderr 一行注记；旧退役提示语（"符号化解析用 idf.py
+  monitor (另票)"）划修为"定性交 AI judge"。**判据链零动**：
+  status/expect/judge 翻转逻辑零触碰，result 上只增不翻——既有三枚钉
+  （test_esp_runtime.py:243/265 + test_verify_esp_dispatch.py:86）全量
+  内零扰动即此条的机检形态。
+- **红绿三态**：基线总数 1288（pytest 口径 1282 passed + skipped=6，
+  `177697c`）→ 钉(红) 35 红（`1cb5d3b`，未实现态全 FAIL 带"缺
+  parse_backtrace/locate_addr2line/symbolize_frames/symbolize_esp_panic/
+  format_symbol_box"指认）→ 实现后总数 1323（**1317 passed + skipped=6
+  恒等**，444 subtests）。自省一笔（测试侧构造错两笔，实现零返工）：
+  `_mk_tools` 空版本清单时未建目录致"glob 空"形态误落 no_tools_dir 账；
+  金比对例将文本 SHA 行替换为本地实算值后仍断言原 SHA_S3 常量。
+- **真工具实格式探针（Phase B 风险前置消化）**：xtensa-esp-elf-addr2line
+  2.43.1 对真 esp32_rev0_rom.elf（nm 取实符号）实跑三态钉：全解
+  `0xA: fn at f:L` / 无 DWARF `fn at ??:?` / 未解 `?? ??:0`（**无 " at "**，
+  解析器分支即按此编码）；skipUnless 装配守卫（与 hooks 探针族同式）。
+  inline 单行形态按 binutils 文档面编码，真机 DWARF 实格式终判归 B。
+- **白名单自证**：diff 仅 scripts/esp_runtime.py + scripts/verify.py +
+  tests/test_f200_panic_symbolize.py (新) + CHANGELOG.md + README.md；
+  data/**、hooks/**、examples/**、machine.json（只读消费 esp_tools_dir）、
+  release.py 零触碰。ruff 全仓零告；打桩棘轮套件内绿（BASELINE 73 键/
+  157 处/38 文件零漂移——新增测试仅仓内共享层 seam patch
+  （esp_runtime.step_capture_uart/symbolize_esp_panic，dispatch 钉先例
+  同族，P 面不计），库面假 addr2line = .bat 壳真 subprocess 吐预置映射
+  零打桩）。变异自证未列（口径 §5 门禁未含此门；35 例全部行为直钉无
+  恒真绿，真工具探针真档实跑）。
+- **P 面（只列不改）**：①ROM 帧（复位向量类）今日形态 = `?? ??:0`
+  unresolved 账，esp-rom-elfs 纳入与否=拍板②建议案不做，唤起=Phase B
+  ③ 终判确认属高频痛点；②internal_error 兜底支无直钉（构造异常需打桩，
+  违 A6 卫生），披露为豁免面；③`ELF file SHA…` 行正则容忍
+  `SHA\w*:` 变体，实格式（空格/截断/大小写）Phase B ② 钓真格式回写；
+  ④Registers 行（_MEPC/EXCVADDR…）机器解码不做（拍板④），AI judge
+  读原文；⑤多 Backtrace 行不去重——若真机出现双核重复 backtrace，
+  帧账按出现序全量入账（对账锚=pc 回显）。
+- **未完成清单（Phase B，09-28 板窗顺列，全过 = F-200 销账）**：①经典
+  ESP32 与 S3 各触发一次真 panic 走 verify 全链，符号化框须出现 app 帧
+  真实文件:行（触发方式=拍板①建议案：临时分支改 main 解引用零/
+  abort()，验后弃，examples/ 不落 panic 工程）；②钓真机 `ELF file SHA…`
+  行实格式回写 A1/A5 钉；③ROM 帧处置终判；④STM32 缺省路径逐字节回归
+  钉（老规矩）；⑤Phase B 过销账，A 合 B 候 = 台账
+  dispatched-pending-realtest 态（先例：F-174 双挂账补票制）。
