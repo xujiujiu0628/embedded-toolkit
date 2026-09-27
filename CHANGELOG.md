@@ -4277,3 +4277,90 @@ F-194 P-2，六件独立先钉后修收口。全程未 push，data/** 零写。
   indent=2，金口径系新旧相对一致，见 T5）。
 - **未完成清单**：无（T1~T6 全收；README 两入册条目划修 + 规避句退役随
   本 docs 笔）。
+
+## F-196 — 防篡改与语义面修复：R8 手工填戳可机检 / fixed_pins 三态 / L2 豁免锚定 / gcc 探测平台化 / fixture 哈希字节直传 / 回退响亮化 / hex token 级解析（WB-20260927-04，2026-09-27）
+
+WB-05 残量七笔（M-6/L-2/L-7/L-9/L-10/L-11 + N-3，对账=WB-20260926-04 报告
+§一），语义件红线=claim 与实现对齐，两头（fail-open→fail-loud 与误伤存量）
+双向钉。全程未 push，data/** 零写。
+
+- **T1 release_audit R8 手工填戳可机检 + R6 工作树脏（M-6）**：R8
+  production_approved 分支旧判据只查批准时间戳非空（手填任意值即过），与
+  头注"手工改值视同篡改"承诺不符。现批准戳须留痕链（`fidelity_boundaries`
+  批准注记在场——approve_record 同笔所落，注记主标收编为
+  `APPROVAL_NOTE_MARK` 单一事实源）**或** git 证据在场（`git show
+  HEAD:<记录>` 字节解析出同一批准戳，_git_bytes 纪律）之一：手填无链未
+  入库 / 工作树改戳与入库版本不一致 → fail；合法 approve→commit 流两条
+  证据天然在场。**历史语义零翻动（本件命门）**：四条真实存量
+  （adc-oled v1.1.0 / toggle v1.0.0 / mpu6050 v0.5+v0.6）全部无 evidence
+  字段走上方 warn 分支，新判据零接触——开单前真档预检为停件判据，实测
+  零冲突故不停件。R6 增 `git status --porcelain` 检查面：已跟踪记录存在
+  未提交变更 → WARN 显形不拦发布（旧病只查 ls-files 跟踪态）。
+- **T2 phase_minus_one fixed_pins 三态 + BLOCKED 退出码（L-2）**：损坏/
+  缺失同 return None、detail 谎报"没有占用表"（fail-open）→ 三态：
+  缺失=None 文案逐字节照旧；文件在场但不可解析/非对象 →
+  `FixedPinsCorrupt` 哨兵携路径，check 显态 CORRUPT（"损坏非缺失，拒绝
+  放行"），与 CONFLICT/UNKNOWN/UNAVAILABLE 同级 BLOCKED（F-194 钉面上叠
+  加，其钉零扰动）；main() BLOCKED → `sys.exit(1)`（旧病 rc=0，--list/
+  帮助路径提前 return 不受影响）。
+- **T3 handoff_guard L2 豁免锚定收窄（L-10）**：`any(p in L2_ALLOW_DIRS
+  for p in parts[:-1])` 对任意深度名为 tests/fixtures 的目录全豁免
+  （docs/tests/x.py 穿透）→ 收窄为仓根相对路径段前缀锚定（^tests/ 或
+  ^tests$，fixtures 同），L2_ALLOW_DIRS 常量随之退役。**波及清单=空集**：
+  全仓 find 实证名为 tests/fixtures 的目录仅根级 tests/ 与
+  tests/fixtures/ 两处，真实存量零波及（合法存量金比对钉三例全绿）。
+- **T4 release.py _gcc_version 平台化（L-7）**：配了 gcc_path 即硬拼
+  `arm-none-eabi-gcc.exe`（Linux 发布机恒 unknown）→ F-164 同款
+  `shutil.which` 优先（nt 自动试 PATHEXT、POSIX 查存在+可执行位），
+  gcc_path 落空退 PATH，两处皆空仍 unknown 但原因入输出。nt 下 which 经
+  PATHEXT 命中回传 .EXE 大写而 gcc 版本行回显 argv[0] 基名 → 基名归一
+  小写保版本串逐字节（真机金值修前修后全等实锤）。ESP not_applicable
+  分流面（F-190）零触碰。
+- **T5 doctor fixture 哈希字节直传（L-9）**：`git show` 经
+  encoding/replace 解码再 encode 回哈希（非 UTF-8 字节变 U+FFFD，漂移
+  误报偏红）→ subprocess 不带 encoding，blob 原始字节直传 h.update
+  （release_audit._git_bytes 同纪律）。oracle 独立计算钉：非 UTF-8
+  fixture 修前哈希≠oracle、修后全等；合法 UTF-8 面解码-再编码恒等 →
+  真仓 contract fixtures 金值修前修后同值（历史档案零翻动，变了即停）。
+- **T6 fsd_coverage 损坏回退响亮化（L-11）**：config 损坏静默回退默认
+  FSD、notes 仅 JSON 可见 → 注记文本携路径+异常类名，_print_human 非
+  skipped 面逐条 [W] 响亮人读（skipped 面 notes 已以"无对账面"入
+  warnings，不双印）；退出码语义不动（verdict 仍照 reconcile，对账照常出）。
+  正常 cfg 人读输出逐字节不变（verbatim 金比对钉）。
+- **T7 serial_send hex token 级解析（N-3）**：`replace("0x","")` 全文
+  子串删除损坏 `A0xB` 类输入且 `0X` 大写不剥不对称 → 按 [\s,]+ 切分后
+  逐 token 去 0[xX] 前缀（仅 token 头），段内非法字符/奇数长度 →
+  bad_hex 显式拒。既有合法用例金比对逐字节（DE AD / 0xDE,0xAD / 0xab /
+  AB / ZZ→None / 空→b""）；文本模式零触碰。
+- **红绿三态**：基线 `Ran 1217 / OK (skipped=6)`（94544a6，Git PATH 补齐
+  口径）→ 钉(红) 19 红（14 FAIL + 5 ERROR——T2 哨兵类/T4 shutil import
+  尚不存在，ERROR 即病灶本体）+ 14 反向金钉/金比对绿
+  （tests/test_f196_tamper_semantics.py 新文件 33 例；全局对象零置桩，
+  棘轮快照零新增）→ 七笔逐修逐绿 → 全量 `Ran 1250 / OK (skipped=6)`
+  （+33=新钉数，skipped 恒等）。钉面两处随修（docs 笔随附）：类 docstring
+  raw 化（source_hygiene 咬中 `\s` 非法转义——机检系统正常工作）、
+  ruff E731 lambda 赋值改 def。
+- **撤销实验×7**：每件 `git show "<fix>^:<file>"` 整文件回退 → 拆修红 →
+  `git checkout --` 还原 → 复绿 + 树净：T1 拆 → 恰 4 红；T2 拆 → 5 红
+  （3F+2E，零覆盖控制组两态皆绿）；T3 拆 → 恰 2 红（既有 guard 全套
+  控制组两态皆绿）；T4 拆 → 3 ERROR（F-190 控制组两态皆绿）；T5 拆 →
+  恰 1 红（两条正常面金钉在修前态也绿=档案零翻动实证）；T6 拆 → 恰 1 红
+  （正常面金钉双态绿）；T7 拆 → 恰 3 红（既有 payload 钉双态绿）。
+- **白名单自证**：`git diff --name-only 94544a6..HEAD`（docs 笔前）=
+  scripts/{release_audit, phase_minus_one, handoff_guard, release,
+  doctor, fsd_coverage, serial_send}.py + tests/test_f196_tamper_
+  semantics.py(新)，exclude pathspec 零输出；禁区（data/**、verify.py/
+  junit_xml.py/evidence_export.py/svd_to_json.py/gen_periph.py/
+  esp_runtime.py/runtime_common.py、hooks/**、examples/**、machine.json、
+  既有断言零删零弱）未触。
+- **P 面（只列不改）**：① T4 语义注记——gcc_path 配置无效时新形态退
+  PATH 兜底（best-effort 取证面），而 F-164 gcc_build 预检是硬错误
+  （构建必须用配置路径），两处语义有意不同源；② T7 token 级语义变化
+  登记——制表符/混排空白现作分隔符（旧不剥 tab 即 ValueError）、孤
+  "0x" token 现拒（旧产 b""）、中段 "0x" 现拒（旧静默剥除产假字节），
+  皆为 fail-loud 方向；③ doctor._detect_default_branch 推断失败时漂移
+  检测静默跳过（既有行为，非本单面）；④ R8 git 证据锚=HEAD blob，approve
+  后未提交窗口由留痕链证据覆盖——若 approve 后又手工改戳再提交，属蓄意
+  伪造（防糊涂不防蓄意边界，与 R7 同）。
+- **未完成清单**：无（T1~T7 全收；README 健壮面条目划修 + Note 面划修 +
+  规避句三连退役随本 docs 笔）。

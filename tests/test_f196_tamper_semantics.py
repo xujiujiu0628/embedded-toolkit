@@ -393,8 +393,9 @@ class GccVersionCrossPlatformTests(unittest.TestCase):
             return types.SimpleNamespace(
                 returncode=0, stdout="arm-none-eabi-gcc (GNU) 10.3.1\n")
 
-        which_fn = lambda cmd, path=None: "/usr/bin/arm-none-eabi-gcc" \
-            if cmd == "arm-none-eabi-gcc" else None
+        def which_fn(cmd, path=None):
+            return "/usr/bin/arm-none-eabi-gcc" if cmd == "arm-none-eabi-gcc" else None
+
         p1, p2, p3 = self._patched({"gcc_path": "/opt/gcc/bin"},
                                    which_fn, fake_run)
         with p1, p2, p3:
@@ -407,7 +408,9 @@ class GccVersionCrossPlatformTests(unittest.TestCase):
         def must_not_run(cmd, **kw):
             raise AssertionError("探不到还跑 subprocess: %r" % (cmd,))
 
-        which_fn = lambda cmd, path=None: None
+        def which_fn(cmd, path=None):
+            return None
+
         p1, p2, p3 = self._patched({"gcc_path": "/opt/gcc/bin"},
                                    which_fn, must_not_run)
         with p1, p2, p3:
@@ -424,7 +427,9 @@ class GccVersionCrossPlatformTests(unittest.TestCase):
             calls["exe"] = cmd[0]
             return types.SimpleNamespace(returncode=0, stdout="gcc 10.3.1\n")
 
-        which_fn = lambda cmd, path=None: "/usr/bin/arm-none-eabi-gcc"
+        def which_fn(cmd, path=None):
+            return "/usr/bin/arm-none-eabi-gcc"
+
         p1, p2, p3 = self._patched({"gcc_path": ""}, which_fn, fake_run)
         with p1, p2, p3:
             out = release._gcc_version()
@@ -562,7 +567,7 @@ T6_NORMAL_GOLDEN = (
 # ═══════════════════ T7 (N-3): serial_send hex token 级解析 ═══════════════════
 
 class HexTokenParseTests(unittest.TestCase):
-    """token 级解析: 按 [\s,]+ 切分后逐 token 去 0[xX] 前缀, 段内非法字符
+    r"""token 级解析: 按 [\s,]+ 切分后逐 token 去 0[xX] 前缀, 段内非法字符
     → bad_hex 显式拒; 不做全文子串删除 (A0xB 类不再静默损坏)。"""
 
     def test_a0xb_explicitly_rejected(self):

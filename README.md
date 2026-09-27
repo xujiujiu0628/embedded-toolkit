@@ -537,10 +537,29 @@ embedded-toolkit/
   ④ M-7 已修——`evidence_export` 对改坏记录做薄型校验（坏类型留痕不抛
   traceback，main 并捕 AttributeError/TypeError），CI `if: always()` 步骤
   假红面消失。③⑤⑥⑦⑧⑨⑩（M-6/L-7/L-8/L-9/L-10/L-11/L-2）仍在。
+  **划修（2026-09-27，F-196 / WB-20260927-04）**：③ M-6 已修——
+  `release_audit` R8 批准戳须留痕链（fidelity_boundaries 批准注记）或
+  git 入库版本同戳在场（手工填戳无链即 fail，真实历史档案全部无
+  evidence 字段零接触=零翻动），R6 增工作树脏 WARN 检查面；⑤ L-7 已修
+  ——`release._gcc_version` 改 shutil.which 平台化（F-164 同款），探不到
+  unknown(原因)，"Linux 发布机 machine.json 留空 gcc_path"规避句退役；
+  ⑦ L-9 已修——`doctor` fixture 漂移哈希改 git blob 原始字节直传，
+  "发布记录不手工编辑"的审计无凭面随 R6/R8 机检化退役；⑧ L-10 已修
+  ——`handoff_guard` L2 豁免收窄为仓根相对前缀锚定，`docs/tests/x.py`
+  伪 tests 目录不再穿透（仓内存量零波及）；⑨ L-11 已修——`fsd_coverage`
+  config 损坏回退人读 [W] 响亮（路径+原因），对账与退出码语义不动；
+  ⑩ L-2 已修——`phase_minus_one` fixed_pins 损坏显态 CORRUPT→BLOCKED
+  （不再谎报"没有占用表"）且 BLOCKED 退出码 1。规避句仅余（顺带退役
+  "中文 Windows 下以 UTF-8 模式跑 verify"，F-195 已收）：三条全退役。
+  ⑥（L-8，mcp_server resolve_project 库根不设防）仍在，属兄弟单/留拍板面。
 - **Note 面留档（2026-09-26 对账）**：`feedback_db` 多进程 RMW 无锁（单会话假设
   维持，WB-05 N-1）；`serial_send` hex 模式 `A0xB` 类输入剥转损坏（WB-05 N-3）。
   引用防呆：WB-05 与 01 报告存在**同号异病**（M-1/H-1/L-2/N-3/N-4 五对），引用
   必须带报告名前缀（对账单 §六）。
+  **划修（2026-09-27，F-196 / WB-20260927-04）**：N-3 已修——`serial_send`
+  hex 模式改 token 级解析（逐 token 去 0[xX] 前缀），`A0xB` 类显式 bad_hex
+  不再静默损坏、`0X` 大写与 `0x` 同权，既有合法用例金比对逐字节。N-1 仍在
+  （单会话假设维持）。
 - **GAP-F-13 现势口径订正（2026-09-26，对账单 §三建议采纳）**：全局打桩计数现势
   一律以 `tests/test_stub_ratchet.py` BASELINE 为唯一事实源（**73 键/157 处/38 文件**，
   AST 判据、机检守卫）；历史口径 98 处/22 文件（F-184）与 102 处/23 文件（01 报告
