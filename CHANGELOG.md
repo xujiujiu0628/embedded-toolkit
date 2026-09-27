@@ -4614,8 +4614,9 @@ markers 实为五枚（草案列三枚，另两枚 assert failed / Heap corrupti
   时机岔开 FR-KEY-01 未中、重跑即绿，实录在案。硬件观察一笔：CH340
   初代板长跑下 BOD 欠压复位环（`E BOD: Brownout detector was
   triggered`），panic 复现窗口受供电边际影响——环境噪音，非代码面。
-  **证据 10 件**：`D:\<local-workspace>\embedded-toolkit_F200_PhaseB_evidence\`
-  （双 ESP 的 run 全文/捕获全文/panic 块摘录 + STM32 两跑）。
+  **证据 8 件**（勘误 2026-09-27：原记 10 件，目录 `ls` 实点 8——双 ESP 各
+  run 全文/捕获全文/panic 块摘录 3×2 + STM32 两跑；铁律"例数实跑核对"
+  对证据计数同样成立）：`D:\<local-workspace>\embedded-toolkit_F200_PhaseB_evidence\`。
 - **未完成清单**：无——Phase B 全过，F-200 销账（Phase A 三 commit
   `1cb5d3b`/`22264fb`/`e140850` + 本销账 commit；§6 拍板①亦按建议案
   执行完毕，临时分支制未落 examples/）。P 面维持只列不改：②
