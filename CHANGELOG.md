@@ -3839,6 +3839,14 @@
 - **未完成清单**：无（T1+T2+T3 全收）。合入门禁建议=维护者真机走一次 ESP
   发布链（G0~G3 + release_audit），artifacts 端到端形态最终以真发布记录为准。
 
+- **契约评估补账（WB-20260927-10, docs; CHANGELOG L1850 范本句式追补）**:
+  本节 T1 state.json 写入形态变更（嵌套 artifacts + 平铺键双形态写入 +
+  时间戳键 "ts"→"timestamp"）——消费方破坏面评估：写入为双形态增量，既有
+  嵌套消费方（release.build_record）与平铺回读消费方（verify --no-build）
+  均照常，"ts" 全仓零消费方（本节 grep 取证在案）；结论：**增量/只读消费，
+  `toolkit_min_version` 无需上调**（契约变更三件套：本段 + 同 commit
+  test_f190_release_chain 契约钉 + 此处声明）。
+
 ## F-191 — KB 消费面随动收口：gen-maps 第二事实源 + rm_lookup 人读键面（WB-20260926-02，2026-09-26）
 
 > 事实源 = WB-20260925-01 整批复审报告 §一 M-2 / L-1 两节（病灶与复现命令照单收口）。
@@ -3910,6 +3918,17 @@
   位号面已由 F-191 修对, 余向量命名域需 gen-maps irq-name 域设计）正式入账 GAP-F-20,
   处置=暂缓, 唤起条件=样例工厂二期/非 C8 目标立项/下次动 gen-maps irq 域。README
   已知遗留同步登记。P 面其余：P-2(--recipe KeyError, 已实证)并入 F-192 杂项捆。
+
+- **F-201 残量登记（WB-20260927-10, docs）**: 本节 T4 账面"数据面外设
+  desc=55/description=0"为**键在场口径**；修复后实际态 = 33/55 非空、
+  **22 外设 desc 本体为空串**（ADC3, DMA2, GPIOB, GPIOC, GPIOD, GPIOE,
+  GPIOF, GPIOG, I2C2, SPI2, SPI3, TIM11, TIM12, TIM13, TIM14, TIM3, TIM4,
+  TIM5, TIM7, TIM8, USART2, USART3 —— 名单与形态分布
+  {'nonempty-str': 33, 'empty-str': 22} 照录 09 报告 L-1，内容见
+  WB-20260927-09 报告 §一；本单开工日数据面反查逐字吻合）。WB-05 M-3
+  "描述恒空"病灶在键面已销（description=0），内容面残量属化妆品级（零判据
+  影响；JSON 模式与生成器不消费 desc 文案）；唤起条款：**内容补全 = 数据面
+  另票**（官方锚纪律同 F-189），本单不动 data/**。
 
 ## F-192 — 护栏棘轮 + 杂项捆：全局打桩静态棘轮 + 四防御面收口（WB-20260926-03，2026-09-26）
 
@@ -4513,6 +4532,13 @@ F-193 P 面 ①③④ 兑现单：把已入册数据接上查询工具（T1）+ 
 - **未完成清单**：GAP-F-21② 多封装维度仍暂缓（唤起条件不变）；
   RM0008 AFIO_MAPR 重映射值域仍未入册（F-193 未完成清单延续）。
 
+- **契约评估补账（WB-20260927-10, docs; L1850 范本句式追补）**: 本节 T1
+  rm_lookup `--pins` JSON 双形态新输出（{query, registered, rows} /
+  {query, registered, known}）——新增 CLI 输出面，既有 --rel/--recipe/--list
+  输出零变化（JSON 回归钉在场），消费方破坏面评估 = 零；结论：**增量/只读
+  消费，`toolkit_min_version` 无需上调**（契约变更三件套：本段 + 同 commit
+  test_rm_lookup_pins 18 例真进程钉 + 此处声明）。
+
 ## F-200 — ESP panic 符号化随链接线：addr2line 离线解码，只加信息不改判据（WB-20260927-08，2026-09-27）
 
 spec §4.3 "panic 检测只做文本级标记……不做符号化"（docs/specs/
@@ -4590,6 +4616,15 @@ markers 实为五枚（草案列三枚，另两枚 assert failed / Heap corrupti
   ④Registers 行（_MEPC/EXCVADDR…）机器解码不做（拍板④），AI judge
   读原文；⑤多 Backtrace 行不去重——若真机出现双核重复 backtrace，
   帧账按出现序全量入账（对账锚=pc 回显）。
+- **P 面补两笔（WB-20260927-10 登记, 只列不改）**: ⑥SerialException 信封
+  携 panic 文本时（F-192 T4 形态：串口异常且已收行含 panic 标记随失败现场
+  入账）`esp_panic_symbolized` 不生成——符号化仅挂 capture 成功续体的
+  panic 分支；信息完备性缺口非漏闸（"只加信息不改判据"红线无违反，panic
+  标记与原文仍入账，AI judge 可读），处置 = 另票或维持（09 报告 N-1）。
+  ⑦addr2line glob 首尾硬编 `.exe`（`xtensa-esp-elf-addr2line.exe`）——
+  POSIX 生产面永不命中，恒 `addr2line_not_found` fail-soft（F-031 盲区在
+  F-200 新面的投影，CI 绿由测试注入面掩盖：假 addr2line 走函数参数注入
+  非生产 glob 消费面）；Linux 真用另票开（09 报告 N-3）。
 - **Phase B 真机终判（09-27 当日板窗提前兑现，四笔全过 = F-200 销账）**：
   ①**双板真 panic**（拍板①建议案执行：esp32-hello / esp32s3-hello 各开
   临时分支 panic-f200-phaseb，app_main 解引用零 → StoreProhibited，验后
@@ -4622,3 +4657,76 @@ markers 实为五枚（草案列三枚，另两枚 assert failed / Heap corrupti
   执行完毕，临时分支制未落 examples/）。P 面维持只列不改：②
   internal_error 兜底无直钉（豁免面）；④Registers 行解码不做；①⑤
   ROM 帧与多行拼接两笔已由本节真机数据定性。
+
+- **契约评估补账（WB-20260927-10, docs; L1850 范本句式追补）**: 本节 T2
+  verify result 增 `esp_panic_symbolized` 增量键（frames + elf_path/tool +
+  elf_sha256/elf_sha256_captured/elf_sha_match）——result 上只增不翻
+  （status/judge/expect 判据链零动，既有三枚钉机检在案），消费方破坏面
+  评估 = 零；结论：**增量/只读消费，`toolkit_min_version` 无需上调**
+  （契约变更三件套：本段 + 同 commit test_f200_panic_symbolize 契约钉 +
+  此处声明）。
+
+## F-201 — 复审清尾捆：9hex 前缀 match 直钉 + 四账登记，修账不修实现（WB-20260927-10，2026-09-27）
+
+> 因果链一句话：WB-20260927-09 整批复审（只读，master `5376d15`）§四 7 项
+> 裁决输入 → 维护者裁决"必修 = ①9hex 直钉；登记 = ②~⑥；留档/另票 =
+> desc 内容补、N-4" → 本单一钉四账兑现。实现面（判据链/函数逻辑）零动——
+> 本单性质 = 修账 + 补钉，不修任何"已经对的东西"。基线 `5376d15`
+> （三查 merge-base=master=HEAD 三值相等，树净）。
+
+- **T1 钉面（test(f201)）**: 9hex 截断前缀 match 双直钉
+  （tests/test_f200_panic_symbolize.py，35→37 例）——真机主形态（Phase B
+  实证 `ELF file SHA256: <9hex>` 截断前缀 vs 本地全形 sha）在本单前套件内
+  零直钉：既有两枚 match 钉输入等长（全形==全形 / 全形≠无关），
+  startswith/==/endswith 三实现无差别，09 报告 §三 F-200 行变异重放实证
+  `startswith→endswith` 回归 35 例全绿穿 CI（"意外绿"）。新钉：
+  `test_sha_captured_9hex_prefix_match_true`（捕获行 = 本地 elf sha256 前
+  9 hex → match=True + 解码框无 "[参考级]"）+
+  `test_sha_captured_9hex_prefix_mismatch_false`（他值 9hex 前缀 →
+  match=False + 框含 "[参考级]" + 帧不删）；期望值数据面反查生成
+  （`_sha256_of(...)[:9]`；他值 = 前 9 hex 逐位 15 补恒非本地前缀，F-186
+  禁手抄常量），零 mock 零全局 patch（棘轮零漂移）。**变异双枪红实录**
+  （09 报告实证不了的洞；实现已正确，红态演示按 CONTRIBUTING 变异验证
+  口径；每枪还原后 sha256 逐字节复得 `b4ccc56c…`，porcelain 只余钉文件）：
+  枪① `startswith→==` → `Ran 37 / FAILED (failures=1)`，恰新 match_true
+  钉红（`AssertionError: False is not True`），旧 35 例 + 新 mismatch 钉
+  36 绿；枪② `startswith→endswith` → 同形态恰 1 红。mismatch 方向钉两枪
+  下维持绿属预期（False 方向对 ==/endswith 不判别）——拦 ==/endswith
+  回归的唯一直钉即 match_true 钉。
+- **T2 账（F-191 节 append）**: desc 残量登记——账面"desc=55"订正为**键在
+  场口径**，修复后实际态 33/55 非空、22 空串（名单照 09 报告 L-1），唤起
+  条款"内容补全 = 数据面另票（官方锚纪律同 F-189）"；开工日数据面反查逐字
+  吻合（total 55 / nonempty 33 / empty 22）。
+- **T3 账+措辞**: `locate_addr2line` docstring "版本段 = 日期后缀单调"
+  收窄为"同版本前缀内日期段单调 + 跨主版本位数/跨命名方案（esp-9 vs
+  esp-14、esp-2022r1）字典序≠语义序 + 现网可达域实证单版本无实害（09 报告
+  L-2 可达域论证）+ 扩集须先改语义比较"——纯注释行，diff 唯一 hunk 全在
+  docstring 内（-1/+4），`locate_addr2line` 函数体逻辑零动（09 报告 L-2
+  维持现状可辩护裁决兑现）；F-200 P 面 append ⑥SerialException 信封无
+  符号化（N-1，另票或维持）⑦glob 硬编 `.exe` POSIX 生产面（N-3，F-031
+  盲区投影，Linux 真用另票开）。
+- **T4 账（契约三件套评估追补，L1850 范本句式）**: F-190 / F-199 / F-200
+  三节各 append 一笔——state.json 双形态写入（"ts"→"timestamp"）/
+  --pins JSON 双形态新输出 / `esp_panic_symbolized` 增量键，三处消费方
+  破坏面评估均零、结论均为**增量/只读消费，`toolkit_min_version` 无需
+  上调**（09 报告 N-2；三票契约钉均同 commit 在案，本笔补评估声明）。
+- **T5 账**: README F-19x 状态清单加 F-201 摘要行（细节归本节）。
+- **红绿账**: 基线 `Ran 1323 / OK (skipped=6)`（5376d15，简报口径逐字合）→
+  +2 新钉全量 1325 绿 skipped 恒 6；变异双枪各恰 1 红（实录见 T1，两枪
+  还原后 sha256 复得 + porcelain 只余钉文件）；打桩棘轮 10 例绿（BASELINE
+  73 键/157 处/38 文件零漂移）；ruff 全仓零告。
+- **白名单自证**: diff 仅 tests/test_f200_panic_symbolize.py +
+  scripts/esp_runtime.py（仅 docstring 注释面，逻辑行零动）+ CHANGELOG.md
+  （append 式）+ README.md（F-19x 清单一行）；data/**、verify.py、
+  hooks/**、examples/**、machine.json、scripts/wb_common.py 零触碰；既有
+  断言零删零弱。
+- **P 面（本单钓出，只列不改）**: ①mismatch/9hex 形态下
+  `elf_sha256_captured` 长度口径——截断捕获按原样 9 位入账（与
+  `elf_sha256` 64 位不等长），消费方须按"前缀字符串"理解禁当全形哈希用
+  （现仓内零消费方，外部门约定面）；②"[参考级]"字样双源维护面——
+  format_symbol_box 模板与测试断言各持一份字面，改字样须两处同动（人读
+  文案未钉死字面）；③`_ELF_SHA_RE` 下限 8 hex 与 9hex 实格式只差 1 位——
+  未来若真机出现 7 hex 截断形态会静默不捕（既有专钉钉的是提取面非下限
+  面），下限变动须回看 Phase B 实格式证据。
+- **未完成清单**: 无（T1~T5 全收）。留档/另票归维护者既有裁决：desc 内容
+  补（数据面另票）、N-1 处置、N-3 Linux 面、N-4 capsys 收编——本单未扩权。

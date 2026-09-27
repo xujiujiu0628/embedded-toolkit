@@ -667,6 +667,7 @@ embedded-toolkit/
   参数 `run_verify.timeout` + `gen_peripheral` ch/freq/duty/baud/speed 由 100% 不可用转可用）·
   测试卫生包 ✅ F-181（GAP-F-2 py3.10 语法地板钉 + GAP-D-9/D-1 槽位注记随动 +
   GAP-ENV-2 hooks bash 解析加固 + GAP-ACC-1 backup 交换回滚支补钉）· KB 消费面随动 ✅ F-191（gen-maps tim_bus/tim_irq 补齐 11 TIM + 类级互证钉 + `--timer` 入参收口 / rm_lookup 人读 desc 三处 + clock_enable 死支反查） · 护栏棘轮与杂项捆 ✅ F-192（全局打桩静态棘轮 L-2 收口：157 处/73 键快照 + 新增即红 + EXEMPTS+note + 双枪 / rm_lookup `--recipe` 人读 KeyError / release openocd_exe 缺键分流 / uart SerialException 已收行入账 / verify swd_probe 死导入删） · pin-mapping 消费面接线 ✅ F-199（rm_lookup `--pins` 消费面：CAN 四行人读/JSON 双形态逐字金比对 + 反 CANRX 替换钉 / 未入册显式指认+动态入册集 / 缺档损坏点名报错 / GAP-F-21① 前缀封闭集 DS5318→DS5792 改名落地 + 回滚语义钉 / 两档互证恒真钉+双态自证） · ESP panic 符号化随链接线 ✅ F-200（Backtrace 帧对+ELF SHA 提取 / 嵌套键 elf 消费 fail-soft 六类点名 / addr2line 一次批量块序 zip 真工具实格式探针 / 解码框双流+SHA 漂移参考级 / 判据链零动三枚钉零扰动）
+  · 复审清尾捆 ✅ F-201（09 复审 7 项裁决 → 一钉四账、修账不修实现：9hex 截断前缀 match 双直钉堵 CI 盲区（==/endswith 变异必红）/ F-191 desc 22 空串残量登记（键在场口径订正）/ locate_addr2line 措辞收窄 + F-200 P 面⑥⑦ / 契约三件套评估追补 ×3）
   ——证据链
   （run/PR/钉子清单）均在 CHANGELOG 对应票。
 

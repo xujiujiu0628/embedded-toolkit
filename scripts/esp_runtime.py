@@ -351,7 +351,10 @@ def locate_addr2line(tools_dir: str | None) -> tuple[str | None, str | None]:
     """A3: esp_tools_dir 下定位 xtensa 统一包 addr2line。
 
     glob tools/xtensa-esp-elf/*/xtensa-esp-elf/bin/xtensa-esp-elf-addr2line.exe;
-    多版本目录取版本段字典序最大 (确定性规则, 版本段 = 日期后缀单调);
+    多版本目录取版本段字典序最大 (确定性规则); 同版本前缀内日期段单调
+    (F-201 措辞收窄: 跨主版本位数/跨命名方案 — 如 esp-9 vs esp-14、
+    esp-2022r1 — 字典序≠语义序; 现网可达域内实证单版本无实害, 09 报告
+    L-2 可达域论证; 扩集须先改语义比较);
     glob 空/目录缺 → (None, reason 点名)。只做存在性定位, 不校验可执行位
     (Windows 无此语义)。riscv/esp32ulp 工具链本票不入面 (在册无此类板)。"""
     if not tools_dir or not os.path.isdir(tools_dir):
