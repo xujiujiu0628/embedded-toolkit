@@ -23,9 +23,19 @@ def error_exit(code, message, use_json):
 
 def build_payload(data, hex_mode, line_ending):
     if hex_mode:
+        # F-196 T7 (N-3): token 级解析 — 旧 replace("0x","") 全文子串删除
+        # 损坏 A0xB 类输入且 0X 大写不剥不对称。现按 [\s,]+ 切分后逐 token
+        # 去 0[xX] 前缀 (仅 token 头), 段内非法字符/奇数长度 → bad_hex 显式拒。
         try:
-            clean = data.replace(" ", "").replace("0x", "").replace(",", "")
-            return bytes.fromhex(clean)
+            parts = []
+            for tok in data.replace(",", " ").split():
+                if tok[:2].lower() == "0x":
+                    tok = tok[2:]
+                if not tok or len(tok) % 2 \
+                        or any(c not in "0123456789abcdefABCDEF" for c in tok):
+                    return None
+                parts.append(tok)
+            return bytes.fromhex("".join(parts))
         except ValueError:
             return None
     else:
