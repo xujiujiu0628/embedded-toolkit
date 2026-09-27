@@ -112,14 +112,37 @@ def _sha256_of(path):
 
 
 def _mk_fake_addr2line(td, script_body=_FAKE_SCRIPT):
-    """假 addr2line: .bat 壳 → python fixture 吐预置映射 (真 subprocess)。"""
+    """假 addr2line: 平台分壳 → python fixture 吐预置映射 (真 subprocess)。
+
+    F-200 CI 追修 (WB-20260927-08): 原只出 Windows `.bat`, ubuntu CI 上
+    subprocess 无法直接 exec `.bat` (无 shebang/无执行位) → Errno 13
+    Permission denied, SymbolizeFramesTests 6 例 + SymbolizeEspPanicTests
+    2 例全红。POSIX 分支改出 `#!/bin/sh` 壳 + 0o755; Windows 分支不动。
+    两平台壳名 basename 由调用方断言 (勿硬编 .bat)。"""
     script = os.path.join(td, "f200_fake_addr2line.py")
     with open(script, "w", encoding="utf-8") as f:
         f.write(script_body)
-    bat = os.path.join(td, "xtensa-esp-elf-addr2line.bat")
-    with open(bat, "w", encoding="utf-8", newline="\r\n") as f:
-        f.write('@echo off\n"%s" "%s" %%*\n' % (sys.executable, script))
-    return bat
+    if os.name == "nt":
+        exe = os.path.join(td, "xtensa-esp-elf-addr2line.bat")
+        with open(exe, "w", encoding="utf-8", newline="\r\n") as f:
+            f.write('@echo off\n"%s" "%s" %%*\n' % (sys.executable, script))
+    else:
+        exe = os.path.join(td, "xtensa-esp-elf-addr2line")
+        with open(exe, "w", encoding="utf-8", newline="\n") as f:
+            f.write('#!/bin/sh\nexec "%s" "%s" "$@"\n'
+                    % (sys.executable, script))
+        os.chmod(exe, 0o755)
+    return exe
+
+
+def _same_path(a, b):
+    """路径等值 (F-200 CI 追修, Windows 8.3 短名盲区): 生产侧
+    workspace_root().resolve() 在 GH runner 上把 TEMP 短名
+    C:\\Users\\RUNNER~1 展开成长名 runneradmin, 而测试期望值是 tempfile
+    原样短名——本地用户名(已脱敏) 无短长名差故跑不出。两侧同过
+    realpath+normcase 归一, 跨平台一致。"""
+    return os.path.normcase(os.path.realpath(a)) == \
+        os.path.normcase(os.path.realpath(b))
 
 
 def _setenv(mapping, log_path=None):
@@ -401,10 +424,12 @@ class SymbolizeEspPanicTests(SymbolizeLandedMixin, unittest.TestCase):
         sym = esp_runtime.symbolize_esp_panic(
             _s3_text_with_sha(ws), ws, addr2line_exe=self.bat)
         self.assertTrue(sym["available"])
-        self.assertEqual(sym["tool"], "xtensa-esp-elf-addr2line.bat")
+        self.assertEqual(sym["tool"], os.path.basename(self.bat))
         self.assertTrue(os.path.isabs(sym["elf_path"]))
-        self.assertEqual(sym["elf_path"],
-                         os.path.join(ws, "build", "app.elf"))
+        self.assertTrue(_same_path(sym["elf_path"],
+                                   os.path.join(ws, "build", "app.elf")),
+                        "%r != %r" % (sym["elf_path"],
+                                      os.path.join(ws, "build", "app.elf")))
         self.assertEqual(sym["frames"], [
             {"pc": "0x403765d3", "function": "panic_abort",
              "file": "panic.c", "line": 118},
@@ -499,8 +524,11 @@ class SymbolizeEspPanicTests(SymbolizeLandedMixin, unittest.TestCase):
             _s3_text_with_sha(ws), ws, addr2line_exe=bat)
         self.assertEqual(sym["available"], False)
         self.assertTrue(sym["reason"].startswith("tool_error"), sym["reason"])
-        self.assertEqual(sym["tool"], "xtensa-esp-elf-addr2line.bat")
-        self.assertEqual(sym["elf_path"], os.path.join(ws, "build", "app.elf"))
+        self.assertEqual(sym["tool"], os.path.basename(bat))
+        self.assertTrue(_same_path(sym["elf_path"],
+                                   os.path.join(ws, "build", "app.elf")),
+                        "%r != %r" % (sym["elf_path"],
+                                      os.path.join(ws, "build", "app.elf")))
 
     def test_production_tools_dir_consumes_machine_json(self):
         """生产路径 (verify 零注入调用面): machine.json esp_tools_dir 消费
