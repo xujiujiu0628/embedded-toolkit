@@ -533,6 +533,28 @@ class SymbolizeEspPanicTests(SymbolizeLandedMixin, unittest.TestCase):
                         sym["reason"])
         self.assertIn("app.elf", sym["reason"])   # 点名缺失档
 
+    def test_absolute_elf_path_rejected_named(self):
+        """F-206 (复审 L-4): state.json 记绝对路径 elf — 修前 os.path.join
+        对绝对路径直接采纳, 可引 workspace 外任意档进符号化; 修后
+        elf_path_escape fail-soft 点名 (写入方恒写相对路径, 防波堤面)。"""
+        outside = os.path.join(self._td.name, "outside.elf")
+        ws = _mk_ws(self._td.name, elf_rel=outside)
+        sym = esp_runtime.symbolize_esp_panic(
+            TEXT_S3, ws, addr2line_exe=self.bat)
+        self.assertEqual(sym["available"], False)
+        self.assertTrue(sym["reason"].startswith("elf_path_escape"),
+                        sym["reason"])
+        self.assertIn("outside.elf", sym["reason"])
+
+    def test_dotdot_escape_elf_path_rejected(self):
+        """F-206 同族: 相对路径 .. 越出 workspace 同样收容拒绝。"""
+        ws = _mk_ws(self._td.name, elf_rel="../escaped/app.elf")
+        sym = esp_runtime.symbolize_esp_panic(
+            TEXT_S3, ws, addr2line_exe=self.bat)
+        self.assertEqual(sym["available"], False)
+        self.assertTrue(sym["reason"].startswith("elf_path_escape"),
+                        sym["reason"])
+
     def test_no_frames_failsoft_short_circuits_before_state(self):
         """abort()/assert 形态: 无帧即账 no_frames, 不触 state/工具。"""
         sym = esp_runtime.symbolize_esp_panic(

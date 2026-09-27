@@ -370,6 +370,18 @@ def main():
     parser.add_argument("--json", action="store_true", help="JSON 输出")
     args = parser.parse_args()
 
+    # F-206 (复审 L-5): --pins 与 ref.json 数据面零依赖 — ref 档缺失/损坏
+    # 不再连带 --pins 不可用 (修前无条件先 load_ref() 再进分支)。同级互斥
+    # 语义不变: --list/--recipe/--rel 与 --pins 同给时仍按原序前者优先。
+    if args.pins and not (args.list or args.recipe or args.rel):
+        raise SystemExit(run_pins_mode(args.pins, args.json))
+
+    if args.pins:
+        # F-206: 同给时原静默按序取前者, 消费者无从知晓 --pins 未执行 —
+        # 显式提示走 stderr (不污染 stdout/JSON 契约)。
+        print("Note: --list/--recipe/--rel 与 --pins 同给, 按同级互斥"
+              "先执行前者; --pins 本次未执行", file=sys.stderr)
+
     global ref_data
     ref_data = load_ref()
 
@@ -407,10 +419,6 @@ def main():
         else:
             format_rel_result(result)
         return
-
-    if args.pins:
-        # F-199 T1: --pins 消费面接线 (同级互斥, 命中即 return)。
-        raise SystemExit(run_pins_mode(args.pins, args.json))
 
     if not args.query:
         parser.print_help()

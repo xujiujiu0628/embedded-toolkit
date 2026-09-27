@@ -60,6 +60,23 @@
   (verify.py/wb_common 自述, "五重门控"scripts/ 无对应实现), 结构节有诚实
   注记但两处未随动。改口径: "修复事件校准链 (feedback_db)" + 退役挂账
   形态说明, 与结构节对齐。零代码变化。
+- **F-206 (fix+test, cleanup): 复审清尾捆 — esp elf 路径收容 / 死正则删除 / --pins 与 ref 档解耦 (v0.7 复审 L-1+L-4+L-5)**:
+  L-4: `_symbolize_impl` 对 state.json 记录的绝对路径 elf_file,
+  `os.path.join` 直接采纳 (workspace 收容被绕过, 可引仓外任意档进符号化;
+  信息面只读无实害) — 加收容校验: normpath+normcase 后必须仍位于
+  workspace 下, 越界/绝对路径 → `elf_path_escape` fail-soft 点名 (理由码
+  封闭集 +1, 判据链零动); `..` 越界同式收容。
+  L-1: `_FRAME_UNKNOWN_RE` 死代码删除 (定义后零消费, 与兜底分支语义重复;
+  误删事故自纠一笔: 同块 _FRAME_SEG_RE/_FRAME_NO_DWARF_RE 为在用正则,
+  提交前完整性核对恢复)。
+  L-5: rm_lookup main 修前无条件先 `load_ref()` 再进分支 — ref 档缺失/
+  损坏连带 `--pins` 不可用 (两数据面零依赖); 改 --pins 提前分流 (同级
+  互斥语义不变), `--list/--recipe/--rel` 与 `--pins` 同给时 stderr 显式
+  提示 (修前静默按序取前者)。
+  测试: 4 例先红实录 (git stash 撤修实测全红) 后绿 — 影子 wb_common 注入
+  load_ref 抛错真 subprocess (零 mock/patch, F-200 A6 假壳先例同式) /
+  绝对路径与 .. 越界各收容 / 同给提示; test_rm_lookup_pins +
+  test_f200_panic_symbolize 全绿。
 
 ## 0.7 — 2026-09-27（净仓换血转公开 + ESP 三后端闭环与发布链收口 + 样例工厂二期 + KB 数据面全量修复 + 护栏棘轮与外派 14 单·整批复审两轮）
 

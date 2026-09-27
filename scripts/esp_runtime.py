@@ -327,7 +327,6 @@ _ADDR2LINE_GLOB = os.path.join("tools", "xtensa-esp-elf", "*",
 _ADDR_PREFIX_RE = re.compile(r"^0x[0-9a-fA-F]+:\s*")
 _FRAME_SEG_RE = re.compile(r"^(.+?)\s+at\s+(.+):(\d+)$")
 _FRAME_NO_DWARF_RE = re.compile(r"^(.+?)\s+at\s+\?\?:\?$")
-_FRAME_UNKNOWN_RE = re.compile(r"^\?\?\s*(?:\?\?:0)?$")
 _DISCRIMINATOR_RE = re.compile(r"\s*\(discriminator \d+\)\s*$")
 _SYMBOLIZE_TIMEOUT = 60
 
@@ -502,8 +501,19 @@ def _symbolize_impl(text: str, workspace: str | None = None, *,
                          "last_build.artifacts.elf_file (未构建/无 elf "
                          "产出/档缺失均此账; 嵌套键消费不含平铺兜底)")
         return out
-    elf = os.path.normpath(os.path.join(str(workspace_root(workspace)), rel))
+    ws_root = os.path.normpath(str(workspace_root(workspace)))
+    elf = os.path.normpath(os.path.join(ws_root, rel))
     out["elf_path"] = elf
+    # F-206 (复审 L-4): os.path.join 对绝对路径 rel 直接采纳 — state.json
+    # 被篡改/外来档可引 workspace 外任意 elf 进符号化。收容校验: 解析结果
+    # 必须仍位于 workspace 下 (normcase 归一 Windows 大小写/分隔符差异);
+    # 信息面只读、写入方恒写相对路径, 此为防波堤非修复行为面。
+    if os.path.isabs(rel) or not os.path.normcase(elf).startswith(
+            os.path.normcase(ws_root + os.sep)):
+        out["available"] = False
+        out["reason"] = ("elf_path_escape: state.json 记录的 elf_file 为"
+                         "绝对路径或越出 workspace (禁跨目录取档): " + rel)
+        return out
     if not os.path.isfile(elf):
         out["available"] = False
         out["reason"] = ("elf_not_found: state.json 记录的 elf 档不存在: "

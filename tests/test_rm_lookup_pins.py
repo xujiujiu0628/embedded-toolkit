@@ -289,5 +289,44 @@ class CliProcessPins(PinsLandedMixin, unittest.TestCase):
         self.assertNotIn("CAN_RX", r.stdout)
 
 
+class PinsRefDecoupleTests(PinsLandedMixin, unittest.TestCase):
+    """F-206 (复审 L-5): --pins 与 ref.json 数据面零依赖 — ref 档缺失/
+    损坏不再连带 --pins 不可用。影子 wb_common 注入 load_ref 抛错
+    (真 subprocess, 子进程内 sys.path 前置影子目录, 零 mock/patch —
+    F-200 A6 假 addr2line 壳先例同式); 同给提示面走真 CLI。"""
+
+    def test_pins_survives_broken_ref(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        shadow = tmp.name
+        with open(os.path.join(shadow, "wb_common.py"), "w",
+                  encoding="utf-8") as f:
+            f.write("TOOLKIT_ROOT = %r\n"
+                    "def load_ref():\n"
+                    "    raise RuntimeError('ref broken (F-206 inject)')\n"
+                    "def force_utf8_streams():\n"
+                    "    pass\n" % TOOLKIT_ROOT)
+        code = ("import sys\n"
+                "sys.path.insert(0, %r)\n"    # scripts 目录
+                "sys.path.insert(0, %r)\n"    # 影子目录最先 — wb_common 被顶替
+                "import rm_lookup\n"
+                "sys.argv = ['rm_lookup.py', '--pins', 'CAN', '--json']\n"
+                "rm_lookup.main()\n") % (os.path.dirname(SCRIPT), shadow)
+        r = subprocess.run([sys.executable, "-c", code], cwd=shadow,
+                           capture_output=True, timeout=60,
+                           encoding="utf-8", errors="replace")
+        self.assertEqual(r.returncode, 0, r.stderr[-800:])
+        self.assertIn("CAN_RX", r.stdout)
+        self.assertNotIn("ref broken", r.stdout + r.stderr)
+
+    def test_rel_pins_cogive_explicit_note(self):
+        """同给显式提示 (stderr): 修前静默按序取 --rel, 消费者无从知晓
+        --pins 未执行; 同级互斥语义本身不变 (F-199 契约钉零扰)。"""
+        r = _run_process(["--rel", "USART1 DMA", "--pins", "CAN"])
+        self.assertEqual(r.returncode, 0, r.stderr[-800:])
+        self.assertIn("--pins 本次未执行", r.stderr)
+        self.assertNotIn("CAN_RX", r.stdout)
+
+
 if __name__ == "__main__":
     unittest.main()
