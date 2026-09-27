@@ -29,7 +29,7 @@
       "--pin",
       "PA1"
     ],
-    "output": "/* ========================================================================\n * ADC1 CH1 — PA1 (single conversion, 12-bit)\n * ======================================================================== */\n\n/* 1. 时钟使能 */\nRCC->APB2ENR |= RCC_APB2ENR_ADC1EN | RCC_APB2ENR_IOPAEN;\n__DSB();\n\n/* 1b. ADC 时钟分频 — ADCPRE=/6 (12MHz @ PCLK2=72MHz, ≤14MHz 上限) */\nRCC->CFGR &= ~(3UL << 14);         // 清 ADCPRE[1:0]\nRCC->CFGR |=  (2UL << 14);         // ADCPRE=10b → PCLK2/6\n\n/* 2. GPIO — PA1 模拟输入 */\nGPIOA->CRL &= ~(0xFUL << 4);\n// CNF=00 MODE=00 → 模拟输入\n\n/* 3. ADC 配置 (单次转换, 软件触发) */\n// 采样时间: 55.5 cycles (推荐用于 12-bit 精度)\nADC1->SMPR2 |= (5UL << 3);  // CH1: 55.5 cycles\nADC1->SQR3 = 1;                 // 转换序列: 1 个通道 = CH1\nADC1->CR2 = 1;                    // ADON 上电\n\n/* 4. 单次转换 */\nstatic uint16_t adc_read_ch1(void) {\n    ADC1->CR2 |= (1UL << 22);    // SWSTART\n    while (!(ADC1->SR & 2));    // 等待 EOC\n    return ADC1->DR & 0xFFF;     // 12-bit result\n}\n\n/* 5. 电压换算 (Vref=3.3V) */\nstatic uint32_t adc_to_mv(uint16_t val) {\n    return (uint32_t)val * 3300 / 4096;\n}\n"
+    "output": "#include <stdint.h>\n/* ========================================================================\n * ADC1 CH1 — PA1 (single conversion, 12-bit)\n * ======================================================================== */\n\n/* 1. 时钟使能 */\nRCC->APB2ENR |= RCC_APB2ENR_ADC1EN | RCC_APB2ENR_IOPAEN;\n__DSB();\n\n/* 1b. ADC 时钟分频 — ADCPRE=/6 (12MHz @ PCLK2=72MHz, ≤14MHz 上限) */\nRCC->CFGR &= ~(3UL << 14);         // 清 ADCPRE[1:0]\nRCC->CFGR |=  (2UL << 14);         // ADCPRE=10b → PCLK2/6\n\n/* 2. GPIO — PA1 模拟输入 */\nGPIOA->CRL &= ~(0xFUL << 4);\n// CNF=00 MODE=00 → 模拟输入\n\n/* 3. ADC 配置 (单次转换, 软件触发) */\n// 采样时间: 55.5 cycles (推荐用于 12-bit 精度)\nADC1->SMPR2 |= (5UL << 3);  // CH1: 55.5 cycles\nADC1->SQR3 = 1;                 // 转换序列: 1 个通道 = CH1\nADC1->CR2 = 1;                    // ADON 上电\n\n/* 4. 单次转换 */\nstatic uint16_t adc_read_ch1(void) {\n    ADC1->CR2 |= (1UL << 22);    // SWSTART\n    while (!(ADC1->SR & 2));    // 等待 EOC\n    return ADC1->DR & 0xFFF;     // 12-bit result\n}\n\n/* 5. 电压换算 (Vref=3.3V) */\nstatic uint32_t adc_to_mv(uint16_t val) {\n    return (uint32_t)val * 3300 / 4096;\n}\n"
   },
   "adc_hclk72": {
     "argv": [
@@ -44,7 +44,7 @@
       "--hclk",
       "72"
     ],
-    "output": "/* ========================================================================\n * ADC1 CH1 — PA1 (single conversion, 12-bit)\n * ======================================================================== */\n\n/* 1. 时钟使能 */\nRCC->APB2ENR |= RCC_APB2ENR_ADC1EN | RCC_APB2ENR_IOPAEN;\n__DSB();\n\n/* 1b. ADC 时钟分频 — ADCPRE=/6 (12MHz @ PCLK2=72MHz, ≤14MHz 上限) */\nRCC->CFGR &= ~(3UL << 14);         // 清 ADCPRE[1:0]\nRCC->CFGR |=  (2UL << 14);         // ADCPRE=10b → PCLK2/6\n\n/* 2. GPIO — PA1 模拟输入 */\nGPIOA->CRL &= ~(0xFUL << 4);\n// CNF=00 MODE=00 → 模拟输入\n\n/* 3. ADC 配置 (单次转换, 软件触发) */\n// 采样时间: 55.5 cycles (推荐用于 12-bit 精度)\nADC1->SMPR2 |= (5UL << 3);  // CH1: 55.5 cycles\nADC1->SQR3 = 1;                 // 转换序列: 1 个通道 = CH1\nADC1->CR2 = 1;                    // ADON 上电\n\n/* 4. 单次转换 */\nstatic uint16_t adc_read_ch1(void) {\n    ADC1->CR2 |= (1UL << 22);    // SWSTART\n    while (!(ADC1->SR & 2));    // 等待 EOC\n    return ADC1->DR & 0xFFF;     // 12-bit result\n}\n\n/* 5. 电压换算 (Vref=3.3V) */\nstatic uint32_t adc_to_mv(uint16_t val) {\n    return (uint32_t)val * 3300 / 4096;\n}\n"
+    "output": "#include <stdint.h>\n/* ========================================================================\n * ADC1 CH1 — PA1 (single conversion, 12-bit)\n * ======================================================================== */\n\n/* 1. 时钟使能 */\nRCC->APB2ENR |= RCC_APB2ENR_ADC1EN | RCC_APB2ENR_IOPAEN;\n__DSB();\n\n/* 1b. ADC 时钟分频 — ADCPRE=/6 (12MHz @ PCLK2=72MHz, ≤14MHz 上限) */\nRCC->CFGR &= ~(3UL << 14);         // 清 ADCPRE[1:0]\nRCC->CFGR |=  (2UL << 14);         // ADCPRE=10b → PCLK2/6\n\n/* 2. GPIO — PA1 模拟输入 */\nGPIOA->CRL &= ~(0xFUL << 4);\n// CNF=00 MODE=00 → 模拟输入\n\n/* 3. ADC 配置 (单次转换, 软件触发) */\n// 采样时间: 55.5 cycles (推荐用于 12-bit 精度)\nADC1->SMPR2 |= (5UL << 3);  // CH1: 55.5 cycles\nADC1->SQR3 = 1;                 // 转换序列: 1 个通道 = CH1\nADC1->CR2 = 1;                    // ADON 上电\n\n/* 4. 单次转换 */\nstatic uint16_t adc_read_ch1(void) {\n    ADC1->CR2 |= (1UL << 22);    // SWSTART\n    while (!(ADC1->SR & 2));    // 等待 EOC\n    return ADC1->DR & 0xFFF;     // 12-bit result\n}\n\n/* 5. 电压换算 (Vref=3.3V) */\nstatic uint32_t adc_to_mv(uint16_t val) {\n    return (uint32_t)val * 3300 / 4096;\n}\n"
   },
   "adc_hclk8": {
     "argv": [
@@ -59,7 +59,7 @@
       "--hclk",
       "8"
     ],
-    "output": "/* ========================================================================\n * ADC1 CH1 — PA1 (single conversion, 12-bit)\n * 时钟前提 (F-110): HCLK=8MHz 按标准 APB 分频推导\n *   APB1=4/APB2=8 MHz (HPRE=1/PPRE2=1/PPRE1=2, TIM×2 §7.3.7); 异常分频请显式传 --tim-clk 或手改。\n * ======================================================================== */\n\n/* 1. 时钟使能 */\nRCC->APB2ENR |= RCC_APB2ENR_ADC1EN | RCC_APB2ENR_IOPAEN;\n__DSB();\n\n/* 1b. ADC 时钟分频 — ADCPRE=/2 (4MHz @ PCLK2=8MHz, ≤14MHz 上限) */\nRCC->CFGR &= ~(3UL << 14);         // 清 ADCPRE[1:0]\nRCC->CFGR |=  (0UL << 14);         // ADCPRE=00b → PCLK2/2\n\n/* 2. GPIO — PA1 模拟输入 */\nGPIOA->CRL &= ~(0xFUL << 4);\n// CNF=00 MODE=00 → 模拟输入\n\n/* 3. ADC 配置 (单次转换, 软件触发) */\n// 采样时间: 55.5 cycles (推荐用于 12-bit 精度)\nADC1->SMPR2 |= (5UL << 3);  // CH1: 55.5 cycles\nADC1->SQR3 = 1;                 // 转换序列: 1 个通道 = CH1\nADC1->CR2 = 1;                    // ADON 上电\n\n/* 4. 单次转换 */\nstatic uint16_t adc_read_ch1(void) {\n    ADC1->CR2 |= (1UL << 22);    // SWSTART\n    while (!(ADC1->SR & 2));    // 等待 EOC\n    return ADC1->DR & 0xFFF;     // 12-bit result\n}\n\n/* 5. 电压换算 (Vref=3.3V) */\nstatic uint32_t adc_to_mv(uint16_t val) {\n    return (uint32_t)val * 3300 / 4096;\n}\n"
+    "output": "#include <stdint.h>\n/* ========================================================================\n * ADC1 CH1 — PA1 (single conversion, 12-bit)\n * 时钟前提 (F-110): HCLK=8MHz 按标准 APB 分频推导\n *   APB1=4/APB2=8 MHz (HPRE=1/PPRE2=1/PPRE1=2, TIM×2 §7.3.7); 异常分频请显式传 --tim-clk 或手改。\n * ======================================================================== */\n\n/* 1. 时钟使能 */\nRCC->APB2ENR |= RCC_APB2ENR_ADC1EN | RCC_APB2ENR_IOPAEN;\n__DSB();\n\n/* 1b. ADC 时钟分频 — ADCPRE=/2 (4MHz @ PCLK2=8MHz, ≤14MHz 上限) */\nRCC->CFGR &= ~(3UL << 14);         // 清 ADCPRE[1:0]\nRCC->CFGR |=  (0UL << 14);         // ADCPRE=00b → PCLK2/2\n\n/* 2. GPIO — PA1 模拟输入 */\nGPIOA->CRL &= ~(0xFUL << 4);\n// CNF=00 MODE=00 → 模拟输入\n\n/* 3. ADC 配置 (单次转换, 软件触发) */\n// 采样时间: 55.5 cycles (推荐用于 12-bit 精度)\nADC1->SMPR2 |= (5UL << 3);  // CH1: 55.5 cycles\nADC1->SQR3 = 1;                 // 转换序列: 1 个通道 = CH1\nADC1->CR2 = 1;                    // ADON 上电\n\n/* 4. 单次转换 */\nstatic uint16_t adc_read_ch1(void) {\n    ADC1->CR2 |= (1UL << 22);    // SWSTART\n    while (!(ADC1->SR & 2));    // 等待 EOC\n    return ADC1->DR & 0xFFF;     // 12-bit result\n}\n\n/* 5. 电压换算 (Vref=3.3V) */\nstatic uint32_t adc_to_mv(uint16_t val) {\n    return (uint32_t)val * 3300 / 4096;\n}\n"
   },
   "gpio_default": {
     "argv": [
@@ -270,7 +270,7 @@
       "--freq",
       "1000"
     ],
-    "output": "/* SysTick — 1000Hz (1000us interval), 72MHz core clock */\nSysTick->LOAD = 71999;         // 72MHz/1000 - 1\nSysTick->VAL  = 0;\nSysTick->CTRL = SysTick_CTRL_ENABLE | SysTick_CTRL_TICKINT | SysTick_CTRL_CLKSOURCE;\n\n/* 基于 SysTick 的延时计数 */\nstatic volatile uint32_t tick_ms;\n\n/* SysTick ISR */\nvoid SysTick_Handler(void) {\n    tick_ms++;                  // F-087: 必须递增, 否则 delay_ms 永久挂死\n    // called every 1000us — 用户代码加在这里\n}\n\nvoid delay_ms(uint32_t ms) {\n    uint32_t start = tick_ms;\n    while ((tick_ms - start) < ms) { __WFI(); }\n}\n"
+    "output": "#include <stdint.h>\n/* SysTick — 1000Hz (1000us interval), 72MHz core clock */\nSysTick->LOAD = 71999;         // 72MHz/1000 - 1\nSysTick->VAL  = 0;\nSysTick->CTRL = SysTick_CTRL_ENABLE | SysTick_CTRL_TICKINT | SysTick_CTRL_CLKSOURCE;\n\n/* 基于 SysTick 的延时计数 */\nstatic volatile uint32_t tick_ms;\n\n/* SysTick ISR */\nvoid SysTick_Handler(void) {\n    tick_ms++;                  // F-087: 必须递增, 否则 delay_ms 永久挂死\n    // called every 1000us — 用户代码加在这里\n}\n\nvoid delay_ms(uint32_t ms) {\n    uint32_t start = tick_ms;\n    while ((tick_ms - start) < ms) { __WFI(); }\n}\n"
   },
   "systick_hclk72": {
     "argv": [
@@ -281,7 +281,7 @@
       "--hclk",
       "72"
     ],
-    "output": "/* SysTick — 1000Hz (1000us interval), 72MHz core clock */\nSysTick->LOAD = 71999;         // 72MHz/1000 - 1\nSysTick->VAL  = 0;\nSysTick->CTRL = SysTick_CTRL_ENABLE | SysTick_CTRL_TICKINT | SysTick_CTRL_CLKSOURCE;\n\n/* 基于 SysTick 的延时计数 */\nstatic volatile uint32_t tick_ms;\n\n/* SysTick ISR */\nvoid SysTick_Handler(void) {\n    tick_ms++;                  // F-087: 必须递增, 否则 delay_ms 永久挂死\n    // called every 1000us — 用户代码加在这里\n}\n\nvoid delay_ms(uint32_t ms) {\n    uint32_t start = tick_ms;\n    while ((tick_ms - start) < ms) { __WFI(); }\n}\n"
+    "output": "#include <stdint.h>\n/* SysTick — 1000Hz (1000us interval), 72MHz core clock */\nSysTick->LOAD = 71999;         // 72MHz/1000 - 1\nSysTick->VAL  = 0;\nSysTick->CTRL = SysTick_CTRL_ENABLE | SysTick_CTRL_TICKINT | SysTick_CTRL_CLKSOURCE;\n\n/* 基于 SysTick 的延时计数 */\nstatic volatile uint32_t tick_ms;\n\n/* SysTick ISR */\nvoid SysTick_Handler(void) {\n    tick_ms++;                  // F-087: 必须递增, 否则 delay_ms 永久挂死\n    // called every 1000us — 用户代码加在这里\n}\n\nvoid delay_ms(uint32_t ms) {\n    uint32_t start = tick_ms;\n    while ((tick_ms - start) < ms) { __WFI(); }\n}\n"
   },
   "systick_hclk8": {
     "argv": [
@@ -292,7 +292,7 @@
       "--hclk",
       "8"
     ],
-    "output": "/* SysTick — 1000Hz (1000us interval), 8MHz core clock */\n * 时钟前提 (F-110): HCLK=8MHz 按标准 APB 分频推导\n *   APB1=4/APB2=8 MHz (HPRE=1/PPRE2=1/PPRE1=2, TIM×2 §7.3.7); 异常分频请显式传 --tim-clk 或手改。\nSysTick->LOAD = 7999;         // 8MHz/1000 - 1\nSysTick->VAL  = 0;\nSysTick->CTRL = SysTick_CTRL_ENABLE | SysTick_CTRL_TICKINT | SysTick_CTRL_CLKSOURCE;\n\n/* 基于 SysTick 的延时计数 */\nstatic volatile uint32_t tick_ms;\n\n/* SysTick ISR */\nvoid SysTick_Handler(void) {\n    tick_ms++;                  // F-087: 必须递增, 否则 delay_ms 永久挂死\n    // called every 1000us — 用户代码加在这里\n}\n\nvoid delay_ms(uint32_t ms) {\n    uint32_t start = tick_ms;\n    while ((tick_ms - start) < ms) { __WFI(); }\n}\n"
+    "output": "#include <stdint.h>\n/* SysTick — 1000Hz (1000us interval), 8MHz core clock */\n * 时钟前提 (F-110): HCLK=8MHz 按标准 APB 分频推导\n *   APB1=4/APB2=8 MHz (HPRE=1/PPRE2=1/PPRE1=2, TIM×2 §7.3.7); 异常分频请显式传 --tim-clk 或手改。\nSysTick->LOAD = 7999;         // 8MHz/1000 - 1\nSysTick->VAL  = 0;\nSysTick->CTRL = SysTick_CTRL_ENABLE | SysTick_CTRL_TICKINT | SysTick_CTRL_CLKSOURCE;\n\n/* 基于 SysTick 的延时计数 */\nstatic volatile uint32_t tick_ms;\n\n/* SysTick ISR */\nvoid SysTick_Handler(void) {\n    tick_ms++;                  // F-087: 必须递增, 否则 delay_ms 永久挂死\n    // called every 1000us — 用户代码加在这里\n}\n\nvoid delay_ms(uint32_t ms) {\n    uint32_t start = tick_ms;\n    while ((tick_ms - start) < ms) { __WFI(); }\n}\n"
   },
   "timer-int_default": {
     "argv": [
@@ -442,5 +442,18 @@
       "usart2_hclk8"
     ],
     "why": "gen_usart/gen_spi 帮手 stdint 自足: #include <stdint.h> 自发射 (F-131 unistd 先例同族; F-078 smoke stub 预置 stdint 掩盖自足缺口的面收口) — 默认输出随生成语义变更而重基线, 每条 diff 恰 +1 行 include (脚本自证); 其余 18 条仍为 c0df0c6 原样。断言强度未变 (逐字节比对)。"
+  },
+  "_rebased_f198": {
+    "by": "F-198 (WB-20260927-05 T1, 销 F-195 P-1 同族第三/四笔)",
+    "at": "2026-09-27",
+    "keys": [
+      "adc_default",
+      "adc_hclk72",
+      "adc_hclk8",
+      "systick_default",
+      "systick_hclk72",
+      "systick_hclk8"
+    ],
+    "why": "gen_systick/gen_adc 帮手 stdint 自足 (F-195 T6 usart/spi 同构): #include <stdint.h> 块首自发射 (F-078 smoke stub 预置 stdint 掩盖自足缺口的面收口) — 默认输出随生成语义变更而重基线, 每条 diff 恰 +1 行 include (重基线脚本自证); 其余 21 条仍为 c0df0c6 原样 (spi 三条经 F-178, i2c 三条经 F-194, usart 三条×2 经 F-195)。断言强度未变 (逐字节比对)。"
   }
 }

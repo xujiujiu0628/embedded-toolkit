@@ -273,6 +273,11 @@ def gen_systick(freq_hz: int, hclk_mhz: int = 72) -> str:
     period_us = 1000000 // freq_hz
 
     lines = []
+    # F-198 T1 (F-195 T6 同族第三笔): 帮手用 uint32_t 而从不发射 stdint —
+    # F-078 烟测 stub 预置 #include <stdint.h> 掩盖自足缺口, 照抄即编译
+    # 失败。块首自发射 (卫语句: 已含则不重复)。
+    if "#include <stdint.h>" not in lines:
+        lines.append("#include <stdint.h>")
     lines.append(f"/* SysTick — {freq_hz}Hz ({period_us}us interval), {hclk_mhz}MHz core clock */")
     lines.extend(_hclk_precondition_note(hclk_mhz))
     lines.append(f"SysTick->LOAD = {load};         // {hclk_mhz}MHz/{freq_hz} - 1")
@@ -551,6 +556,10 @@ def gen_adc(adc: str, ch: int, pin: str, hclk_mhz: int = 72,
         adc_clk_s = f"{pclk2 / div:.2f}"       # 非整除: 真值如实 (F-111 H-1)
 
     lines = []
+    # F-198 T1 (F-195 T6 同族第四笔): adc_read_chN 返回 uint16_t、
+    # adc_to_mv 用 uint32_t 而从不发射 stdint — 同 gen_systick 块首自发射。
+    if "#include <stdint.h>" not in lines:
+        lines.append("#include <stdint.h>")
     lines.append("/* ========================================================================")
     lines.append(f" * {adc} CH{ch} — {pin} (single conversion, 12-bit)")
     lines.extend(_hclk_precondition_note(hclk_mhz, pclk2_mhz=pclk2_mhz))

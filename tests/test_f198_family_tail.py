@@ -132,6 +132,28 @@ class GenSystickAdcStdintSelfEmitTests(unittest.TestCase):
         self._syntax_check("adc", gen_periph.gen_adc("ADC1", 1, "PA1"))
 
 
+# 重基线金样 (capture-once @ F-198 T1 修后): == gen_periph_golden_f195.json
+# 移出的 t6_systick_1k / t6_adc_ch1 原值 + 第 0 行块首 include (重基线脚本
+# 与 capture 脚本双自证 "恰 +1 行")。其余型金比对 (gpio/pwm/timer-int/i2c)
+# 留在 f195 夹具原样不动。
+_GOLDEN_F198_SYSTICK = '#include <stdint.h>\n/* SysTick — 1000Hz (1000us interval), 72MHz core clock */\nSysTick->LOAD = 71999;         // 72MHz/1000 - 1\nSysTick->VAL  = 0;\nSysTick->CTRL = SysTick_CTRL_ENABLE | SysTick_CTRL_TICKINT | SysTick_CTRL_CLKSOURCE;\n\n/* 基于 SysTick 的延时计数 */\nstatic volatile uint32_t tick_ms;\n\n/* SysTick ISR */\nvoid SysTick_Handler(void) {\n    tick_ms++;                  // F-087: 必须递增, 否则 delay_ms 永久挂死\n    // called every 1000us — 用户代码加在这里\n}\n\nvoid delay_ms(uint32_t ms) {\n    uint32_t start = tick_ms;\n    while ((tick_ms - start) < ms) { __WFI(); }\n}'
+
+_GOLDEN_F198_ADC = '#include <stdint.h>\n/* ========================================================================\n * ADC1 CH1 — PA1 (single conversion, 12-bit)\n * ======================================================================== */\n\n/* 1. 时钟使能 */\nRCC->APB2ENR |= RCC_APB2ENR_ADC1EN | RCC_APB2ENR_IOPAEN;\n__DSB();\n\n/* 1b. ADC 时钟分频 — ADCPRE=/6 (12MHz @ PCLK2=72MHz, ≤14MHz 上限) */\nRCC->CFGR &= ~(3UL << 14);         // 清 ADCPRE[1:0]\nRCC->CFGR |=  (2UL << 14);         // ADCPRE=10b → PCLK2/6\n\n/* 2. GPIO — PA1 模拟输入 */\nGPIOA->CRL &= ~(0xFUL << 4);\n// CNF=00 MODE=00 → 模拟输入\n\n/* 3. ADC 配置 (单次转换, 软件触发) */\n// 采样时间: 55.5 cycles (推荐用于 12-bit 精度)\nADC1->SMPR2 |= (5UL << 3);  // CH1: 55.5 cycles\nADC1->SQR3 = 1;                 // 转换序列: 1 个通道 = CH1\nADC1->CR2 = 1;                    // ADON 上电\n\n/* 4. 单次转换 */\nstatic uint16_t adc_read_ch1(void) {\n    ADC1->CR2 |= (1UL << 22);    // SWSTART\n    while (!(ADC1->SR & 2));    // 等待 EOC\n    return ADC1->DR & 0xFFF;     // 12-bit result\n}\n\n/* 5. 电压换算 (Vref=3.3V) */\nstatic uint32_t adc_to_mv(uint16_t val) {\n    return (uint32_t)val * 3300 / 4096;\n}'
+
+
+class GenSystickAdcRebasedGoldenTests(unittest.TestCase):
+    """T1 重基线金钉: systick/adc 输出走 F-198 新形态 (f195 金样 +1 行
+    块首 include), 逐字节; 此后任何生成语义再动即红。"""
+
+    def test_systick_rebased_golden_byte_exact(self):
+        self.assertEqual(gen_periph.gen_systick(1000).replace("\r\n", "\n"),
+                         _GOLDEN_F198_SYSTICK)
+
+    def test_adc_rebased_golden_byte_exact(self):
+        self.assertEqual(gen_periph.gen_adc("ADC1", 1, "PA1").replace("\r\n", "\n"),
+                         _GOLDEN_F198_ADC)
+
+
 # ════════════════════════════ T2 (F-195 P-2) ════════════════════════════
 
 class MergeIntoRefPeripheralsGuardTests(unittest.TestCase):

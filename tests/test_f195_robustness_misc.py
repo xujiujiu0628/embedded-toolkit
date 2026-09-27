@@ -559,6 +559,8 @@ class GenStdintSelfEmitTests(unittest.TestCase):
 
     def test_other_generators_byte_identical(self):
         # 反向钉 (金比对): 其它型输出与修前金夹具逐字节同 (其它型不随动)。
+        # F-198 T1: adc/systick 两键随其 stdint 自足语义变更移入
+        # test_f198_family_tail 自有金钉 — 本夹具回归"其它型"纯集。
         fixture = os.path.join(TK_ROOT, "tests", "fixtures",
                                "gen_periph_golden_f195.json")
         with open(fixture, encoding="utf-8") as f:
@@ -566,10 +568,8 @@ class GenStdintSelfEmitTests(unittest.TestCase):
         current = {
             "t6_gpio_pp50": gen_periph.gen_gpio("PC13", "out-pp-50mhz"),
             "t6_pwm_tim2_ch1": gen_periph.gen_pwm("TIM2", 1, "PA0", 1000, 50),
-            "t6_adc_ch1": gen_periph.gen_adc("ADC1", 1, "PA1"),
             "t6_timerint_tim2": gen_periph.gen_timer_int("TIM2", 1, 72),
             "t6_i2c1_std": gen_periph.gen_i2c("I2C1", 100000, "PB6", "PB7"),
-            "t6_systick_1k": gen_periph.gen_systick(1000),
         }
         for key, value in current.items():
             with self.subTest(case=key):
