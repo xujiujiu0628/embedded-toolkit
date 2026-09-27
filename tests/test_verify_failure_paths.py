@@ -13,6 +13,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from contextlib import redirect_stdout  # F-207: as_json 打印面接 stdout
 from unittest import mock
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(
@@ -116,10 +117,16 @@ class CaptureTimeoutTests(unittest.TestCase):
         proc = mock.Mock()
         proc.communicate.return_value = ("LED ON\r\nInfo : x\r\n", "TGL 3\r\n")
         result = {"steps": {}, "status": None}
-        with self.assertRaises(SystemExit) as cm:
-            verify._finish_capture_timeout(proc, result, 10, 0, as_json=True)
+        out = io.StringIO()
+        # F-207 (复审 L-7): as_json=True 走 output_json 打印 — 修前测试
+        # 未接 stdout, 全量跑时 verify 结果 JSON 泄漏到真实 stdout (摘要行
+        # 之后才见, 缓冲排空时序所致)。接住并顺手钉"JSON 走 stdout"。
+        with redirect_stdout(out):
+            with self.assertRaises(SystemExit) as cm:
+                verify._finish_capture_timeout(proc, result, 10, 0, as_json=True)
         self.assertEqual(cm.exception.code, 1)
         self.assertEqual(result["status"], "capture_failed")
+        self.assertIn("capture_failed", out.getvalue())  # JSON 面在 stdout
         cap = result["steps"]["capture"]
         self.assertEqual(cap["status"], "error")
         self.assertEqual(cap["lines"], 2)  # LED ON + TGL 3, Info 行被过滤
@@ -136,9 +143,12 @@ class CaptureTimeoutTests(unittest.TestCase):
         proc = mock.Mock()
         proc.communicate.side_effect = OSError("process dead")
         result = {"steps": {}, "status": None}
-        with self.assertRaises(SystemExit):
-            verify._finish_capture_timeout(proc, result, 10, 0, as_json=True)
+        out = io.StringIO()
+        with redirect_stdout(out):  # F-207: 同上, as_json 打印面不漏真 stdout
+            with self.assertRaises(SystemExit):
+                verify._finish_capture_timeout(proc, result, 10, 0, as_json=True)
         self.assertEqual(result["status"], "capture_failed")
+        self.assertIn("capture_failed", out.getvalue())
         self.assertEqual(result["steps"]["capture"]["lines"], 0)
 
 

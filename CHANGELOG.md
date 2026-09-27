@@ -77,6 +77,17 @@
   load_ref 抛错真 subprocess (零 mock/patch, F-200 A6 假壳先例同式) /
   绝对路径与 .. 越界各收容 / 同给提示; test_rm_lookup_pins +
   test_f200_panic_symbolize 全绿。
+- **F-207 (fix, test-hygiene): 全量套件 stdout 泄漏源定位与修复 (v0.7 复审 L-7)**:
+  根因: CaptureTimeoutTests 两例直调 `verify._finish_capture_timeout(...,
+  as_json=True)` 未接 stdout——库函数按契约打 verify 结果 JSON, 测试面
+  漏到真实 stdout; 全量跑时因 stdout 块缓冲/父端摘要行时序差, JSON 在
+  "OK" 摘要后才显形 (Python -u 无缓冲保序实测定位到 test 名)。
+  处置: 两例 redirect_stdout 接住, 顺手把"as_json 输出面在 stdout"升级
+  为断言 (assertIn capture_failed)——泄漏面从"没人管"变"有人钉"。
+  库行为零变化 (真实调用面本就该打印)。定位方法注记: PYTHONUNBUFFERED=1
+  + -v + stdout/stderr 同文件保序, 找 JSON 行号向上最近 test 名即漏源。
+  测试: test_verify_failure_paths 27 例全绿, 全量跑真实 stdout 零 verify
+  JSON 残留。
 
 ## 0.7 — 2026-09-27（净仓换血转公开 + ESP 三后端闭环与发布链收口 + 样例工厂二期 + KB 数据面全量修复 + 护栏棘轮与外派 14 单·整批复审两轮）
 
