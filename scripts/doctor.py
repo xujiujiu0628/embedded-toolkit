@@ -128,11 +128,13 @@ def _fixture_main_sha(fixture_dir: str) -> dict:
         try:
             r = subprocess.run(
                 ["git", "show", f"{base}:{rel}/{name}"],
-                capture_output=True, cwd=TOOLKIT_ROOT, timeout=5,
-                encoding="utf-8", errors="replace")
+                capture_output=True, cwd=TOOLKIT_ROOT, timeout=5)
             if r.returncode == 0 and r.stdout:
                 h = hashlib.sha256()
-                h.update(r.stdout.encode("utf-8"))
+                h.update(r.stdout)   # F-196 T5 (L-9): 原始字节直传 — 旧病
+                # 经 encoding/replace 解码再 encode 回哈希, 非 UTF-8 字节变
+                # U+FFFD, 漂移误报偏红; 哈希纪律与 release_audit._git_bytes
+                # 同源 (合法 UTF-8 面解码-再编码恒等, 历史档案零翻动)。
                 out[f"{name.replace('.json', '')}_sha256"] = h.hexdigest()
         except (OSError, subprocess.TimeoutExpired):
             pass
