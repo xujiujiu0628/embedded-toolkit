@@ -251,8 +251,9 @@ class CliProcessPins(PinsLandedMixin, unittest.TestCase):
 
     def test_cli_branch_mutual_exclusion(self):
         """同级互斥命中即 return: --recipe 先挂载则 recipe 赢, 输出无
-        --pins 内容 (分支次序的契约钉, 与实现挂载序一致)。"""
-        r = _run_process(["--pins", "CAN", "--recipe", "PWM"])
+        --pins 内容 (分支次序的契约钉, 与实现挂载序一致)。查询词取
+        ref.json 真实配方命中词 BSRR (PWM 系零命中词, 见人读先例钉)。"""
+        r = _run_process(["--pins", "CAN", "--recipe", "BSRR"])
         self.assertEqual(r.returncode, 0, r.stderr[-500:])
         self.assertIn("> 配方:", r.stdout)
         self.assertNotIn("CAN_RX", r.stdout)

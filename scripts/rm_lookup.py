@@ -8,13 +8,104 @@ STM32F103 参考手册快速查询工具
     python rm_lookup.py "bit 3"                 # 查位含义 (需结合上下文)
     python rm_lookup.py --list                  # 列出所有外设
     python rm_lookup.py --recipe PWM            # 搜索配方
+    python rm_lookup.py --pins CAN              # 查外设引脚映射 (pin-mapping 档)
     python rm_lookup.py --json                  # 输出 JSON 格式
 """
 
 import argparse
 import json
+import os
+import sys
 
-from wb_common import load_ref  # F-157: 三份 load_ref 收编
+from wb_common import TOOLKIT_ROOT, load_ref  # F-157: 三份 load_ref 收编
+
+PIN_MAPPING_PATH = os.path.join(TOOLKIT_ROOT, "data", "pin-mapping-f103.json")
+
+
+class PinMappingError(Exception):
+    """pin-mapping 数据档缺失/损坏 — 显式点名, 禁裸 traceback (F-198 T2 同式)。"""
+
+
+def load_pin_mapping(path=None):
+    """读引脚映射档 (F-199 T1: data/pin-mapping-f103.json 唯一事实源)。
+
+    共享层零改动 (WB-20260927-07 简报禁区): 不动 wb_common, 直接 open
+    加载; 缺失/不可解析/结构坏 → PinMappingError 点名文件与原因。
+    """
+    target = path or PIN_MAPPING_PATH
+    if not os.path.isfile(target):
+        raise PinMappingError(f"pin-mapping 数据档不存在: {target}")
+    try:
+        with open(target, encoding="utf-8") as f:
+            data = json.load(f)
+    except (OSError, ValueError) as exc:
+        raise PinMappingError(
+            f"pin-mapping 数据档不可读/损坏: {target} ({exc})") from exc
+    if not isinstance(data, dict):
+        raise PinMappingError(
+            f"pin-mapping 数据档损坏: {target} (顶层非对象)")
+    for name, block in data.items():
+        if name == "_meta":
+            continue
+        if not isinstance(block, dict):
+            raise PinMappingError(
+                f"pin-mapping 数据档损坏: {target} (外设块 {name} 非对象)")
+        for pin, entry in block.items():
+            if not isinstance(entry, dict):
+                raise PinMappingError(
+                    f"pin-mapping 数据档损坏: {target} "
+                    f"({name}.{pin} 条目非对象)")
+    return data
+
+
+def search_pins(query, mapping):
+    """--pins 查询 (F-199 T1): 查询词 upper() 精确匹配顶层外设块名 —
+    禁模糊匹配、禁从 _relationships 或记忆推导 (宁缺毋滥)。
+    入册值原样逐字输出 (F-193 P③: DS5319 Rev 20 表内拼写 CANRX/CANTX
+    不得回写替换, 规范名 CAN_RX 就是入册值); 未入册返回动态 known 集
+    (顶层块键导出, 禁硬编码)。查询无果不是错误 (exit 0)。"""
+    name = query.strip().upper()
+    if name and name != "_meta" and name in mapping:
+        rows = [dict(pin=pin, **entry) for pin, entry in mapping[name].items()]
+        return {"query": query, "registered": True, "rows": rows}
+    return {"query": query, "registered": False,
+            "known": sorted(k for k in mapping if k != "_meta")}
+
+
+def format_pins_result(result):
+    """--pins 人读输出: 已入册四列 (脚/功能/列位/source, 入册值原样);
+    未入册 = 显式指认 + 当前入册集 + CHANGELOG 指路。"""
+    name = result["query"].strip().upper()
+    print(f"\n=== pin-mapping: {name} ===\n")
+    if result["registered"]:
+        print(f"  {'脚':<6} {'功能':<10} {'列位':<12} source")
+        for row in result["rows"]:
+            print(f"  {row['pin']:<6} {row['function']:<10} "
+                  f"{row['column']:<12} {row['source']}")
+    else:
+        print(f"  \"{name}\" 未入册 (data/pin-mapping-f103.json)。")
+        known = ", ".join(result["known"]) or "（空）"
+        print(f"  当前入册外设集: {known}")
+        print("  官方锚入册流程见 CHANGELOG F-189/F-193 节 (宁缺毋滥)。")
+    print()
+
+
+def run_pins_mode(query, json_mode=False, path=None):
+    """--pins 分支主体 (与 --rel/--recipe 同级, 命中即 return); 库态可
+    直调 (驱动先例: test_rm_lookup_pins.py 函数直调零打桩)。返回进程
+    退出码: 查询无果=0 (未入册走显式指认), 数据档缺失/损坏=1 (stderr
+    Error 行点名文件与原因)。"""
+    try:
+        mapping = load_pin_mapping(path)
+    except PinMappingError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return 1
+    result = search_pins(query, mapping)
+    if json_mode:
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+    else:
+        format_pins_result(result)
+    return 0
 
 
 def search_peripheral(query: str, ref: dict) -> list[dict]:
@@ -262,6 +353,7 @@ def main():
     parser.add_argument("--list", action="store_true", help="列出所有外设和寄存器")
     parser.add_argument("--recipe", default=None, help="仅搜索配方")
     parser.add_argument("--rel", default=None, help="查外设关系 (e.g. 'USART1 DMA', 'I2C1 pins', 'USART2 clock')")
+    parser.add_argument("--pins", default=None, help="查外设引脚映射 (data/pin-mapping-f103.json, e.g. CAN)")
     parser.add_argument("--json", action="store_true", help="JSON 输出")
     args = parser.parse_args()
 
@@ -302,6 +394,10 @@ def main():
         else:
             format_rel_result(result)
         return
+
+    if args.pins:
+        # F-199 T1: --pins 消费面接线 (同级互斥, 命中即 return)。
+        raise SystemExit(run_pins_mode(args.pins, args.json))
 
     if not args.query:
         parser.print_help()
