@@ -166,10 +166,20 @@ def resolve_project(project: str) -> str:
     """工程根白名单校验: 必须存在且持有 .workbench/config.json。
 
     MCP agent 传任意路径都过这道闸——不存在/非工程即拒绝, 不给文件系统
-    探测面 (agentic-hil 安全设计)。"""
+    探测面 (agentic-hil 安全设计)。
+
+    F-198 (WB-05 L-8): 库根本身在配置残留 (F-015 时代 .workbench/config.json)
+    在场时曾凭"持有 config"漏判为工程 — "不要传工具库自身路径"防线落空。
+    库根闸前置: realpath+normcase 双归一 (大小写盘符/尾斜杠/相对段) 后与
+    TOOLKIT_ROOT 同判即拒绝, 不依赖残留是否在场。"""
     if not isinstance(project, str) or not project.strip():
         raise McpToolError("project 必填: 工程根目录绝对路径")
     ws = os.path.abspath(project)
+    if (os.path.normcase(os.path.realpath(ws))
+            == os.path.normcase(os.path.realpath(TOOLKIT_ROOT))):
+        raise McpToolError(
+            f"{ws} 是工具库根本身, 不是工程 — 工程应有自己的 .workbench "
+            "与固件源, 请传固件工程根路径")
     if not os.path.isdir(ws):
         raise McpToolError(f"project 目录不存在: {ws}")
     if not os.path.isfile(os.path.join(ws, ".workbench", "config.json")):
