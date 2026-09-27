@@ -237,7 +237,12 @@ class ParseBacktraceTests(SymbolizeLandedMixin, unittest.TestCase):
 
 
 class LocateAddr2lineTests(SymbolizeLandedMixin, unittest.TestCase):
-    """A3: glob 定位 + 版本段字典序最大 + fail-soft 点名。"""
+    """A3: glob 定位 + 版本段语义最大 (F-208, 复审 L-2) + fail-soft 点名。"""
+
+    # F-208 (复审 L-3): 工具名随平台 — 生产 glob 与测试夹具同源分支
+    # (Windows .exe / POSIX 无后缀), 勿在测试侧硬编任一形态。
+    TOOL_BASENAME = ("xtensa-esp-elf-addr2line.exe" if os.name == "nt"
+                     else "xtensa-esp-elf-addr2line")
 
     def _mk_tools(self, td, versions):
         tools = os.path.join(td, "tools-root")
@@ -246,8 +251,7 @@ class LocateAddr2lineTests(SymbolizeLandedMixin, unittest.TestCase):
             bindir = os.path.join(tools, "tools", "xtensa-esp-elf", ver,
                                   "xtensa-esp-elf", "bin")
             os.makedirs(bindir, exist_ok=True)
-            with open(os.path.join(bindir,
-                                   "xtensa-esp-elf-addr2line.exe"), "wb") as f:
+            with open(os.path.join(bindir, self.TOOL_BASENAME), "wb") as f:
                 f.write(b"marker")
         return tools
 
@@ -256,16 +260,30 @@ class LocateAddr2lineTests(SymbolizeLandedMixin, unittest.TestCase):
             tools = self._mk_tools(td, ["esp-14.2.0_20260121"])
             exe, why = esp_runtime.locate_addr2line(tools)
             self.assertIsNone(why)
-            self.assertTrue(exe.endswith("xtensa-esp-elf-addr2line.exe"))
+            self.assertTrue(exe.endswith(self.TOOL_BASENAME))
             self.assertIn("esp-14.2.0_20260121", exe)
 
-    def test_multiple_versions_take_lexicographic_max_segment(self):
+    def test_multiple_versions_take_semantic_max_segment(self):
+        """同版本双日期: 数值前缀相同 → seg 串行决胜 (日期段单调)。
+        F-208 前本例只有日期形态; 跨主版本反例 (esp-9 vs esp-14) 由
+        test_cross_major_version_semantic_max 承接 (修前字典序选 esp-9
+        实锤红)。"""
         with tempfile.TemporaryDirectory() as td:
             tools = self._mk_tools(td, ["esp-14.2.0_20241026",
                                         "esp-14.2.0_20260121"])
             exe, why = esp_runtime.locate_addr2line(tools)
             self.assertIsNone(why)
-            self.assertIn("esp-14.2.0_20260121", exe)   # 字典序最大 (日期段)
+            self.assertIn("esp-14.2.0_20260121", exe)   # 日期段最大
+
+    def test_cross_major_version_semantic_max(self):
+        """F-208 (复审 L-2 实锤反例): esp-9.4.0 与 esp-14.2.0 并存 —
+        字典序 "esp-9…" > "esp-14…" 选 esp-9 (错), 语义数值序选 esp-14。"""
+        with tempfile.TemporaryDirectory() as td:
+            tools = self._mk_tools(td, ["esp-9.4.0_20240101",
+                                        "esp-14.2.0_20240101"])
+            exe, why = esp_runtime.locate_addr2line(tools)
+            self.assertIsNone(why)
+            self.assertIn("esp-14.2.0", exe)
 
     def test_glob_empty_named_reason(self):
         with tempfile.TemporaryDirectory() as td:

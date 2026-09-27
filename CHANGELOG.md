@@ -88,6 +88,21 @@
   + -v + stdout/stderr 同文件保序, 找 JSON 行号向上最近 test 名即漏源。
   测试: test_verify_failure_paths 27 例全绿, 全量跑真实 stdout 零 verify
   JSON 残留。
+- **F-208 (fix+test, esp): addr2line 定位面两债清偿 — 版本语义比较 + 平台自适应工具名 (v0.7 复审 L-2+L-3, 收 F-201 遗留裁决)**:
+  L-2: 多版本目录选择修前取版本段**字典序**最大 — esp-9.4.0 与
+  esp-14.2.0 并存实测选中 esp-9 (字符串 "9">"14"); F-201 T3 遗留裁决
+  "现网单版本无实害, 扩集须先改语义比较" 本票兑现: 数字段按数值比较
+  (元组序), 无数字段 (-1, seg) 垫底, 同数值前缀由 seg 串行决胜 (日期段
+  单调原钉行为不变); 跨命名方案 (esp-2022r1 年份制 vs 版本制) 数值序即
+  所得, 不承诺跨方案语义序 (docstring 原边界保留)。
+  L-3: `_ADDR2LINE_GLOB` 修前恒以 `.exe` 结尾 — POSIX 生产面 glob 恒空
+  → `addr2line_not_found` (CI 绿由 addr2line_exe 注入面掩盖); 改平台
+  自适应 basename (Windows .exe / POSIX 无后缀), 与测试假壳 _mk_fake_
+  addr2line 的平台分支同源口径。
+  测试: LocateAddr2lineTests 改语义钉 — 跨主版本反例 (esp-9 vs esp-14)
+  修前红实录, 修后绿; _mk_tools 夹具与单版本断言随平台 basename 随动
+  (POSIX CI 面对齐, 本机 Windows 仅能实证 L-2 先红, L-3 的 POSIX 红态
+  由 CI ubuntu 实证); test_f200_panic_symbolize 40 例全绿, ruff 零告。
 
 ## 0.7 — 2026-09-27（净仓换血转公开 + ESP 三后端闭环与发布链收口 + 样例工厂二期 + KB 数据面全量修复 + 护栏棘轮与外派 14 单·整批复审两轮）
 

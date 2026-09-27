@@ -321,9 +321,14 @@ def _write_last_build(ws: str, bin_rel: str, elf_rel: str) -> None:
 # 按块序 zip, 禁回显匹配。
 _BACKTRACE_PAIR_RE = re.compile(r"(0x[0-9a-fA-F]+):(0x[0-9a-fA-F]+)")
 _ELF_SHA_RE = re.compile(r"ELF file SHA\w*:\s*([0-9a-fA-F]{8,64})")
+# F-208 (复审 L-3): 工具名随平台 — xpack Windows 布局带 .exe, POSIX 无
+# 后缀; 修前 glob 恒以 .exe 结尾, POSIX 生产面恒 addr2line_not_found
+# (CI 绿由 addr2line_exe 注入面掩盖)。
+_ADDR2LINE_BASENAME = ("xtensa-esp-elf-addr2line.exe" if os.name == "nt"
+                       else "xtensa-esp-elf-addr2line")
 _ADDR2LINE_GLOB = os.path.join("tools", "xtensa-esp-elf", "*",
                                "xtensa-esp-elf", "bin",
-                               "xtensa-esp-elf-addr2line.exe")
+                               _ADDR2LINE_BASENAME)
 _ADDR_PREFIX_RE = re.compile(r"^0x[0-9a-fA-F]+:\s*")
 _FRAME_SEG_RE = re.compile(r"^(.+?)\s+at\s+(.+):(\d+)$")
 _FRAME_NO_DWARF_RE = re.compile(r"^(.+?)\s+at\s+\?\?:\?$")
@@ -349,13 +354,15 @@ def parse_backtrace(text: str) -> dict:
 def locate_addr2line(tools_dir: str | None) -> tuple[str | None, str | None]:
     """A3: esp_tools_dir 下定位 xtensa 统一包 addr2line。
 
-    glob tools/xtensa-esp-elf/*/xtensa-esp-elf/bin/xtensa-esp-elf-addr2line.exe;
-    多版本目录取版本段字典序最大 (确定性规则); 同版本前缀内日期段单调
-    (F-201 措辞收窄: 跨主版本位数/跨命名方案 — 如 esp-9 vs esp-14、
-    esp-2022r1 — 字典序≠语义序; 现网可达域内实证单版本无实害, 09 报告
-    L-2 可达域论证; 扩集须先改语义比较);
-    glob 空/目录缺 → (None, reason 点名)。只做存在性定位, 不校验可执行位
-    (Windows 无此语义)。riscv/esp32ulp 工具链本票不入面 (在册无此类板)。"""
+    glob tools/xtensa-esp-elf/*/xtensa-esp-elf/bin/<平台工具名> (F-208:
+    Windows .exe / POSIX 无后缀, 修前 POSIX 生产面恒 not_found);
+    多版本目录取版本段**语义最大** (F-208, 复审 L-2): 数字段按数值比较
+    (esp-9 < esp-14, 字典序反例实锤), 无数字段退化 (-1, seg) 保确定性;
+    同数值前缀内由 seg 串行决胜 (日期段单调, F-201 原钉行为不变)。
+    跨命名方案 (esp-2022r1 年份制 vs 版本制) 数值序即所得, 不承诺跨方案
+    语义序。glob 空/目录缺 → (None, reason 点名)。只做存在性定位, 不校验
+    可执行位 (Windows 无此语义)。riscv/esp32ulp 工具链本票不入面
+    (在册无此类板)。"""
     if not tools_dir or not os.path.isdir(tools_dir):
         return None, ("no_tools_dir: esp_tools_dir 未配置或目录不存在 "
                       "(tools_dir=%r)" % (tools_dir,))
@@ -368,7 +375,12 @@ def locate_addr2line(tools_dir: str | None) -> tuple[str | None, str | None]:
     def _ver(hit: str) -> str:
         return os.path.relpath(hit, tools_dir).split(os.sep)[2]
 
-    best = max(hits, key=lambda h: (_ver(h), h))
+    def _ver_key(seg: str) -> tuple:
+        # F-208 (复审 L-2): 数字段语义比较; 无数字 (-1,) 垫底保确定性。
+        nums = tuple(int(n) for n in re.findall(r"\d+", seg))
+        return (nums if nums else (-1,), seg)
+
+    best = max(hits, key=lambda h: (_ver_key(_ver(h)), h))
     return best, None
 
 
