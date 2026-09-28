@@ -122,6 +122,27 @@
   redirect_stdout 接住 (一改护四例), 断言面零变化。
   测试: test_serial_log_record 4 例全绿, ruff 零告; 全量跑真实 stdout
   零 JSON 残留。
+- **F-211 (change, hygiene): git filter-repo 全史身份碎片清洗 + 两出库文件历史抹除 + commit-map 入仓 (v0.7 复审 L-6)**:
+  背景: 复审 H-1 前向清洗只保未来——旧 blob (≤f9d0e6d) 仍含私有工作区
+  路径/机器路径/用户名叙述; 根提交 machine.json (工具链本机路径) 与已删
+  token_stats.py (模型计费语境) 也在全史可达。经维护者拍板执行全史重写。
+  处置: `git filter-repo --replace-text/--replace-message` 八条规则
+  (wordbuddy→<local-workspace> / D:\\claude·D:/claude→<d-claude-root> /
+  D:\python·python.exe 双形态→<python> / C:\\openocd·C:\openocd 双形态
+  →<openocd-install> / "用户名 34354 无短长名差"→"用户名(已脱敏) 无短长
+  名差") + `--invert-paths` 出库 machine.json 与 scripts/token_stats.py
+  全史轨迹; 设计内保留项: 大写 WordBuddy 叙述一处 (F-087 账目事实,
+  非路径非身份碎片, 与现行扫描钉口径一致)。全部 461 提交 SHA 重写,
+  **账本文内旧 SHA 锚点自此失效**, 新旧对照锚 =
+  docs/history-rewrite-20260928-commit-map.txt (旧→新全量映射入仓);
+  提交信息体内的 SHA 引用由 filter-repo 自动同步 (release(0.7) 信息内
+  v0.6 锚已自洽); 重写前全史 bundle 备份于仓外 (%TEMP%,
+  etk-pre-rewrite.bundle)。远端尚未 force-push——**GitHub 侧旧对象在
+  GC 前仍可按旧 SHA 访问**, 彻底清除需 force-push 后联系 GitHub 支持
+  或删库重建 (维护者决策面, 不在本票)。
+  验证: pickaxe 八项敏感串全史全零 + machine.json/token_stats.py 全史
+  零轨迹 + tags v0.2~v0.6 重写后完好 + 树净; 全量回归 1283 绿
+  (skipped=21) + ruff 零告; 本票为 461 提交重写后的首笔新账。
 
 ## 0.7 — 2026-09-27（净仓换血转公开 + ESP 三后端闭环与发布链收口 + 样例工厂二期 + KB 数据面全量修复 + 护栏棘轮与外派 14 单·整批复审两轮）
 
