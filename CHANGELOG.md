@@ -129,7 +129,7 @@
   处置: `git filter-repo --replace-text/--replace-message` 八条规则
   (wordbuddy→<local-workspace> / D:\\claude·D:/claude→<d-claude-root> /
   D:\python·python.exe 双形态→<python> / C:\\openocd·C:\openocd 双形态
-  →<openocd-install> / "用户名 34354 无短长名差"→"用户名(已脱敏) 无短长
+  →<openocd-install> / "用户名 <uid> 无短长名差"→"用户名(已脱敏) 无短长
   名差") + `--invert-paths` 出库 machine.json 与 scripts/token_stats.py
   全史轨迹; 设计内保留项: 大写 WordBuddy 叙述一处 (F-087 账目事实,
   非路径非身份碎片, 与现行扫描钉口径一致)。全部 461 提交 SHA 重写,
