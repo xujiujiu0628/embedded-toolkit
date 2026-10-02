@@ -13,7 +13,9 @@ phase_minus_one 的共同上游: RCC 位写错一个 → 生成代码使能错�
   5. relationships.irq: number ∈ [0,67] (F103 系外部 IRQ 上限), 名称符合
      CMSIS *_IRQn 命名;
   6. registers.offset 可按十六进制解析且 < 0x1000;
-  7. f103_known_issues.json 非空 (已知硬件陷阱登记在册)。
+  7. f103_known_issues.json 非空 (已知硬件陷阱登记在册);
+  8. peripherals.desc 全覆盖无空串 (F-212: 历史上 22/55 空串, 根因=继承自
+     ST SVD 而该 22 外设在 SVD 中本身无 description)。
 
 校验规则取值依据: RM0008 (总线/寄存器)、Cortex-M3 TRM (IRQ 数)、
 2026-09-08 全库实测 (clocks/bits/irq 的当前值域)。
@@ -64,6 +66,38 @@ class RefMetaConsistencyTests(unittest.TestCase):
         self.assertEqual(self.ref["_meta"]["chip"], "STM32F103C8T6")
         self.assertEqual(self.ref["_meta"]["flash_kb"], 64)
         self.assertEqual(self.ref["_meta"]["ram_kb"], 20)
+
+
+class PeripheralDescCoverageTests(unittest.TestCase):
+    """F-212 — 外设 desc 全覆盖钉。
+
+    历史账: 22/55 外设 desc 为空串, 根因是数据面从 ST 官方 SVD 继承, 而这 22 个
+    外设在 SVD 里本身就没有 <description> (已逐条比对, 两集合完全一致)。F-212 按
+    SVD 的 derivedFrom 继承链取祖先描述补齐, 22 条全有锚零弃登。
+
+    这里只钉"不得再出现空串"这一条真不变式。**刻意不钉"同族兄弟 desc 必相同"** ——
+    该规则在本库本就不成立 (ADC1 "12-bit successive approximation ADC" vs ADC2
+    "Analog to digital converter" 是几乎同构的外设却刻意不同), 钉上去会挡住未来
+    合理的描述分化。继承规则是入库时的一次性推导, 不该被反写成断言。
+    """
+
+    def setUp(self):
+        self.peripherals = _load(REF_PATH)["peripherals"]
+
+    def test_no_peripheral_has_empty_desc(self):
+        empty = sorted(name for name, per in self.peripherals.items()
+                       if not str(per.get("desc", "")).strip())
+        self.assertEqual(
+            empty, [],
+            "外设 desc 出现空串——会让 rm_lookup 人读面输出空白描述列。"
+            "补法: 沿 SVD derivedFrom 找祖先描述 (F-212 22 条先例), "
+            "禁手写第三方案例后猜测")
+
+    def test_desc_has_no_placeholder(self):
+        placeholders = {"todo", "tbd", "n/a", "na", "none", "null", "-", "?"}
+        bad = sorted(name for name, per in self.peripherals.items()
+                     if str(per.get("desc", "")).strip().lower() in placeholders)
+        self.assertEqual(bad, [], "外设 desc 为占位符——占位符等价于没写")
 
 
 class PeripheralBaseAddressTests(unittest.TestCase):

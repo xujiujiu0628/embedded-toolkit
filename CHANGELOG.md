@@ -5,6 +5,30 @@
 
 ## Unreleased — 0.8 封袋后新账（F-212 起）
 
+- **F-212 (data+test, kb): 外设 desc 22/55 空串补齐 — 沿 SVD derivedFrom 继承祖先描述 + 两条回归钉（09 复审 L-1 候补票）**:
+  根因: 数据面从 ST 官方 SVD 继承，而**这 22 个外设在 SVD 中本身就没有
+  `<description>`**——逐条比对两空集合完全一致（ADC3/DMA2/GPIOB~G/I2C2/
+  SPI2/SPI3/TIM3·4·5·7·8·11·12·13·14/USART2/USART3）。非继承丢失，是源端即空；
+  09 复审 L-1 记的"账面 desc=55"口径即**键在场而值为空串**。
+  处置: 沿 SVD `derivedFrom` 继承链取 **ref.json 自身**祖先的 desc 补齐，
+  22/22 全有锚、零弃登。取自身而非 SVD 原文的理由：SVD 原文带换行缩进，且
+  USART1 已被人工归一为单行"Universal Sync/Async Receiver Transmitter"——
+  照抄 SVD 会让同族三兄弟不一致（库内既有反例：ADC1「12-bit successive
+  approximation ADC」vs ADC2「Analog to digital converter」几乎同构却刻意
+  不同）。去重后仅 10 个不同取值，全部落在本库既有词汇表内。
+  `_meta.updated` 随动 2026-08-12→2026-10-02；`peripheral_count`=55 未动
+  （无测试断言 `updated`，有守卫断言 `peripheral_count`）。写入前后验 JSON
+  `indent=1` 往返字节级还原（sha 一致）才落笔，改面精确 23 行。
+  测试: tests/test_kb_hygiene 新增 `PeripheralDescCoverageTests` 两例
+  （无空串 / 无占位符）。变异枪实录：清空 TIM12 + I2C1 塞 `TBD` → **恰 2 红**，
+  还原后 10 例全绿。**刻意不钉"同族兄弟 desc 必相同"**——该规则在本库本就不成立
+  （ADC1≠ADC2 反例），钉上去会挡住未来合理的描述分化；继承规则是入库时的一次性
+  推导，不该被反写成断言。
+  未核实项（诚实披露）: RM0008 对 TIM12/13/14 的**功能分类**（是否列为 basic
+  timer）本轮**未取到**——st.com 被网络策略挡、Web 检索无返回。本笔 desc 采用
+  SVD 结构锚（三者派生自 TIM9/TIM10，含 CC 通道），**不按未经核实的功能分类
+  改写**；后续若拿到 RM0008 原文，与此锚不符再单开账订正。
+
 ## 0.8 — 2026-10-02（v0.7 无上下文对抗复审 H/M/L 整改十笔全闭 · 公开仓脱敏回归 + 全史身份碎片清洗 + addr2line 定位面两债清偿 + MCP --pins 接线 + stdout 泄漏两处清尾）
 
 > 封袋定义: 自 v0.7 标签（commit 5099ef7, 2026-09-27）之后落入本账本的

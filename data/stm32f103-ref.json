@@ -5,7 +5,7 @@
   "flash_kb": 64,
   "ram_kb": 20,
   "description": "STM32F103 Reference Manual knowledge base",
-  "updated": "2026-08-12",
+  "updated": "2026-10-02",
   "peripheral_count": 55
  },
  "memory_map": {
@@ -2667,7 +2667,7 @@
   "ADC3": {
    "base": "0x40013C00",
    "bus": "APB2",
-   "desc": "",
+   "desc": "Analog to digital converter",
    "registers": {
     "SR": {
      "offset": "0x0",
@@ -10102,7 +10102,7 @@
   "DMA2": {
    "base": "0x40020400",
    "bus": "AHB",
-   "desc": "",
+   "desc": "DMA controller",
    "registers": {
     "ISR": {
      "offset": "0x0",
@@ -13274,7 +13274,7 @@
   "GPIOB": {
    "base": "0x40010C00",
    "bus": "APB2",
-   "desc": "",
+   "desc": "General purpose I/O",
    "registers": {
     "CRL": {
      "offset": "0x0",
@@ -13852,7 +13852,7 @@
   "GPIOC": {
    "base": "0x40011000",
    "bus": "APB2",
-   "desc": "",
+   "desc": "General purpose I/O",
    "registers": {
     "CRL": {
      "offset": "0x0",
@@ -14430,7 +14430,7 @@
   "GPIOD": {
    "base": "0x40011400",
    "bus": "APB2",
-   "desc": "",
+   "desc": "General purpose I/O",
    "registers": {
     "CRL": {
      "offset": "0x0",
@@ -15008,7 +15008,7 @@
   "GPIOE": {
    "base": "0x40011800",
    "bus": "APB2",
-   "desc": "",
+   "desc": "General purpose I/O",
    "registers": {
     "CRL": {
      "offset": "0x0",
@@ -15586,7 +15586,7 @@
   "GPIOF": {
    "base": "0x40011C00",
    "bus": "APB2",
-   "desc": "",
+   "desc": "General purpose I/O",
    "registers": {
     "CRL": {
      "offset": "0x0",
@@ -16164,7 +16164,7 @@
   "GPIOG": {
    "base": "0x40012000",
    "bus": "APB2",
-   "desc": "",
+   "desc": "General purpose I/O",
    "registers": {
     "CRL": {
      "offset": "0x0",
@@ -17054,7 +17054,7 @@
   "I2C2": {
    "base": "0x40005800",
    "bus": "APB1",
-   "desc": "",
+   "desc": "Inter integrated circuit",
    "registers": {
     "CR1": {
      "offset": "0x0",
@@ -18480,7 +18480,7 @@
   "SPI2": {
    "base": "0x40003800",
    "bus": "APB1",
-   "desc": "",
+   "desc": "Serial peripheral interface",
    "registers": {
     "CR1": {
      "offset": "0x0",
@@ -18748,7 +18748,7 @@
   "SPI3": {
    "base": "0x40003C00",
    "bus": "APB1",
-   "desc": "",
+   "desc": "Serial peripheral interface",
    "registers": {
     "CR1": {
      "offset": "0x0",
@@ -19932,7 +19932,7 @@
   "TIM11": {
    "base": "0x40015400",
    "bus": "APB2",
-   "desc": "",
+   "desc": "General purpose timer",
    "registers": {
     "CR1": {
      "offset": "0x0",
@@ -20143,7 +20143,7 @@
   "TIM12": {
    "base": "0x40001800",
    "bus": "APB1",
-   "desc": "",
+   "desc": "General purpose timer",
    "registers": {
     "CR1": {
      "offset": "0x0",
@@ -20461,7 +20461,7 @@
   "TIM13": {
    "base": "0x40001C00",
    "bus": "APB1",
-   "desc": "",
+   "desc": "General purpose timer",
    "registers": {
     "CR1": {
      "offset": "0x0",
@@ -20672,7 +20672,7 @@
   "TIM14": {
    "base": "0x40002000",
    "bus": "APB1",
-   "desc": "",
+   "desc": "General purpose timer",
    "registers": {
     "CR1": {
      "offset": "0x0",
@@ -20883,7 +20883,7 @@
   "TIM3": {
    "base": "0x40000400",
    "bus": "APB1",
-   "desc": "",
+   "desc": "General purpose 16-bit timer, 4-ch PWM/capture",
    "registers": {
     "CR1": {
      "offset": "0x0",
@@ -21433,7 +21433,7 @@
   "TIM4": {
    "base": "0x40000800",
    "bus": "APB1",
-   "desc": "",
+   "desc": "General purpose 16-bit timer, 4-ch PWM/capture",
    "registers": {
     "CR1": {
      "offset": "0x0",
@@ -21983,7 +21983,7 @@
   "TIM5": {
    "base": "0x40000C00",
    "bus": "APB1",
-   "desc": "",
+   "desc": "General purpose 16-bit timer, 4-ch PWM/capture",
    "registers": {
     "CR1": {
      "offset": "0x0",
@@ -22663,7 +22663,7 @@
   "TIM7": {
    "base": "0x40001400",
    "bus": "APB1",
-   "desc": "",
+   "desc": "Basic timer",
    "registers": {
     "CR1": {
      "offset": "0x0",
@@ -22793,7 +22793,7 @@
   "TIM8": {
    "base": "0x40013400",
    "bus": "APB2",
-   "desc": "",
+   "desc": "Advanced timer",
    "registers": {
     "CR1": {
      "offset": "0x0",
@@ -24246,7 +24246,7 @@
   "USART2": {
    "base": "0x40004400",
    "bus": "APB1",
-   "desc": "",
+   "desc": "Universal Sync/Async Receiver Transmitter",
    "registers": {
     "SR": {
      "offset": "0x0",
@@ -24518,7 +24518,7 @@
   "USART3": {
    "base": "0x40004800",
    "bus": "APB1",
-   "desc": "",
+   "desc": "Universal Sync/Async Receiver Transmitter",
    "registers": {
     "SR": {
      "offset": "0x0",
