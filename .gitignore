@@ -49,3 +49,8 @@ examples/sim-demo/.workbench/*
 !examples/sim-demo/.workbench/expectations.json
 
 .workbuddy/
+
+# F-214: CI 形态模拟的临时克隆 (验证浅克隆下默认分支探测用)。git add -A
+# 曾把这类嵌套克隆当 gitlink 带进仓 (20e6edf 前科, b07a293 清退)。
+ci-sim/
+cistrict/
