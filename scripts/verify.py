@@ -559,19 +559,34 @@ def _run_doctor(args) -> None:
         _print_doctor(report)
 
 
-def _fail_fast_on_bad_patterns(config, cli_patterns, args):
-    """F-216: 编译期校验全部期望正则, 非法即烧录前退 1。
+class BadPatternError(Exception):
+    """F-217: 期望正则非法。抛异常而非自行sys.exit, 交信封统一出口。
+
+    F-216 审查 C-2: 旧实现末句直接 `sys.exit(1)`, 不经 _fail_with_envelope
+    /_output —— `--json` 消费方拿到 **0 字节 stdout**, JUnit 也不落盘。
+    `SystemExit` 被 main() 的 `except SystemExit: raise` 显式放行, 信封
+    结构上够不着它。这正是本单要消灭的"最该报错时机器可读性归零"。
+    """
+
+
+def _fail_fast_on_bad_patterns(config):
+    """F-216/F-217: 编译期校验期望正则, 非法即烧录前拦下。
 
     三号复审转述的 A1-③: 旧实现把 re.search 放在判定阶段, 非法正则要等
-    构建+烧录+采集全跑完才抛 re.error——白烧一次板子, 且现场与真正的
-    失败原因隔着一整轮硬件动作, 归因成本高。此处与 GAP-F-19 同处
-    _prepare_context (烧录前), fail-fast。
+    构建+烧录+采集全跑完才抛 re.error——白烧一次板子。此处与 GAP-F-19 同处
+    _prepare_context (烧录前)。
 
-    覆盖两条来源:
-      · legacy config.verify.expect_patterns (F-104 迁移后已整体失效,
-        但仍应校验——配置里留个坏正则本身就是配置错误)
-      · CLI --expect-pattern
-      · manifest 模式 expectations.json 的 patterns / forbidden_patterns
+    **来源只两条, 且刻意不重复实现 manifest 侧判据**:
+      · legacy config.verify.expect_patterns (F-104 迁移后已整体失效, 但
+        配置里留个坏正则本身就是配置错误, 故仍校验)
+      · manifest expectations.json —— **不手写解析**, 直接复用
+        load_expectations()。它已含 E5 正则预编译判据
+        (expectations.py:117, 注释明写"惰性编译会把非法正则拖到烧录后")。
+        F-216 曾在这里手写一份拷贝并读错键名 (`items` 而非真实 schema 的
+        `expectations`), 造出一条永不生效的假防线 (审查 C-1)。
+
+    **CLI 不在此列**: F-216 曾声称覆盖 `--expect-pattern`, 但该参数在
+    argparse 里根本不存在 (审查 H-1), 是条死分支。
     """
     bad = []
 
@@ -579,36 +594,24 @@ def _fail_fast_on_bad_patterns(config, cli_patterns, args):
         for p in (patterns or []):
             try:
                 re.compile(p)
-            except re.error as e:
+            except (re.error, TypeError) as e:   # F-217 M-3: 非字符串抛 TypeError
                 bad.append(f"{where}: {p!r} — {e}")
 
     verify_cfg = (config.get("verify") or {})
     check(verify_cfg.get("expect_patterns"), "config.verify.expect_patterns")
-    check(cli_patterns, "--expect-pattern")
 
-    # manifest: expectations.json 的每条 items[].patterns / forbidden_patterns
-    exp_path = os.path.join(WORKSPACE, ".workbench", "expectations.json")
-    if os.path.isfile(exp_path):
-        try:
-            with open(exp_path, encoding="utf-8") as f:
-                manifest = json.load(f)
-        except (json.JSONDecodeError, UnicodeDecodeError, OSError):
-            manifest = None          # 损坏由专门的 lint/判定路径报, 不在此重复
-        if isinstance(manifest, dict):
-            for item in manifest.get("items", []) or []:
-                if not isinstance(item, dict):
-                    continue
-                ident = item.get("id", "?")
-                check(item.get("patterns"), f"expectations[{ident}].patterns")
-                check(item.get("forbidden_patterns"),
-                      f"expectations[{ident}].forbidden_patterns")
+    # manifest: 复用既有单一事实源, 不手写解析 (F-217 C-1)
+    try:
+        load_expectations(WORKSPACE)
+    except ExpectationError as e:
+        bad.append(f"expectations.json: {e}")
+    except Exception as e:                        # 损坏等非预期形态也不放过
+        bad.append(f"expectations.json 不可读: {type(e).__name__}: {e}")
 
     if bad:
-        print("错误: 期望正则非法 (烧录前拦截, 不白跑一轮硬件):",
-              file=sys.stderr)
-        for b in bad:
-            print("  - " + b, file=sys.stderr)
-        sys.exit(1)
+        raise BadPatternError(
+            "期望正则非法 (烧录前拦截, 不白跑一轮硬件):\n  - "
+            + "\n  - ".join(bad))
 
 
 def _prepare_context(args):
@@ -644,13 +647,12 @@ def _prepare_context(args):
         sys.exit(1)
     builder = config.get("builder", "gcc")   # 构建后端 (gcc | keil[legacy], 2026-08-28 默认翻转为 gcc)
 
-    # F-216: 期望正则的**编译期**校验—— 必须在任何构建/烧录之前。
+    # F-216: 期望正则的**编译期**校验 —— 必须在任何构建/烧录之前。
     # 旧实现把 re.search 放在判定阶段 (verify()), 非法正则要等烧完板子
-    # 才炸, 白烧一次且现场难归因 (三号复审转述的 A1-③)。此处 fail-fast,
-    # 与上方 GAP-F-19 同属"烧录前拦住"纪律。清单模式 (manifest) 走
-    # expectations.json, 其 patterns 同在此校验。
-    _fail_fast_on_bad_patterns(config, getattr(args, "expect_patterns", None),
-                               args)
+    # 才炸, 白烧一次且现场难归因。与上方 GAP-F-19 同属"烧录前拦住"纪律。
+    # F-217: 改抛 BadPatternError 而非自行 sys.exit, 交 main() 的信封统一
+    # 出口 (旧实现绕过信封, --json 下 stdout 零字节)。
+    _fail_fast_on_bad_patterns(config)
 
     # 工具库版本检查: 工程要求的最低版本
     cfg_min = config.get("toolkit_min_version")
@@ -664,19 +666,26 @@ def _prepare_context(args):
 def main():
     """F-216: 统一异常信封。
 
-    三号复审转述的 A1 (异常路径绕过失败信封) 实跑复现, 三条全部成立:
-      ① ESP 配置缺失 — esp_runtime.resolve_idf_path 抛 EspConfigError,
-         verify.py:239 step_flash_esptool 与 main() 均无 try → 裸 traceback,
-         无 status 字段 / 无 last_failure.json / 无 JUnit;
-      ② --project 指错目录 — _prepare_context 只接 ConfigError, 接不住
-         FileNotFoundError (load_config 在工程内无 .workbench/config.json 时抛),
-         → 裸 traceback 且**退出码 0**(崩溃却报成功, 最糟形态);
-      ③ legacy 非法正则在 flash 之后的判定阶段才 re.search 炸 ——
-         应在跑之前拦住, 否则白烧一次板子。
+    三号复审转述的 A1 (异常路径绕过失败信封) 实跑复现; F-217 复审后更正如下:
 
-    ①② 由本信封统一兜住: 任何未捕获异常都转成 _output 的标准失败结构,
-    走既有唯一出口 (evidence 字段 + JUnit 旁路), 并补写 last_failure.json
-    ——与"失败现场诚实化"的承诺对齐。③ 属校验时机问题, 见 _prepare_context。
+      ① ESP 配置缺失 — resolve_idf_path 抛 EspConfigError, 调用链无 try。
+         **F-217 L-2 更正**: 实测 ESP 三键齐备 + idf 路径不可达时, 走的是
+         正常失败路径(有 status/error, error_type 为None), **不进本信封**;
+         混配后端则被 GAP-F-19 提前拦掉。原写的"① 由本信封兜住"未获复现,
+         信封本身仍正确, 只是这个 motivating case 站不住。
+      ② --project 指错目录 — _prepare_context 只接 ConfigError, 接不住
+         FileNotFoundError → 裸 traceback, `--json` 下 stdout 零字节。
+         **F-217 H-4 更正**: F-216 写"退出码 0, CI 会误判成功"是错的——
+         用修复前代码实跑三种变体全部 EXIT=1。真实危害是机器可读性归零,
+         不是 CI 误判成功。F-216 把一个推断写成了实测结论。
+      ③ 非法期望正则拖到 flash 之后才炸。**F-217 C-1 更正**: manifest
+         侧本就由 load_expectations 的 E5判据在烧录前拦截, "白烧一次板子"
+         在该侧不成立; 真正缺的是 legacy config.verify.expect_patterns。
+
+    本信封的职责: 任何未捕获异常都转成 _output 的标准失败结构, 走既有
+    唯一出口 (evidence 字段 + JUnit 旁路), 并补写 last_failure.json
+    ——与"失败现场诚实化"的承诺对齐。③ 属校验时机问题, 见
+    _fail_fast_on_bad_patterns。
     """
     args = _parse_args()
 
@@ -725,7 +734,10 @@ def _fail_with_envelope(exc: BaseException, args) -> None:
                                                   "config.json")):
         ws = TOOLKIT_ROOT
     try:
-        from failure_context import _save_failure_context
+        # F-217 M-2: 原先此处又写了一遍函数内 import, 而模块顶层 (:72-73)
+        # 已绑定同一符号 —— 函数内 import 使 mock.patch.object(verify,
+        # "_save_failure_context") 完全失效, "写现场失败不掩盖原异常"
+        # 这条路径实际不可测。直接用顶层已绑定的符号。
         result["agent_hint"] = (
             "内部错误: 这是工具链或配置问题, 不是被测工程的问题。"
             "检查 --project 指向的目录是否含 .workbench/config.json, "
@@ -735,10 +747,17 @@ def _fail_with_envelope(exc: BaseException, args) -> None:
         # .workbench/build/), 与既有三处调用点同口径。
         _save_failure_context(result, max_retries=0, capture_text="",
                               workspace=ws)
-        result["failure_context_path"] = os.path.join(
-            ws, ".workbench", "build", "last_failure.json")
+        # F-217 M-1: _save_failure_context 内部写失败是 except...pass 静默
+        # 的, 故写完**复查**文件真在, 不在就不宣称路径——否则信封会在最该
+        # 诚实的时候撒谎(人读分支还会照着这个不存在的路径打印"现场: ...")。
+        ctx_path = os.path.join(ws, ".workbench", "build", "last_failure.json")
+        if os.path.isfile(ctx_path):
+            result["failure_context_path"] = ctx_path
+        else:
+            result["failure_context_write_failed"] = True
+            result["failure_context_expected_path"] = ctx_path
     except Exception:                      # 写现场失败不得掩盖原始异常
-        pass
+        result["failure_context_write_failed"] = True
     print(f"错误: {msg}", file=sys.stderr)
     if isinstance(exc, KeyboardInterrupt):
         raise
@@ -1577,8 +1596,14 @@ def _output(result: dict, as_json: bool):
             print("\n  内部错误 (未经预期路径的异常已被信封捕获):")
             print(f"    类型: {result['error_type']}")
             print(f"    信息: {result.get('error', '?')}")
-            print(f"    现场: .workbench/build/last_failure.json"
-                  f"{' (含完整 traceback)' if result.get('traceback') else ''}")
+            # F-217 M-1: 现场没落盘时不得照着不存在的路径说"现场在…"
+            if result.get("failure_context_path"):
+                print(f"    现场: {result['failure_context_path']}"
+                      f"{' (含完整 traceback)' if result.get('traceback') else ''}")
+            else:
+                print(f"    现场: 写入失败 (期望路径 "
+                      f"{result.get('failure_context_expected_path', '?')})"
+                      f" —— 下方 traceback 是唯一现场")
             print("\n  这是工具链缺陷或配置问题, 不是被测工程的问题。")
             tb = result.get("traceback")
             if tb:
