@@ -5,7 +5,7 @@
   "flash_kb": 64,
   "ram_kb": 20,
   "description": "STM32F103 Reference Manual knowledge base",
-  "updated": "2026-10-02",
+  "updated": "2026-10-03",
   "peripheral_count": 55
  },
  "memory_map": {
@@ -4294,7 +4294,17 @@
        "name": "BRP",
        "desc": "BRP"
       }
-     }
+     },
+     "timing_semantics": {
+      "tq": "tq = (BRP[9:0]+1) * tPCLK",
+      "tBS1": "tBS1 = tq * (TS1+1)",
+      "tBS2": "tBS2 = tq * (TS2+1)",
+      "bit_time_tq": "TS1 + TS2 + 3",
+      "baudrate": "PCLK / ((BRP+1) * (TS1+TS2+3))",
+      "note": "字段值 N 表示 N+1 个时间量 (tq), 不是 N; 位时间含 1 个同步段"
+     },
+     "timing_semantics_source": "web:RM0008:§24.9.2:bit timing",
+     "note": "F-215: TS1/TS2 字段值 N 表示 N+1 个 tq。F-213 修正了 examples/f103-can 的换算公式 (原式按字段值直算 1+TS1+TS2, 少算 2 tq, 把真机 450kbps 当 500kbps), 本条把语义补回事实源——否则下游读 ref.json 仍会犯同一推断错误。"
     },
     "CAN_TI0R": {
      "offset": "0x180",
@@ -17389,7 +17399,22 @@
        "name": "PR",
        "desc": "Prescaler divider"
       }
-     }
+     },
+     "encoding": {
+      "0b000": {"divider": 4},
+      "0b001": {"divider": 8},
+      "0b010": {"divider": 16},
+      "0b011": {"divider": 32},
+      "0b100": {"divider": 64},
+      "0b101": {"divider": 128},
+      "0b110": {"divider": 256},
+      "0b111": {
+       "divider": 256,
+       "note": "6 的冗余别名 (表 96 原文 '6 (or 7)'); 非 Reserved, 亦无 /512"
+      }
+     },
+     "encoding_source": "web:RM0008:Table 96 (Prescaler register IWDG_PR):p495-496",
+     "note": "F-215 (订正 F-213): PR=7 是 /256 的冗余别名, 不是保留值。F-213 据二手摘要误判 7=Reserved 并把该误判钉进 examples/f103-iwdg 的 mock 断言, 三号整批对抗复审经 RM0008 Rev 21 表 96 原文 (p.495-496) 订正; RM0090/RM0041/RM0444 四份 ST 手册同为 111:/256, 排除孤例勘误。"
     },
     "RLR": {
      "offset": "0x8",
