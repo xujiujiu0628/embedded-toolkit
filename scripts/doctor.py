@@ -85,6 +85,13 @@ def _detect_default_branch() -> str:
     """拿仓默认分支名. 优先 symbolic-ref origin/HEAD, fallback master, main.
 
     返回: 分支名字符串 (e.g. 'master', 'main', 'unknown')
+
+    F-214: 补 refs/remotes/origin/<cand> 一层。CI (actions/checkout 默认
+    fetch-depth=1 + 不建 origin/HEAD + 只检出 PR 分支) 下 origin/HEAD 不存在、
+    refs/heads/master 不存在, 旧实现两条路都落空 → 返 "unknown" →
+    _fixture_main_sha 静默返空 dict → fixture 漂移检测**整段消失且无任何
+    告警**(fail-silent 门禁缺口, PR #1 实跑暴露)。浅克隆里远端跟踪引用通常
+    仍在, 故先试它再退本地。
     """
     try:
         r = subprocess.run(
@@ -96,17 +103,19 @@ def _detect_default_branch() -> str:
             return r.stdout.strip().rsplit("/", 1)[-1]
     except (OSError, subprocess.TimeoutExpired):
         pass
-    # fallback: master 先, main 后 (本仓 master 是真默认, main 是老 GitHub 习惯)
-    for cand in ("master", "main"):
-        try:
-            r = subprocess.run(
-                ["git", "rev-parse", "--verify", f"refs/heads/{cand}"],
-                capture_output=True, cwd=TOOLKIT_ROOT, timeout=5,
-                encoding="utf-8", errors="replace")
-            if r.returncode == 0:
-                return cand
-        except (OSError, subprocess.TimeoutExpired):
-            continue
+    # fallback: master 先, main 后 (本仓 master 是真默认, main 是老 GitHub 习惯)。
+    # 远端跟踪引用优先于本地分支——CI 浅克隆只在 refs/remotes/origin/* 下有基准分支。
+    for ref in ("refs/heads/{0}", "refs/remotes/origin/{0}"):
+        for cand in ("master", "main"):
+            try:
+                r = subprocess.run(
+                    ["git", "rev-parse", "--verify", ref.format(cand)],
+                    capture_output=True, cwd=TOOLKIT_ROOT, timeout=5,
+                    encoding="utf-8", errors="replace")
+                if r.returncode == 0:
+                    return cand
+            except (OSError, subprocess.TimeoutExpired):
+                continue
     return "unknown"
 
 
@@ -123,7 +132,14 @@ def _fixture_main_sha(fixture_dir: str) -> dict:
         return out
     base = _detect_default_branch()
     if base == "unknown":
-        return out   # 无法推断默认分支 → 静默返空, 漂移检测跳过
+        # F-214: 原为静默返空。探测不到基准分支 → fixture 漂移检测整段消失
+        # 且无任何痕迹, 是 fail-silent 门禁缺口 (CI 浅克隆实跑暴露)。改为
+        # 显式告警到 stderr: 调用方 (fixture_health) 仍按"无基准"处理, 但
+        # 人与日志看得见"漂移检测本次未执行", 不会误读成"无漂移"。
+        print("[warn] fixture 漂移检测跳过: 无法推断仓默认分支 "
+              "(origin/HEAD 与 refs/heads|remotes/origin/{master,main} 均不可得)",
+              file=sys.stderr)
+        return out
     for name in ("config.json", "expectations.json"):
         try:
             r = subprocess.run(

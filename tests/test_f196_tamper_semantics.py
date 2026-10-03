@@ -461,25 +461,37 @@ class FixtureShaRawBytesTests(unittest.TestCase):
         return repo, fdir
 
     def _oracle(self, repo, rel):
-        r = subprocess.run(["git", "show", self._base_ref(repo) + ":" + rel],
+        base = self._base_ref(repo)
+        self.assertIsNotNone(base,
+                             f"{repo} 探测不到基准分支 (临时仓应有 master)")
+        r = subprocess.run(["git", "show", base + ":" + rel],
                            cwd=repo, capture_output=True, timeout=30)
         self.assertEqual(r.returncode, 0, r.stderr)
         return hashlib.sha256(r.stdout).hexdigest()
 
     @staticmethod
     def _base_ref(repo):
-        """基准分支名: master 优先, 否则用当前 HEAD。
+        """基准分支名。与 doctor._detect_default_branch 同口径, 探测不到返 None。
 
-        F-214 修 CI 假绿: 原实现硬编码 "master:", 而 CI 的 actions/checkout
-        在 PR 上只检出 PR 分支 (本地无 master), `git show master:<path>` 直接
-        报 "invalid object name 'master'" → 该金值比对在 CI 上从未真正执行,
-        是长期假绿。本地/分支检出形态不一, 故按可用性择基准分支。
+        F-214 修 CI 长期假绿 (两处同源缺陷):
+        ① 原实现硬编码 "master:", 而 CI 的 actions/checkout 在 PR 上只检出 PR
+           分支 → `invalid object name 'master'` → 该金值比对在 CI 上从未真正
+           执行。
+        ② 更深的根因在产品侧: doctor._detect_default_branch 依赖 origin/HEAD
+           + refs/heads/master, 二者在 CI 浅克隆 (fetch-depth=1、无 origin/HEAD)
+           下都不存在 → 返 "unknown" → _fixture_main_sha 静默返空 dict, 漂移
+           检测整段消失。产品侧已补 refs/remotes/origin/<cand> 一层 + 显式告警。
+
+        本函数**不得退到 HEAD**: 用 HEAD 当基准等于拿"当前检出内容"与
+        "当前检出内容"比, 恒等, 假绿。基准不可得时应让调用方显式 skip。
         """
-        head = subprocess.run(["git", "rev-parse", "--verify", "master"],
-                              cwd=repo, capture_output=True, timeout=30)
-        if head.returncode == 0:
-            return "master"
-        return "HEAD"
+        for cand in ("master", "main"):
+            for ref in ("refs/heads/" + cand, "refs/remotes/origin/" + cand):
+                r = subprocess.run(["git", "rev-parse", "--verify", ref],
+                                   cwd=repo, capture_output=True, timeout=30)
+                if r.returncode == 0:
+                    return cand
+        return None
 
     def test_non_utf8_bytes_hashed_raw(self):
         # 含非法 UTF-8 字节 (GBK 双字节) 的 fixture — 修前: U+FFFD 往返
@@ -505,6 +517,13 @@ class FixtureShaRawBytesTests(unittest.TestCase):
     def test_real_repo_contract_fixtures_stable(self):
         # 真仓 master 的 contract fixtures 金值: 修前修后必须同值
         # (变了就是错 — 历史漂移档案口径零翻动)
+        # F-214: 基准分支不可得时显式 skip。旧实现在 CI 浅克隆下拿 HEAD 当
+        # 基准 (= 自己比自己, 恒等假绿), 或产品侧返空 dict 时报 None != sha。
+        base = self._base_ref(REPO_ROOT)
+        if base is None:
+            self.skipTest("仓默认分支不可得 (origin/HEAD 与 "
+                          "refs/heads|remotes/origin/{master,main} 均缺) — "
+                          "CI actions/checkout 浅克隆形态, 无基准可比")
         fdir = os.path.join(REPO_ROOT, "tests", "fixtures", "contract")
         out = doctor._fixture_main_sha(fdir)
         for name, key in (("config.json", "config_sha256"),

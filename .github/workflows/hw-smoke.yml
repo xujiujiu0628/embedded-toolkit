@@ -26,8 +26,14 @@ jobs:
       PYTHONIOENCODING: utf-8
       PYTHONUTF8: "1"
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-python@v6
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          # F-214: 默认 fetch-depth=1 浅克隆拿不到仓默认分支, 导致
+          # fixture 漂移金值比对在 CI 上无法执行 (长期假绿, 见
+          # test_f196_tamper_semantics._base_ref 的显式 skip)。全量取
+          # 以让基准分支可达, 该比对才真正跑起来。
+          fetch-depth: 0
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: "3.12"
       - name: "环境预检 (doctor: toolkit/Python/machine.json/gcc/openocd/make/SWD)"

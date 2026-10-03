@@ -19,8 +19,14 @@ jobs:
       PYTHONIOENCODING: utf-8
       PYTHONUTF8: "1"
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-python@v6
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          # F-214: 默认 fetch-depth=1 浅克隆拿不到仓默认分支, 导致
+          # fixture 漂移金值比对在 CI 上无法执行 (长期假绿, 见
+          # test_f196_tamper_semantics._base_ref 的显式 skip)。全量取
+          # 以让基准分支可达, 该比对才真正跑起来。
+          fetch-depth: 0
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: ${{ matrix.python-version }}
       - name: Install optional deps (serial tools only)
@@ -36,8 +42,14 @@ jobs:
   coverage-gate:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-python@v6
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          # F-214: 默认 fetch-depth=1 浅克隆拿不到仓默认分支, 导致
+          # fixture 漂移金值比对在 CI 上无法执行 (长期假绿, 见
+          # test_f196_tamper_semantics._base_ref 的显式 skip)。全量取
+          # 以让基准分支可达, 该比对才真正跑起来。
+          fetch-depth: 0
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: "3.12"
       - name: Install coverage
@@ -60,8 +72,14 @@ jobs:
   lint:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
-      - uses: astral-sh/ruff-action@v3
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          # F-214: 默认 fetch-depth=1 浅克隆拿不到仓默认分支, 导致
+          # fixture 漂移金值比对在 CI 上无法执行 (长期假绿, 见
+          # test_f196_tamper_semantics._base_ref 的显式 skip)。全量取
+          # 以让基准分支可达, 该比对才真正跑起来。
+          fetch-depth: 0
+      - uses: astral-sh/ruff-action@4919ec5cf1f49eff0871dbcea0da843445b837e6 # v3
         with:
           args: check scripts tests
 
@@ -70,8 +88,14 @@ jobs:
   coverage-lint:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-python@v6
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          # F-214: 默认 fetch-depth=1 浅克隆拿不到仓默认分支, 导致
+          # fixture 漂移金值比对在 CI 上无法执行 (长期假绿, 见
+          # test_f196_tamper_semantics._base_ref 的显式 skip)。全量取
+          # 以让基准分支可达, 该比对才真正跑起来。
+          fetch-depth: 0
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: "3.12"
       - name: Coverage gap lint (--strict gate)
@@ -82,8 +106,14 @@ jobs:
   syntax-smoke:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-python@v6
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          # F-214: 默认 fetch-depth=1 浅克隆拿不到仓默认分支, 导致
+          # fixture 漂移金值比对在 CI 上无法执行 (长期假绿, 见
+          # test_f196_tamper_semantics._base_ref 的显式 skip)。全量取
+          # 以让基准分支可达, 该比对才真正跑起来。
+          fetch-depth: 0
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: "3.12"
       - name: Install GNU Arm Embedded toolchain
@@ -104,8 +134,14 @@ jobs:
       checks: write
       pull-requests: read   # PR 上下文下写注释用
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-python@v6
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          # F-214: 默认 fetch-depth=1 浅克隆拿不到仓默认分支, 导致
+          # fixture 漂移金值比对在 CI 上无法执行 (长期假绿, 见
+          # test_f196_tamper_semantics._base_ref 的显式 skip)。全量取
+          # 以让基准分支可达, 该比对才真正跑起来。
+          fetch-depth: 0
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: "3.12"
       - name: Install qemu-system-arm + GNU Arm Embedded toolchain
