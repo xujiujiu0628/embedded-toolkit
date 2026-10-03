@@ -20,6 +20,7 @@ import tempfile
 import threading
 import time
 import unittest
+from pathlib import Path as _Path
 from unittest import mock
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(
@@ -142,6 +143,53 @@ class StateLockMechanismTests(unittest.TestCase):
         with open(lock) as f:
             self.assertIn("999999" if os.name == "nt" else str(os.getpid() + 1000),
                           f.read())
+
+
+    def test_empty_lockfile_is_stale_only_by_age(self):
+        """F-213: 空锁文件不得被判"永远活着"。
+
+        原实现 int(text or "0") 在锁文件为空 (O_EXCL 建锁与写 pid 之间被
+        kill 的窗口) 时得 holder=0, 而 os.kill(0, 0) 的语义是"给当前进程组
+        发信号 0", 必然成功 → 判活 → 空锁永不回收, 持锁方只能等超时降级。
+        现空内容按超龄兜底: 新鲜空锁仍算持锁中, 超龄才回收。
+        """
+        ws = _fresh_ws()
+        lock = os.path.join(ws, ".workbench", "state.json.lock")
+        with open(lock, "w") as f:
+            f.write("")            # 建锁后写 pid 前被 kill 的窗口形态
+        # 新鲜 → 不该被立刻抢走 (否则等于把别人正在建的锁当陈旧)
+        self.assertFalse(runtime_common._state_lock_is_stale(_Path(lock)))
+        old = time.time() - 3600
+        os.utime(lock, (old, old))  # 超龄 → 回收
+        self.assertTrue(runtime_common._state_lock_is_stale(_Path(lock)))
+
+    def test_nonpositive_pid_is_stale_only_by_age(self):
+        """F-213: holder<=0 不可探活 (0/负值 = 进程组), 走超龄兜底。"""
+        ws = _fresh_ws()
+        for raw in ("0", "-1"):
+            lock = os.path.join(ws, ".workbench", "state.json.lock." + raw)
+            with open(lock, "w") as f:
+                f.write(raw)
+            self.assertFalse(runtime_common._state_lock_is_stale(_Path(lock)),
+                             "pid=%s 新鲜时不得判陈旧" % raw)
+            old = time.time() - 3600
+            os.utime(lock, (old, old))
+            self.assertTrue(runtime_common._state_lock_is_stale(_Path(lock)),
+                            "pid=%s 超龄后必须判陈旧" % raw)
+
+    def test_stale_reclaim_leaves_no_claim_residue(self):
+        """F-213: 陈旧锁回收走 rename 原子占位, 不得留 .claim 残留。"""
+        ws = _fresh_ws()
+        lock = os.path.join(ws, ".workbench", "state.json.lock")
+        with open(lock, "w") as f:
+            f.write("999999")
+        old = time.time() - 3600
+        os.utime(lock, (old, old))
+        with runtime_common.state_write_lock(ws, timeout=2):
+            pass
+        leftovers = [f for f in os.listdir(os.path.join(ws, ".workbench"))
+                     if ".claim" in f]
+        self.assertEqual(leftovers, [], "陈旧锁回收残留 claim 文件: %s" % leftovers)
 
 
 class MuxStateMutationTests(unittest.TestCase):

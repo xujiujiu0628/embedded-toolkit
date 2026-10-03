@@ -76,18 +76,27 @@ def g0_checks(ws, tag):
 
 def gate1(ws, timeout):
     """G1: subprocess 重跑 verify (clean rebuild + 清单判定), 返回 JSON 结果。
-    验证的就是开发者日常那条命令 — 门禁公信力所在。"""
+    验证的就是开发者日常那条命令 — 门禁公信力所在。
+
+    F-213: 外层 subprocess 超时原硬编码 600s, 与传进来的 verify 自身预算
+    (timeout) 无关。ESP 链 config build_timeout 默认 900s > 600s, 慢机上
+    verify 尚未跑完就被外层砍掉 → 报 "重跑超时", G0-G3 事实不可用且无从
+    区分"真超时"与"外层先到"。改为跟随传入预算并留裕量 (verify 收尾/序列化
+    需要额外时间, 故 +60s), 使外层只在 verify 自身预算耗尽后才动手。"""
     cmd = [sys.executable, VERIFY, "--json", "--rebuild",
            "--gate-run",
            "--task-origin", "schedule",
            "--require-schedule-origin",
            "--timeout", str(timeout)]
+    outer = int(timeout) + 60
     try:
         r = subprocess.run(cmd, capture_output=True, text=True,
                            encoding="utf-8", errors="replace",
-                           timeout=600, cwd=ws)
+                           timeout=outer, cwd=ws)
     except subprocess.TimeoutExpired:
-        return {"status": "error", "error": "verify 重跑超时 (600s)"}
+        return {"status": "error",
+                "error": f"verify 重跑超时 (外层 {outer}s = verify 预算 "
+                         f"{timeout}s + 60s 收尾裕量)"}
     try:
         return json.loads(r.stdout)
     except json.JSONDecodeError:

@@ -16,7 +16,11 @@ import os
 import subprocess
 import sys
 
-from runtime_common import now_iso
+from runtime_common import (
+    load_workspace_state_for_update,
+    now_iso,
+    state_write_lock,
+)
 from wb_common import atomic_write_json
 
 
@@ -99,20 +103,21 @@ def record_checkpoint(workspace: str, status: str, duration_sec: float,
                 f.write(json.dumps(entry, ensure_ascii=False) + "\n")
         # 2) 同步 last_checkpoint 到 state.json (与现有 last_build 同构)
         #    gate 模式也写, 但 status=gate_skip 标出, 给 release audit 区分
-        state = {}
-        if os.path.isfile(state_path):
-            try:
-                with open(state_path, encoding="utf-8") as f:
-                    state = json.load(f)
-            except (json.JSONDecodeError, UnicodeDecodeError):
-                # 旧 state.json 损坏: 不丢其它键, 按空 dict 继续 (load_workspace_state
-                # for_update 的损坏隔离纪律不适用于 read-modify-write 单点)
-                state = {}
-        state["last_checkpoint"] = entry
-        # F-047 自审 (2026-09-03) 改: 改用 atomic_write_json (F-022 纪律),
-        # 防止进程在写 state.json 中途被 kill 导致 JSON 截断 → 下次读
-        # 走损坏 → 走 state={} → 丢全部历史键 (含 last_build).
-        atomic_write_json(state_path, state)
+        #
+        # F-213: 两处纪律修复。
+        # ① 损坏隔离: 原实现 except 分支注释写"不丢其它键"而代码恰是丢——
+        #    state = {} 后直接覆写, last_build 等键无声蒸发, 而 verify
+        #    --no-build 恰恰依赖 last_build。改调 load_workspace_state_for_update
+        #    (F-019 既有纪律: 损坏 → 隔离到 .corrupt 保留现场 → 按 {} 重建)。
+        # ② 并发: 本函数是 state.json 上的读-改-写, 原先全程不持写锁, 与
+        #    runtime_common 的 state_write_lock (F-127) 口径不一致, 并发下
+        #    可与 build/flash 路径互相覆盖。现套同一把锁。
+        with state_write_lock(workspace):
+            state = load_workspace_state_for_update(workspace)
+            state["last_checkpoint"] = entry
+            # F-047 自审 (2026-09-03) 改: 改用 atomic_write_json (F-022 纪律),
+            # 防止进程在写 state.json 中途被 kill 导致 JSON 截断。
+            atomic_write_json(state_path, state)
     except OSError:
         # 审计非门禁: 落盘失败不阻断主流程
         print(f"[warn] checkpoint 落盘失败: {jsonl_path}", file=sys.stderr)

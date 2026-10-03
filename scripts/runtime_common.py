@@ -135,12 +135,28 @@ def _state_lock_is_stale(lock_path: Path) -> bool:
     F-117 教训内化: Windows 上 os.kill(pid, 0) 是 TerminateProcess 不是探活
     ——这里绝不重蹈。跨进程判死只在 POSIX 用 os.kill(pid,0); Windows 无法廉价
     探活, 只认超龄 (mtime 超 STATE_LOCK_STALE_SECONDS)。holder==本 pid 不回收
-    (线程共享 pid, 误回收会破坏线程互斥), 同样落到超龄兜底。"""
+    (线程共享 pid, 误回收会破坏线程互斥), 同样落到超龄兜底。
+
+    F-213: 空/坏锁文件不再回落到 pid=0。原实现 `int(text or "0")` 在锁文件
+    为空 (O_EXCL 建锁与写 pid 之间被 kill 的窗口) 时得 holder=0, 而
+    os.kill(0, 0) 的语义是"给**当前进程组**发信号 0" —— 必然成功 → 返回
+    False (判活) → 空锁永不被回收, 持锁方只能等超时降级。现按超龄兜底处理,
+    与其它读不到锁的路径同口径。"""
     try:
-        holder = int(lock_path.read_text().strip() or "0")
+        raw = lock_path.read_text().strip()
         mtime = lock_path.stat().st_mtime
-    except (OSError, ValueError):
-        return True  # 空/坏/读不到的锁文件按陈旧处理
+    except OSError:
+        return True  # 读不到的锁文件按陈旧处理
+    if not raw:
+        # 空锁 = 建锁后未写完 pid 的窗口, holder 不可知 → 只认超龄
+        return time.time() - mtime > STATE_LOCK_STALE_SECONDS
+    try:
+        holder = int(raw)
+    except ValueError:
+        return True  # 非数字内容按陈旧处理
+    if holder <= 0:
+        # 非正 pid 无法探活 (0 = 进程组, 负值 = 进程组), 一律走超龄
+        return time.time() - mtime > STATE_LOCK_STALE_SECONDS
     if holder == os.getpid():
         return time.time() - mtime > STATE_LOCK_STALE_SECONDS
     if os.name != "nt":
@@ -186,8 +202,19 @@ def state_write_lock(workspace: str | None = None, *, timeout: float = 5.0):
                 break
             except FileExistsError:
                 if _state_lock_is_stale(lock_path):
+                    # F-213: 原为 unlink() 后 continue, 判陈旧与删锁之间有窗口
+                    # ——两个进程可同时判陈旧, P1 unlink 后 P2 再 unlink 会删掉
+                    # P1 刚建的新锁, 随后双双 O_EXCL 成功, 双"持锁"写同一
+                    # state.json, 恰好破坏 F-127 要防的丢更新。改用 rename
+                    # 原子占位: 同一时刻只有一个进程能把锁挪走, 另一方 rename
+                    # 失败即知锁已被重建, 回到重试。
+                    claimed = lock_path.with_name(lock_path.name + f".{os.getpid()}.claim")
                     try:
-                        lock_path.unlink()
+                        os.replace(lock_path, claimed)
+                    except OSError:
+                        continue          # 已被他人回收/重建 → 重试
+                    try:
+                        claimed.unlink()  # 回收我认领的这一份
                     except OSError:
                         pass
                     continue

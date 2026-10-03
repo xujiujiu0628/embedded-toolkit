@@ -26,8 +26,28 @@ static void rtc_init_1hz(void)
     RTC->PRLL = 32767;                    /* LSE 32768Hz → 1Hz (bits 0:15) */
     RTC->CRH |= (1UL << 0);               /* SECIE 秒中断使能 (CRH bit0) */
     RTC->CRL &= ~(1UL << 4);              /* CNF=0 退出配置模式 */
-    while (RTC->CRL & (1UL << 5)) {       /* 等 RTOFF (bit5) 写完成 */
+    /* F-213: RTOFF (CRL bit5, 只读) = 1 表示"上次写已完成/寄存器已解锁",
+     * 故应等它"变 1"。原写 `while (CRL & (1<<5))` 等的是它变 0, 极性反了:
+     * 写入后硬件立即置 1, 循环一次都不进 (等于没等); 若恰在写周期内采样到 0
+     * 则死等。正确判据 = while (!(CRL & (1<<5)))。 */
+#ifndef F103_SAMPLE_HOST_TEST
+    while (!(RTC->CRL & (1UL << 5))) {    /* 真机: 等 RTOFF (bit5) 置 1 = 写完成 */
     }
+#else
+    /* host: mock 内存静态, RTOFF 无人置位 → 裸忙等会死等。此处用有界
+     * 轮询模拟"硬件应答", 与本仓其它样例 (如 f103-can 的 can_wait_msr_bit)
+     * 同口径: 有 guard 轮询, 超时返回, 既不死等又能断言调用发生。
+     * 注意这不是"绕过忙等"——原实现靠错误极性在恒 0 上一次不进循环,
+     * 等于把等待整个跳过, 真机行为从未被验证。 */
+    {
+        uint32_t guard = 1000000u;
+        while (guard--) {
+            if (RTC->CRL & (1UL << 5)) {   /* 模拟硬件置位 */
+                break;
+            }
+        }
+    }
+#endif
 }
 
 #ifndef F103_SAMPLE_HOST_TEST
@@ -58,8 +78,9 @@ static uint32_t rtc_hms_day(uint32_t cnt)  { return cnt / 86400u; }
 int main(void)
 {
     /* 模拟硬件应答: LSE 已起振 (LSERDY=1) — 否则 init 的忙等在 mock
-     * 下永不退出。CRL 不预置 RTOFF: mock 内存静态, 而 init 末尾的
-     * RTOFF 忙等极性存疑 (见报告勘误), 预置 1 会死等, 置 0 直接跳过 */
+     * 下永不退出。RTOFF 不预置: F-213 已把忙等极性改正为"等 RTOFF=1",
+     * 且 host 分支改用有界轮询 (见 rtc_init_1hz), 预置与否都不死等,
+     * 断言重点是寄存器终态而非等待时长。 */
     f103_mock_RCC.BDCR = RCC_BDCR_LSEON | RCC_BDCR_LSERDY;
     /* 组1 备份域解锁链: APB1 PWREN|BKPEN + PWR.DBP (bit8) */
     rtc_init_1hz();

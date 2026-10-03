@@ -11,11 +11,17 @@
 
 /* 超时换算 (纯函数, host 可测):
  * tick = (4 << PR) / 40000 s  (LSI 40kHz, 分频 4..256 — GAP-D-4)
- * tick_us(PR) = (4 << PR) * 25 ; timeout_us(PR, RL) = RL * tick_us(PR) */
+ * tick_us(PR) = (4 << PR) * 25 ; timeout_us(PR, RL) = RL * tick_us(PR)
+ *
+ * F-213: PR 域是 3 位 (0..7), 但 RM0008 的分频表只定义 0..6
+ * (/4../256), PR=7 为 Reserved —— 原实现按 (4<<7)=512 当成合法 /512 分频,
+ * 等于把保留值当成可用配置 (真机行为未定义, 勿依赖)。现按既有越界防御
+ * 同构处理: PR=7 返回 0 哨兵, 防御判据从"越宽"扩为"越域"。 */
 static uint32_t iwdg_tick_us(uint32_t pr)
 {
-    if (pr > 7u) {                       /* 二期防御: ref.json IWDG.PR
-                                            bits 0:2 — 越宽返回 0 哨兵 */
+    if (pr > 6u) {                       /* 二期防御: ref.json IWDG.PR
+                                            bits 0:2 — 越宽返回 0 哨兵
+                                            F-213: 上界收紧至 6 (7=Reserved) */
         return 0u;
     }
     return (4UL << pr) * 25UL;
@@ -75,11 +81,14 @@ int main(void)
     /* 1) 纯换算断言 (期望值由公式手工演算, 不与实现共享代码) */
     CHECK(iwdg_timeout_us(0, 4095) == 409500u);   /* 最小分频, RL 满档 */
     CHECK(iwdg_timeout_us(6, 4095) == 26208000u); /* 最大≈26.2s */
-    /* 组1 tick 边界 (手算: (4<<PR)*25): PR=0 → 100µs, PR=7 → 12800µs;
-     * 满档超时 4095*12800 = 52416000µs ≈ 52.4s */
+    /* 组1 tick 边界 (手算: (4<<PR)*25): PR=0 → 100µs, PR=6 → 6400µs;
+     * 满档超时 4095*6400 = 26208000µs ≈ 26.2s */
     CHECK(iwdg_tick_us(0) == 100u);
-    CHECK(iwdg_tick_us(7) == 12800u);
-    CHECK(iwdg_timeout_us(7, 4095) == 52416000u);
+    CHECK(iwdg_tick_us(6) == 6400u);
+    /* 组1b F-213: PR=7 是 RM0008 的 Reserved 值, 非 /512 —— 防御返回 0 哨兵,
+     * 原断言 (tick=12800, 满档 52416000) 把保留值当成了合法分频。 */
+    CHECK(iwdg_tick_us(7) == 0u);
+    CHECK(iwdg_timeout_us(7, 4095) == 0u);
     /* 组2 反解边界 (手算): 1s@PR=4 (tick 1600µs) → 625;
      * 不足一个 tick 的目标 → 0 */
     CHECK(iwdg_rl_for_us(4, 1000000u) == 625u);
