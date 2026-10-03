@@ -461,10 +461,25 @@ class FixtureShaRawBytesTests(unittest.TestCase):
         return repo, fdir
 
     def _oracle(self, repo, rel):
-        r = subprocess.run(["git", "show", "master:" + rel], cwd=repo,
-                           capture_output=True, timeout=30)
+        r = subprocess.run(["git", "show", self._base_ref(repo) + ":" + rel],
+                           cwd=repo, capture_output=True, timeout=30)
         self.assertEqual(r.returncode, 0, r.stderr)
         return hashlib.sha256(r.stdout).hexdigest()
+
+    @staticmethod
+    def _base_ref(repo):
+        """基准分支名: master 优先, 否则用当前 HEAD。
+
+        F-214 修 CI 假绿: 原实现硬编码 "master:", 而 CI 的 actions/checkout
+        在 PR 上只检出 PR 分支 (本地无 master), `git show master:<path>` 直接
+        报 "invalid object name 'master'" → 该金值比对在 CI 上从未真正执行,
+        是长期假绿。本地/分支检出形态不一, 故按可用性择基准分支。
+        """
+        head = subprocess.run(["git", "rev-parse", "--verify", "master"],
+                              cwd=repo, capture_output=True, timeout=30)
+        if head.returncode == 0:
+            return "master"
+        return "HEAD"
 
     def test_non_utf8_bytes_hashed_raw(self):
         # 含非法 UTF-8 字节 (GBK 双字节) 的 fixture — 修前: U+FFFD 往返
