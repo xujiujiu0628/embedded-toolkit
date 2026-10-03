@@ -471,26 +471,29 @@ class FixtureShaRawBytesTests(unittest.TestCase):
 
     @staticmethod
     def _base_ref(repo):
-        """基准分支名。与 doctor._detect_default_branch 同口径, 探测不到返 None。
+        """基准的**完整引用名**(可直接喂给 git show), 探测不到返 None。
 
-        F-214 修 CI 长期假绿 (两处同源缺陷):
-        ① 原实现硬编码 "master:", 而 CI 的 actions/checkout 在 PR 上只检出 PR
-           分支 → `invalid object name 'master'` → 该金值比对在 CI 上从未真正
-           执行。
-        ② 更深的根因在产品侧: doctor._detect_default_branch 依赖 origin/HEAD
-           + refs/heads/master, 二者在 CI 浅克隆 (fetch-depth=1、无 origin/HEAD)
-           下都不存在 → 返 "unknown" → _fixture_main_sha 静默返空 dict, 漂移
-           检测整段消失。产品侧已补 refs/remotes/origin/<cand> 一层 + 显式告警。
+        F-214: 这条测试让 PR 连红三轮, 每轮失败形态都不同, 根因三层:
+          ① 产品侧 doctor._detect_default_branch 在 CI 浅克隆下探不到默认分支
+             → 静默返空 dict, 漂移检测整段消失 (产品侧已修: 补远端引用 + 告警)
+          ② actions/checkout 默认 fetch-depth=1 (已修: CI 加 fetch-depth: 0)
+          ③ **本函数返回裸分支名** —— 加了 fetch-depth: 0 后基准确实探测得到,
+             但它在 refs/remotes/origin/master 下, `git show master:<path>`
+             仍报 invalid object name。这一层前两轮都没走到, 因为前两轮
+             基准根本探测不到, 失败形态被更早的层挡住了。
 
-        本函数**不得退到 HEAD**: 用 HEAD 当基准等于拿"当前检出内容"与
-        "当前检出内容"比, 恒等, 假绿。基准不可得时应让调用方显式 skip。
+        故此处必须返回**含 origin/ 前缀的完整引用**, 且**不得退到 HEAD**
+        (拿当前检出与当前检出比 = 恒等 = 假绿)。探测不到时让调用方显式 skip。
         """
         for cand in ("master", "main"):
+            # 本地分支优先; 都没有则用远端跟踪引用 (CI 只 checkout PR 分支)
             for ref in ("refs/heads/" + cand, "refs/remotes/origin/" + cand):
                 r = subprocess.run(["git", "rev-parse", "--verify", ref],
                                    cwd=repo, capture_output=True, timeout=30)
                 if r.returncode == 0:
-                    return cand
+                    # 远端引用需带 origin/ 前缀才是 git show 可解析的名字
+                    return cand if ref.startswith("refs/heads/") \
+                        else "origin/" + cand
         return None
 
     def test_non_utf8_bytes_hashed_raw(self):

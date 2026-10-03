@@ -142,12 +142,23 @@ def _fixture_main_sha(fixture_dir: str) -> dict:
         return out
     for name in ("config.json", "expectations.json"):
         try:
-            r = subprocess.run(
-                ["git", "show", f"{base}:{rel}/{name}"],
-                capture_output=True, cwd=TOOLKIT_ROOT, timeout=5)
-            if r.returncode == 0 and r.stdout:
+            # F-214: 基准名可能是远端跟踪引用。_detect_default_branch 按
+            # 既有语义返回**裸分支名**(如 "master", tests/test_fixture_doctor.py
+            # 的 DetectDefaultBranchTests 已钉死该语义, 不改它)。但在 CI 上
+            # 本地无该分支、只有 refs/remotes/origin/master, 裸名会让
+            # `git show master:<path>` 报 invalid object name。故按
+            # 裸名 → origin/<名> 顺序试, 取首个能解析的。
+            payload = b""
+            for ref in (base, "origin/" + base):
+                r = subprocess.run(
+                    ["git", "show", f"{ref}:{rel}/{name}"],
+                    capture_output=True, cwd=TOOLKIT_ROOT, timeout=5)
+                if r.returncode == 0 and r.stdout:
+                    payload = r.stdout
+                    break
+            if payload:
                 h = hashlib.sha256()
-                h.update(r.stdout)   # F-196 T5 (L-9): 原始字节直传 — 旧病
+                h.update(payload)   # F-196 T5 (L-9): 原始字节直传 — 旧病
                 # 经 encoding/replace 解码再 encode 回哈希, 非 UTF-8 字节变
                 # U+FFFD, 漂移误报偏红; 哈希纪律与 release_audit._git_bytes
                 # 同源 (合法 UTF-8 面解码-再编码恒等, 历史档案零翻动)。
