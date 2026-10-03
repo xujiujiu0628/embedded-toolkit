@@ -13,6 +13,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from contextlib import redirect_stdout  # F-207: as_json 打印面接 stdout
 from unittest import mock
@@ -421,13 +422,28 @@ class ExceptionEnvelopeTests(unittest.TestCase):
     """
 
     def _run_verify(self, args):
-        """跑 verify 子进程, 返回 (returncode, stdout, stderr)。"""
+        """跑 verify 子进程, 返回 (returncode, stdout, stderr)。
+
+        F-217: **把 scripts/ 复制到隔离沙箱再跑**。
+        信封在工程不可用时把 last_failure.json 落到 TOOLKIT_ROOT, 而
+        TOOLKIT_ROOT = 由 `wb_common.py:11` 从**脚本自身路径**推导
+        (`dirname(dirname(abspath(__file__)))`), 无环境变量可重定向。
+        故 cwd 隔离无效 —— 实测加了 cwd 后仍写进真实仓库。加 TMPDIR 环境
+        变量同样无效。唯一干净解法: 复制一份 scripts/ 到临时目录跑。
+        """
         env = dict(os.environ)
         env["PYTHONIOENCODING"] = "utf-8"
+        sandbox = tempfile.mkdtemp(prefix="f217sbx_")
+        self.addCleanup(shutil.rmtree, sandbox, ignore_errors=True)
+        shutil.copytree(
+            os.path.join(os.path.dirname(os.path.dirname(
+                os.path.abspath(__file__))), "scripts"),
+            os.path.join(sandbox, "scripts"))
+        shim = os.path.join(sandbox, "scripts", "verify.py")
         return subprocess.run(
-            [sys.executable, "-X", "utf8", verify.__file__] + args,
+            [sys.executable, "-X", "utf8", shim] + args,
             capture_output=True, text=True, encoding="utf-8",
-            errors="replace", timeout=120, env=env)
+            errors="replace", timeout=120, env=env, cwd=sandbox)
 
     def test_wrong_project_dir_gives_envelope_not_traceback(self):
         """②: --project 指向无 config.json 的目录 → 结构化 + 退出码 1。
@@ -446,6 +462,20 @@ class ExceptionEnvelopeTests(unittest.TestCase):
                          f"崩溃必须退 1\n{r.stdout}")
         self.assertIn('"status": "internal_error"', r.stdout,
                       "必须有结构化 status, 不是裸 traceback")
+        # F-217: 跑子进程不得污染真实仓库 (信封会往 TOOLKIT_ROOT 写现场)
+        repo_wb = os.path.join(os.path.dirname(os.path.dirname(
+            os.path.abspath(__file__))), ".workbench")
+        leaked = []
+        for dirpath, _dirs, files in os.walk(repo_wb):
+            for fn in files:
+                if fn == "last_failure.json":
+                    leaked.append(os.path.join(dirpath, fn))
+        for p in leaked:
+            try:
+                if (time.time() - os.path.getmtime(p)) < 120:   # 本次跑出来的
+                    self.fail(f"测试污染了真实仓库现场: {p}")
+            except OSError:
+                pass
         self.assertIn('"error_type": "FileNotFoundError"', r.stdout)
         self.assertIn('"failure_context_path"', r.stdout)
         # 裸 traceback 的特征串不应出现在 stderr 的用户可见摘要里
