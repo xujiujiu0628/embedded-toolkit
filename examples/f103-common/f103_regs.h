@@ -165,16 +165,21 @@ typedef struct {   /* ref.json peripherals.PWR: CR@0x00 CSR@0x04 */
  * F-213: RTCCR/CR/CSR 位于 DR10 与 DR11 之间, 不是排在 DR[42] 之后。
  * 真值锚 CMSIS Device ST/STM32F1xx/Include/stm32f100xb.h:178-194
  * (RESERVED0, DR1..DR10, RTCCR, CR, CSR) + ref.json 口径归一 (base
- * 0x40006C04 → 外设相对 -0x04): DR10@0x24, RTCCR@0x28, CR@0x2C,
- * CSR@0x30, DR11@0x38 .. DR42@0xB4。 */
+ * 0x40006C04 → 外设相对 -0x04): DR10@0x28, RTCCR@0x2C, CR@0x30,
+ * CSR@0x34, DR11@0x3C .. DR42@0xB8。
+ *
+ * F-215: 二段数组名取 DR / DR_HI (不用 DR2)。ref.json 的 BKP 键名是
+ * DR1..DR42 逐个登记, 其中 `DR2` 正是第二个数据寄存器(偏移 0x4); 结构体里
+ * 叫 `DR2` 会与之撞名, 使按名比对把数组首元素错配到 DR2 上。
+ */
 typedef struct {   /* RTCCR/CR/CSR 夹在 DR10 与 DR11 之间 */
     volatile uint32_t RESERVED0;             /* 0x00 */
-    volatile uint32_t DR[10];                /* 0x04..0x28 DR1..DR10 */
-    volatile uint32_t RTCCR;                 /* 0x28 */
-    volatile uint32_t CR;                    /* 0x2C */
-    volatile uint32_t CSR;                   /* 0x30 */
-    volatile uint32_t RESERVED1;             /* 0x34 */
-    volatile uint32_t DR2[32];               /* 0x38..0xB4 DR11..DR42 */
+    volatile uint32_t DR[10];                /* 0x04..0x28 = DR1..DR10 */
+    volatile uint32_t RTCCR;                 /* 0x2C */
+    volatile uint32_t CR;                    /* 0x30 */
+    volatile uint32_t CSR;                   /* 0x34 */
+    volatile uint32_t RESERVED1;             /* 0x38 */
+    volatile uint32_t DR_HI[32];             /* 0x3C..0xB8 = DR11..DR42 */
 } BKP_TypeDef;
 
 typedef struct {   /* ref.json peripherals.SDIO: POWER@0x00 .. FIFO@0x80

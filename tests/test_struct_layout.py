@@ -102,35 +102,114 @@ def _canon_ref_key(key: str) -> str:
     return key[4:] if key.startswith("CAN_") else key
 
 
+_DECL_RE = re.compile(
+    r"^(?:volatile\s+|const\s+|unsigned\s+|signed\s+)*"   # 限定词可叠加
+    r"[A-Za-z_]\w*[ \t]+"                                  # 类型名 (后必跟空白!)
+    r"(?:\*\s*)?"                                          # 可能的指针星
+    r"(?P<id>[A-Za-z_]\w*)"                                # 标识符 (须完整词)
+    r"(?P<dims>(?:\s*\[[^\]]*\])*)\s*$"                    # 可能的数组维度, 到此为止
+)
+# 并列声明的后续项: " CFGR" / " CSR;" —— 无类型名, 只有标识符 (+数组维度)
+_DECL_TAIL_RE = re.compile(
+    r"^(?P<id>[A-Za-z_]\w*)"
+    r"(?P<dims>(?:\s*\[[^\]]*\])*)\s*$"
+)
+
+
+def _member_names_from_decl(decl):
+    """从**一条完整声明**提取标识符列表 (支持逗号并列)。
+
+    F-215 修 Medium-4: 旧实现用 `body.split(",")`, 对
+    `volatile uint32_t CR, CFGR, CIR, ...;` 这类并列声明, 切出的 " CFGR"
+    只有裸标识符而旧正则要求"类型名 + 标识符"两个 token → 全部落空, 每个
+    结构体只捕获**首成员**。实测 19 条断言全是"首成员偏移 == 0x00"——任何 C
+    结构体的首成员偏移恒为 0, 该断言无信息量 (门面恒真)。
+
+    现在按 `;` 切声明语句; 每条声明按 `,` 拆声明符后:
+      · 首项带类型名 → 用 _DECL_RE (严格, 要求类型名)
+      · 后续项只有标识符 → 用 _DECL_TAIL_RE (宽松)
+    """
+    parts = [p.strip() for p in decl.split(",")]
+    parts = [p for p in parts if p]
+    names = []
+    for i, part in enumerate(parts):
+        m = (_DECL_RE if i == 0 else _DECL_TAIL_RE).match(part)
+        if m:
+            names.append(m.group("id"))
+    return names
+
+
 def _parse_header_members():
     """从 f103_regs.h 抽 (结构体名 -> [成员名...])。
 
-    只解析顶层 typedef struct ... } Name; 的成员声明块; 嵌套匿名 struct
-    (CAN 的 TXM/RXM) 整体记为一个成员块跳过——它们不在比对范围 (ref.json
-    以 TI0R 等平铺登记, 已在组内偏移上被前后成员夹逼验证)。
+    F-215: 嵌套匿名 struct (CAN 的 TXM/RXM) 旧版整条跳过, 现在**递归提取其
+    成员**并加父名前缀 (如 TXM0_TIR), 否则 CAN 的邮箱/过滤器区零覆盖。
     """
     with open(HEADER, encoding="utf-8") as f:
         text = f.read()
-    # 去掉块注释与行注释, 避免注释里的 typedef 被误认
     text = re.sub(r"/\*.*?\*/", " ", text, flags=re.S)
     text = re.sub(r"//[^\n]*", " ", text)
 
     out = {}
-    for m in re.finditer(r"typedef\s+struct\s*\{(.*?)\}\s*(\w+)\s*;", text, re.S):
-        body, name = m.group(1), m.group(2)
-        if "{" in body:                 # 含嵌套匿名 struct → 整体跳过
-            continue
+
+    def handle(body, name):
         members = []
-        for decl in body.split(","):
-            decl = decl.strip()
-            if not decl:
-                continue
-            mm = re.match(r"^(?:volatile\s+)?(?:const\s+)?\w+\s+(\w+)", decl)
-            if mm:
-                members.append(mm.group(1))
+        # 嵌套匿名 struct: struct { ... } NAME[N];  —— 递归 + 展平加前缀
+        for nested in re.finditer(
+                r"struct\s*\{(.*?)\}\s*(\w+)\s*((?:\[[^\]]*\])?)\s*;",
+                body, re.S):
+            inner, tag, dims = nested.group(1), nested.group(2), nested.group(3)
+            n = _array_count(dims)
+            for i in range(n if n else 1):
+                prefix = f"{tag}{i}_" if n else ""
+                for sub in _split_decls(inner):
+                    for id_ in _member_names_from_decl(sub):
+                        members.append(prefix + id_)
+        # 去掉嵌套块后处理顶层声明
+        flat = re.sub(r"struct\s*\{.*?\}\s*\w*\s*(\[[^\]]*\])?\s*;",
+                      " ", body, flags=re.S)
+        for decl in _split_decls(flat):
+            members.extend(_member_names_from_decl(decl))
         if members:
             out[name] = members
+
+    def _split_decls(s):
+        """按 `;` 切声明语句 (保留逗号并列的完整声明)。"""
+        return [d for d in s.split(";") if d.strip()]
+
+    def _array_count(dims):
+        m = re.match(r"\s*\[\s*(\d+)\s*[uU]?\s*\]", dims or "")
+        return int(m.group(1)) if m else 0
+
+    for body, name in _iter_structs(text):
+        handle(body, name)
     return out
+
+
+def _iter_structs(text):
+    """配平花括号地提取 `typedef struct { ... } NAME;` 的 (体, 名)。
+
+    F-215: 不能用 `re.finditer(r"typedef\\s+struct\\s*\\{(.*?)\\}...")`——
+    非贪婪的 `.*?` 会在**嵌套匿名 struct 的第一个 `}`** 处截断, 导致
+    CAN_TypeDef 的 body 只剩嵌套部分、顶层声明 (MCR/RESERVED0/FMR/F...)
+    全部丢失; 外层 } 之后的声明则被误当成别的 typedef。
+    """
+    for m in re.finditer(r"typedef\s+struct\s*\{", text):
+        i = m.end()          # '{' 之后
+        depth = 1
+        j = i
+        while j < len(text) and depth:
+            if text[j] == "{":
+                depth += 1
+            elif text[j] == "}":
+                depth -= 1
+            j += 1
+        if depth:
+            continue                      # 括号不配平 (文件尾截断) → 跳过
+        tail = text[j:j + 80]
+        nm = re.match(r"\s*(\w+)\s*;", tail)
+        if nm:
+            yield text[i:j - 1], nm.group(1)
 
 
 def _member_names(ref_regs):
@@ -320,6 +399,30 @@ class StructLayoutOffsetTests(unittest.TestCase):
             self.assertEqual(actual.get(mem), expect,
                              f"{struct}.{mem} 绝对偏移应为 0x{expect:X}, "
                              f"实得 {actual.get(mem)}")
+
+    def test_parser_coverage_is_not_silently_vacuous(self):
+        """防"门面恒真"复发 (F-215, 三号复审 Medium-4)。
+
+        F-214 的解析器只捕获每个结构体的**首成员**, 于是 19 条断言全是
+        "首成员偏移 == 0x00"——任何 C 结构体的首成员偏移恒为 0, 该断言无
+        信息量, 套件照样全绿。本例钉住:
+          ① 比对总量不得低于下限 (解析器一退化就红);
+          ② 零覆盖的结构体必须是显式登记的已知缺口, 新增即红。
+        """
+        # 已知缺口: ref.json 按通道逐个登记 (CCR1/CNDR1/...), 结构体是
+        # 单通道视图 DMA_Channel_TypeDef, 二者不可直接按名比对。
+        known_zero = {"DMA_Channel_TypeDef"}
+        compared = sum(len(v) for v in self.checked.values())
+        self.assertGreaterEqual(
+            compared, 150,
+            f"比对成员数 {compared} 低于下限 150——解析器可能已退化 "
+            f"(F-214 曾退化成 19 条且全为恒真的 offset==0x00)")
+        zero = {s for s, _p, _a in _STRUCT_MAP if s not in self.checked}
+        unexpected = zero - known_zero
+        self.assertEqual(
+            unexpected, set(),
+            f"新增零覆盖结构体 {sorted(unexpected)}——解析器或口径表退化, "
+            f"或需登记为已知缺口 (当前已知缺口: {sorted(known_zero)})")
 
     def test_can_filter_bank_count_is_14(self):
         """CAN 滤波器组数必须是 14 (ref.json F0R1..F13R2 = 0x70 字节)。
