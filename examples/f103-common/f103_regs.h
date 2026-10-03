@@ -72,12 +72,24 @@ typedef struct {   /* Cortex-M3 核心外设 (架构定义; ref.json peripherals
     volatile uint32_t CTRL, LOAD, VAL, CALIB;
 } SysTick_Type;
 
-typedef struct {   /* Cortex-M3 核心外设; ref.json peripherals.NVIC 已登记
-                     ISER@0xE100 + ICER/ISPR/ICPR/IABR/IP (@F-179 P1 入册,
-                     base 相对 offset 0x80/0x100/0x180/0x200/0x300 —
-                     原 GAP-D-1 已闭合, 现为正式登记)。IP 为字节宽 (架构定义)。 */
-    volatile uint32_t ISER[8u], ICER[8u], ISPR[8u], ICPR[8u], IABR[8u];
-    volatile uint8_t  IP[240u];
+/* F-213: 五组寄存器之间各有 0x60 保留间隙, 非连续排列。
+ * 真值锚 CMSIS core_cm3.h:340-355 NVIC_Type (RESERVED0..4), 与本项目
+ * ref.json peripherals.NVIC 已登记 offset 逐项一致 (ISER@0x00 /
+ * ICER@0x80 / ISPR@0x100 / ICPR@0x180 / IABR@0x200 / IP@0x300)。
+ * 原实现五数组连续排列 → ICER 落 0x20、IP 落 0xA0, 真机写保留区静默失效;
+ * host mock 以同一错布局重定向静态内存, 结构上无法自证。 */
+typedef struct {   /* IP 为字节宽 (架构定义) */
+    volatile uint32_t ISER[8u];   /* 0x000 IRQ 0-255 使能 (写 1 置位) */
+    volatile uint32_t RESERVED0[24u];
+    volatile uint32_t ICER[8u];   /* 0x080 IRQ 0-255 禁用 (写 1 清位) */
+    volatile uint32_t RESERVED1[24u];
+    volatile uint32_t ISPR[8u];   /* 0x100 挂起 */
+    volatile uint32_t RESERVED2[24u];
+    volatile uint32_t ICPR[8u];   /* 0x180 清挂起 */
+    volatile uint32_t RESERVED3[24u];
+    volatile uint32_t IABR[8u];   /* 0x200 活动中 (只读) */
+    volatile uint32_t RESERVED4[56u];
+    volatile uint8_t  IP[240u];   /* 0x300 IRQ n 优先级 @ n 字节 */
 } NVIC_Type;
 
 typedef struct {   /* ref.json peripherals.DMA1: ISR@0x00 IFCR@0x04,
@@ -115,6 +127,10 @@ typedef struct {   /* ref.json peripherals.CRC: DR@0x00 IDR@0x04 CR@0x08 */
     volatile uint32_t DR, IDR, CR;
 } CRC_TypeDef;
 
+/* F-213: 滤波器区两处错——① 缺 0x220..0x23F 保留间隙, 原实现令 F[] 落
+ * 0x220 (真值 F0R1@0x240, 整体 -0x20); ② 组数写 F[28][2] 而真值为 14 组
+ * (F0R1@0x240 .. F13R2@0x2AC, 即 F[14][2] = 0x70 字节)。两者叠加: 只修
+ * 偏移则 F[28][2] 铺到 0x2FF 越过外设末端, 等于把静默错位换成越界踩踏。 */
 typedef struct {   /* ref.json peripherals.CAN: MCR@0x00, 邮箱三组步进 0x10
                      (TI0R@0x180..), FIFO 两组步进 0x10 (RI0R@0x1B0..) */
     volatile uint32_t MCR, MSR, TSR, RF0R, RF1R, IER, ESR, BTR;
@@ -123,8 +139,9 @@ typedef struct {   /* ref.json peripherals.CAN: MCR@0x00, 邮箱三组步进 0x1
     struct { volatile uint32_t RIR, RDTR, RDLR, RDHR; } RXM[2];   /* 0x1B0 */
     volatile uint32_t RESERVED1[12];          /* 0x1D0..0x1FF */
     volatile uint32_t FMR, FM1R, RESERVED2, FS1R, RESERVED3, FFA1R,
-        RESERVED4, FA1R;                       /* 0x200..0x21C */
-    volatile uint32_t F[28][2];                /* F0R1@0x240 .. F13R2@0x2AC */
+        RESERVED4, FA1R;                       /* 0x200..0x21F */
+    volatile uint32_t RESERVED5[8];           /* 0x220..0x23F */
+    volatile uint32_t F[14][2];               /* 0x240..0x2AF F0R1..F13R2 */
 } CAN_TypeDef;
 
 typedef struct {   /* ref.json peripherals.DAC: CR@0x00 .. DOR2@0x30 */
@@ -143,12 +160,21 @@ typedef struct {   /* ref.json peripherals.PWR: CR@0x00 CSR@0x04 */
 
 /* BKP: ref.json peripherals.BKP base=0x40006C04 (DR1 记在偏移 0)。
  * 本头按外设基址 0x40006C00 表示, DR1 = +0x04 — 与 ref.json 绝对地址
- * 0x40006C04 相等, 仅表达口径不同 (GAP-D-2 已记账)。 */
-typedef struct {   /* DR1@0x04 .. DR42@0xB8, RTCCR@0x2C, CR@0x30, CSR@0x34 */
-    volatile uint32_t RESERVED0;
-    volatile uint32_t DR[42];
-    volatile uint32_t RESERVED1[2];
-    volatile uint32_t RTCCR, CR, CSR;
+ * 0x40006C04 相等, 仅表达口径不同 (GAP-D-2 已记账)。
+ *
+ * F-213: RTCCR/CR/CSR 位于 DR10 与 DR11 之间, 不是排在 DR[42] 之后。
+ * 真值锚 CMSIS Device ST/STM32F1xx/Include/stm32f100xb.h:178-194
+ * (RESERVED0, DR1..DR10, RTCCR, CR, CSR) + ref.json 口径归一 (base
+ * 0x40006C04 → 外设相对 -0x04): DR10@0x24, RTCCR@0x28, CR@0x2C,
+ * CSR@0x30, DR11@0x38 .. DR42@0xB4。 */
+typedef struct {   /* RTCCR/CR/CSR 夹在 DR10 与 DR11 之间 */
+    volatile uint32_t RESERVED0;             /* 0x00 */
+    volatile uint32_t DR[10];                /* 0x04..0x28 DR1..DR10 */
+    volatile uint32_t RTCCR;                 /* 0x28 */
+    volatile uint32_t CR;                    /* 0x2C */
+    volatile uint32_t CSR;                   /* 0x30 */
+    volatile uint32_t RESERVED1;             /* 0x34 */
+    volatile uint32_t DR2[32];               /* 0x38..0xB4 DR11..DR42 */
 } BKP_TypeDef;
 
 typedef struct {   /* ref.json peripherals.SDIO: POWER@0x00 .. FIFO@0x80
