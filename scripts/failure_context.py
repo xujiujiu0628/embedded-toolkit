@@ -96,7 +96,11 @@ def _save_failure_context(result: dict, max_retries: int, capture_text: str = ""
         "status": result.get("status", "unknown"),
         "error": result.get("error", ""),
         "steps": {},
-        "agent_hint": "",
+        # F-216: 上游显式提供的 hint 优先。异常信封 (verify._fail_with_envelope)
+        # 要写"这是工具链问题不是工程问题"这类与 steps 无关的指引, 而下面
+        # 按 steps 分支赋值的逻辑对 internal_error (steps={}) 一条都不命中,
+        # 会留空——Agent 拿到空 hint 等于没指引。
+        "agent_hint": result.get("agent_hint", ""),
     }
     if capture_text:
         ctx["captured_output"] = capture_text

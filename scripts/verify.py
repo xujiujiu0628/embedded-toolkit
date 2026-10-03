@@ -32,6 +32,7 @@ import re
 import subprocess
 import sys
 import time
+import traceback
 
 
 WORKSPACE = None  # 工程根, main() 中 --project 或 cwd 向上发现后设置
@@ -558,6 +559,58 @@ def _run_doctor(args) -> None:
         _print_doctor(report)
 
 
+def _fail_fast_on_bad_patterns(config, cli_patterns, args):
+    """F-216: 编译期校验全部期望正则, 非法即烧录前退 1。
+
+    三号复审转述的 A1-③: 旧实现把 re.search 放在判定阶段, 非法正则要等
+    构建+烧录+采集全跑完才抛 re.error——白烧一次板子, 且现场与真正的
+    失败原因隔着一整轮硬件动作, 归因成本高。此处与 GAP-F-19 同处
+    _prepare_context (烧录前), fail-fast。
+
+    覆盖两条来源:
+      · legacy config.verify.expect_patterns (F-104 迁移后已整体失效,
+        但仍应校验——配置里留个坏正则本身就是配置错误)
+      · CLI --expect-pattern
+      · manifest 模式 expectations.json 的 patterns / forbidden_patterns
+    """
+    bad = []
+
+    def check(patterns, where):
+        for p in (patterns or []):
+            try:
+                re.compile(p)
+            except re.error as e:
+                bad.append(f"{where}: {p!r} — {e}")
+
+    verify_cfg = (config.get("verify") or {})
+    check(verify_cfg.get("expect_patterns"), "config.verify.expect_patterns")
+    check(cli_patterns, "--expect-pattern")
+
+    # manifest: expectations.json 的每条 items[].patterns / forbidden_patterns
+    exp_path = os.path.join(WORKSPACE, ".workbench", "expectations.json")
+    if os.path.isfile(exp_path):
+        try:
+            with open(exp_path, encoding="utf-8") as f:
+                manifest = json.load(f)
+        except (json.JSONDecodeError, UnicodeDecodeError, OSError):
+            manifest = None          # 损坏由专门的 lint/判定路径报, 不在此重复
+        if isinstance(manifest, dict):
+            for item in manifest.get("items", []) or []:
+                if not isinstance(item, dict):
+                    continue
+                ident = item.get("id", "?")
+                check(item.get("patterns"), f"expectations[{ident}].patterns")
+                check(item.get("forbidden_patterns"),
+                      f"expectations[{ident}].forbidden_patterns")
+
+    if bad:
+        print("错误: 期望正则非法 (烧录前拦截, 不白跑一轮硬件):",
+              file=sys.stderr)
+        for b in bad:
+            print("  - " + b, file=sys.stderr)
+        sys.exit(1)
+
+
 def _prepare_context(args):
     """F-160 (P1-4 拆分): 工程根发现 + 配置/版本装载。"""
 
@@ -591,6 +644,14 @@ def _prepare_context(args):
         sys.exit(1)
     builder = config.get("builder", "gcc")   # 构建后端 (gcc | keil[legacy], 2026-08-28 默认翻转为 gcc)
 
+    # F-216: 期望正则的**编译期**校验—— 必须在任何构建/烧录之前。
+    # 旧实现把 re.search 放在判定阶段 (verify()), 非法正则要等烧完板子
+    # 才炸, 白烧一次且现场难归因 (三号复审转述的 A1-③)。此处 fail-fast,
+    # 与上方 GAP-F-19 同属"烧录前拦住"纪律。清单模式 (manifest) 走
+    # expectations.json, 其 patterns 同在此校验。
+    _fail_fast_on_bad_patterns(config, getattr(args, "expect_patterns", None),
+                               args)
+
     # 工具库版本检查: 工程要求的最低版本
     cfg_min = config.get("toolkit_min_version")
     if cfg_min and not version_ok(toolkit_version(), cfg_min):
@@ -601,6 +662,22 @@ def _prepare_context(args):
 
 
 def main():
+    """F-216: 统一异常信封。
+
+    三号复审转述的 A1 (异常路径绕过失败信封) 实跑复现, 三条全部成立:
+      ① ESP 配置缺失 — esp_runtime.resolve_idf_path 抛 EspConfigError,
+         verify.py:239 step_flash_esptool 与 main() 均无 try → 裸 traceback,
+         无 status 字段 / 无 last_failure.json / 无 JUnit;
+      ② --project 指错目录 — _prepare_context 只接 ConfigError, 接不住
+         FileNotFoundError (load_config 在工程内无 .workbench/config.json 时抛),
+         → 裸 traceback 且**退出码 0**(崩溃却报成功, 最糟形态);
+      ③ legacy 非法正则在 flash 之后的判定阶段才 re.search 炸 ——
+         应在跑之前拦住, 否则白烧一次板子。
+
+    ①② 由本信封统一兜住: 任何未捕获异常都转成 _output 的标准失败结构,
+    走既有唯一出口 (evidence 字段 + JUnit 旁路), 并补写 last_failure.json
+    ——与"失败现场诚实化"的承诺对齐。③ 属校验时机问题, 见 _prepare_context。
+    """
     args = _parse_args()
 
     global _JUNIT_OUT
@@ -610,7 +687,63 @@ def main():
         _run_doctor(args)
         return
 
-    _run_pipeline(args)
+    try:
+        _run_pipeline(args)
+    except SystemExit:
+        raise                       # argparse 自身的用法错误, 语义已明确
+    except BaseException as e:      # noqa: BLE001 — 信封边界, 刻意兜全量
+        _fail_with_envelope(e, args)
+
+
+def _fail_with_envelope(exc: BaseException, args) -> None:
+    """F-216: 把未捕获异常转成标准失败结果, 走 _output 唯一出口。
+
+    刻意用 BaseException: 这里就是"什么都得接住"的边界——内核级异常
+    (MemoryError / KeyboardInterrupt) 逃出去同样会让调用方拿到 traceback
+    而非结构化现场, 与本仓"失败现场诚实化"承诺相悖。KeyboardInterrupt
+    仍按常规语义抛给上层处理 Windows 的 Ctrl-C, 但先落现场。
+    """
+    if isinstance(exc, KeyboardInterrupt):
+        kind, msg = "interrupted", "用户中断 (Ctrl-C)"
+    else:
+        kind = "internal_error"
+        msg = f"{type(exc).__name__}: {exc}"
+    result = {
+        "status": kind,
+        "error": msg,
+        "steps": {},
+        "error_type": type(exc).__name__,
+        "traceback": traceback.format_exc(),
+        "evidence": "static",      # _output 会覆写, 此处仅保键存在
+    }
+    # last_failure.json: 异常路径此前完全不写, Agent 无现场可读 (F-216)
+    # 工程本身不可用时 (如 --project 指错目录, WORKSPACE 指向一个没有
+    # .workbench/config.json 的路径), 不往那儿写现场——那等于在校验失败
+    # 的目录里凭空造出 .workbench/ 结构。改落 toolkit 自己的 build 目录。
+    ws = WORKSPACE
+    if not ws or not os.path.isfile(os.path.join(ws, ".workbench",
+                                                  "config.json")):
+        ws = TOOLKIT_ROOT
+    try:
+        from failure_context import _save_failure_context
+        result["agent_hint"] = (
+            "内部错误: 这是工具链或配置问题, 不是被测工程的问题。"
+            "检查 --project 指向的目录是否含 .workbench/config.json, "
+            "以及 machine.json 的工具链路径。完整 traceback 见本文件 "
+            "traceback 字段。")
+        # workspace 收的是**工程根** (_save_failure_context 内部再拼
+        # .workbench/build/), 与既有三处调用点同口径。
+        _save_failure_context(result, max_retries=0, capture_text="",
+                              workspace=ws)
+        result["failure_context_path"] = os.path.join(
+            ws, ".workbench", "build", "last_failure.json")
+    except Exception:                      # 写现场失败不得掩盖原始异常
+        pass
+    print(f"错误: {msg}", file=sys.stderr)
+    if isinstance(exc, KeyboardInterrupt):
+        raise
+    _output(result, as_json=getattr(args, "json", False))
+    sys.exit(1)
 
 
 def _run_pipeline(args):
@@ -1437,6 +1570,24 @@ def _output(result: dict, as_json: bool):
         print("=" * 60)
         print("  闭环验证报告")
         print("=" * 60)
+
+        # F-216: 内部错误 (信封兜住的未捕获异常) 没有 steps 结构, 逐段打 "?"
+        # 会让人误读成"各步骤状态未知", 而非"这里炸了"。单独呈现。
+        if result.get("error_type"):
+            print("\n  内部错误 (未经预期路径的异常已被信封捕获):")
+            print(f"    类型: {result['error_type']}")
+            print(f"    信息: {result.get('error', '?')}")
+            print(f"    现场: .workbench/build/last_failure.json"
+                  f"{' (含完整 traceback)' if result.get('traceback') else ''}")
+            print("\n  这是工具链缺陷或配置问题, 不是被测工程的问题。")
+            tb = result.get("traceback")
+            if tb:
+                print("\n--- traceback ---")
+                print(tb.rstrip())
+            print("\n" + "=" * 60)
+            print("  Verdict: INTERNAL ERROR")
+            print("=" * 60)
+            return
 
         build_s = steps.get("build", {})
         print(f"\n[1] Build:    {build_s.get('status', '?').upper()}"

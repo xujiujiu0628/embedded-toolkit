@@ -5,6 +5,7 @@
 - F-003: OpenOCD 卡死超时 → 回收部分输出 + capture_failed (非谎报"程序无输出")
 - F-004: 反馈落账三条路径 (成功/门禁跳过/落账失败) 全部在 result.feedback 留痕
 """
+import inspect
 import io
 import json
 import os
@@ -404,3 +405,145 @@ class RttSpawnFlagsPlatformTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ExceptionEnvelopeTests(unittest.TestCase):
+    """F-216: 未捕获异常必须走失败信封, 不得裸 traceback 逃逸。
+
+    三号复审转述的 A1 实跑复现 (三条全成立):
+      ① ESP 配置缺失 (EspConfigError) — step_flash_esptool 调用链无 try
+      ② --project 指错目录 (FileNotFoundError) — **且退出码 0**, 崩溃却
+         报成功, 是最糟形态: 脚本/CI 会以为跑成了
+      ③ legacy 非法正则在 flash 之后的判定阶段才炸 — 白烧一次板子
+
+    本组钉①②的信封行为 (③ 由 PatternPreflightTests 钉)。
+    """
+
+    def _run_verify(self, args):
+        """跑 verify 子进程, 返回 (returncode, stdout, stderr)。"""
+        env = dict(os.environ)
+        env["PYTHONIOENCODING"] = "utf-8"
+        return subprocess.run(
+            [sys.executable, "-X", "utf8", verify.__file__] + args,
+            capture_output=True, text=True, encoding="utf-8",
+            errors="replace", timeout=120, env=env)
+
+    def test_wrong_project_dir_gives_envelope_not_traceback(self):
+        """②: --project 指向无 config.json 的目录 → 结构化 + 退出码 1。"""
+        empty = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, empty, ignore_errors=True)
+        r = self._run_verify(["--project", empty, "--json"])
+        self.assertEqual(r.returncode, 1,
+                         f"崩溃必须退 1 而非 0 (F-216 前实测为 0)\n{r.stdout}")
+        self.assertIn('"status": "internal_error"', r.stdout,
+                      "必须有结构化 status, 不是裸 traceback")
+        self.assertIn('"error_type": "FileNotFoundError"', r.stdout)
+        self.assertIn('"failure_context_path"', r.stdout)
+        # 裸 traceback 的特征串不应出现在 stderr 的用户可见摘要里
+        self.assertNotIn("Traceback (most recent call last)",
+                         r.stdout.split('"error"')[0],
+                         "stdout 不应直接倾倒裸 traceback")
+
+    def test_envelope_writes_failure_context_with_hint(self):
+        """信封必须写 last_failure.json 且带 agent_hint (异常路径此前完全不写)。"""
+        empty = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, empty, ignore_errors=True)
+        with mock.patch.object(verify, "TOOLKIT_ROOT", empty), \
+             mock.patch.object(verify, "WORKSPACE", empty):
+            with redirect_stdout(io.StringIO()):   # F-207: 不漏真 stdout
+                with self.assertRaises(SystemExit):
+                    verify._fail_with_envelope(
+                        ValueError("boom"), mock.Mock(json=True))
+            p = os.path.join(empty, ".workbench", "build", "last_failure.json")
+            self.assertTrue(os.path.isfile(p), "异常路径必须留痕")
+            with open(p, encoding="utf-8") as f:
+                ctx = json.load(f)
+        self.assertEqual(ctx["status"], "internal_error")
+        self.assertTrue(ctx["agent_hint"],
+                        "agent_hint 不得为空 —— 空 hint 对 Agent 等于没指引")
+
+    def test_envelope_does_not_create_project_dir(self):
+        """工程本身不可用时不得在校验失败的目录里凭空造 .workbench/。"""
+        bad = os.path.join(tempfile.mkdtemp(), "no-such-project")
+        with mock.patch.object(verify, "WORKSPACE", bad):
+            with redirect_stdout(io.StringIO()):
+                with self.assertRaises(SystemExit):
+                    verify._fail_with_envelope(
+                        FileNotFoundError("no config"), mock.Mock(json=True))
+        self.assertFalse(os.path.isdir(bad),
+                         "不得创建无效工程目录")
+
+    def test_systemexit_passes_through(self):
+        """argparse 用法错误走 SystemExit, 信封不得吞掉。"""
+        with mock.patch.object(verify, "_run_pipeline",
+                               side_effect=SystemExit(2)), \
+             mock.patch.object(verify, "_parse_args",
+                               return_value=mock.Mock(doctor=False,
+                                                      junit_xml=None)):
+            with self.assertRaises(SystemExit) as cm:
+                verify.main()
+        self.assertEqual(cm.exception.code, 2)
+
+
+class PatternPreflightTests(unittest.TestCase):
+    """F-216 ③: 非法期望正则必须在**烧录前**拦下。
+
+    旧实现把 re.search 放在判定阶段 (verify()), 非法正则要等构建+烧录+
+    采集全跑完才抛 re.error —— 白烧一次板子。
+    """
+
+    def setUp(self):
+        self.ws = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.ws, ignore_errors=True)
+        os.makedirs(os.path.join(self.ws, ".workbench"), exist_ok=True)
+        verify.WORKSPACE = self.ws
+
+    def _write(self, cfg):
+        with open(os.path.join(self.ws, ".workbench", "config.json"), "w",
+                  encoding="utf-8") as f:
+            json.dump(cfg, f)
+
+    def test_bad_config_pattern_fails_fast(self):
+        self._write({"builder": "gcc",
+                     "verify": {"expect_patterns": ["OK[", "(unclosed"]}})
+        with self.assertRaises(SystemExit) as cm:
+            verify._fail_fast_on_bad_patterns(
+                {"verify": {"expect_patterns": ["OK[", "(unclosed"]}}, None, None)
+        self.assertEqual(cm.exception.code, 1)
+
+    def test_bad_manifest_pattern_fails_fast(self):
+        exp = {"items": [{"id": "X1", "patterns": ["["]},
+                         {"id": "X2", "forbidden_patterns": ["(bad"]}]}
+        with open(os.path.join(self.ws, ".workbench", "expectations.json"),
+                  "w", encoding="utf-8") as f:
+            json.dump(exp, f)
+        with self.assertRaises(SystemExit):
+            verify._fail_fast_on_bad_patterns({}, None, None)
+
+    def test_good_patterns_pass(self):
+        """合法正则不得被误杀。"""
+        self._write({"builder": "gcc", "verify": {"expect_patterns": [r"OK \d+"]}})
+        verify._fail_fast_on_bad_patterns(
+            {"verify": {"expect_patterns": [r"OK \d+", r"TGL \d+"]}}, None, None)
+
+    def test_preflight_runs_before_flash(self):
+        """时序钉: 校验发生在 _prepare_context 内, 即构建/烧录之前。
+
+        不用源码字符串位置比对——`_run_flash_step` 这个名字在源文件里的
+        首次出现可能是函数定义或注释, 与实际调用序无关 (第一版就是这么
+        写错的)。改为: 打桩校验函数, 跑 _prepare_context, 确认被调用。
+        """
+        self._write({"builder": "gcc", "verify": {"expect_patterns": [r"OK \d+"]}})
+        args = mock.Mock()
+        args.expect_patterns = None
+        args.project = self.ws          # _prepare_context 读它定位工程根
+        called = []
+        with mock.patch.object(verify, "_fail_fast_on_bad_patterns",
+                               side_effect=lambda *a, **k: called.append(1)):
+            verify._prepare_context(args)
+        self.assertEqual(len(called), 1,
+                         "正则预编译校验必须在 _prepare_context (烧录前) 被调用")
+        # _prepare_context 返回后才有 builder/flash, 故校验点天然在其前
+        self.assertNotIn("_fail_fast_on_bad_patterns",
+                         inspect.getsource(verify._run_flash_step),
+                         "校验不得放在 flash 阶段")
