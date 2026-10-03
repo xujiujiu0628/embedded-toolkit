@@ -240,7 +240,7 @@ BASELINE = {
     ('tests/test_p2_edge_pack.py', 'B', 'sys.argv'): 1,
     ('tests/test_physical_gate.py', 'B', 'physical_gate.subprocess.Popen'): 2,
     ('tests/test_physical_gate.py', 'B', 'physical_gate.time.sleep'): 1,
-    ('tests/test_release.py', 'B', 'release.subprocess.run'): 2,
+    ('tests/test_release.py', 'B', 'release.subprocess.run'): 4,
     ('tests/test_rm_lookup_human_output.py', 'B', 'sys.argv'): 1,
     ('tests/test_serial_dedup.py', 'B', 'sys.stderr'): 2,
     ('tests/test_serial_dedup.py', 'B', 'sys.stdout'): 1,

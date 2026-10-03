@@ -28,6 +28,12 @@ from runtime_common import esp_backend_mode, load_json_file  # noqa: E402  (F-19
 
 VERIFY = os.path.join(TOOLKIT_ROOT, "scripts", "verify.py")
 
+# F-215: G1 外层 subprocess 超时基准 (秒)。覆盖 clean rebuild + 烧录 + 采集
+# 的**总**时长, 与 --timeout (采集超时, 默认 10s) 是两回事——F-213 误把后者
+# 当总预算, 使默认路径外层上限从 600s 掉到 70s, 属反向回归 (三号复审 High-2)。
+# 取 600 是守住历史值; 实际生效值 = max(本项, timeout + 60), 见 gate1。
+GATE1_OUTER_TIMEOUT_S = 600
+
 # F-190/M-1: G0.5 swd_probe 经 OpenOCD 探 ST-Link, 语义仅 Cortex-M — ESP 模式
 # 步骤抑制并落可机检 skipped 痕 (status/reason 形态对齐 F-188 N-4 /
 # F-150 sim skip)。run_gates 与 build_record 共用同一常量。
@@ -78,25 +84,36 @@ def gate1(ws, timeout):
     """G1: subprocess 重跑 verify (clean rebuild + 清单判定), 返回 JSON 结果。
     验证的就是开发者日常那条命令 — 门禁公信力所在。
 
-    F-213: 外层 subprocess 超时原硬编码 600s, 与传进来的 verify 自身预算
-    (timeout) 无关。ESP 链 config build_timeout 默认 900s > 600s, 慢机上
-    verify 尚未跑完就被外层砍掉 → 报 "重跑超时", G0-G3 事实不可用且无从
-    区分"真超时"与"外层先到"。改为跟随传入预算并留裕量 (verify 收尾/序列化
-    需要额外时间, 故 +60s), 使外层只在 verify 自身预算耗尽后才动手。"""
+    F-215 订正 F-213: F-213 把外层 subprocess 超时改成 `int(timeout) + 60`,
+    声称"跟随传入预算"。三号复审 High-2 判定方向相反且属反向回归:
+    **timeout 是采集超时秒数** (release.py --timeout 默认 10, 语义见
+    verify.py:510 "采集超时秒数"), 不是 verify 总预算; 而 gate1 跑的是
+    --rebuild (clean rebuild + 烧录 + 采集), 真实周期远大于采集超时。故
+    `10 + 60 = 70s` 把默认路径的外层上限从 600s 收紧到 70s, 恰好制造了
+    它声称要消除的"慢机上 verify 未跑完被外层砍掉"。F-213 引用的
+    esp_runtime.build_timeout (默认 900) 与本处无关, 属参数张冠李戴——
+    该键在本文件从未被引用。
+
+    F-215 修法: 外层预算独立于采集超时, 由 **GATE1_OUTER_TIMEOUT_S**
+    单点定义并取"不小于历史 600s", 采集超时只作为下限参与:
+        outer = max(GATE1_OUTER_TIMEOUT_S, timeout + 60)
+    采集超时是真实下界 (verify 至少要跑那么久), 但绝不是上界。
+    """
     cmd = [sys.executable, VERIFY, "--json", "--rebuild",
            "--gate-run",
            "--task-origin", "schedule",
            "--require-schedule-origin",
            "--timeout", str(timeout)]
-    outer = int(timeout) + 60
+    outer = max(GATE1_OUTER_TIMEOUT_S, int(timeout) + 60)
     try:
         r = subprocess.run(cmd, capture_output=True, text=True,
                            encoding="utf-8", errors="replace",
                            timeout=outer, cwd=ws)
     except subprocess.TimeoutExpired:
         return {"status": "error",
-                "error": f"verify 重跑超时 (外层 {outer}s = verify 预算 "
-                         f"{timeout}s + 60s 收尾裕量)"}
+                "error": f"verify 重跑超时 (外层 {outer}s = "
+                         f"max(GATE1 基准 {GATE1_OUTER_TIMEOUT_S}s, "
+                         f"采集超时 {timeout}s + 60s 收尾裕量))"}
     try:
         return json.loads(r.stdout)
     except json.JSONDecodeError:

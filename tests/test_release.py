@@ -342,3 +342,64 @@ class ReleaseGateTests(unittest.TestCase):
                 release.main()
         self.assertEqual(cm.exception.code, 1)   # run_gates 返回 False
         self.assertEqual(m_gates.call_args[0][4], "fake-openocd.exe")
+
+
+class Gate1OuterTimeoutTests(unittest.TestCase):
+    """F-215 (订正 F-213, 三号复审 High-2): G1 外层超时不得由采集超时支配。
+
+    F-213 把 gate1 的 subprocess 外层超时改成 `int(timeout) + 60`, 声称
+    "跟随传入预算"。但 --timeout 是**采集超时秒数**(release.py argparse
+    default=10), 而 gate1 跑的是 --rebuild (clean rebuild + 烧录 + 采集)。
+    故 `10 + 60 = 70s` 把默认路径的外层上限从 600s 收紧到 70s——反向回归,
+    恰好制造它声称要消除的"慢机上 verify 未跑完被外层砍掉"。
+
+    本组是此前完全缺失的覆盖: 既有 gate1 相关用例全部
+    `mock.patch.object(release, "gate1")` 把整个函数打桩掉, 从不触及
+    subprocess.run 的 timeout 实参, 故该缺陷零阻力通过。
+    """
+
+    def _outer_timeout_for(self, capture_timeout):
+        """跑一次 gate1, 从 mock 出的 subprocess.run 读 timeout 实参。"""
+        ws = tempfile.mkdtemp(prefix="g1tmo_")
+        self.addCleanup(shutil.rmtree, ws, ignore_errors=True)
+        ok = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout='{"status": "pass"}', stderr="")
+        with mock.patch.object(release.subprocess, "run",
+                               return_value=ok) as m_run:
+            release.gate1(ws, capture_timeout)
+        self.assertTrue(m_run.called, "gate1 未调用 subprocess.run")
+        return m_run.call_args.kwargs.get("timeout")
+
+    def test_default_capture_timeout_keeps_historical_outer(self):
+        """--timeout 默认 10 (采集超时) → 外层不得掉到 70s"""
+        outer = self._outer_timeout_for(10)
+        self.assertEqual(outer, release.GATE1_OUTER_TIMEOUT_S,
+                         f"默认采集超时下外层应为 {release.GATE1_OUTER_TIMEOUT_S}s, "
+                         f"实得 {outer}s (F-213 曾使其为 70s)")
+
+    def test_outer_never_below_historical_floor(self):
+        """任何采集超时取值, 外层都不得低于 600s 基准。"""
+        for cap in (10, 30, 120, 599):
+            with self.subTest(capture_timeout=cap):
+                outer = self._outer_timeout_for(cap)
+                self.assertGreaterEqual(
+                    outer, release.GATE1_OUTER_TIMEOUT_S,
+                    f"采集超时 {cap}s 时外层 {outer}s 跌破基准")
+
+    def test_large_capture_timeout_raises_outer(self):
+        """采集超时是真实下界: 超大取值应抬高外层 (max 分支的另一侧)。"""
+        huge = release.GATE1_OUTER_TIMEOUT_S + 300
+        outer = self._outer_timeout_for(huge)
+        self.assertEqual(outer, huge + 60,
+                         f"采集超时 {huge}s 时外层应为 {huge + 60}s")
+
+    def test_timeout_reached_reports_actual_outer(self):
+        """超时错误信息须报出实际生效的外层值, 便于区分真超时/外层先到。"""
+        ws = tempfile.mkdtemp(prefix="g1exp_")
+        self.addCleanup(shutil.rmtree, ws, ignore_errors=True)
+        with mock.patch.object(release.subprocess, "run",
+                               side_effect=subprocess.TimeoutExpired("verify", 600)):
+            res = release.gate1(ws, 10)
+        self.assertEqual(res["status"], "error")
+        self.assertIn(str(release.GATE1_OUTER_TIMEOUT_S), res["error"])
+        self.assertNotIn("70s", res["error"], "不得再报 F-213 的 70s 值")
