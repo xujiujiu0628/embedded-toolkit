@@ -104,7 +104,10 @@ def _detect_default_branch() -> str:
     except (OSError, subprocess.TimeoutExpired):
         pass
     # fallback: master 先, main 后 (本仓 master 是真默认, main 是老 GitHub 习惯)。
-    # 远端跟踪引用优先于本地分支——CI 浅克隆只在 refs/remotes/origin/* 下有基准分支。
+    # 本地分支优先于远端跟踪引用——本地 refs/heads/{cand} 是当前检出的真实基准,
+    # 而 origin/* 在 CI 浅克隆下可能是陈旧快照。注: 分支名优先级 (master 优先于
+    # main) 高于引用位置优先级, 故会先试 refs/heads/main 再试 origin/master;
+    # 本仓 master 为真默认, 该次序不产生实际歧义。
     for ref in ("refs/heads/{0}", "refs/remotes/origin/{0}"):
         for cand in ("master", "main"):
             try:
