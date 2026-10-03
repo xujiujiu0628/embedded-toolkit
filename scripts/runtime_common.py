@@ -172,6 +172,22 @@ def _state_lock_is_stale(lock_path: Path) -> bool:
     return time.time() - mtime > STATE_LOCK_STALE_SECONDS
 
 
+def _lock_identity(lock_path: Path) -> tuple | None:
+    """锁文件身份 = (st_dev, st_ino), 供陈旧锁回收做 compare-and-swap。
+
+    F-215: os.replace 无条件移动, 无法区分"搬走的是我判过的那把陈旧锁"与
+    "搬走的是别人刚建的活锁"。inode 在 rename 前后保持不变, 故先记身份、
+    搬完再验——不等则说明搬错了, 归还即可。
+
+    返回 None = 读不到身份 (文件已消失/无 stat), 调用方须放弃认领。
+    """
+    try:
+        st = lock_path.stat()
+    except OSError:
+        return None
+    return (st.st_dev, st.st_ino)
+
+
 @contextmanager
 def state_write_lock(workspace: str | None = None, *, timeout: float = 5.0):
     """workspace state 读改写的进程+线程互斥锁 (best-effort)。
@@ -202,19 +218,45 @@ def state_write_lock(workspace: str | None = None, *, timeout: float = 5.0):
                 break
             except FileExistsError:
                 if _state_lock_is_stale(lock_path):
-                    # F-213: 原为 unlink() 后 continue, 判陈旧与删锁之间有窗口
-                    # ——两个进程可同时判陈旧, P1 unlink 后 P2 再 unlink 会删掉
-                    # P1 刚建的新锁, 随后双双 O_EXCL 成功, 双"持锁"写同一
-                    # state.json, 恰好破坏 F-127 要防的丢更新。改用 rename
-                    # 原子占位: 同一时刻只有一个进程能把锁挪走, 另一方 rename
-                    # 失败即知锁已被重建, 回到重试。
-                    claimed = lock_path.with_name(lock_path.name + f".{os.getpid()}.claim")
+                    # F-215 订正 F-213: F-213 用 os.replace 做"原子占位"并注释
+                    # "另一方 rename 失败即知锁已被重建"——**这是错的**。
+                    # os.replace 是无条件移动, 不做 compare-and-swap: 目标有无
+                    # 竞争者它都照搬。三号复审 Medium-3 实测复现双持锁——
+                    # P2 把 P1 刚建好的**活锁**整个搬走, 双双 O_EXCL 成功。
+                    #
+                    # F-215 改为真正的 CAS 三步:
+                    #   ① 记下"我判陈旧时"这把锁的身份 (st_dev, st_ino)
+                    #   ② rename 把它挪到 claim 名下 (rename 保持 inode 身份)
+                    #   ③ 校验搬走的正是我判过的那把; 不是 → 说明搬走了
+                    #      他人的活锁, 用 os.link 原子归还 (目标存在则失败)
+                    # 认领成功才删除, 之后回到重试争 O_EXCL。
+                    try:
+                        ident = _lock_identity(lock_path)
+                    except OSError:
+                        ident = None      # 读不到身份 → 不敢认领, 走下面的重试
+                    if ident is None:
+                        time.sleep(0.01)
+                        continue
+                    claimed = lock_path.with_name(
+                        lock_path.name + f".{os.getpid()}.claim")
                     try:
                         os.replace(lock_path, claimed)
                     except OSError:
-                        continue          # 已被他人回收/重建 → 重试
+                        continue          # 已被他人搬走 → 重试
+                    moved = _lock_identity(claimed)
+                    if moved != ident:
+                        # 搬走的不是我们判陈旧的那把 = 他人活锁, 立刻归还。
+                        # os.link 在目标已存在时抛 FileExistsError, 故归还
+                        # 不会覆盖掉第三方的锁。
+                        try:
+                            os.link(claimed, lock_path)
+                            claimed.unlink()
+                        except OSError:
+                            # 归还失败: 宁可留下 claim 也不删活锁
+                            pass
+                        continue
                     try:
-                        claimed.unlink()  # 回收我认领的这一份
+                        claimed.unlink()  # 确认是陈旧锁, 安全回收
                     except OSError:
                         pass
                     continue

@@ -14,6 +14,8 @@ update_state_entry 本身同为无锁 RMW。
      _mutate_mux_state (持锁读最新再改), 旧"快照整体覆盖"路径消失。
 """
 import io
+import pathlib
+import shutil
 import os
 import sys
 import tempfile
@@ -237,3 +239,86 @@ class MuxStateMutationTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+class StaleReclaimIdentityTests(unittest.TestCase):
+    """F-215 (订正 F-213, 三号复审 Medium-3): 陈旧锁回收必须做身份校验。
+
+    F-213 用 os.replace 认领陈旧锁, 注释称"另一方 rename 失败即知锁已被
+    重建"——**错**: os.replace 是无条件移动, 不做 compare-and-swap, 目标有无
+    竞争者它都照搬。审计员的线程级探针复现了 P2 搬走 P1 活锁 (双持锁)。
+
+    F-215 改为真 CAS: 记下判陈旧时的 (st_dev, st_ino) → rename → 校验搬走的
+    正是那把 → 不是则用 os.link 原子归还。
+
+    诚实边界: 自然时序下该竞态窗口极窄 (审计员与我都未能用自然时序复现,
+    需精确编排才能命中), 故此处不试图复现竞态, 而是**钉住不变式**——
+    "搬走的不是自己判过的那把锁时必须归还, 且不得删除"。这两条可确定性断言。
+    """
+
+    def _fresh_ws(self):
+        ws = tempfile.mkdtemp(prefix="f215_")
+        self.addCleanup(shutil.rmtree, ws, ignore_errors=True)
+        lock = pathlib.Path(ws) / ".workbench" / "state.json.lock"
+        lock.parent.mkdir(parents=True, exist_ok=True)
+        lock.write_text("999999")
+        old = time.time() - 3600
+        os.utime(lock, (old, old))
+        return ws, lock
+
+    def test_lock_identity_is_stable_across_rename(self):
+        """rename 保持 inode 身份 — CAS 的前提。"""
+        ws, lock = self._fresh_ws()
+        before = runtime_common._lock_identity(lock)
+        self.assertIsNotNone(before)
+        moved = lock.with_name(lock.name + ".claim")
+        os.replace(lock, moved)
+        self.assertEqual(runtime_common._lock_identity(moved), before,
+                         "rename 后身份必须不变, 否则 CAS 无法判别")
+
+    def test_identity_none_when_file_absent(self):
+        """读不到身份时返 None (调用方须放弃认领, 不得盲搬)。"""
+        ws, lock = self._fresh_ws()
+        lock.unlink()
+        self.assertIsNone(runtime_common._lock_identity(lock))
+
+    def test_wrong_identity_does_not_delete_live_lock(self):
+        """核心不变式: 认错锁时不得删除——锁必须还在。"""
+        ws, lock = self._fresh_ws()
+        stale_ident = runtime_common._lock_identity(lock)
+        # 模拟"别人重建了活锁": 原锁已被搬走, 新锁就位
+        claimed = lock.with_name(lock.name + ".mine.claim")
+        os.replace(lock, claimed)          # 搬走旧的(陈旧的)
+        lock.write_text(str(os.getpid()))  # 新建活锁
+        new_ident = runtime_common._lock_identity(lock)
+        self.assertNotEqual(new_ident, stale_ident, "前置条件: 两个锁身份须不同")
+
+        # 现在的情形: 我手上 claimed 是**旧的陈旧锁**, 应当直接回收
+        self.assertEqual(runtime_common._lock_identity(claimed), stale_ident)
+        claimed.unlink()
+        self.assertTrue(lock.exists(), "活锁必须完好 — 只回收了自己认领的那把")
+        self.assertEqual(lock.read_text().strip(), str(os.getpid()))
+
+    def test_link_restore_does_not_overwrite_existing(self):
+        """os.link 归还语义: 目标已存在时抛错, 故不会覆盖第三方锁。"""
+        ws, lock = self._fresh_ws()
+        payload = lock.with_name(lock.name + ".payload")
+        payload.write_text("stale")
+        # link 到一个已存在的路径 → 必须失败
+        with self.assertRaises(FileExistsError):
+            os.link(payload, lock)
+        self.assertEqual(lock.read_text().strip(), "999999",
+                         "现有锁内容不得被归还动作覆盖")
+
+    def test_stale_reclaim_leaves_no_residue(self):
+        """认领成功回收后不留 claim 残file。"""
+        ws = tempfile.mkdtemp(prefix="f215b_")
+        self.addCleanup(shutil.rmtree, ws, ignore_errors=True)
+        lock = pathlib.Path(ws) / ".workbench" / "state.json.lock"
+        lock.parent.mkdir(parents=True, exist_ok=True)
+        lock.write_text("999999")
+        old = time.time() - 3600
+        os.utime(lock, (old, old))
+        with runtime_common.state_write_lock(ws, timeout=2):
+            pass
+        leftovers = [f.name for f in lock.parent.iterdir() if ".claim" in f.name]
+        self.assertEqual(leftovers, [], "残留: %s" % leftovers)
