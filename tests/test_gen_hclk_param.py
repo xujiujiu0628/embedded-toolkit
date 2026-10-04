@@ -299,5 +299,72 @@ class PreconditionNoteTests(unittest.TestCase):
                                  "默认路径不得注入 (兼容契约)")
 
 
+class GenAdcInternalChannelTests(unittest.TestCase):
+    """F-219: CH16/17 内部通道必须使能 CR2.TSVREFE, 否则读回恒 0。
+
+    背景 (三号复审历轮列账, 本轮立项): `gen_adc` 生成的 `CR2 = 1` 只置
+    ADON。对 CH16 (VREFINT) / CH17 (温度传感器) 而言, 内部通路未使能——
+    **转换照常完成、EOC 照常置位、读回恒 0**, 无任何报错。典型 B 类静默。
+
+    真值锚 CMSIS `stm32f103xe.h` ADC_CR2: `TSVREFE_Pos = 23`
+    (0x00800000), 且 **F1 无独立 VREFEN 位**——`grep -c ADC_CR2_VREFEN`
+    在官方头文件为0, 内部通路由 TSVREFE 一位统一使能 (ref.json ADC1.CR2
+    位登记一致: "23": TSVREFE "Temperature sensor and VREFINT enable")。
+    故修法是 CR2 初值带上 bit23, **不是** 补一个不存在的 VREFEN。
+
+    外部通道 (CH0~15) 必须**不受影响**: TSVREFE 只对内部通道有意义, 且
+    RM0008 §11.5 内部通道不受外部触发配置影响——本组钉住外部路径逐字节
+    不变, 防"修内部顺手改了外部"。
+    """
+
+    def _internal(self, ch):
+        return gen_periph.gen_adc("ADC1", ch, "PA1")
+
+    def test_ch16_enables_tsvrefe(self):
+        """CH16 (VREFINT): CR2 初值须含 TSVREFE(bit23) + ADON。"""
+        out = self._internal(16)
+        self.assertRegex(
+            out, r"ADC1->CR2\s*=\s*[^;]*\(1UL << 23\)",
+            f"CH16 生成物未使能 TSVREFE:\n{out}")
+
+    def test_ch17_enables_tsvrefe(self):
+        """CH17 (温度传感器): 同 CH16。"""
+        out = self._internal(17)
+        self.assertRegex(
+            out, r"ADC1->CR2\s*=\s*[^;]*\(1UL << 23\)",
+            f"CH17 生成物未使能 TSVREFE:\n{out}")
+
+    def test_tsvrefe_bit_matches_official_23(self):
+        """位号钉: TSVREFE 必须是 bit23 (0x00800000), 移位写错则静默开别的位。"""
+        out = self._internal(16)
+        # 提取 TSVREFE 的移位量, 断言为 23
+        m = re.search(r"\(1UL << (\d+)\)[^\n]*TSVREFE|TSVREFE[^\n]*?\(1UL << (\d+)\)",
+                      out)
+        self.assertIsNotNone(m, f"生成物未见 TSVREFE 置位语句:\n{out}")
+        shift = int(m.group(1) or m.group(2))
+        self.assertEqual(
+            shift, 23,
+            f"TSVREFE 移位量应为 23 (官方 ADC_CR2_TSVREFE_Pos), 实得 {shift}")
+
+    def test_external_channels_unchanged(self):
+        """CH0~15 逐字节不变——修内部通道不得波及外部通道。"""
+        for ch in (0, 1, 5, 15):
+            with self.subTest(ch=ch):
+                out = self._internal(ch)
+                self.assertNotIn(
+                    "TSVREFE", out,
+                    f"外部通道 CH{ch} 不该出现 TSVREFE")
+                self.assertIn("ADC1->CR2 = 1;", out)
+
+    def test_no_phantom_vrefen_bit(self):
+        """F1 无 VREFEN 位——若生成物出现 VREFEN 说明按 F2/F4 误改。"""
+        for ch in (16, 17):
+            with self.subTest(ch=ch):
+                self.assertNotIn(
+                    "VREFEN", self._internal(ch),
+                    "F1 的 ADC_CR2 无 VREFEN 位 (官方头文件 grep 为 0), "
+                    "内部通路由 TSVREFE 一位使能")
+
+
 if __name__ == "__main__":
     unittest.main()

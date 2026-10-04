@@ -27,7 +27,7 @@ ROOT_DIR = Path(__file__).resolve().parents[1]  # embedded-toolkit/ (machine.jso
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
-from wb_common import load_machine  # noqa: E402  (单一实现, 含 example 回退链)
+from wb_common import file_lock, load_machine  # noqa: E402  (单一实现, 含 example 回退链; file_lock = F-219 D3 跨进程 RMW 锁)
 from wb_runtime import (  # noqa: E402
     JSONCorruptError,
     hidden_subprocess_kwargs,
@@ -124,14 +124,20 @@ def merge_gcc_config(config_file: Path, makefile: Path, target: str,
     其他段无声蒸发 (损坏被构建行为放大成数据丢失)。"""
     config_file, makefile = Path(config_file), Path(makefile)
     log_path, workspace = Path(log_path), Path(workspace)
-    data = load_json_strict(config_file) if Path(config_file).exists() else {}
-    data["gcc"] = {
-        **data.get("gcc", {}),
-        "project": str(makefile.relative_to(workspace) if makefile.is_relative_to(workspace) else makefile),
-        "target": target,
-        "log_dir": str(log_path.relative_to(workspace) if log_path.is_relative_to(workspace) else log_path),
-    }
-    save_json_file(config_file, data)
+    # F-219 D3: 读-改-写整段须持跨进程锁。旧版裸 load→改→save: 两个构建
+    # 进程并发时各自读到旧值, 后写的 os.replace 覆盖先写的, **先写进程对
+    # config.json 的改动无声蒸发**(丢更新, 非撕裂——atomic 写只保证文件
+    # 不半截, 不保证不丢)。锁的是 config.json.lock 旁路哨兵, 与目标
+    # 文件 replace 不打架。
+    with file_lock(config_file):
+        data = load_json_strict(config_file) if Path(config_file).exists() else {}
+        data["gcc"] = {
+            **data.get("gcc", {}),
+            "project": str(makefile.relative_to(workspace) if makefile.is_relative_to(workspace) else makefile),
+            "target": target,
+            "log_dir": str(log_path.relative_to(workspace) if log_path.is_relative_to(workspace) else log_path),
+        }
+        save_json_file(config_file, data)
     return {"status": "ok"}
 
 

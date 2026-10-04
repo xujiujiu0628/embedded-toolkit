@@ -75,8 +75,28 @@ HFSR_BITS = {
 # F-157: 本地 now_iso (UTC+8 硬编码) 删除, 收编 runtime_common 共享版
 # (astimezone 本地时区) — 时区口径变化见 CHANGELOG。
 
+# F-219 D4: 探针层预算。此前是内联字面量 60, 与外层任何预算都无声明关系,
+# 且**总预算 = 3 次 × 60s + 2 × 3s 间隔 = 186s 是隐式的**——调用方
+# (failure_context 的 agent_hint / 人工排障) 无从预知这一层的最坏耗时。
+# 改为显式常量并对外暴露总预算, 使"层2 有多大"可被引用而非心算。
+# 60s 单次预算本身不动 (真机 OpenOCD init+halt+16 次寄存器访问的实测需要),
+# 本票只把**隐式变显式**并给超时一个可辨识形态。
+OPENOCD_ATTEMPTS = 3
+OPENOCD_ATTEMPT_TIMEOUT_S = 60
+OPENOCD_RETRY_SLEEP_S = 3
+#: 层 2 探针最坏总耗时 (秒) = 3×60 + 2×3。供调用方预留外层预算。
+OPENOCD_DIAG_BUDGET_S = (OPENOCD_ATTEMPTS * OPENOCD_ATTEMPT_TIMEOUT_S
+                         + (OPENOCD_ATTEMPTS - 1) * OPENOCD_RETRY_SLEEP_S)
+#: 超时哨兵文本。此前超时与"连不上"同形 (都归成 out=""), 排障时无法区分
+#: "探针慢/卡" 与 "探针不在/拒连"——两者处置完全不同 (等 vs 查接线)。
+_TIMED_OUT_MARKER = "[HF-DIAG-TIMEOUT]"
+
+
 def run_openocd_diag() -> str:
-    """运行 OpenOCD 读取故障寄存器, 返回原始输出文本"""
+    """运行 OpenOCD 读取故障寄存器, 返回原始输出文本
+
+    F-219 D4: 超时不再静默化——返回文本带 `_TIMED_OUT_MARKER` 前缀,
+    使"探针超时"与"探针连不上"在下游可分辨 (旧版两者都是空串)。"""
     openocd_exe = load_machine()["openocd_exe"]  # F-054: 惰性解析 (原模块级常量)
     # cfg 组装单一事实源 (WB-20260919-06); cwd 向上发现工程根做工程层解析
     try:
@@ -118,24 +138,27 @@ def run_openocd_diag() -> str:
     # ST-Link 释放竞态: verify.py capture 会话刚退出时 ST-Link 偶发未释放,
     # 首次连接失败时短延迟重试 (与门控 step_physical_gate 对齐: 3 次, 3s 间隔)
     last_out = ""
-    for attempt in range(3):
+    for attempt in range(OPENOCD_ATTEMPTS):
         try:
             result = subprocess.run(
                 cmd, capture_output=True, text=True,
                 encoding='utf-8', errors='replace',
-                timeout=60, cwd=WORKSPACE
+                timeout=OPENOCD_ATTEMPT_TIMEOUT_S, cwd=WORKSPACE
             )
             out = result.stdout + "\n" + result.stderr
         except subprocess.TimeoutExpired:
-            out = ""
+            # F-219 D4: 带哨兵而非静默空串——"超时"与"连不上"处置不同
+            # (等 vs 查接线), 静默化让两者不可分辨。
+            out = (f"{_TIMED_OUT_MARKER} attempt {attempt + 1}/"
+                   f"{OPENOCD_ATTEMPTS} 超 {OPENOCD_ATTEMPT_TIMEOUT_S}s")
         except FileNotFoundError:
             return ""
         last_out = out
         # 连接成功判据: SWD 探测到目标 (DPIDR 打印) 且能读到 PC — 连接失败时两者皆无
         if "SWD DPIDR" in out and re.search(r"pc\s*\(/32\):\s*0x", out):
             return out
-        if attempt < 2:
-            time.sleep(3)
+        if attempt < OPENOCD_ATTEMPTS - 1:
+            time.sleep(OPENOCD_RETRY_SLEEP_S)
     return last_out
 
 

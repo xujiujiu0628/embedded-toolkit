@@ -315,11 +315,19 @@ def run_planned_call(plan: dict) -> dict:
     JSON (可解析时), stdout/stderr 截尾透传——agent 拿到的是工具自己的
     输出, 本层不加工语义。"""
     try:
+        # F-219 D5: 无 stdin 通道时显式接 DEVNULL, 不继承本进程的 stdin。
+        # MCP server 自身跑在 stdio transport 上——它的 stdin 是 JSON-RPC
+        # 帧通道。若工具子进程被继承该句柄: 子进程任何 read() 会**吞掉下一个
+        # JSON-RPC 请求帧**, 表现为 client 侧无响应/连接挂死, 且错误栈
+        # 指向"工具超时"而非通道污染, 极难归因。
+        # (POSIX 上旧行为还可能让子进程抢到 tty 输入; 显式 DEVNULL 两侧同构。)
+        stdin_payload = plan["stdin_text"]
         proc = subprocess.run(
             plan["argv"], capture_output=True, text=True,
             encoding="utf-8", errors="replace",
             timeout=plan["timeout"], cwd=plan["cwd"],
-            input=plan["stdin_text"])
+            input=stdin_payload if stdin_payload is not None else None,
+            stdin=None if stdin_payload is not None else subprocess.DEVNULL)
     except subprocess.TimeoutExpired:
         return {"ok": False, "exit_code": None,
                 "error": f"工具子进程超时 ({plan['timeout']}s)"}

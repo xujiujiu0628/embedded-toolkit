@@ -592,7 +592,16 @@ def gen_adc(adc: str, ch: int, pin: str, hclk_mhz: int = 72,
     else:
         lines.append(f"{adc}->SMPR1 |= (5UL << {(ch-10)*3});  // CH{ch}: 55.5 cycles")
     lines.append(f"{adc}->SQR3 = {ch};                 // 转换序列: 1 个通道 = CH{ch}")
-    lines.append(f"{adc}->CR2 = 1;                    // ADON 上电")
+    if ch >= 16:
+        # F-219: CH16(VREFINT)/CH17(温度传感器) 是内部通道, 必须先使能内部
+        # 通路 CR2.TSVREFE (bit23) 才转换得出值。旧版 CR2=1 只置 ADON,
+        # **转换照常完成、EOC 照常置位、读回恒 0** —— B 类静默 (三号复审
+        # 历轮列账, 本轮立项)。真值锚 CMSIS stm32f103xe.h ADC_CR2_TSVREFE_Pos
+        # = 23; 且 **F1 无独立 VREFEN 位**, 内部通路由 TSVREFE 一位统一使能,
+        # 故此处不额外置 VREFEN (按 F2/F4 惯例补之即是凭空写不存在的位)。
+        lines.append(f"{adc}->CR2 = (1UL << 23) | 1;      // TSVREFE(内部通路) + ADON")
+    else:
+        lines.append(f"{adc}->CR2 = 1;                    // ADON 上电")
     lines.append("")
     lines.append("/* 4. 单次转换 */")
     lines.append(f"static uint16_t adc_read_ch{ch}(void) {{")

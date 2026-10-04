@@ -98,6 +98,84 @@ def atomic_write_json(path, data):
     os.replace(tmp, path)
 
 
+# ── 跨进程文件锁 (F-219 D3/D6) ───────────────────────────────────────────
+# atomic_write_json 防的是**撕裂** (半截文件), 不防**丢更新**: 两个进程
+# 各自 load 旧值、各自改、各自 replace, 后写的覆盖先写的, 先写进程的改动
+# 无声蒸发。凡「读-改-写」同一 JSON 而无锁, 都有此竞态 (D3 gcc_build 写回
+# config.json / D6 hw_lease 写 meta 旁车)。
+#
+# 锁本体 = 同 hw_lease 口径的 OS 级字节锁: Windows msvcrt.locking /
+# POSIX fcntl.flock。**不是** 锁目标文件本身 (那会与 os.replace 打架:
+# replace 换 inode, 锁随之失效), 而是锁一把**旁路哨兵文件** ——
+# <target>.lock, 只创建不删, 生命周期与目标无关。
+
+try:
+    import fcntl as _fcntl          # noqa: F401  (POSIX)
+    _HAVE_FCNTL = True
+except ImportError:                  # pragma: no cover - Windows 走 msvcrt
+    _HAVE_FCNTL = False
+
+if os.name == "nt":
+    import msvcrt as _msvcrt         # noqa: F401  (Windows 主平台)
+
+
+def _lock_fd(fd, blocking):
+    if os.name == "nt":
+        mode = _msvcrt.LK_LOCK if blocking else _msvcrt.LK_NBLCK
+        _msvcrt.locking(fd, mode, 1)
+    elif _HAVE_FCNTL:
+        op = _fcntl.LOCK_EX if blocking else _fcntl.LOCK_EX | _fcntl.LOCK_NB
+        _fcntl.flock(fd, op)
+    # 其他平台: 无 OS 级锁 → 退化为不加锁 (best effort, 不假装有保证)
+
+
+class file_lock:
+    """跨进程排他锁的上下文管理器, 锁 <path>.lock 旁路哨兵。
+
+        with file_lock(target_path):
+            data = load(target_path)
+            data["x"] = 1
+            atomic_write_json(target_path, data)
+
+    blocking=False 时抢不到抛 BlockingIOError (供"试一下就走"的场景);
+    blocking=True (默认) 阻塞等待。
+
+    **不删哨兵文件**: 删了会让并发者各自新建不同 inode 而锁不到同一把锁。
+    哨兵是 0 字节, 常驻无成本。
+    """
+
+    def __init__(self, target_path, blocking=True):
+        self._path = str(target_path) + ".lock"
+        self._blocking = blocking
+        self._fh = None
+
+    def __enter__(self):
+        d = os.path.dirname(self._path)
+        if d:
+            os.makedirs(d, exist_ok=True)
+        self._fh = open(self._path, "a+b")   # a: 不截断, 跨进程共用同一 inode
+        try:
+            _lock_fd(self._fh.fileno(), self._blocking)
+        except (OSError, BlockingIOError):
+            self._fh.close()
+            self._fh = None
+            raise
+        return self
+
+    def __exit__(self, *exc):
+        if self._fh is not None:
+            try:
+                if os.name == "nt":
+                    _msvcrt.locking(self._fh.fileno(), _msvcrt.LK_UNLCK, 1)
+                elif _HAVE_FCNTL:
+                    _fcntl.flock(self._fh.fileno(), _fcntl.LOCK_UN)
+            except OSError:
+                pass          # 解锁失败不掩盖主流程异常
+            self._fh.close()
+            self._fh = None
+        return False
+
+
 REF_PATH = os.path.join(TOOLKIT_ROOT, "data", "stm32f103-ref.json")
 
 

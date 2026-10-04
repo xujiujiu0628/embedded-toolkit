@@ -33,7 +33,7 @@ import sys
 import time
 
 from runtime_common import now_iso, output_json
-from wb_common import TOOLKIT_ROOT
+from wb_common import TOOLKIT_ROOT, atomic_write_json  # noqa: E402  (F-219 D6: atomic_write_json = meta 旁车原子写)
 
 DEFAULT_DEVICE = "stlink"
 POLL_INTERVAL = 0.2   # --lease-wait 有界等待的轮询间隔 (秒)
@@ -89,9 +89,18 @@ def _read_meta(meta_file: str) -> dict | None:
 
 
 def _write_meta(meta_file: str, payload: dict) -> None:
-    os.makedirs(os.path.dirname(meta_file), exist_ok=True)
-    with open(meta_file, "w", encoding="utf-8") as f:
-        f.write(json.dumps(payload, ensure_ascii=False, indent=2))
+    """写 meta 旁车 (F-219 D6: 改原子写)。
+
+    旧版 `open(w)` 是**截断写**: 读者可能在 truncate 与 write 之间读到
+    空串或半截JSON, `_read_meta` 捕获 JSONDecodeError 后返 None ——
+    而"读不到meta"在本模块的语义是「**无人持有**」。于是并发获取期间,
+    `holder_info()` 会把真实持有者误报成无人持有, 冲突提示随即失效
+    (最坏路径: 两个进程都以为对方没持有而双双写入)。
+
+    改走 `wb_common.atomic_write_json`: tmp + os.replace, 读者要么看到
+    旧完整内容、要么看到新完整内容, 不会看到半截。
+    """
+    atomic_write_json(meta_file, payload)
 
 
 def _holder_message(meta: dict | None, device: str, waited: float) -> str:

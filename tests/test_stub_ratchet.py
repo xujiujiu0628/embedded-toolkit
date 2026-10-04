@@ -189,6 +189,13 @@ BASELINE = {
     ('tests/test_capture_rtt.py', 'B', 'capture_rtt.time.sleep'): 4,
     ('tests/test_capture_semihosting.py', 'B', 'capture_semihosting.subprocess.Popen'): 1,
     ('tests/test_capture_sim.py', 'B', 'sys.argv'): 1,
+    # F-219 D4: hardfault 层2 探针超时路径的钉。subprocess.run 打桩是
+    # 逼出 TimeoutExpired 的唯一真手段 (真跑 OpenOCD 无法稳定构造超时);
+    # time.sleep 同理 (否则每次等 3s ×2)。两处计数为 2 = 两个测试方法
+    # (test_timeout_path_returns_marker / test_no_false_success_on_timeout)
+    # 各打一次, 二者共用同一 mock 组合。与既有两处同形态同理由。
+    ('tests/test_d_tier_fixes_f219.py', 'B', 'hardfault.subprocess.run'): 2,
+    ('tests/test_d_tier_fixes_f219.py', 'B', 'hardfault.time.sleep'): 2,
     ('tests/test_checkpoint_ledger.py', 'A', 'builtins.open'): 1,
     ('tests/test_checkpoint_ledger.py', 'B', 'sys.argv'): 2,
     ('tests/test_cube_usercode.py', 'A', 'os.replace'): 3,

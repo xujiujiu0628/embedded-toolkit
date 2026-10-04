@@ -362,6 +362,32 @@ Claude Code 注册：把仓根 `.mcp.json.example` 拷为工程根（或 `~/.cla
 `run_verify` 等需要工程的工具要求 `project` 参数指向持有
 `.workbench/config.json` 的固件工程根——不存在或不是工程即拒绝。
 
+### ⚠️ 信任边界：勿对不受信的工程跑 verify / MCP `run_verify`（F-219, L-3）
+
+本工具**按"配置即意图"执行**：`.workbench/config.json` 不只是数据，它能
+**决定在你的机器上执行什么**——
+
+| 键 | 决定 |
+|---|---|
+| `gcc.project` | 构建时 `make -f <该值>` 跑哪个 Makefile（`gcc_build.py:188`） |
+| `gcc.target` | 传给该 Makefile 的 target |
+| `capture.sim.exe` | sim 后端启动哪个可执行文件（`capture_sim.py:48`） |
+| `flash.backend` / `capture.backend` / `builder` | 换整条后端（OpenOCD / esptool / uart / idf） |
+
+**故：把 `verify.py` / MCP `run_verify` 指向一个你不知道来源的工程，等同于
+以你的权限执行那个工程的作者指定的任意命令**（Makefile 可含任意 shell
+recipe；`sim.exe` 直接是任意二进制）。设备锁、bounded argv、参数白名单
+都**不覆盖这一条**——它们防的是参数注入与并发抢占，不是"该不该信这个工程"。
+
+**规避**：只对自己写过、或来源可审计的工程跑 verify；`project` 指向他人
+仓库前先读其 `.workbench/config.json` 的 `gcc.project` 与 `capture.sim.exe`。
+CI 与只读工具（`rm_lookup` / `fsd_coverage` / `expectations_lint` 等纯离线
+命令）不受此限——它们不读 config 决定执行面。
+
+> 登记口径：这是**设计边界不是缺陷**——工具链的职责是把声明的构建跑起来，
+> 不是替调用者判断声明可不可信。变更此项须同步更新本节与
+> `CHANGELOG` F-219。
+
 ## 工程契约（`.workbench/`）
 
 固件工程通过 `.workbench/config.json` 被发现（从 cwd 逐级向上查找，兜底识别
