@@ -276,16 +276,86 @@
   ① `gen_adc` CH16/17 缺 `CR2.TSVREFE` — `gen_periph.py` 本轮零改动,
   未修未入账 (上轮建议立项); ② README 信任边界 ("勿对不受信工程跑
   verify / MCP run_verify") 未加; ③ 路径残留见上条 F-218-附;
-  ④ D 档六条弱点的**现状 (F-219/F-221 收口)**: `gcc_build` config RMW 无锁
-  / hardfault 层 2 预算错配 / mcp stdin 未接 DEVNULL / `hw_lease` meta
-  旁车竞态 **四条已于 F-219 修复**; `feedback_db` PASS 灌水与
-  `release_audit` 退出语义两条**经影响面评估后撤案/改判**——前者证伪
-  (无灌水路径)、后者是有意设计, 二者均已在 **F-221** 补上机检钉。**D 档
-  六条至此全部有结论, 无悬空欠账。**
+  ④ D 档六条弱点的**现状 (F-219/F-221/F-222 三轮收口)**: `gcc_build`
+  config RMW 无锁 / mcp stdin 未接 DEVNULL **F-219 已修**;
+  `feedback_db` PASS 灌水与 `release_audit` 退出语义两条**经影响面评估后
+  撤案/改判**, F-221 补上机检钉; **hardfault 层 2 预算错配与 `hw_lease`
+  meta 旁车竞态两条由四审查出"上轮只做了一半"、F-222 补齐本体**
+  (详见 F-219 与 F-222 两条)。**D 档六条至此全部有结论, 无悬空欠账。**
   另注: F-213~F-217 已于 **F-220** 补入本表 (见下四条), 兑现本条承诺;
   skipped 24 vs 上轮 21 的差额为本机缺 host gcc 的 3 个运行探针 (交叉
   编译路径已补位)。
 
+- **F-219 (fix+docs, 四笔): gen_adc CH16/17 补 TSVREFE + README 信任边界 + D 档三条纯代码修复**:
+  ① **gen_adc CH16/17 缺 `CR2.TSVREFE`**: 旧版 `CR2 = 1` 只置 ADON,
+  CH16(VREFINT)/CH17(温度传感器) 内部通路未使能 → **转换照常完成、EOC
+  照常置位、读回恒 0**(B 类静默)。真值锚官方 `stm32f103xe.h`
+  `ADC_CR2_TSVREFE_Pos=23`; 且**F1 无独立 VREFEN 位**(官方头文件零命中,
+  ref.json 位登记一致) → 改 bit23 而非补一个不存在的 VREFEN(按 F2/F4
+  惯例补之即凭空写位)。外部通道 CH0~15 逐字节不变, 各有钉。
+  ② **README 信任边界 (L-3)**: 核实 `gcc.project` 决定跑哪个 Makefile
+  (可含任意 shell recipe)、`capture.sim.exe` 直接是任意二进制 → 对不受信
+  工程跑 verify/MCP `run_verify` **等同于以调用者权限执行对方指定的任意
+  命令**, 设备锁/bounded argv/白名单**均不覆盖此条**。写为 MCP 节下独立
+  小节 + 机制表; 配 4 例钉, 含**反向过期钉**(gcc_build 若不再读
+  `gcc.project`, 该节表述即失效转红, 防文档陈旧吓人)。
+  ③ **D3 `gcc_build` config RMW 无锁** → 新增 `wb_common.file_lock`
+  跨进程 OS 级字节锁。**原子写只防撕裂不防丢更新**: 两进程各自 load 旧值、
+  各改、各 `os.replace`, 后写覆盖先写。锁走 `<target>.lock` 旁路哨兵
+  (**不锁目标文件本身** —— replace 换 inode, 锁随之失效; **哨兵不删**
+  ——删了并发者各建新 inode 互斥失效)。互斥性用 **6 个真进程**验证丢更新,
+  不用 mock。
+  ④ **D5 MCP stdin 未接 DEVNULL**: server 跑在 stdio transport 上, 其
+  stdin 是 JSON-RPC 帧通道; 子进程继承后任何 `read()` 会**吞掉下一个请求
+  帧**, 表现为 client 无响应而错栈指向"工具超时"。有 stdin 通道时仍走 PIPE。
+  ⑤ **D6 `hw_lease` meta 截断写** → 改走 `atomic_write_json`。截断写窗口内
+  读者可读到半截 JSON, `_read_meta` 捕获后返 None —— 而**"读不到 meta"在
+  本模块的语义是「无人持有」**, 故并发获取期间 `holder_info()` 会把真实
+  持有者误报为无人, 冲突提示失效(最坏: 两进程都以为对方没持有而双双写入)。
+  **D4 hardfault 层 2** 预算显式化 + 超时哨兵见 **F-222**(四审查出上轮
+  只做了显式化、错配本体未修)。
+  测试: 新增 30 例; stub_ratchet 新增两处 B 式打桩按纪律登记入快照
+  (计数 2, 已注明是哪个测试方法共用), 未改判据、未用豁免。
+- **F-222 (fix, 四审新发现三件): verify 层2 外层预算错配本体 + hw_lease meta 删除时序 + save_skill_section 补锁**:
+  四审对照 F-218~F-221 后提三件, **全部核实为真**。共同病灶:
+  **账目按"我改了什么"写, 不按"缺陷的本体在哪"核** —— 于是"改善了一部分"
+  被记成"已修复"。这与 F-221 那次 D1 误判同族, 但那次是**判断**层面,
+  这次是**记账**层面。
+  ① **D4 错配本体 (四审唯一实质项)**: F-219 只把 `hardfault.py` 内的
+  3×60+2×3=186s 显式化为 `OPENOCD_DIAG_BUDGET_S`, **却没动
+  `verify.py:1279` 的外层 `timeout=60`** —— 于是**在 verify 链路里层 2
+  必然被外层掐死在第 1 次尝试**, 3 次重试从未跑到第二遍; 改善只惠及独立
+  运行 `hardfault.py` 的场景。账目却写了"已修复"。**属实**。
+  修法: verify 层 2 的 `timeout` 改 `max(60, hardfault_budget_s())`, 引用
+  常量而非重写 186(两处各写一份必然漂移)。预算取值用 `runpy` 读常量而
+  **不 import**(import 会执行模块级代码且污染 import 缓存), 读不到退兜底
+  186 并配钉防副本漂移。
+  ② **B8a meta 误删竞态仍在**: `hw_lease.py` 解锁后**无条件
+  `os.remove(meta_file)`**, A 释放与 B 写新 meta 交错时会删掉 B 的旁车。
+  账目"meta 旁车竞态已修复"比修的宽(只修了截断写)。**属实**。
+  **修法与首版不同**: 我第一版是**整行删掉 `os.remove`**, 被既有
+  `tests/test_hw_lease.py` **打回 5 例** —— 因为 `holder_info()` 以
+  「meta 存在」判定「有持有者」(多处断言 release 后旁车已清), 留着会让
+  **陈旧 meta 冒充活锁**。既有契约是对的, 错的是**删除时机**。
+  改为 **`os.remove` 移到解锁之前**: B 只有在 A 解锁后才可能 acquire,
+  而 A 的删除已在解锁前完成 → 不存在"A 删在 B 写之后"的交错。
+  **教训: 我第一版的"修法"把自己的推断当成了缺陷本体, 没查既有契约** ——
+  与 D1 那次同型, 但这次既有测试直接把它挡住了。
+  ③ **`save_skill_section` 对 config.json 的 RMW 仍无锁**: 与 D3
+  **同一目标文件**的同类竞态, 四审"同类残留顺带一提"属实。已收编:
+  `runtime_common` 从 `wb_common` 导入**同一把** `file_lock`(锁必须按目标
+  文件由**全部写入方**共用, 两处各加各的等于没加)。F-020 损坏拒写契约
+  不回归, 有钉。
+  补钉 `tests/test_f222_fourth_review_fixes.py`(10 例), 变异验证三处各自
+  转红(D4 退回 60s / B8a 退回 unlock-then-remove 旧序 / save_skill 去锁)。
+  **形态钉的踩坑记录(值一条)**: 三处形态钉首版全部**假红**——断言字符串
+  命中了我自己写的**说明文字**。依次踩了四个坑: ①文本扫描命中注释;
+  ②手写字符串扫描把字面量 `"meta_file": meta_file` 误判成注释起点;
+  ③改用 `tokenize` 后 `" ".join` 抹平行结构致 split 失配; ④只取 `lineno`
+  丢掉多行调用的**续行**(`timeout=max(...)` 正在续行上)。最终用 **AST
+  按 `lineno..end_lineno` 取整段 + 查调用节点**。**教训: 形态钉必须查语法
+  树而非文本**——文本搜索对"文档解释代码"的仓天然误报。
+  全量 1423 绿 (skipped=9, 基线 1413 + 10); ruff 零告。
 - **F-221 (test, D1/D2 契约): feedback_db outcome 语义与 release_audit 退出码补机检 + D1 撤案纠错**:
   F-219 留账的 D 档最后两条。经**影响面评估后两笔都只补钉、不改行为**,
   且D1 的原指控被证伪并撤案。

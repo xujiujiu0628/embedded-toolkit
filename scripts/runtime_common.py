@@ -28,6 +28,12 @@ STATE_DIR_NAME = ".workbench"
 STATE_FILE_NAME = "state.json"
 PROJECT_CONFIG_FILE_NAME = "config.json"
 
+# F-222: file_lock 由 wb_common 单点提供 (Layer 0)。wb_common 只依赖标准库,
+# 不 import 本模块 → 无循环依赖。锁共享而非各脚本各抄一份, 是 D3/D6 与
+# save_skill_section 三处写入方能互斥的前提: **锁必须按目标文件由所有
+# 写入方共用**, 两处各抄一把锁等于没锁。
+from wb_common import file_lock  # noqa: E402  (F-222)
+
 
 class JSONCorruptError(ValueError):
     """JSON 文件损坏/非 UTF-8/顶层非对象 — 读改写场景必须显式处理。
@@ -515,19 +521,26 @@ def save_skill_section(config_file: str | Path, skill: str, values: dict) -> Pat
     """读改写 config.json 的 skill 段 (F-020 契约): 损坏拒绝写回返回 None。
 
     段值为 null 时按空段合并 (采纳 ocd 版 `or {}` 防御 —— wb/serial 旧版此处
-    会 TypeError, 属崩溃路径增强, 正常写回形态不变)。"""
+    会 TypeError, 属崩溃路径增强, 正常写回形态不变)。
+
+    F-222: 整段读-改-写纳入跨进程锁 (与 D3 gcc_build 写回 config.json
+    **同一目标文件**的同类竞态)。两处若一个加锁一个不加, 反而互为丢更新
+    的对手方 —— 加锁必须按**目标文件**覆盖全部写入方, 不是按脚本覆盖。
+    `atomic_write` 只防撕裂不防丢更新, 故仍须锁。
+    """
     file_path = Path(config_file)
-    if file_path.exists():
-        try:
-            data = load_json_strict(file_path)
-        except JSONCorruptError as e:
-            print(f"Warning: 拒绝写回 config.json 以免清空其他配置段, "
-                  f"请手工修复后重试: {e}", file=sys.stderr)
-            return None
-    else:
-        data = {}
-    data[skill] = {**(data.get(skill) or {}), **values}
-    save_json_file(file_path, data)
+    with file_lock(file_path):
+        if file_path.exists():
+            try:
+                data = load_json_strict(file_path)
+            except JSONCorruptError as e:
+                print(f"Warning: 拒绝写回 config.json 以免清空其他配置段, "
+                      f"请手工修复后重试: {e}", file=sys.stderr)
+                return None
+        else:
+            data = {}
+        data[skill] = {**(data.get(skill) or {}), **values}
+        save_json_file(file_path, data)
     return file_path
 
 

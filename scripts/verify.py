@@ -336,6 +336,32 @@ def _release_hw_lease(lease) -> None:
               f"(进程退出时 OS 自动放锁, 不影响本次结果)", file=sys.stderr)
 
 
+def hardfault_budget_s() -> int:
+    """层 2 诊断(hardfault.py)的总预算秒数, 取自其模块常量。
+
+    F-222: verify 在这里 spawn hardfault.py 子进程, 外层 `timeout` 必须
+    **罩过**被调方的总预算, 否则内层重试从未跑完就被外层掐断(F-219 只把
+    186s 显式化, 却没改这里的 60 —— 错配本体在此, 四审抓出属实)。
+
+    用 `runpy` 读常量而**不 import**: import hardfault 会执行其模块级代码
+    (机器探测/常量解析), 且 import 缓存会让 monkeypatch 测试失效; runpy
+    只取值不驻留。读不到时退回 186 (= 3×60 + 2×3) 并在注释标明这是
+    **兜底副本**, 上游改预算时须同步此处——故配了
+    `test_hardfault_budget_matches_module_constant` 钉住两者一致。
+    """
+    try:
+        import runpy
+        ns = runpy.run_path(
+            os.path.join(TOOLKIT_ROOT, "scripts", "hardfault.py"),
+            run_name="__hf_budget_probe__")   # 非 __main__ → 不跑 main()
+        val = ns.get("OPENOCD_DIAG_BUDGET_S")
+        if isinstance(val, int) and val > 0:
+            return val
+    except Exception:
+        pass
+    return 186   # 兜底副本: 3×60s + 2×3s, 与 hardfault.py 同口径
+
+
 def _hardfault_trigger(captured_text, capture_empty, flash_ran):
     """F-115 (B1): HardFault 诊断触发路径归因 (spec rtt-hardfault §3.2)。
 
@@ -1276,7 +1302,16 @@ def _run_judgement(args, config, result, captured_text, captured_lines,
                     hf_cmd,
                     capture_output=True, text=True,
                     encoding='utf-8', errors='replace',
-                    timeout=60, cwd=WORKSPACE, **hf_kw
+                    # F-222: 外层必须罩过层 2 的**总**预算。
+                    # F-219 只把 hardfault.py 内的 3×60+2×3=186s 显式化为
+                    # OPENOCD_DIAG_BUDGET_S, 却没动这里的 60 —— 于是**在
+                    # verify 链路里层 2 必然被外层掐死在第 1 次尝试**,
+                    # 3 次重试从未跑到过第二遍 (改善只惠及独立运行
+                    # hardfault.py 的场景)。四审抓出, 属实: 那不是"预算错配
+                    # 已修复", 只做了显式化+超时可辨识, 错配本体在此。
+                    # 引用常量而非重写 186 —— 两处数字若各写一份必然漂移。
+                    timeout=max(60, hardfault_budget_s()), cwd=WORKSPACE,
+                    **hf_kw
                 )
                 if hf_result.returncode == 0 and hf_result.stdout.strip():
                     hf_data = json.loads(hf_result.stdout)

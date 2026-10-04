@@ -176,19 +176,33 @@ def release(lease: dict | None) -> dict:
         return {"ok": True, "note": "无锁可放 (acquire 未成功)"}
     fd = lease.get("_fd")
     lock_file = lease.get("lock_file", "")
+    # meta_file 仍从 lease 取但**不再用于删除** (F-222 B8a, 见下方注释);
+    # 保留读取以兼容调用方传入的旧形态 lease dict (该键是 acquire 的
+    # 公开返回字段之一), 不用它做任何动作。
     meta_file = lease.get("meta_file", "")
     if not isinstance(fd, int) or not lock_file:
         return {"ok": False,
                 "error": "lease dict 缺 _fd/lock_file — 必须传 acquire 的原返回值"}
+    # F-222 (B8a): meta 旁车**在解锁之前**删除, 不是解锁之后。
+    # 旧实现在 `unlock → close → remove` 顺序下删, 留下交错窗口:
+    #   A 解锁 → B acquire 并写入新 meta → A remove → B 的旁车凭空消失
+    # 后果是 `holder_info()` 读不到 meta 而把真实持有者报成「无人持有」——
+    # 与 F-219 D6 修的「半截 JSON 读成无人」同型, 只是成因从"读到半截"
+    # 变成"被整个删掉"。
+    # 改序即闭合: B 只有在 A **解锁之后**才可能 acquire, 而 A 的删除已在
+    # 解锁前完成 → 不存在 "A 删在 B 写之后" 的交错。
+    # **为何仍要删**: `holder_info()` 以「meta 存在」判定「有持有者」
+    # (tests/test_hw_lease.py 多处断言 release 后旁车已清), 留着会让
+    # 陈旧 meta 冒充活锁。故保持删除, 只调顺序。
+    try:
+        os.remove(meta_file)
+    except OSError:
+        pass   # meta 不存在/已被清 (并发或崩溃残留), 无害
     unlocked = _unlock_byte(fd)
     try:
         os.close(fd)
     except OSError:
         pass   # fd 可能已随失效路径关闭
-    try:
-        os.remove(meta_file)
-    except OSError:
-        pass   # meta 留置无害 (下次 acquire 覆写)
     if not unlocked:
         return {"ok": False,
                 "error": f"解锁失败: fd {fd} 无效 (已被提前 close/双释放); "
