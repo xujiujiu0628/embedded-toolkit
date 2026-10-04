@@ -257,21 +257,15 @@ def _arm_gcc():
     return None
 
 
-def _static_assert_probe(pairs, tmpdir):
-    """降级路径: 生成 _Static_assert 片段用交叉编译器**编译期**校验。
+def _compile_asserts(lines, tmpdir):
+    """把若干条 _Static_assert 用交叉编译器编译一次 (CI 路径共用)。
 
-    CI 只装 arm-none-eabi (装不了 host gcc 也跑不了 ARM 二进制), 运行探针
-    在那里必然不可用。此路径不运行任何东西——编译通过即断言成立, 编译失败
-    即断言不成立, 由编译器把错值与期望值一并报出。
+    返回 CompletedProcess; 找不到编译器返回 None。编译通过即全部断言成立,
+    任一失败即编译失败——由编译器把出错那条一并报出。
     """
     gcc = _arm_gcc()
     if not gcc:
         return None
-    lines = []
-    for i, (struct, mem, expect) in enumerate(pairs):
-        lines.append(
-            '_Static_assert(offsetof(%s, %s) == 0x%X, '
-            '"%s.%s 应为 0x%X");' % (struct, mem, expect, struct, mem, expect))
     src = ('#include <stddef.h>\n#include "f103_regs.h"\n'
            + "\n".join(lines) + "\n")
     cpath = os.path.join(tmpdir, "sa.c")
@@ -281,6 +275,34 @@ def _static_assert_probe(pairs, tmpdir):
         [gcc, "-c", "-I", HEADER_DIR, cpath, "-o", os.path.join(tmpdir, "sa.o")],
         capture_output=True, text=True, encoding="utf-8",
         errors="replace", timeout=180)
+
+
+def _static_assert_probe(pairs, tmpdir):
+    """降级路径: 生成 _Static_assert 片段用交叉编译器**编译期**校验。
+
+    CI 只装 arm-none-eabi (装不了 host gcc 也跑不了 ARM 二进制), 运行探针
+    在那里必然不可用。此路径不运行任何东西——编译通过即断言成立, 编译失败
+    即断言不成立, 由编译器把错值与期望值一并报出。
+    """
+    lines = [
+        '_Static_assert(offsetof(%s, %s) == 0x%X, '
+        '"%s.%s 应为 0x%X");' % (struct, mem, expect, struct, mem, expect)
+        for struct, mem, expect in pairs]
+    return _compile_asserts(lines, tmpdir)
+
+
+def _size_assert_probe(pairs, tmpdir):
+    """数组成员的**长度**钉 (F-218)。
+
+    offsetof 只问数组的**起始**偏移, 逐名比对又整体跳过数组成员
+    (见 setUpClass 的说明), 于是数组长度无人过问: DR_HI[32] 被写成
+    DR_HI[31] 这类错误, 起始偏移照样对得上, 两道钉全绿。长度必须单列。
+    """
+    lines = [
+        '_Static_assert(%s == %s, "%s 应为 %s");'
+        % (expr, expect, label, expect)
+        for label, expr, expect in pairs]
+    return _compile_asserts(lines, tmpdir)
 
 
 class StructLayoutOffsetTests(unittest.TestCase):
@@ -478,6 +500,10 @@ class CrossCompilerStaticAssertTests(unittest.TestCase):
         ("CAN_TypeDef", "F", 0x240),
         ("BKP_TypeDef", "RTCCR", 0x2C), ("BKP_TypeDef", "CR", 0x30),
         ("BKP_TypeDef", "CSR", 0x34),
+        # F-218: DR_HI 起始偏移。CSR 与 DR_HI 之间是**两个**保留字
+        # (官方 stm32f103xe.h 的 RESERVED13[2]), 故 DR_HI@0x40 起;
+        # 漏写一字会让整段 DR11..DR42 前移到保留区 (B 类静默)。
+        ("BKP_TypeDef", "DR_HI", 0x40),
         ("RCC_TypeDef", "CR", 0x00), ("RCC_TypeDef", "BDCR", 0x20),
         ("FLASH_TypeDef", "ACR", 0x00), ("FLASH_TypeDef", "WRPR", 0x20),
         ("IWDG_TypeDef", "KR", 0x00), ("IWDG_TypeDef", "SR", 0x0C),
@@ -487,6 +513,26 @@ class CrossCompilerStaticAssertTests(unittest.TestCase):
         ("CRC_TypeDef", "CR", 0x08),
         ("WWDG_TypeDef", "SR", 0x08),
         ("SysTick_Type", "CTRL", 0x00), ("SysTick_Type", "CALIB", 0x0C),
+    ]
+
+    # F-218: 数组长度钉。offsetof 只覆盖起始偏移, 逐名比对跳过数组成员——
+    # 长度错了 (DR_HI[32] 写成 [31]) 起始偏移照样对得上, 满绿。
+    SIZE_PINS = [
+        ("BKP DR_HI (DR11..DR42 = 32 字)",
+         "sizeof(((BKP_TypeDef *)0)->DR_HI)", "32 * 4"),
+        ("BKP DR (DR1..DR10 = 10 字)",
+         "sizeof(((BKP_TypeDef *)0)->DR)", "10 * 4"),
+        # 0x40 + 32*4 = 0xC0。改前实测 0xBC (整段前移一字, 末元素 DR_HI[31]
+        # 落在 0xB8 而真 DR42@0xBC) —— 本条是 F-218 缺陷的直接证人。
+        ("BKP_TypeDef 整体 (0x00..0xC0)",
+         "sizeof(BKP_TypeDef)", "0xC0"),
+        # NVIC 本地刻意止于 IP (官方 core_cm3.h 还有 RESERVED5[644] + STIR
+        # 到 0xE04)。钉 0x3F0 是把这个**截断边界**钉死: 既防误补对齐空洞,
+        # 也防有人照官方补全时漏改 IP 宽度 (IP 是 uint8_t[240] 字节宽)。
+        ("NVIC ISER..IP (止于 IP 末尾 0x3F0)",
+         "sizeof(NVIC_Type)", "0x3F0"),
+        ("CAN F (14 组 × 2 字)",
+         "sizeof(((CAN_TypeDef *)0)->F)", "14 * 2 * 4"),
     ]
 
     def test_critical_offsets_hold_under_cross_compiler(self):
@@ -501,6 +547,18 @@ class CrossCompilerStaticAssertTests(unittest.TestCase):
                 r.returncode, 0,
                 "结构体偏移静态断言不成立 (F-213 回归):\n"
                 + (r.stderr or "")[-3000:])
+
+    def test_array_extents_hold_under_cross_compiler(self):
+        """数组成员的长度钉 (F-218)。"""
+        import tempfile
+        with tempfile.TemporaryDirectory() as td:
+            r = _size_assert_probe(self.SIZE_PINS, td)
+            if r is None:
+                self.skipTest("未找到 arm-none-eabi-gcc, 无法执行数组长度钉")
+            self.assertEqual(
+                r.returncode, 0,
+                "数组成员长度静态断言不成立 (F-218: 长度错而起始偏移对得上, "
+                "偏移钉与逐名比对均拦不住):\n" + (r.stderr or "")[-3000:])
 
 
 class RefJsonConventionDocTests(unittest.TestCase):

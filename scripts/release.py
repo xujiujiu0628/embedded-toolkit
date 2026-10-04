@@ -34,6 +34,37 @@ VERIFY = os.path.join(TOOLKIT_ROOT, "scripts", "verify.py")
 # 取 600 是守住历史值; 实际生效值 = max(本项, timeout + 60), 见 gate1。
 GATE1_OUTER_TIMEOUT_S = 600
 
+# F-218: ESP 构建步的内层预算默认值。与 esp_runtime.step_build_idf 的
+# `cfg.get("build_timeout", 900)` 保持同源同值——两处默认值各写各的,
+# 迟早漂移成"门禁按 900 罩、构建按别的值跑"的新错法。
+IDF_BUILD_TIMEOUT_DEFAULT_S = 900
+
+# F-218: 内层构建预算之外还要留的**收尾**裕量。外层杀掉 verify 时, 它可能
+# 正处在写失败上下文 / 落台账的途中, 裕量给这些收尾动作留出跑完的机会。
+IDF_OUTER_MARGIN_S = 120
+
+
+def _idf_build_budget(config):
+    """工程 config 里的 ESP 构建步内层预算 (秒)。非 ESP / 读不到 / 值非法
+    一律返回 None——调用方据此判定"无须抬外层"。
+
+    判 builder==idf 而非 esp_backend_mode: 后者含 flash.backend=esptool /
+    capture.backend=uart 两个标记, 混配时也会为真, 但那两条路径不走
+    step_build_idf, 没有内层构建预算可罩。抬错对象同样是错。
+    """
+    cfg = config or {}
+    if cfg.get("builder") != "idf":
+        return None
+    raw = (cfg.get("idf") or {}).get("build_timeout",
+                                      IDF_BUILD_TIMEOUT_DEFAULT_S)
+    try:
+        val = int(raw)
+    except (TypeError, ValueError):
+        # esp_runtime 侧对非数值是裸抛 ValueError (已知欠账, F-174 T3);
+        # 门禁侧读到这种 config 不跟着崩——退回默认值, 宁可多给时间。
+        return IDF_BUILD_TIMEOUT_DEFAULT_S
+    return val if val > 0 else None
+
 # F-190/M-1: G0.5 swd_probe 经 OpenOCD 探 ST-Link, 语义仅 Cortex-M — ESP 模式
 # 步骤抑制并落可机检 skipped 痕 (status/reason 形态对齐 F-188 N-4 /
 # F-150 sim skip)。run_gates 与 build_record 共用同一常量。
@@ -91,13 +122,25 @@ def gate1(ws, timeout):
     --rebuild (clean rebuild + 烧录 + 采集), 真实周期远大于采集超时。故
     `10 + 60 = 70s` 把默认路径的外层上限从 600s 收紧到 70s, 恰好制造了
     它声称要消除的"慢机上 verify 未跑完被外层砍掉"。F-213 引用的
-    esp_runtime.build_timeout (默认 900) 与本处无关, 属参数张冠李戴——
-    该键在本文件从未被引用。
+    esp_runtime.build_timeout (默认 900) 确实在本文件从未被引用——但
+    "未被引用"不等于"无关", 这一点由 F-218 订正 (见下)。
 
     F-215 修法: 外层预算独立于采集超时, 由 **GATE1_OUTER_TIMEOUT_S**
     单点定义并取"不小于历史 600s", 采集超时只作为下限参与:
         outer = max(GATE1_OUTER_TIMEOUT_S, timeout + 60)
     采集超时是真实下界 (verify 至少要跑那么久), 但绝不是上界。
+
+    F-218 补第三项: 外层还必须**罩过内层的构建步预算**。F-215 把耦合
+    定性为"张冠李戴: idf.build_timeout 在 release.py 从未被引用"——
+    引用关系属实, 但耦合是**嵌套**的, 不是引用的: 外层 600s 罩住整个
+    verify 子进程, 而 verify 内部的 ESP 构建步预算 idf.build_timeout
+    默认 900s。--rebuild 对 ESP 是 fullclean+build, 合法耗时完全可能落在
+    600~900s, 此时内层没超、外层先杀, 报"verify 重跑超时"——把一次
+    正常但偏慢的构建误归成外层超时, 归因误导且无从分辨。
+
+    故 ESP 路径再取 max:
+        outer = max(600, timeout + 60, idf_build_timeout + 120)
+    STM32 路径逐字节不变 (无 idf 预算 → 第三项缺席)。
     """
     cmd = [sys.executable, VERIFY, "--json", "--rebuild",
            "--gate-run",
@@ -105,6 +148,15 @@ def gate1(ws, timeout):
            "--require-schedule-origin",
            "--timeout", str(timeout)]
     outer = max(GATE1_OUTER_TIMEOUT_S, int(timeout) + 60)
+    basis = [f"GATE1 基准 {GATE1_OUTER_TIMEOUT_S}s",
+             f"采集超时 {timeout}s + 60s 收尾裕量"]
+    # F-218: 第三项。config 缺失/非 ESP 时 _idf_build_budget 返回 None,
+    # STM32 路径的 outer 与修前逐字节相同。
+    idf_budget = _idf_build_budget(_project_config(ws))
+    if idf_budget is not None:
+        outer = max(outer, idf_budget + IDF_OUTER_MARGIN_S)
+        basis.append(f"idf 构建预算 {idf_budget}s + "
+                     f"{IDF_OUTER_MARGIN_S}s 收尾裕量")
     try:
         r = subprocess.run(cmd, capture_output=True, text=True,
                            encoding="utf-8", errors="replace",
@@ -112,8 +164,7 @@ def gate1(ws, timeout):
     except subprocess.TimeoutExpired:
         return {"status": "error",
                 "error": f"verify 重跑超时 (外层 {outer}s = "
-                         f"max(GATE1 基准 {GATE1_OUTER_TIMEOUT_S}s, "
-                         f"采集超时 {timeout}s + 60s 收尾裕量))"}
+                         f"max({', '.join(basis)}))"}
     try:
         return json.loads(r.stdout)
     except json.JSONDecodeError:

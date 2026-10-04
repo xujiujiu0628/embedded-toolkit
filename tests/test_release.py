@@ -344,7 +344,31 @@ class ReleaseGateTests(unittest.TestCase):
         self.assertEqual(m_gates.call_args[0][4], "fake-openocd.exe")
 
 
-class Gate1OuterTimeoutTests(unittest.TestCase):
+class _Gate1OuterProbe:
+    """读 gate1 传给 subprocess.run 的外层 timeout 实参。
+
+    F-218 抽成 mixin: F-215 组与 F-218 组都要这个探针, 各自复制一份
+    等于多一处 `mock.patch.object(release.subprocess, ...)` 全局打桩——
+    test_stub_ratchet 把打桩计作欠账并要求逐处裁决豁免。共用一份即只多一处。
+    """
+
+    def _outer_timeout_for(self, capture_timeout=10, ws=None):
+        """跑一次 gate1, 从 mock 出的 subprocess.run 读 timeout 实参。
+
+        ws 省略时自建空工作区; 需要工程 config 的用例传入自备的 ws。"""
+        if ws is None:
+            ws = tempfile.mkdtemp(prefix="g1tmo_")
+            self.addCleanup(shutil.rmtree, ws, ignore_errors=True)
+        ok = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout='{"status": "pass"}', stderr="")
+        with mock.patch.object(release.subprocess, "run",
+                               return_value=ok) as m_run:
+            release.gate1(ws, capture_timeout)
+        self.assertTrue(m_run.called, "gate1 未调用 subprocess.run")
+        return m_run.call_args.kwargs.get("timeout")
+
+
+class Gate1OuterTimeoutTests(_Gate1OuterProbe, unittest.TestCase):
     """F-215 (订正 F-213, 三号复审 High-2): G1 外层超时不得由采集超时支配。
 
     F-213 把 gate1 的 subprocess 外层超时改成 `int(timeout) + 60`, 声称
@@ -357,18 +381,6 @@ class Gate1OuterTimeoutTests(unittest.TestCase):
     `mock.patch.object(release, "gate1")` 把整个函数打桩掉, 从不触及
     subprocess.run 的 timeout 实参, 故该缺陷零阻力通过。
     """
-
-    def _outer_timeout_for(self, capture_timeout):
-        """跑一次 gate1, 从 mock 出的 subprocess.run 读 timeout 实参。"""
-        ws = tempfile.mkdtemp(prefix="g1tmo_")
-        self.addCleanup(shutil.rmtree, ws, ignore_errors=True)
-        ok = subprocess.CompletedProcess(
-            args=[], returncode=0, stdout='{"status": "pass"}', stderr="")
-        with mock.patch.object(release.subprocess, "run",
-                               return_value=ok) as m_run:
-            release.gate1(ws, capture_timeout)
-        self.assertTrue(m_run.called, "gate1 未调用 subprocess.run")
-        return m_run.call_args.kwargs.get("timeout")
 
     def test_default_capture_timeout_keeps_historical_outer(self):
         """--timeout 默认 10 (采集超时) → 外层不得掉到 70s"""
@@ -403,3 +415,76 @@ class Gate1OuterTimeoutTests(unittest.TestCase):
         self.assertEqual(res["status"], "error")
         self.assertIn(str(release.GATE1_OUTER_TIMEOUT_S), res["error"])
         self.assertNotIn("70s", res["error"], "不得再报 F-213 的 70s 值")
+
+
+class Gate1IdfBuildBudgetTests(_Gate1OuterProbe, unittest.TestCase):
+    """F-218: 外层超时必须**罩过**内层构建预算, 否则先杀者归因错误。
+
+    F-215 把 gate1 的耦合定性为"张冠李戴: idf.build_timeout 在 release.py
+    从未被引用"——引用关系属实, 但耦合是**嵌套**的而非引用的:
+      外层 subprocess(600s) 罩住整个 verify 子进程
+        └ verify 内部 idf 构建步预算 idf.build_timeout(默认 900s)
+    --rebuild 对 ESP 是 fullclean+build, 合法耗时落在 600~900s 区间时,
+    内层未超而外层先杀, 报"verify 重跑超时"并把构建超时误归为外层超时。
+
+    本组钉的是**不等式** outer > 内层构建预算, 不是某个具体秒数。
+    """
+
+    def _ws_with_config(self, cfg):
+        ws = tempfile.mkdtemp(prefix="g1idf_")
+        self.addCleanup(shutil.rmtree, ws, ignore_errors=True)
+        wb = os.path.join(ws, ".workbench")
+        os.makedirs(wb, exist_ok=True)
+        with open(os.path.join(wb, "config.json"), "w", encoding="utf-8") as f:
+            json.dump(cfg, f)
+        return ws
+
+    def test_idf_outer_exceeds_inner_build_budget(self):
+        """核心不等式: 外层必须严格大于内层构建预算。"""
+        ws = self._ws_with_config(
+            {"builder": "idf", "idf": {"build_timeout": 900}})
+        outer = self._outer_timeout_for(ws=ws)
+        self.assertGreater(
+            outer, 900,
+            f"idf 构建预算 900s 时外层仅 {outer}s —— 外层会先于内层被杀, "
+            f"构建超时被误报为 'verify 重跑超时' (F-218)")
+
+    def test_idf_honours_raised_build_timeout(self):
+        """用户把 build_timeout 调到更大值时, 外层跟着抬。"""
+        ws = self._ws_with_config(
+            {"builder": "idf", "idf": {"build_timeout": 2400}})
+        outer = self._outer_timeout_for(ws=ws)
+        self.assertGreater(outer, 2400,
+                           f"build_timeout=2400 时外层仅 {outer}s")
+
+    def test_default_idf_budget_used_when_key_absent(self):
+        """缺 build_timeout 键时按 esp_runtime 的默认 900 兜底。"""
+        ws = self._ws_with_config({"builder": "idf"})
+        outer = self._outer_timeout_for(ws=ws)
+        self.assertGreater(outer, 900, f"缺键时外层仅 {outer}s")
+
+    def test_stm32_outer_unchanged_by_this_fix(self):
+        """非 ESP 配置下外层仍是 600s 基准 —— 本修复不得动 STM32 路径。"""
+        ws = self._ws_with_config({"builder": "gcc"})
+        outer = self._outer_timeout_for(ws=ws)
+        self.assertEqual(outer, release.GATE1_OUTER_TIMEOUT_S)
+
+    def test_missing_config_keeps_baseline(self):
+        """config 缺失/损坏 → 退 600s 基准, 不得崩。"""
+        outer = self._outer_timeout_for()
+        self.assertEqual(outer, release.GATE1_OUTER_TIMEOUT_S)
+
+    def test_malformed_build_timeout_does_not_crash(self):
+        """build_timeout 非数值不得裸抛 ValueError (esp_runtime 侧是已知欠账,
+        门禁侧至少不能因读配置而崩——崩在这里 = 门禁自身挂掉)。"""
+        ws = self._ws_with_config(
+            {"builder": "idf", "idf": {"build_timeout": "abc"}})
+        outer = self._outer_timeout_for(ws=ws)
+        self.assertGreaterEqual(outer, release.GATE1_OUTER_TIMEOUT_S)
+
+    def test_esptool_only_config_keeps_baseline(self):
+        """只配 flash.backend=esptool (builder 非 idf) 时**不抬**外层:
+        该路径不走 step_build_idf, 没有内层构建预算可罩, 抬了是抬错对象。"""
+        ws = self._ws_with_config({"flash": {"backend": "esptool"}})
+        outer = self._outer_timeout_for(ws=ws)
+        self.assertEqual(outer, release.GATE1_OUTER_TIMEOUT_S)
