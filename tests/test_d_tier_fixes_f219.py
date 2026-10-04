@@ -327,26 +327,38 @@ class D6MetaAtomicWriteTests(unittest.TestCase):
                              f"holder_info 会把真实持有者误报为无人持有")
 
 
-class D1D2StillUnfixedTests(unittest.TestCase):
-    """防误读: D1/D2 本轮**未修**, 此钉记录其当前形态, 供下轮接手。
+class D1D2DispositionTests(unittest.TestCase):
+    """D1/D2 已在 F-221 收口 —— 本组记录**处置结论**, 防误读为"仍未处理"。
 
-    这不是"钉住缺陷", 是**钉住待办的存在** —— 若下轮修了, 本例应随
-    改动更新或删除, 且 CHANGELOG 需记账。写在这里是为了防止"F-219 全清"
-    的错误印象。
+    历史: F-219 当轮把 D1/D2 判为"需另行开单"(D1 改则动既有落库数据、
+    D2 改则翻转外部流水线判红判绿)。F-221 做完影响面评估后**两笔都只补
+    钉、不改行为**, 且 D1 原指控被证伪撤案:
+      · D1「PASS 事件灌水」不成立—— `update_calibration` 只认三个归宿类
+        取值, pass/fail 落不进计数器; 落库文件未被跟踪且零条 pass。
+      · D2「退出语义不一致」是有意设计—— `release_audit.py:32` 已明文
+        声明三档退出码, 缺的只是机检。
+    详见 CHANGELOG F-221 与 `tests/test_d1_d2_contracts_f220.py`。
+
+    本组**不钉缺陷本身**(缺陷已不成立), 只钉"当前形态仍是 F-221 评估时的
+    形态"——若上游改了 `valid_outcomes` 或退出码契约, 本组提醒同步复核
+    F-221 的撤案依据是否仍成立。
     """
 
-    def test_d1_feedback_db_still_accepts_pass_outcome(self):
+    def test_d1_valid_outcomes_still_has_no_calibration_weight(self):
+        """pass/fail 仍不进校准计数(灌水路径仍不存在)。"""
         src = _src("feedback_db.py")
-        self.assertIn(
-            '"pass"', src,
-            "feedback_db 的 valid_outcomes 已无 pass —— D1 若已修, 请更新"
-            "本例并记账; 本轮刻意未动 (改则动既有落库数据语义)")
+        seg = src.split("def update_calibration", 1)[1][:1200]
+        self.assertIn('if outcome == "fixed"', seg)
+        for poison in ('"pass"', "'pass'", '"fail"', "'fail'"):
+            self.assertNotIn(
+                poison, seg,
+                f"update_calibration 出现 {poison} —— 若真让 pass/fail "
+                f"参与校准, F-221 的「D1 灌水不成立」结论即失效, "
+                f"须重新评估(而非沿用撤案结论)")
 
-    def test_d2_release_audit_exit_semantics_unchanged(self):
-        src = _src("release_audit.py")
-        self.assertIn('return 1 if result["verdict"] == "failed" else 0', src,
-                      "release_audit 退出判据已变 —— D2 若已修, 请更新本例"
-                      "并记账; 本轮刻意未动 (改退出码会翻转外部流水线判红)")
+    def test_d2_exit_contract_line_still_present(self):
+        """`release_audit.py:32` 的三档契约声明仍在。"""
+        self.assertIn("0 = clean/warned", _src("release_audit.py"))
 
 
 if __name__ == "__main__":

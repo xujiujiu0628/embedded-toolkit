@@ -276,12 +276,55 @@
   ① `gen_adc` CH16/17 缺 `CR2.TSVREFE` — `gen_periph.py` 本轮零改动,
   未修未入账 (上轮建议立项); ② README 信任边界 ("勿对不受信工程跑
   verify / MCP run_verify") 未加; ③ 路径残留见上条 F-218-附;
-  ④ D 档六条弱点 (`feedback_db` PASS 事件灌水 / `release_audit` 退出语义
-  不一致 / `gcc_build` config RMW 无锁 / hardfault 层 2 预算错配 /
-  mcp stdin 未接 DEVNULL / `hw_lease` meta 旁车竞态) 未动, 量级上合理延后。
+  ④ D 档六条弱点的**现状 (F-219/F-221 收口)**: `gcc_build` config RMW 无锁
+  / hardfault 层 2 预算错配 / mcp stdin 未接 DEVNULL / `hw_lease` meta
+  旁车竞态 **四条已于 F-219 修复**; `feedback_db` PASS 灌水与
+  `release_audit` 退出语义两条**经影响面评估后撤案/改判**——前者证伪
+  (无灌水路径)、后者是有意设计, 二者均已在 **F-221** 补上机检钉。**D 档
+  六条至此全部有结论, 无悬空欠账。**
   另注: F-213~F-217 已于 **F-220** 补入本表 (见下四条), 兑现本条承诺;
   skipped 24 vs 上轮 21 的差额为本机缺 host gcc 的 3 个运行探针 (交叉
   编译路径已补位)。
+
+- **F-221 (test, D1/D2 契约): feedback_db outcome 语义与 release_audit 退出码补机检 + D1 撤案纠错**:
+  F-219 留账的 D 档最后两条。经**影响面评估后两笔都只补钉、不改行为**,
+  且D1 的原指控被证伪并撤案。
+  **D1 撤案 —— 「PASS 事件灌水」不成立**: `update_calibration`
+  (`feedback_db.py:237-242`) 只认 `fixed`/`still_broken`/`false_positive`
+  三个归宿类取值, `pass`/`fail` **落不进任何计数器**; `by_pipeline`
+  计数(`:189-190`) 只看 pipeline 名不看 outcome; 落库文件
+  `examples/sim-demo/.workbench/feedback/feedback_db.json` **未被跟踪**
+  (`.gitignore:47` 命中), 既有 7 条事件 `outcome` **全为 `fixed`, 零条
+  `pass`**。**无数据可迁移、无自动化消费方、无灌水路径。**
+  我此前判断「改则动既有落库数据、需重算校准」**是错的**——错因是
+  **没读 feedback-log skill 就下结论**: skill 明文要求
+  `verify_result: "pass"` 与 `outcome: "fixed"` 配对出现, 即
+  **`pass` 是 `verify_result` 字段的取值(验证结果), 而 `outcome` 是另一个
+  字段(诊断归宿)** —— 我把两个字段的取值混为一谈了。这是本仓「没核实就
+  断言」病灶的第四次复发(F-215 二手摘要 / F-216 推断当实测 / F-217 H-4
+  措辞升级), 但**最轻**: 未造成代码伤害, 只是差点让错判进账本。
+  **根因与前三笔同: 凭字段名猜语义, 不看消费方。**
+  补钉(钉语义分工, 防后续改坏): ①真跑 `update_calibration` 喂
+  fixed/pass/fail/未知值, 断言**只有 `fixed` 进 `entry["fixed"]`**
+  (行为钉, 非源码断言); ②真跑 `log_event` 断言 `by_pipeline` 计数与
+  outcome 无关; ③钉住 `pass`/`fail` 与归宿类**不重叠**; ④钉住 skill
+  实际用法同时记两个字段(分工前提); ⑤钉住落库数据零条 `pass`
+  ——若将来真出现, 本例转红提醒**重新评估而非沿用撤案结论**。
+  复核中另发现 `valid_outcomes` 含第七个成员 **`reported`**
+  (`feedback_db.py:157`, fresh_check 已交付语义), 已补入测试取值域。
+  **D2 补钉 —— `warned → 0` 是有意设计, 非疏漏**: `release_audit.py:32`
+  **已明文声明**「0 = clean/warned, 1 = 存在 fail 项, 2 = 用法/环境错误」,
+  但该契约**零机检**——只活在注释里, 改代码前不会坏、改之后也不会被发现坏。
+  故钉而**不改**: 五例覆盖 `warned→0`(核心, 防后人误当 bug 改掉)/
+  `failed→1` / 用法错误`→2` / approve 成功`→0` / approve 失败`→1`。
+  **退出码走真子进程而非 mock sys.argv + 直接调 main**: ①`sys.argv` 是
+  stub_ratchet 判定的 B 式全局打桩(新增即红), 本组不新增该欠账;
+  ②退出码本是**进程级**契约, 直接调 main 拿到的是 return 值, 与
+  `sys.exit()` 后的实际 code 之间隔一层包装, 恰是D2 这类"退出语义"
+  问题的要害所在。
+  变异验证: D1 令 `pass` 计入 `fixed` → 红; D2 令 `warned` 退 1 → 红。
+  **仍未修**: 若将来真要改 `warned` 的退出码(例如让 warn 也阻断发布),
+  须先裁决影响面(有无外部流水线消费该码)再动, 本组钉会随之更新。
 
 ### 0.8 封袋后补账 — F-213~F-217 (F-220, 2026-10-04)
 
