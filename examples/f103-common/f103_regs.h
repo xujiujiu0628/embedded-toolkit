@@ -166,7 +166,15 @@ typedef struct {   /* ref.json peripherals.PWR: CR@0x00 CSR@0x04 */
  * 真值锚 CMSIS Device ST/STM32F1xx/Include/stm32f100xb.h:178-194
  * (RESERVED0, DR1..DR10, RTCCR, CR, CSR) + ref.json 口径归一 (base
  * 0x40006C04 → 外设相对 -0x04): DR10@0x28, RTCCR@0x2C, CR@0x30,
- * CSR@0x34, DR11@0x3C .. DR42@0xB8。
+ * CSR@0x34。
+ *
+ * F-218: DR11 的起点**必须**另找锚, 不能从上面这段外推。stm32f100xb.h 是
+ * 值线 (xB) 头文件, 其 BKP_TypeDef 到 CSR 即止, 根本没有 DR11 之后的布局
+ * —— 按"CSR 后跟一个保留字"外推, 得到 DR11@0x3C, 整段静默前移一字:
+ * DR_HI[0] 落进保留区, DR_HI[31]=0xB8 而真 DR42@0xBC。
+ * 高密度真值锚 CMSIS stm32f103xe.h:246 (RESERVED13[**2**], DR11..DR42),
+ * 叠加同一 ref.json 口径 (DR11 ref 偏移 0x3C + 4 = 外设相对 0x40):
+ * DR11@0x40 .. DR42@0xBC, 结构体止于 0xC0。
  *
  * F-215: 二段数组名取 DR / DR_HI (不用 DR2)。ref.json 的 BKP 键名是
  * DR1..DR42 逐个登记, 其中 `DR2` 正是第二个数据寄存器(偏移 0x4); 结构体里
@@ -178,8 +186,8 @@ typedef struct {   /* RTCCR/CR/CSR 夹在 DR10 与 DR11 之间 */
     volatile uint32_t RTCCR;                 /* 0x2C */
     volatile uint32_t CR;                    /* 0x30 */
     volatile uint32_t CSR;                   /* 0x34 */
-    volatile uint32_t RESERVED1;             /* 0x38 */
-    volatile uint32_t DR_HI[32];             /* 0x3C..0xB8 = DR11..DR42 */
+    volatile uint32_t RESERVED1[2];          /* 0x38..0x3C (高密度两个保留字) */
+    volatile uint32_t DR_HI[32];             /* 0x40..0xBC = DR11..DR42 */
 } BKP_TypeDef;
 
 typedef struct {   /* ref.json peripherals.SDIO: POWER@0x00 .. FIFO@0x80
