@@ -180,6 +180,68 @@
   验证: pickaxe 八项敏感串全史全零 + machine.json/token_stats.py 全史
   零轨迹 + tags v0.2~v0.6 重写后完好 + 树净; 全量回归 1283 绿
   (skipped=21) + ruff 零告; 本票为 461 提交重写后的首笔新账。
+- **F-218 (fix, regs-layout + release-gate): BKP DR_HI 静默前移一字修复 + 双钉; G1 外层超时罩过 idf 构建预算 (三号复审 H-1 + 对 F-215 的反驳)**:
+  **BKP 布局 (三号复审 High-1)**: `examples/f103-common/f103_regs.h` 的
+  `BKP_TypeDef` 把高密度的 `RESERVED13[2]` 写成单个 `RESERVED1`, 致
+  DR11..DR42 整段**前移一字**: `DR_HI[0]` 落进保留区 (真值 0x40, 头里
+  0x3C)、`DR_HI[31]` 落 0xB8 (真 DR42@0xBC), 实测 `sizeof`=0xBC (应 0xC0)。
+  典型 B 类静默: 写保留区不报错, 备份域读回全错。**根因可考**——真值锚
+  注释指向 `stm32f100xb.h` (值线), 该文件 BKP 定义到 CSR 即止, **根本没有
+  DR11 之后的布局**, 按"CSR 后跟一个保留字"外推即得错值; 改锚高密度
+  `stm32f103xe.h:246`。ref.json (DR11 绝对 0x40006C40) 一直是对的。
+  旧钉没拦住的原因: 逐名比对跳过数组成员, 定点钉只钉了 RTCCR/CR/CSR。
+  **补钉两枚 (均先见红再修)**: ①`CrossCompilerStaticAssertTests.PINS`
+  加 `("BKP_TypeDef","DR_HI",0x40)`; ②新增 `SIZE_PINS` 数组成员**长度**
+  钉 + `_size_assert_probe`——`offsetof` 只问起始偏移、逐名比对整体跳过
+  数组, 于是 `DR_HI[32]` 被写成 `[31]` 时两道钉照样全绿, 长度根本无人
+  过问 (评审未提, 本轮自查发现, 与 H-1 同源)。含 BKP 整体 0xC0、NVIC
+  截断边界 0x3F0、CAN F 14 组。变异验证: 退回错布局两枚钉均转红。
+  **G1 外层超时 (对 F-215 的反驳, 成立)**: F-215 将此耦合定性为
+  "张冠李戴: idf.build_timeout 在 release.py 从未被引用"——引用关系属实,
+  但耦合是**嵌套**而非引用的: 外层 600s 罩整个 verify 子进程, 而 verify
+  内部 ESP 构建步预算 900s。`--rebuild` 对 ESP 是 fullclean+build, 合法
+  耗时落在 600~900s 时内层未超而外层先杀, 报"verify 重跑超时"——把一次
+  正常偏慢的构建误归为外层超时, 归因误导且无从分辨。修法
+  `outer = max(600, timeout+60, idf_build_timeout+120)`; 判 `builder=="idf"`
+  而非 `esp_backend_mode`——后者含 `flash.backend=esptool`/
+  `capture.backend=uart` 两标记, 混配时亦为真, 但那两条路不走
+  `step_build_idf`、无内层预算可罩, **抬错对象同样是错**。STM32 路径逐
+  字节不变 (实测无 config / gcc / esptool-only / 坏值四种情形外层仍
+  600s); 门禁侧读非数值 build_timeout 退回默认而非裸抛 (esp_runtime 侧
+  裸抛 ValueError 仍是 F-174 T3 欠账, 本票不动)。
+  **顺带**: 抽 `_Gate1OuterProbe` mixin 供 F-215/F-218 两组共用探针——否则
+  多一处全局打桩要进 stub ratchet 豁免裁决, 棘轮快照零改动零新增豁免;
+  订正 release.py 里 F-215 "从未被引用故无关"这句错判 (**未被引用 ≠ 无关**,
+  正是误判源头)。
+  测试: 全量 1372 绿 (skipped=9) + ruff 零告; 两处修复各自变异验证可拦。
+  未修项留账见下条 (三号复审"明确未修")。
+- **F-218-附 (doc, 诚实订正): SENSITIVE_FINDINGS「终验零残留」对当前树不实, 已改为分项现状**:
+  该报告第 34 行「终验零残留」是对 F-1/F-2 两笔在 2026-09-01 处置时点的
+  结论, 随仓演进已不再成立, 但正文未随之更新——**文档在陈述一个不成立的
+  结论, 比残留本身更危险**。本轮实测当前工作树 (被跟踪文件) 分项现状:
+  ① **用户名 F-1: 仍为零** (除本条与 SENSITIVE_FINDINGS 对应表格自指外,
+  数字串零命中, 结论成立);
+  ② **工作区根路径 F-2: 有 1 处** (本段下方 F-211 条目内: 那里记载
+  replace-text 规则时**把待替换的敏感串本身写了出来**——账本描述脱敏
+  动作时复述了脱敏对象, 属自污染; 仓内他处已用 `<d-claude-root>` 占位。
+  **本条刻意不复述该串**, 否则本段自己就是第二处); ③ **工具链安装路径
+  (F-2 范围外, 原报告未覆盖)**: `machine.json` 未被跟踪 (已 gitignore,
+  符合预期), 但 `scripts/svd_to_json.py:16,445,462` 硬编码 Keil Pack
+  安装路径三处为**被跟踪文件中的真实机器路径**。
+  定性: ①②为 PII/信息暴露级, ③为工具安装路径暴露, 均非凭证级泄漏
+  (凭证类 12 项模式仍全零, 该结论未受影响)。处置**留账待维护者拍板**:
+  ①②建议随本轮一并脱敏 (改动小、收益明确), ③涉 Keil 退役遗留, 宜与
+  F-067b 归档一并处置。**本票只订正文档表述, 未动任何被脱敏内容**。
+- **三号复审「明确未修」清单 (F-218 结案留账, 供下轮选做)**:
+  ① `gen_adc` CH16/17 缺 `CR2.TSVREFE` — `gen_periph.py` 本轮零改动,
+  未修未入账 (上轮建议立项); ② README 信任边界 ("勿对不受信工程跑
+  verify / MCP run_verify") 未加; ③ 路径残留见上条 F-218-附;
+  ④ D 档六条弱点 (`feedback_db` PASS 事件灌水 / `release_audit` 退出语义
+  不一致 / `gcc_build` config RMW 无锁 / hardfault 层 2 预算错配 /
+  mcp stdin 未接 DEVNULL / `hw_lease` meta 旁车竞态) 未动, 量级上合理延后。
+  另注: F-213~F-217 尚未进本表, 符合「release 封账」既有工作流, 下个
+  版本落账即可; skipped 24 vs 上轮 21 的差额为本机缺 host gcc 的 3 个
+  运行探针 (交叉编译路径已补位)。
 
 ## 0.7 — 2026-09-27（净仓换血转公开 + ESP 三后端闭环与发布链收口 + 样例工厂二期 + KB 数据面全量修复 + 护栏棘轮与外派 14 单·整批复审两轮）
 
