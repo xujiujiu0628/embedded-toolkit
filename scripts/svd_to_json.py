@@ -13,7 +13,7 @@ Usage:
 
 SVD source locations for STM32F103:
     - CubeMX: ~/STM32Cube/db/mcu/STM32F103C8Tx.xml (may need conversion)
-    - Keil Pack: D:/KEIL5/ARM/Pack/Keil/STM32F1xx_DFP/x.x.x/CMSIS/SVD/STM32F103xx.svd
+    - Keil Pack: <keil-pack-root>/ARM/Pack/Keil/STM32F1xx_DFP/x.x.x/CMSIS/SVD/STM32F103xx.svd
     - ST GitHub: https://github.com/STMicroelectronics/cmsis-device-f1
     - Community: https://github.com/posborne/cmsis-svd (mirrors)
 
@@ -442,7 +442,7 @@ Examples:
   python svd_to_json.py --svd STM32F103xx.svd --periph I2C1 --json
   python svd_to_json.py --svd STM32F103xx.svd --all --out knowledge/peripherals/
 SVD sources:
-  Keil Pack: D:/KEIL5/ARM/Pack/Keil/STM32F1xx_DFP/*/CMSIS/SVD/STM32F103xx.svd
+  Keil Pack: <keil-pack-root>/ARM/Pack/Keil/STM32F1xx_DFP/*/CMSIS/SVD/STM32F103xx.svd
   ST GitHub: https://github.com/STMicroelectronics/cmsis-device-f1
         """
     )
@@ -459,7 +459,7 @@ SVD sources:
     if not os.path.exists(args.svd):
         print(f"Error: SVD file not found: {args.svd}", file=sys.stderr)
         print("SVD files are typically found in:", file=sys.stderr)
-        print("  Keil Pack: D:/KEIL5/ARM/Pack/Keil/STM32F1xx_DFP/*/CMSIS/SVD/", file=sys.stderr)
+        print("  Keil Pack: <keil-pack-root>/ARM/Pack/Keil/STM32F1xx_DFP/*/CMSIS/SVD/", file=sys.stderr)
         print("  CubeMX:    ~/STM32Cube/db/mcu/", file=sys.stderr)
         print("  ST GitHub: https://github.com/STMicroelectronics/cmsis-device-f1", file=sys.stderr)
         sys.exit(1)

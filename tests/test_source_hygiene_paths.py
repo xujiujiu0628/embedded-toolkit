@@ -17,11 +17,16 @@ F-202 扩面 (公开仓 v0.7 复审 H-1): 原单模式只钉 <旧工作区根> �
     3. 用户主目录下裸数字用户名的路径形态 (**形态匹配, 不含真实值**)
        —— 借夹具入仓的守卫面; 叙述层裸数字无从机检, 靠 F-202 清洗 + 复审。
   扫描面: .py / .md / .json (F-202 加 .json)。
-  豁免: CHANGELOG.md 对**模式 1** 豁免——历史账目段属 append-only 保护区
-  (F-069 记账纪律: "以本段为准/不改旧段"), 其中的工具链路径是账目的一
-  部分, 事后擦写会断证据链; 豁免是显式决策不是遗漏。**身份碎片 (模式
-  2/3) 不享豁免**: 账目完整性不构成公开维护者私有工作区布局/本机账号
-  的理由, test_changelog_no_identity_fragments 单独机检 (F-202)。
+  豁免: F-202 原给 CHANGELOG.md 一条模式 1 豁免, 理由是"历史账目段属
+  append-only 保护区 (F-069 记账纪律: 以本段为准/不改旧段), 其中的工具链
+  路径是账目的一部分, 事后擦写会断证据链"。**F-218 经维护者拍板撤销**:
+  ①该豁免与本文件下方 22-24 行原则自相矛盾——"账目完整性不构成公开维护者
+  私有工作区布局的理由", 而模式 1 豁免的恰是工作区根; ②脱敏实测账目
+  完整性未受损 (规则条数/双形态配对/461 重写/commit-map 锚全部保留, 仅
+  源串改占位符指代), "会断证据链"未被证实。**现 EXEMPT_FILES 为空集**,
+  账目段与普通文件同标准——日后任何账目段写机器路径即红, 与 F-202 原则
+  一致。**身份碎片 (模式 2/3) 历来不享豁免**, 由
+  test_no_identity_fragments_in_changelog 单独机检。
 
 F-213 口径更正 (安全): 模式 2/3 原以 _s() 把真实身份字面量编码成 chr 码
 内嵌源码, 理由是"避免自扫描命中"。chr 码完全可逆, 该做法使守卫文件本身
@@ -31,7 +36,9 @@ F-213 口径更正 (安全): 模式 2/3 原以 _s() 把真实身份字面量编�
 并登记为已知缺口, 不以可逆编码假装覆盖 (见 _PRIVATE_WS_PATTERNS)。
 模式 1 的旧根名字面量沿 F-089 原式 (拼装位置不构成匹配)。
 
-豁免清单变更纪律: 若未来账目段落入其他文件, 在此处追加豁免并记账。
+豁免清单变更纪律: 撤销豁免亦须显式——EXEMPT_FILES 空集由下方
+test_exemption_list_is_empty_and_minimal 钉住; 若未来确需为某文件开模式 1
+豁免, 在此处追加并**同时记账推翻 F-218 撤销决定的理由**。
 """
 import os
 import re
@@ -81,7 +88,7 @@ class TrackedFilePathHygieneTests(unittest.TestCase):
         _FORBIDDEN_PRIVATE_WS,
         _FORBIDDEN_USER_HOME,
     ]
-    EXEMPT_FILES = {"CHANGELOG.md"}
+    EXEMPT_FILES = set()   # F-218: 空集 (原 {"CHANGELOG.md"} 已撤销, 见模块 docstring)
     SCAN_EXTS = (".py", ".md", ".json")         # F-202: +.json (fixture/_meta 面)
 
     def _tracked_files(self):
@@ -112,9 +119,13 @@ class TrackedFilePathHygieneTests(unittest.TestCase):
             "tracked 文件出现裸机器路径/身份碎片 (F-089+F-202 扫描钉):\n"
             + "\n".join(hits))
 
-    def test_exemption_list_is_explicit_and_minimal(self):
-        """豁免清单显式声明且最小——防静默扩大豁免面"""
-        self.assertEqual(self.EXEMPT_FILES, {"CHANGELOG.md"})
+    def test_exemption_list_is_empty_and_minimal(self):
+        """豁免清单显式声明且为空——防静默扩大豁免面 (F-218 撤销 CHANGELOG 豁免后)。
+
+        旧版此处钉 {"CHANGELOG.md"}, 现钉空集: 账目段与普通文件同标准, 与
+        本文件"账目完整性不构成公开维护者私有工作区布局的理由"原则一致。
+        空集意味着**任何** tracked 文件 (含 CHANGELOG) 出现模式 1 即红。"""
+        self.assertEqual(self.EXEMPT_FILES, set())
 
 
 class ChangelogIdentityFragmentTests(unittest.TestCase):
