@@ -63,6 +63,30 @@
   未退出, 最小样例范围内如实登记未改)。② RTC 判 1Hz 系 10s 计数比对,
   非示波器级。③ IWDG 活性判据=停喂必复位且 <500ms, 非精确 100ms 测量。
 
+- **F-224 (fix+docs, hygiene): file_lock 常驻哨兵 `.workbench/*.lock` 的 .gitignore 覆盖缺口收口 — 三工程同修 + 新工程模板随动（v0.8 发布 G0 首绊钓出）**:
+  背景: F-219 给 config.json 读改写引入跨进程 file_lock（`wb_common.file_lock`），
+  其设计明言 **"不删哨兵文件"**（0 字节常驻——删了会让并发者各自新建不同 inode
+  而锁不到同一把锁）。哨兵自此成为**设计永久物**，但入库边界未随动：
+  2026-10-08 v0.8 板窗发布 G0「工作树不干净」**首绊**于
+  `.workbench/config.json.lock`（`??` 未跟踪非 ignore）。现场排查先分辨
+  "真僵尸 vs 设计常驻"——**是后者**：锁体是 OS 级文件锁（msvcrt/flock，随进程
+  消亡），文件本身按设计常驻；被绊的只是树净检查，**误删哨兵反而破坏并发锁
+  语义**。
+  暴露面按**代码路径核查**（非猜测；承 F-218 教训五"同一原则还有哪些角落"）：
+  哨兵仅由两个写入方产生——`save_skill_section`（openocd/serial 后端写回
+  config.json）与 `merge_gcc_config`（gcc 构建写回）→ **仅 gcc+openocd/serial
+  路径工程**；ESP 侧 esp_runtime/verify 不触 save_skill_section（grep 零命中），
+  四 ESP/robot 工程 .workbench **实证零哨兵** → 不在本票范围，登记备查
+  （若未来 ESP 路径引入 config 写回须随动）。
+  修复: mpu6050-oled（`e1aa8f1`，板窗现场）· adc-oled（`a444097`）·
+  button-toggle（`d8e2ad3`）三工程 .gitignore 补 `.workbench/*.lock`（工程仓
+  纯本地记录，不推远端）；新工程模板随动——esp32s3 pilot spec 的 `.gitignore`
+  模板块补该行 + F-224 增补注；F103 侧 de-facto 模板=「照抄 adc-oled」
+  （spec 原文即此约定），同修即随动。
+  **教训**: 新增常驻副作用文件（锁哨兵/缓存/状态旁车）时，必须同步问
+  **"入库边界随动了吗"** —— 是 F-218 教训五的镜像面：**新增机制 ≠ 边界已随动**；
+  且树净被绊时先分辨"真僵尸 vs 设计常驻"，再看是修边界还是清文件。
+
 ## 0.8 — 2026-10-02（v0.7 无上下文对抗复审 H/M/L 整改十笔全闭 · 公开仓脱敏回归 + 全史身份碎片清洗 + addr2line 定位面两债清偿 + MCP --pins 接线 + stdout 泄漏两处清尾）
 
 > 封袋定义: 自 v0.7 标签（commit 5099ef7, 2026-09-27）之后落入本账本的

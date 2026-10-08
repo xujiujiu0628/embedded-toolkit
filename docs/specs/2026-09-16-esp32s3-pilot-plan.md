@@ -1054,7 +1054,15 @@ sdkconfig.old
 managed_components/
 dependencies.lock
 .workbench/build/
+.workbench/*.lock
 ```
+
+> F-224 增补 2026-10-08（v0.8 板窗钓出）：模板补 `.workbench/*.lock`——F-219
+> file_lock 的 0 字节哨兵按设计常驻（`wb_common.file_lock` class doc 明言
+> "不删哨兵文件"），不罩会绊 release G0 树净检查（v0.8 发布首绊实证）。ESP
+> 路径当前不触哨兵生成（esp_runtime/verify 不调 save_skill_section），该行按
+> 统一原则预置。F103 侧 de-facto 模板=照抄 `stm32f103-adc-oled/.gitignore`
+> （同批已修，`a444097`）。
 
 `.workbench/config.json`：
 
