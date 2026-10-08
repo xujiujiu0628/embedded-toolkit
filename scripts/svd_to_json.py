@@ -70,6 +70,34 @@ def parse_dim_element_group(reg_elem):
     return result
 
 
+def _field_bit_key(field_elem):
+    """字段位域位置 → bit_key ("n" 单比特 或 "lo:hi")；无法解析返回 None。
+
+    F-226 (WB-05 L-3): 三种 CMSIS SVD 风格全收 —— <bitRange> /
+    <bitOffset>+<bitWidth> / <lsb>+<msb>。旧版主路径仅前两种 (lsb/msb
+    静默丢弃), 回填路径仅第二种且缺省 offset=0/width=1 (编造位域)。
+    """
+    bit_range = field_elem.find('bitRange')
+    if bit_range is not None and bit_range.text:
+        offset, width = parse_bit_range(bit_range.text)
+        return str(offset) if width == 1 else f"{offset}:{offset+width-1}"
+    bit_offset = field_elem.find('bitOffset')
+    if bit_offset is not None and bit_offset.text:
+        offset = int(bit_offset.text, 0)
+        bit_width = field_elem.find('bitWidth')
+        width = int(bit_width.text, 0) if bit_width is not None and bit_width.text else 1
+        return str(offset) if width == 1 else f"{offset}:{offset+width-1}"
+    lsb = field_elem.find('lsb')
+    msb = field_elem.find('msb')
+    if lsb is not None and lsb.text and msb is not None and msb.text:
+        lo = int(lsb.text, 0)
+        hi = int(msb.text, 0)
+        if hi < lo:
+            return None
+        return str(lo) if hi == lo else f"{lo}:{hi}"
+    return None
+
+
 def extract_fields(reg_elem, all_registers):
     """Extract bit fields from a register element."""
     fields = {}
@@ -98,19 +126,9 @@ def extract_fields(reg_elem, all_registers):
         desc_elem = field_elem.find('description')
         desc = desc_elem.text.strip() if desc_elem is not None and desc_elem.text else ''
 
-        # Parse bit position
-        bit_range = field_elem.find('bitRange')
-        bit_offset = field_elem.find('bitOffset')
-        bit_width = field_elem.find('bitWidth')
-
-        if bit_range is not None and bit_range.text:
-            offset, width = parse_bit_range(bit_range.text)
-            bit_key = str(offset) if width == 1 else f"{offset}:{offset+width-1}"
-        elif bit_offset is not None and bit_offset.text:
-            offset = int(bit_offset.text, 0)
-            width = int(bit_width.text, 0) if bit_width is not None and bit_width.text else 1
-            bit_key = str(offset) if width == 1 else f"{offset}:{offset+width-1}"
-        else:
+        # Parse bit position (F-226: 三风格统一走 _field_bit_key)
+        bit_key = _field_bit_key(field_elem)
+        if bit_key is None:
             continue
 
         # Access type
@@ -149,12 +167,18 @@ def extract_fields(reg_elem, all_registers):
         if not already_present:
             b_name_elem = bfield.find('name')
             b_desc_elem = bfield.find('description')
-            b_bit_offset = bfield.find('bitOffset')
-            b_bit_width = bfield.find('bitWidth')
             if b_name_elem is not None and b_name_elem.text:
-                b_offset = int(b_bit_offset.text, 0) if b_bit_offset is not None and b_bit_offset.text else 0
-                b_width = int(b_bit_width.text, 0) if b_bit_width is not None and b_bit_width.text else 1
-                b_key = str(b_offset) if b_width == 1 else f"{b_offset}:{b_offset+b_width-1}"
+                # F-226 (WB-05 L-3): 复用主路径三风格解析; 旧版只认
+                # bitOffset/bitWidth 且缺省 offset=0/width=1 —— bitRange/
+                # lsb-msb 风格的基字段被静默写成 "bit 0" (编造位域)。
+                b_key = _field_bit_key(bfield)
+                if b_key is None:
+                    reg_name = reg_elem.findtext('name') or '?'
+                    print(f"WARNING: register '{reg_name}' derivedFrom="
+                          f"'{derived}': 继承字段 '{b_name_elem.text}' 无位域"
+                          "位置信息 (bitRange/bitOffset+bitWidth/lsb+msb 皆缺)"
+                          " — 跳过该字段, 不产出默认位 0", file=sys.stderr)
+                    continue
                 fields[b_key] = {
                     "name": b_name_elem.text,
                     "desc": b_desc_elem.text.strip() if b_desc_elem is not None and b_desc_elem.text else '',
