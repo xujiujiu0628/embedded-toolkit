@@ -50,6 +50,13 @@ TIM_CLOCK_BIT = _GEN_MAPS["tim_clock_bit"]
 # 更隐蔽的变体是 AI 顺手"修"成使能别的位 → 定时器时钟从未开启。
 TIM_BUS = _GEN_MAPS["tim_bus"]
 
+# ---- TIM 向量名域 (F-225, GAP-F-20 收口): CMSIS 实名 ----
+# 与 ref.json _relationships.<P>.irq.name 互证 (test_genmaps_ref_crosscheck
+# 钉)。naive 名 (TIM9_IRQHandler 等) 在无 CMSIS 的样例工厂环境是孤儿符号
+# — ISR 永不执行; 全 CMSIS 工程里旧名仅靠 ST 头 painless-migration 别名区
+# 侥幸绑定, 实名是两环境通吃的选择。
+TIM_IRQ_NAME = _GEN_MAPS["tim_irq_name"]
+
 # ---- I2C 时钟映射 ----
 I2C_CLOCK_BIT = {k: tuple(v) for k, v in _GEN_MAPS["i2c_clock_bit"].items()}
 
@@ -627,10 +634,14 @@ def gen_timer_int(timer: str, period_ms: int,
     WB-20260920-01 派生链: 显式 tim_clk > pclk1 派生 (APB1 族, §7.3.7)
     > hclk 推导; TIM1 (APB2) 维持 hclk 推导 (见 gen_pwm GAP-P-1 注)。
 
-    F-086 修复两处 C 类静默缺陷:
-      1. TIM1 的 CMSIS 向量名是 TIM1_UP_* (bit25 = TIM1_UP_IRQn);
-         TIM1_IRQHandler/TIM1_IRQn 不存在 — 弱默认处理函数接管, 编译
-         链接都不报错, ISR 永不执行;
+    F-086 / F-225 向量名修复:
+      1. 向量名一律查 CMSIS 实名域 (gen-maps tim_irq_name, 与 ref.json
+         _relationships.<P>.irq.name 互证): TIM1_UP_TIM10_* / TIM1_BRK_TIM9_*
+         / TIM8_BRK_TIM12_* 等 xg 口径 merged 名 — 在样例工厂 (无 CMSIS,
+         startup.c 实名向量表) 与全 CMSIS 工程 (painless-migration 别名区)
+         两环境均绑定。F-086 原仅特判 TIM1→TIM1_UP_* 而 TIM9/12/13/14 仍
+         发射 naive 名 — 后者在样例工厂是孤儿符号 (编译链接全绿, ISR 永不
+         执行); TIM1_IRQHandler/TIM1_IRQn 不存在, 原病灶不回退;
       2. ARR 超 16 位 (period ≥ 63ms, 因 target_hz=1000//period_ms 整除)
          被硬件截断而注释照写名义周期 — 现显式报错 (周期类配置在固定
          PSC 下无合理近似, 不产出假装正确的配置)。
@@ -678,11 +689,13 @@ def gen_timer_int(timer: str, period_ms: int,
                 f"PSC={best_psc} ({tick_str} tick) 下不可表示; "
                 f"请缩短周期或自行降低 tick 频率。*/")
 
-    # F-086 缺陷 1: 向量表命名 — TIM1 走 TIM1_UP_* (更新中断), TIM2~4
-    # 走常规命名
-    vec_irq = f"{timer}_UP_IRQn" if timer == "TIM1" else f"{timer}_IRQn"
-    vec_handler = (f"{timer}_UP_IRQHandler" if timer == "TIM1"
-                   else f"{timer}_IRQHandler")
+    # F-225 (GAP-F-20 收口): 向量名一律查 CMSIS 实名域 (tim_irq_name,
+    # 与 ref.json 互证); 未登记名维持 naive fallback (库态 .get 缺省语义
+    # 不变, CLI 层另有入口闸)。
+    vec_irq = TIM_IRQ_NAME.get(timer, f"{timer}_IRQn")
+    # CMSIS 处理器名 = IRQn 枚举名去 "IRQn" 后缀 + "IRQHandler"
+    # (startup 向量表同款, 例 TIM1_BRK_TIM9_IRQn → TIM1_BRK_TIM9_IRQHandler)
+    vec_handler = vec_irq.removesuffix("IRQn") + "IRQHandler"
 
     lines = []
     lines.append("/* ========================================================================")

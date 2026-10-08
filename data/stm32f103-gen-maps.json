@@ -29,6 +29,13 @@
     "TIM6": 54, "TIM7": 55, "TIM9": 24, "TIM12": 43, "TIM13": 44,
     "TIM14": 45
   },
+  "tim_irq_name": {
+    "TIM1": "TIM1_UP_TIM10_IRQn", "TIM2": "TIM2_IRQn", "TIM3": "TIM3_IRQn",
+    "TIM4": "TIM4_IRQn", "TIM5": "TIM5_IRQn", "TIM6": "TIM6_IRQn",
+    "TIM7": "TIM7_IRQn", "TIM9": "TIM1_BRK_TIM9_IRQn",
+    "TIM12": "TIM8_BRK_TIM12_IRQn", "TIM13": "TIM8_UP_TIM13_IRQn",
+    "TIM14": "TIM8_TRG_COM_TIM14_IRQn"
+  },
   "i2c_clock_bit": {
     "I2C1": ["APB1ENR", "I2C1EN", 21],
     "I2C2": ["APB1ENR", "I2C2EN", 22]

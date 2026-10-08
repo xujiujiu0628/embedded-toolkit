@@ -121,7 +121,9 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y gcc-arm-none-eabi
       - name: Run generator syntax smoke tests
-        run: python -m unittest tests.test_gen_syntax_smoke -v
+        # F-225: 同 job 追加共享向量命名/链接绑定钉 (同需 arm 工具链;
+        # 钉在 unittest 矩阵里会因缺工具链整体 skip = 没钉, 故并入本 job)。
+        run: python -m unittest tests.test_gen_syntax_smoke tests.test_f225_shared_vector_naming -v
 
   # F-150 (总工单 v2 C-1/T6): sim 后端闭环 — "陌生人克隆"路径第一次覆盖
   # build → capture → judge 判定链 (无硬件)。qemu 直接加载 elf, 同一份

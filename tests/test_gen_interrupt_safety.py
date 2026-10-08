@@ -71,23 +71,27 @@ class TimerIrqSafetyTests(unittest.TestCase):
 
 
 class Timer1VectorNameTests(unittest.TestCase):
-    """F-086 缺陷 1 修复钉: TIM1 的 CMSIS 向量名是 TIM1_UP_IRQ*。
+    """F-086 缺陷 1 修复钉（F-225 扩面订正）: TIM1 的向量名取 CMSIS 实名
+    TIM1_UP_TIM10_IRQ*（xg 口径；xB/xE 头有 painless-migration 别名兜底）。
 
-    STM32F103 事实 (RM0008/CMSIS): bit25 = TIM1_UP_IRQn，向量表函数
-    TIM1_UP_IRQHandler；TIM1_IRQHandler / TIM1_IRQn 均不存在——生成物
-    编译链接都不报错（弱默认处理函数接管），ISR 永不执行（C 类静默）。
+    F-086 原钉 TIM1_UP_* 在 CMSIS 工程可绑定，但无 CMSIS 的样例工厂环境
+    （f103-common/f103_regs.h 无 CMSIS 依赖 + startup.c 实名向量表）里
+    TIM1_UP_IRQHandler 是孤儿符号——ISR 永不执行。F-225 全定时器统一发射
+    实名；TIM1_IRQHandler / TIM1_IRQn 仍不存在（原病灶不回退）。
     """
 
     def setUp(self):
         self.out = gen_periph.gen_timer_int("TIM1", 10, 72)
 
-    def test_handler_is_tim1_up_irqhandler(self):
-        self.assertIn("void TIM1_UP_IRQHandler(void) {", self.out)
+    def test_handler_is_cmsis_real_name(self):
+        self.assertIn("void TIM1_UP_TIM10_IRQHandler(void) {", self.out)
+        self.assertNotIn("void TIM1_UP_IRQHandler(void)", self.out)
         self.assertNotIn("TIM1_IRQHandler", self.out)
 
-    def test_iser_comment_names_tim1_up_irqn(self):
+    def test_iser_comment_names_real_irqn(self):
         self.assertIn("NVIC->ISER[0] = (1UL << 25);", self.out)
-        self.assertIn("// TIM1_UP_IRQn = 25", self.out)
+        self.assertIn("// TIM1_UP_TIM10_IRQn = 25", self.out)
+        self.assertNotIn("// TIM1_UP_IRQn =", self.out)
         self.assertNotIn("TIM1_IRQn =", self.out)
 
     def test_tim2_3_4_vector_names_unchanged(self):

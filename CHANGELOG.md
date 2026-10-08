@@ -97,6 +97,37 @@
   计入回归兑现。新键真机实测不欠账——唤醒条件"第二 ARM 板型接入"满足时
   随行。README「已知遗留」同笔结案（"待真机回归合入"口径收口）。
 
+- **F-225 (fix+test+data, gen): GAP-F-20 收口 — 共享向量 TIM 向量名统一发射 CMSIS 实名（TIM1 同步升级为 xg 口径 merged 名）**:
+  病灶（F-191 P 面 P-1 登记）：`gen_timer_int` 向量名逻辑仅对 TIM1 特判，
+  TIM9/12/13/14 发射 naive 名（`TIM9_IRQHandler`/`TIM9_IRQn`）。两环境
+  实测定性（2026-10-08）：
+  ① **样例工厂（生成物第一消费现场）**：`f103-common/f103_regs.h` 明言
+  "无 HAL/LL/CMSIS 依赖" + `startup.c` 向量表用 CMSIS 实名——无别名区
+  兜底，naive 名是**孤儿符号**：编译链接全绿、ISR 永不执行。链接级实证：
+  实名 extern 探针引用 naive 生成物 → `undefined reference`（四定时器
+  逐一见红）；
+  ② 全 CMSIS 工程：ST 头 "painless codes migration" 别名区
+  （`stm32f103xb.h:10207` 族 / `stm32f103xg.h:11908` 族）把 naive 名映射
+  到实名——`arm-none-eabi-gcc -E` 逐名实测旧名侥幸绑定（故历轮 CMSIS 侧
+  未暴露；样例工厂侧才是病灶现场）。
+  处置：gen-maps 增 `tim_irq_name` 域（11 TIM 实名，与 ref.json
+  `_relationships.<P>.irq.name` 逐字互证，源锚 stm32f103xg.h；
+  `examples/f103-common/startup.c` 向量表第三源核对）+ `gen_timer_int`
+  单点改查表（handler 名由 IRQn 名去后缀派生）；**TIM1 由 `TIM1_UP_*`
+  升级为 xg 口径 `TIM1_UP_TIM10_*`**——旧名在无 CMSIS 样例环境同为孤儿
+  （startup.c 向量 25 即 merged 名），F-086 原钉随之订正（原病灶
+  `TIM1_IRQHandler`/`TIM1_IRQn 不存在`不回退）。未登记名维持 naive
+  fallback（库态 `.get` 缺省语义不变，CLI 层另有入口闸）。实名在样例
+  工厂与 CMSIS 两环境均绑定，是两环境通吃的唯一形态。
+  钉：新增 `test_f225_shared_vector_naming`（发射面字符串钉恒跑 + 样例
+  环境**链接绑定双向钉**：实名探针必须链接通过 / naive 探针必须链接
+  失败）；`test_genmaps_ref_crosscheck` 增 `tim_irq_name` 互证类（逐键 ×
+  ref.json + 键集与 tim_irq 对齐 + 类级补齐）；`test_gen_interrupt_safety`
+  TIM1 旧钉订正。CI：syntax-smoke job 并入新模块（该 job 已装 arm 工具
+  链；放 unittest 矩阵会因缺工具链整体 skip = 没钉）。
+  咬合实录：变异枪（数据层 TIM9 实名→naive）恰 5 红、还原全绿；实现
+  期间 handler 派生一次写错（IRQn 后缀未替换）被全套钉当场咬红 19 项。
+
 ## 0.8 — 2026-10-02（v0.7 无上下文对抗复审 H/M/L 整改十笔全闭 · 公开仓脱敏回归 + 全史身份碎片清洗 + addr2line 定位面两债清偿 + MCP --pins 接线 + stdout 泄漏两处清尾）
 
 > 封袋定义: 自 v0.7 标签（commit 5099ef7, 2026-09-27）之后落入本账本的

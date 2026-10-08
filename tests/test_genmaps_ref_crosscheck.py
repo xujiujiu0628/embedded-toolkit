@@ -12,6 +12,9 @@ CMSIS 不存在 / ISER 28 是 TIM2 的 / 内核时钟误走 pclk1 分支)。
     clock.rcc_register 的总线前缀;
   * tim_irq 逐键: _relationships.<P>.irq.number + peripherals.<P>.interrupts
     第三源;
+  * tim_irq_name 逐键 (F-225): _relationships.<P>.irq.name — 生成器发射的
+    向量名必须是 CMSIS 实名逐字 (TIM9_IRQHandler 等 naive 名在无 CMSIS 的
+    样例工厂环境是孤儿符号); 键集须与 tim_irq 对齐 (两域同增同减);
   * 类级补齐 (防类不防点): _relationships 里每个 TIM 外设必须在两域都有键
     —— 下一笔同类缺键 (如未来 rel 收编 TIM8/10/11) 必被咬;
   * tim_clock_bit / tim_ch_pins 本单不改值, 只进互证面: 前者证位名在 RCC
@@ -215,6 +218,48 @@ class TimChPinsCrosscheckTests(unittest.TestCase):
         self.assertEqual(
             problems, [],
             "tim_ch_pins 与 _relationships.pins 矛盾:\n" + "\n".join(problems))
+
+
+class TimIrqNameCrosscheckTests(unittest.TestCase):
+    """tim_irq_name 逐键互证 (F-225) + 键集与 tim_irq 对齐。"""
+
+    def setUp(self):
+        self.ref = _load(REF_PATH)
+        self.maps = _load(MAPS_PATH)
+        self.rels = _tim_rels(self.ref)
+
+    def test_domain_present_and_keyset_equals_tim_irq(self):
+        self.assertIn("tim_irq_name", self.maps,
+                      "F-225: tim_irq_name 域缺失 — 生成器无法发射 CMSIS 实名")
+        self.assertEqual(
+            sorted(self.maps["tim_irq_name"]), sorted(self.maps["tim_irq"]),
+            "tim_irq_name 键集必须与 tim_irq 一致 (同增同减)")
+
+    def test_every_name_matches_relationships_irq_name(self):
+        problems = []
+        for key in sorted(self.maps["tim_irq_name"]):
+            name = self.maps["tim_irq_name"][key]
+            rel = self.rels.get(key)
+            if rel is None:
+                problems.append(
+                    f"tim_irq_name.{key}={name!r}: 不在 _relationships — 无互证源")
+                continue
+            rel_name = (rel.get("irq") or {}).get("name")
+            if rel_name != name:
+                problems.append(
+                    "tim_irq_name.{0}={1!r} 但 _relationships.{0}.irq.name="
+                    "{2!r}".format(key, name, rel_name))
+        self.assertEqual(
+            problems, [],
+            "tim_irq_name 与 ref.json 矛盾 (发射名必须是 CMSIS 实名):\n"
+            + "\n".join(problems))
+
+    def test_name_covers_every_relationships_tim(self):
+        missing = sorted(set(self.rels) - set(self.maps["tim_irq_name"]))
+        self.assertEqual(
+            missing, [],
+            "_relationships TIM 外设缺 tim_irq_name 键 (缺键即回退 naive 名 "
+            "→ 样例工厂孤儿符号): %r" % (missing,))
 
 
 if __name__ == "__main__":
