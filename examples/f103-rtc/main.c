@@ -3,7 +3,8 @@
  * ref.json anchor: peripherals.RTC (CRH/CRL/PRLH/PRLL 位名), RCC.BDCR
  *                  (LSEON/LSERDY/RTCSEL/RTCEN), PWR.CR bit8=DBP,
  *                  RCC.APB1ENR bits 27/28=BKPEN/PWREN。
- * 硬件验收: 未做（编译级样例）
+ * 硬件验收: ✅ 2026-10-08 真机 PASS (F103C8T6+ST-Link, F-223 修复后复验;
+ *          buggy 先红=BDCR 0x8203/LSI 且 RTC 停摆); 详见 README
  * mock 二期 (WB-20260920-02): 新增 host mock — 备份域链/BDCR 位型/
  *          预分频已知答案 + 日历进位换算。
  */
@@ -95,9 +96,12 @@ int main(void)
     CHECK(f103_mock_RCC.APB1ENR & RCC_APB1ENR_PWREN);
     CHECK(f103_mock_RCC.APB1ENR & RCC_APB1ENR_BKPEN);
     CHECK(f103_mock_PWR.CR & PWR_CR_DBP);
-    /* 组2 BDCR 终态位型 (手算): LSEON(0)|LSERDY(1)|RTCSEL=10b(8:9)
-     * |RTCEN(15) = 0x3|0x200|0x8000 = 0x8203 */
-    CHECK(f103_mock_RCC.BDCR == 0x8203u);
+    /* 组2 BDCR 终态位型 (手算): LSEON(0)|LSERDY(1)|RTCSEL=01b(8:9)
+     * |RTCEN(15) = 0x3|0x100|0x8000 = 0x8103
+     * F-223 订正: 原期望 0x8203 (=10b=LSI 编码) 与错误宏值互相自证;
+     * 真机实测 BDCR=0x8203 且 RTC 停摆 (CNT/DIV 冻结), 双源 (RM0008 +
+     * CMSIS RCC_BDCR_RTCSEL_LSE=0x100) 核实后订正为 01b 编码。 */
+    CHECK(f103_mock_RCC.BDCR == 0x8103u);
     /* 组3 1Hz 预分频已知答案: 32768Hz/(32767+1) = 1Hz;
      * PRLH=0 (bits 0:3) / PRLL=32767 (bits 0:15); SECIE=CRH bit0 */
     CHECK(f103_mock_RTC.PRLH == 0u && f103_mock_RTC.PRLL == 32767u);

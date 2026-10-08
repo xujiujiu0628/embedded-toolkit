@@ -29,6 +29,40 @@
   SVD 结构锚（三者派生自 TIM9/TIM10，含 CC 通道），**不按未经核实的功能分类
   改写**；后续若拿到 RM0008 原文，与此锚不符再单开账订正。
 
+- **F-223 (fix+docs, examples): can/rtc/iwdg 三样例首次真机验收 — 真机钓出两处「host 自证」错并订正（RTC RTCSEL 枚举值 / CAN MSR INAK 位号），修复后真机复验绿**:
+  背景: 三样例此前只有编译级 + host mock 证据; 本轮板窗 (2026-10-08, ST-Link +
+  F103C8T6 Blue Pill) 首次上硅, 按先红后绿取证 (buggy 版先烧录取证 → 修复 →
+  复验)。
+  **缺陷 1 — f103-rtc RTCSEL 枚举值写反** (`f103_regs.h`):
+  `RCC_BDCR_RTCSEL_LSE` 原为 `(2UL << 8)` = RTCSEL=10b; 双源核实 —
+  RM0008 RCC_BDCR / ST CMSIS (`stm32f103xb.h`: `RCC_BDCR_RTCSEL_LSE=0x100`,
+  `RCC_BDCR_RTCSEL_LSI=0x200`) 一致为 **01b=LSE / 10b=LSI**——原值实为 LSI
+  编码, 注释「10b=LSE」与 host 期望 `BDCR==0x8203` 互相自证 (F-213 自证同族)。
+  真机实证: buggy 版 BDCR=0x8203 (LSI) 且 RTC 全链停摆——样例从未使能 LSION
+  → 选中时钟源无时钟: CNT/DIV 冻结于复位值、RSF=0; 修复 (01b) + 备份域复位
+  (BDRST, 注意 F1 上 BDCR 写入受 PWR_CR.DBP 写保护) 后: BDCR=0x8103,
+  CRL=0x29 (RSF/RTOFF=1), CNT 10 秒 +10 = 精确 1Hz (LSE 32768/32768)。
+  **缺陷 2 — f103-can INAK 位号错** (`main.c` 两处等待 + mock):
+  原 `can_wait_msr_bit(1UL << 1, ...)` 等 SLAK 而注释写明「bit1=INAK」;
+  双源核实 — ref.json `CAN.MSR` 与 CMSIS (`CAN_MSR_INAK_Pos=0`) 一致为
+  **bit0=INAK / bit1=SLAK**。真机实证: buggy 版 MCR=0x10003 (只写了 INRQ)、
+  MSR=0xC01 (INAK=1 硬件已应答, 码等的 SLAK=0 永不置位)、BTR=0x01230000
+  复位值原封 —— 初始化序列从未走完; 修复后 MCR=0x1001A、MSR INAK=0、
+  BTR=0x005A0003 逐位 = 500kbps 配置 (BRP=3/TS1=10/TS2=5)。
+  **对照项 f103-iwdg 全绿** (无缺陷): PR=2/RLR=250 回读与真值锚逐字节一致
+  (行前反汇编核对 IWDG 基址 0x40003000; `str` 序列 = 0x5555/PR/RLR/0xAAAA/
+  0xCCCC); 4s 稳态 IWDGRSTF=0; 停喂 500ms → IWDGRSTF=1 活性实证。操作注记:
+  openocd `stm32f1x.cfg` examine 会置 `DBGMCU_CR.DBG_IWDG_STOP`, 活性测试
+  须先清该位 (否则停喂不咬)。
+  修复面: `f103_regs.h` RTCSEL=01b + 双源注记 / `f103-can/main.c` 两等待与
+  mock 改正 bit0 / `f103-rtc/main.c` host 期望 0x8203→0x8103 —— 订正后的
+  host 钉即防回归钉 (回退任一即 mock 红)。三例 README「硬件验收」行由
+  「未做」更新为真机 PASS 记录。
+  诚实边界: ① CAN 验收范围=初始化时序 (无收发与总线伙伴; 500k 系配置值
+  非总线波形级) —— 终态 SLAK=1 = 进入 Sleep (MCR.SLEEP 为复位默认, 样例
+  未退出, 最小样例范围内如实登记未改)。② RTC 判 1Hz 系 10s 计数比对,
+  非示波器级。③ IWDG 活性判据=停喂必复位且 <500ms, 非精确 100ms 测量。
+
 ## 0.8 — 2026-10-02（v0.7 无上下文对抗复审 H/M/L 整改十笔全闭 · 公开仓脱敏回归 + 全史身份碎片清洗 + addr2line 定位面两债清偿 + MCP --pins 接线 + stdout 泄漏两处清尾）
 
 > 封袋定义: 自 v0.7 标签（commit 5099ef7, 2026-09-27）之后落入本账本的

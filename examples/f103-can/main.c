@@ -6,7 +6,8 @@
  * GAP-D-4: CAN 引脚映射 (PA11/PA12 或 PB8/PB9 重映射) ref.json 未登记,
  *          本样例不配置 GPIO。CAN 时钟 = APB1 36MHz (72MHz/2, 标准分频
  *          假设 — 同 gen_periph --hclk 口径)。
- * 硬件验收: 未做（编译级样例）
+ * 硬件验收: ✅ 2026-10-08 真机 PASS (F103C8T6+ST-Link, F-223 修复后复验;
+ *          buggy 先红=MCR 停 0x10003/INAK 永不完成); 范围=初始化时序, 详见 README
  * mock 二期 (WB-20260920-02): 四速率已知答案 + 边界/防御 + 序列握手
  *          (序列函数移出 #ifndef, 与其它样例"配置序列两态共用"对齐)。
  */
@@ -51,8 +52,13 @@ static int can_init_500k(void)
     RCC->APB1ENR |= RCC_APB1ENR_CANEN;   /* ref.json RCC.APB1ENR bit25 */
     __DSB();
     CAN->MCR |= (1UL << 0);              /* INRQ 请求初始化 (MCR bit0) */
-    if (can_wait_msr_bit(1UL << 1, 1) != 0) {
-        return -1;                       /* MSR bit1=INAK 未置位 */
+    /* F-223 真机钓出: 原代码等 MSR bit1 并注释为 "bit1=INAK" —— 位号错。
+     * ref.json CAN.MSR 与 ST CMSIS (stm32f103xb.h CAN_MSR_INAK_Pos=0)
+     * 双源一致: bit0=INAK / bit1=SLAK。真机实测: INRQ 置位后硬件应答
+     * 在 INAK(bit0), 码在等的 SLAK(bit1) 永不置位 → 超时退出, 初始化
+     * 序列从未走完 (BTR 保持复位值, INRQ 未清)。已订正为 bit0。 */
+    if (can_wait_msr_bit(1UL << 0, 1) != 0) {
+        return -1;                       /* MSR bit0=INAK 未置位 */
     }
     /* F-213: 以下三处原为整字赋值 (CAN->MCR = ...), 把 INRQ 一并清零——
      * 硬件随即退出初始化模式, 其后写入的 BTR 被静默忽略。配置域寄存器
@@ -66,7 +72,7 @@ static int can_init_500k(void)
              | (5UL << 20);              /* TS2=5 → 6 TQ (bits 20:22) */
     /* 1 + 11 + 6 = 18 TQ/bit × 4 = 72 → 36MHz/72 = 500kbps 真值 */
     CAN->MCR &= ~(1UL << 0);             /* 退出初始化 (清 INRQ) */
-    if (can_wait_msr_bit(1UL << 1, 0) != 0) {
+    if (can_wait_msr_bit(1UL << 0, 0) != 0) {
         return -2;                       /* INAK 未清 */
     }
     return 0;
@@ -134,12 +140,12 @@ int main(void)
      * 断言重点=寄存器终态; 退出等待的通过侧语义单测
      * F-213: MCR 期望值随初始化序列修复而变——原实现整字赋值把 INRQ
      * 清零, 终态只剩 bit4; 现改读改写, RFLM(bit3) 应保留。 */
-    f103_mock_CAN.MSR = (1u << 1);            /* 模拟硬件 INAK 应答 */
+    f103_mock_CAN.MSR = (1u << 0);            /* 模拟硬件 INAK(bit0) 应答 */
     CHECK(can_init_500k() == -2);
     CHECK(f103_mock_CAN.MCR == ((1u << 3) | (1u << 4)));  /* RFLM+NART, INRQ 已清 */
     CHECK(f103_mock_CAN.BTR == ((3u << 0) | (10u << 16) | (5u << 20)));
     f103_mock_CAN.MSR = 0;
-    CHECK(can_wait_msr_bit(1u << 1, 0) == 0); /* INAK 已清 → 等待通过 */
+    CHECK(can_wait_msr_bit(1u << 0, 0) == 0); /* INAK(bit0) 已清 → 等待通过 */
     if (failures) {
         printf("MOCK FAILED (%d)\n", failures);
         return 1;

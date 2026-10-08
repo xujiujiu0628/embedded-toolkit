@@ -315,10 +315,16 @@ typedef struct {   /* ref.json peripherals.FSMC — 样例仅用 BCR1/BTR1;
 #define RCC_AHBENR_FSMCEN     (1UL << 8)
 #define RCC_AHBENR_SDIOEN     (1UL << 10)
 /* BDCR: 0=LSEON 1=LSERDY 2=LSEBYP 8:9=RTCSEL 15=RTCEN 16=BDRST
- *       (ref.json RCC.BDCR bits) — RTC 选择域 10b=LSE (RM 语义, GAP-D-4) */
+ *       (ref.json RCC.BDCR bits) — RTCSEL 枚举值 ref.json 未登记 (GAP-D-4),
+ *       取值按 RM0008 表 RCC_BDCR / ST CMSIS (stm32f103xb.h:
+ *       RCC_BDCR_RTCSEL_LSE=0x100, RCC_BDCR_RTCSEL_LSI=0x200):
+ *       01b=LSE / 10b=LSI / 11b=HSE/128。
+ *       F-223 真机钓出: 原值 (2UL<<8) 是 LSI 编码, 板测 RTC 全链停摆
+ *       (选中 LSI 而样例从未使能 LSION → 无时钟: CNT/DIV 冻结, RSF=0),
+ *       已订正为 01b。 */
 #define RCC_BDCR_LSEON        (1UL << 0)
 #define RCC_BDCR_LSERDY       (1UL << 1)
-#define RCC_BDCR_RTCSEL_LSE   (2UL << 8)
+#define RCC_BDCR_RTCSEL_LSE   (1UL << 8)
 #define RCC_BDCR_RTCEN        (1UL << 15)
 /* PWR.CR: 8=DBP (ref.json peripherals.PWR.registers.CR bits) */
 #define PWR_CR_DBP            (1UL << 8)

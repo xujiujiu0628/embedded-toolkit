@@ -3,7 +3,8 @@
  * ref.json anchor: peripherals.IWDG (KR/PR/RLR/SR 偏移与位宽)。
  * GAP-D-4: KR 魔数序列 0x5555/0xAAAA/0xCCCC 与 LSI=40kHz 为 ST 架构常量,
  *          ref.json 未登记 (PR/RLR 位宽与 SR 位名已锚定)。
- * 硬件验收: 未做（编译级样例）
+ * 硬件验收: ✅ 2026-10-08 真机 PASS (F103C8T6+ST-Link) — PR/RLR 回读一致 /
+ *          稳态 IWDGRSTF=0 / 停喂 500ms 触发复位; 详见 README
  * mock 二期 (WB-20260920-02): host 断言加深 — tick/反解边界 + 非法
  *          PR 防御 (0 哨兵, 规避除零)。
  */
