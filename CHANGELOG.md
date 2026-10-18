@@ -174,6 +174,75 @@
   derivedFrom 链自祖先继承）与手册分类**一致，不开订正票**；F-212「不按未核实
   分类改写」的处置经原文验证正确。本笔纯账本，data/代码零动。
 
+- **F-228 (fix+test+docs, review-closeout): 三号复审「必修三笔」清尾 — M-1 `idf` 段类型兜底 / L-1 模板 `.lock*` 加宽 / L-2 层 2 外层预算裕量（票面来源：三号复审报告 WB-20261018-04 §二 M-1·L-1·L-2 与 §五裁决表第 1~3 行）**:
+  **M-1（Medium）`release._idf_build_budget` 对非 dict `idf` 段抛裸 AttributeError**：
+  病灶: 旧写法 `(cfg.get("idf") or {}).get("build_timeout", ...)` 只兜 **falsy**
+  段 (None / {} 退成 {})，手编或半成品工程把段写成 `"idf": "oops"`（拼错形态，
+  非罕见）或数组时是 truthy 非 dict → `AttributeError: 'str' object has no
+  attribute 'get'`；而调用点 gate1 在 `subprocess.run` 的 `try` **之外**，异常
+  一路穿透 run_gates → main（release 无统一信封），报错不可归因，与
+  F-204/F-216 立的"显式点名，禁裸 traceback"正面冲突（判据 fail-closed，不产生
+  假发布，故记 M 不记 H）。
+  处置: 段类型非法 = 读不到内层预算 → 退回 `IDF_BUILD_TIMEOUT_DEFAULT_S`（900s）。
+  六形态对照（三号复审实测表）：`"oops"` / `[1, 2]` 由 RAISED 改为 900（**前两行
+  变化**）；`None`→900、`{"build_timeout":"abc"}`→900、`0`→None、`-3`→None（**后
+  四行不变**）。
+  钉: `tests/test_release.py` 新增 `Gate1NonDictIdfSectionTests` 三例（非 dict 四
+  形态退默认 / 六形态表逐行复现 / gate1 全链不崩且外层按默认预算+裕量抬）；探针
+  helper `_ws_with_config` 上提到 `_Gate1OuterProbe` mixin 供两组共用（不留第二
+  份副本，同 F-029 纪律）。
+  红绿自证: 变异枪 = 把 `if not isinstance(idf, dict):` 换成 `if idf is None:`
+  （即修前"只兜 falsy、truthy 非 dict 必抛"的形态）→ 全模块
+  `Ran 37 / FAILED (errors=8)`，8 处**全部**落在新钉区（4 + 2 + 2 个 subTest，
+  `'str'/'list' object has no attribute 'get'` 逐条在案），既有 34 例全绿；还原
+  后 `Ran 3 / OK`，文件 sha256 逐字节复得 `3b51d38c…`。
+
+  **L-1（Low）F-224 哨兵边界未覆盖 F-215 CAS 的 `.claim` 旁车**：
+  病灶: `*.lock` 要求文件名**以** `.lock` 结尾，而 CAS 把陈旧锁挪成
+  `state.json.lock.<pid>.claim`——「归还失败」（`os.link` 抛错）与「进程在 rename
+  后被杀」两种情形会永久留下该旁车；一旦残留，工程仓 `git status --porcelain`
+  非空 → release G0「工作树不干净」**再次首绊**（与 v0.8 板窗同一形态，且出现在
+  "回收一把陈旧锁"这种与发布无关的路径上，归因成本高）。
+  处置: 新工程模板 `.workbench/*.lock` → `.workbench/*.lock*`（一条模式覆盖锁与
+  claim），spec 的 F-224 说明段同句订正 + 追加 F-228 订正段（写明机理与"新增机
+  制 ≠ 边界已随动"入账口径）。**三工程仓 .gitignore 已随修**
+  （mpu6050-oled `55157aa` / adc-oled `069cc9f` / button-toggle `e8e89d5`；工程
+  仓纯本地记录、不推远端），本仓侧只此模板半笔，未出仓。
+  自证（仓外临时 git 库，不触碰任何工程仓）: 从 spec 文本取出模板 .gitignore 跑
+  `git check-ignore -v --no-index` 双态——**新模板**三条探针全 rc=0
+  （`.lock` / `.lock` / `.lock.9999.claim` 均命中 `.workbench/*.lock*`）；
+  **旧模板**（F-224 原值）前两条 rc=0、`state.json.lock.9999.claim` **rc=1 未忽
+  略** —— 红态即三号复审 L-1 的逐字复现。
+
+  **L-2（Low）verify 层 2 外层预算取内层等号，零裕量**：
+  病灶: `timeout=max(60, hardfault_budget_s())` 实测取到 186 =
+  `OPENOCD_DIAG_BUDGET_S`，而内层 186s 只统计"3×60 子进程超时 + 2×3 重试间隔"，
+  **不含**解释器启动、模块导入、寄存器解析与 JSON 序列化；三次全超时的最坏路径
+  上外层仍会先杀，拿回的还是"verify 超时"——F-219 专为可辨识性加的
+  `[HF-DIAG-TIMEOUT]` 哨兵文本永远出不来（该票想买的东西只在"第 2、3 次尝试成
+  功"的路径上买到了）。
+  处置: `scripts/verify.py` 新增 `HARDFAULT_OUTER_MARGIN_S = 30`，调用点改为
+  `max(60, hardfault_budget_s() + HARDFAULT_OUTER_MARGIN_S)`（生效 216s）；
+  **内层 `hardfault.py` 零动**（`OPENOCD_DIAG_BUDGET_S` 仍 186）。取 30 而不复用
+  `IDF_OUTER_MARGIN_S=120` 的理由：层 2 子进程无产物落盘、无台账写回
+  （`hardfault.py` 零文件写，grep 实测），收尾面远小于构建步。
+  钉: `tests/test_f222_fourth_review_fixes.py` 判据由「等号」改为「大于」——①形态
+  钉不再接受 `timeout=max(60, hardfault_budget_s())`（等号形态判红），且新增"ast
+  取到的**调用点原文表达式**必须含裕量常量"；②新增
+  `test_outer_budget_strictly_exceeds_inner`：用 ast 取出
+  `subprocess.run(hf_cmd, …, timeout=…)` 的 timeout 表达式原文 eval 求值，断言
+  外层 > 内层（不是测试自己重算常量，故回退调用点即转红）。既有
+  `test_helper_reads_real_module_constant` 与兜底 186 等于 9 例断言零改。
+  红绿自证: 变异枪 = 调用点退回等号形态 → `Ran 11 / FAILED (failures=2)`，红钉恰
+  两条，首条报 `AssertionError: 186 not greater than 186`（L-2 本体逐字复现）；
+  还原后 `Ran 11 / OK`，文件 sha256 逐字节复得 `b9127bd8…`。
+
+  会计口径: 三笔全在 fail-closed / fail-soft 面，**无判据翻转、无假发布风险**；本
+  单不含任何"修已经对的东西"。未核实项: CI 十 job 远端面未亲验（本地全量 + ruff
+  为凭）。
+  验证: 全套 **1451** 例绿（`skipped=9`，随环境变化以实跑为准）= 基线 1447 + 本
+  单新钉 4（`Gate1NonDictIdfSectionTests` 3 + L-2 追加 1）。
+
 ## 0.8 — 2026-10-02（v0.7 无上下文对抗复审 H/M/L 整改十笔全闭 · 公开仓脱敏回归 + 全史身份碎片清洗 + addr2line 定位面两债清偿 + MCP --pins 接线 + stdout 泄漏两处清尾）
 
 > 封袋定义: 自 v0.7 标签（commit 5099ef7, 2026-09-27）之后落入本账本的

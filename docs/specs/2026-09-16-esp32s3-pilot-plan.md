@@ -1054,15 +1054,27 @@ sdkconfig.old
 managed_components/
 dependencies.lock
 .workbench/build/
-.workbench/*.lock
+.workbench/*.lock*
 ```
 
-> F-224 增补 2026-10-08（v0.8 板窗钓出）：模板补 `.workbench/*.lock`——F-219
+> F-224 增补 2026-10-08（v0.8 板窗钓出）：模板补 `.workbench/*.lock`（**F-228 已
+> 加宽为 `.workbench/*.lock*`，见本条末订正**）——F-219
 > file_lock 的 0 字节哨兵按设计常驻（`wb_common.file_lock` class doc 明言
 > "不删哨兵文件"），不罩会绊 release G0 树净检查（v0.8 发布首绊实证）。ESP
 > 路径当前不触哨兵生成（esp_runtime/verify 不调 save_skill_section），该行按
 > 统一原则预置。F103 侧 de-facto 模板=照抄 `stm32f103-adc-oled/.gitignore`
 > （同批已修，`a444097`）。
+>
+> **F-228 订正 2026-10-18（三号复审 L-1）：`.workbench/*.lock` → `.workbench/*.lock*`。**
+> 机理：`*.lock` 要求文件名**以** `.lock` 结尾，而 F-215 的 CAS 把陈旧锁挪成
+> `state.json.lock.<pid>.claim`——「归还失败」（`os.link` 抛错）与「进程在
+> rename 后被杀」两种情形会**永久留下**该旁车，`*.lock` 不命中它，工程仓
+> `git status --porcelain` 随即非空 → release G0「工作树不干净」**再次首绊**
+> （与 v0.8 板窗同一形态，且出现在"回收一把陈旧锁"这种与发布无关的路径上，
+> 归因成本高）。入账口径同 F-224 教训：**新增机制 ≠ 边界已随动**。
+> 三工程仓 .gitignore 已随修（mpu6050-oled `55157aa` / adc-oled `069cc9f` /
+> button-toggle `e8e89d5`；工程仓纯本地记录、不推远端）。本仓侧的落点即上面
+> 模板行。
 
 `.workbench/config.json`：
 
