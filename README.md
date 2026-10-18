@@ -1,6 +1,7 @@
 # embedded-toolkit
 
 [![CI](https://github.com/xujiujiu0628/embedded-toolkit/actions/workflows/ci.yml/badge.svg)](https://github.com/xujiujiu0628/embedded-toolkit/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/xujiujiu0628/embedded-toolkit?label=release&color=brightgreen)](https://github.com/xujiujiu0628/embedded-toolkit/releases/latest)
 ![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)
 ![Python](https://img.shields.io/badge/python-3.10%2B-blue)
 ![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux-lightgrey)
@@ -14,9 +15,28 @@
 
 版本线 v0.2 → v0.8（每个 tag 均过 G0~G3 真机门禁 + CI 全绿），逐版变更见
 [Releases](https://github.com/xujiujiu0628/embedded-toolkit/releases) 与
-[CHANGELOG](CHANGELOG.md)（每条账可对到证据 commit）。
+[CHANGELOG](CHANGELOG.md)。正文中的 `F-xxx` / `GAP-x` 为内部账编号，每条在
+CHANGELOG 有对应条目与证据 commit——**状态类事实以 CHANGELOG 为唯一权威**，
+本 README 只写结构与非易失的实录，处置史不在此复制。
 
-## 零配置试跑（任何人，1 分钟）
+## Highlights
+
+- **四态期望判定**——PASS / XFAIL（登记在案的"预期失败"欠条，须附理由）/
+  XPASS（欠条已落地却未销账的意外通过，强制判红）/ FAIL，见[「怎么工作」](#怎么工作)
+- **证据分级四档**——每次判定携带 `evidence` 字段，与 verdict 正交；
+  仿真与静态证据进不了发布记录
+- **G0→G3 发布门禁 + R1~R8 事后审计**——hex 字节哈希锚定"烧的是什么"、
+  契约哈希锚定"拿什么判的绿"，"当时绿了"任何人**事后可重算**
+- **无板闭环**——仓内自带 `examples/sim-demo`，QEMU 上同一判定引擎端到端跑绿
+- **两族真机后端**——STM32（OpenOCD 烧录 + RTT/semihosting 采集）与
+  ESP32-S3（idf 构建 + esptool 烧录 + UART 定时窗采集）均有真机全链实证
+- **MCP 正门**——六个核心工具有界包装：子进程透传、入参白名单、
+  **不给 agent 任意 shell**
+- **纯 mock 回归套件**——不碰硬件、零第三方依赖（仅串口族需 pyserial），
+  Windows/Linux 双腿全绿由 CI 每 push 实证
+- **55 外设寄存器知识库** + 寄存器级外设代码生成——AI 生成物先过门控再进编译
+
+## 一分钟试跑（零配置、零依赖、零硬件）
 
 ```bash
 git clone https://github.com/xujiujiu0628/embedded-toolkit.git
@@ -24,31 +44,23 @@ cd embedded-toolkit
 python -m unittest discover -s tests
 ```
 
-无需任何配置与第三方依赖：回归套件是**纯 mock** 的（不碰硬件；仅串口工具族
-可选依赖 pyserial），machine.json 缺失时自动回退 `machine.example.json` 模板
-并给出明确提示——这条命令本身就是"陌生人克隆"路径的机检金丝雀（CI 每次必跑）。
-例数与 skipped 数随环境变化，以实跑输出为准（仓库纪律：文档不写死数字）；
-末行 `OK` 即通过——缺 bash/arm-gcc/coverage/esp 工具链时 skip 增多，样例
-工厂动态生成例在工具链不在场时整类不出现（是"缺席"不是 skip，见
+回归套件是**纯 mock** 的（不碰硬件；仅串口工具族可选依赖 pyserial），
+machine.json 缺失时自动回退 `machine.example.json` 模板并给出明确提示——
+这条命令本身就是"陌生人克隆"路径的机检金丝雀（CI 每次必跑）。末行 `OK`
+即通过；例数与 skipped 数随环境变化，以实跑输出为准（仓库纪律：文档不写死
+数字）——缺 bash/arm-gcc/coverage/esp 工具链时 skip 增多，样例工厂动态生成
+例在工具链不在场时整类不出现（是"缺席"不是 skip，见
 tests/test_sample_factory.py 模块注记）。
 
-### Windows PowerShell 首次跑测试的乱码告警
+> **Windows PowerShell 首跑的乱码告警**：你可能看到十几行
+> `Warning: session_fix_cache.json , ԭļ: ...` 式乱码。这是反馈库把损坏缓存
+> 主动隔离重建（F-020 诚实化设计，绝不裸 traceback）时写往 stderr 的中文
+> 警告被 GBK 控制台解码所致——**终端显示问题，不是工具失败**，唯一判据是
+> 末行 `OK` / `FAILED`。消除乱码：`$env:PYTHONIOENCODING = "utf-8"`。
+> 另：hooks 行为测试在 Windows 请用 Git Bash 跑（PowerShell 全局 autocrlf
+> 会造成行尾漂移假红，见 CONTRIBUTING）。
 
-PowerShell 下你可能看到十几行类似 `Warning: session_fix_cache.json , ԭļ: ...`
-的乱码。**这是终端 GBK 编码显示问题，不是工具失败**——反馈库发现损坏缓存时会
-主动隔离为 `.corrupt` 并重建（F-020 诚实化设计，绝不裸 traceback），其写往
-stderr 的中文警告被 PowerShell 按 GBK 解码所致。判定方法：看最后一行
-`OK (skipped=1)` / `FAILED`。想消除乱码：
-
-```powershell
-$env:PYTHONIOENCODING = "utf-8"
-python -m unittest discover -s tests
-```
-
-另注意 hooks 行为测试在本机 Windows 上请用 Git Bash 跑（PowerShell 全局
-autocrlf 会造成行尾漂移假红，见 CONTRIBUTING）。
-
-## 无硬件快速体验（一块板都不需要）
+## 先无硬件尝鲜（一块板都不需要）
 
 装好 **arm-none-eabi-gcc** 与 **QEMU**（`qemu-system-arm` 在 PATH，或
 `machine.json` 填 `qemu_exe`）后：
@@ -62,56 +74,57 @@ semihosting 收 printf 输出——**和真机路径完全相同的契约、判�
 仿真证据恒 `evidence="simulation_validated"`，与真机证据平级可信、但不进发布
 门禁（G2 只认 `hardware_validated`）。跑通它，就理解了本项目的一半。
 
-## 特性
+## 怎么工作
 
-（下文 `F-xxx` 为内部账编号，每条在 [CHANGELOG](CHANGELOG.md) 有对应条目。）
+```text
+需求(FSD/expectations.json) → 生成(Claude + review-code 对抗审查) → 构建(gcc_build / idf, F-174)
+  → 真机判定(RTT / semihosting / UART 采集 printf) → 门禁(release.py G0-G3, 全绿才打 tag) → 落账(feedback_db.py 校准)
+```
 
-### 判定与证据
+三个设计支点：
 
-> 为什么需要：LLM 生成的固件"看起来对"不等于"跑起来对"，判定必须外置成
-> 机器可评估的契约，而不是模型的自觉。
+1. **判定外置**——"对不对"不写在 AI 的自觉里，写在版本化的契约文件里；AI 改代码
+   可以，改契约会在发布审计的契约哈希锚（R1~R8 八查中的 R7）里现形。
+2. **证据优先**——每条期望必须对应真机打印的字节（正则匹配 + 数值区间），
+   `HAL_OK ≠ 字节正确` 是本仓库用一个月黑屏 OLED 换来的教训。
+3. **异构审查**——工作台的维护者（AI）也会被换无上下文、不同模型家族的
+   外部智能体审计，`handoff_guard` 机器强制其不碰硬件与禁区。
 
-- **四态期望判定**：`expectations.json` 契约驱动，每条期望判为 PASS /
-  XFAIL（登记在案的"预期失败"欠条，须附理由）/ XPASS（欠条已落地却未销账的
-  意外通过——强制判红）/ FAIL
-- **真机证据采集**：RTT / semihosting 双后端抓取固件 printf 输出，数值断言
-  （正则 + capture_group + min/max）直接编进契约
-- **多平台后端矩阵（F-174）**：STM32 = OpenOCD 烧录 + RTT/semihosting 采集；
-  ESP32-S3 = `idf.py` 构建 + esptool 烧录 + UART 定时窗采集（真机双 PASS 收口）；
-  QEMU sim 作无板平级判定后端（不进发布门禁）。**缺省配置行为逐字节不变**，
-  OpenOCD 专属动作（判定后复位 / HardFault 层 2 诊断）按后端设闸互不越界
-- **证据分级四档**：每次判定携带 `evidence` 字段
-  （`hardware_validated` / `simulation_validated` / `static` /
-  `production_approved`），与 verdict 正交——见「效果预览」段说明表
+### 判定四态与证据四档
 
-### 发布与审计
+期望契约（`expectations.json`）逐条判为：
 
-> 为什么需要："当时绿了"要能被任何人**事后重算**，绿的资格才可继承。
+| 状态 | 语义 |
+|---|---|
+| `PASS` | 信号在采集全文中按契约命中 |
+| `XFAIL` | 登记在案的"预期失败"欠条（`"xfail": true` 必须携带 `xfail_reason`） |
+| `XPASS` | 欠条已落地却未销账的**意外通过——强制判红**，杜绝"顺便实现了"静默混入 |
+| `FAIL` | 正向匹配未命中，或负断言命中 |
 
-- **发布门禁 G0→G3**（四道检查：工作树干净 → 探针连通预检 → clean rebuild
-  重跑判定 + xfail 翻转确认 → 落记录打 annotated tag），任一环失败自动回滚
-- **双重取证锚**：hex 字节哈希锚定"烧的是什么"，契约哈希（sha256）锚定
-  "拿什么判的绿"——发布记录可被 `release_audit` 的事后八查（R1~R8）逐条重算
+仅构建/lint 的绿不算"验证过"，`static` 与真机证据分家——每条判定携带顶层
+`evidence` 字段（与 verdict 正交：FAIL 也是真机证据，PASS 也可能是静态证据）：
 
-### 治理与工程
+| 取值 | 含义 |
+|---|---|
+| `"hardware_validated"` | capture 后端（rtt/semihosting）真机实跑采到运行时输出 |
+| `"simulation_validated"` | sim 后端：qemu 直接加载 elf（`capture.backend: "sim"`，见 `examples/sim-demo`）——与真机平级的判定后端，**不进发布门禁**（G2 只认 hardware_validated） |
+| `"static"` | 仅构建/lint，或 capture 未跑成——无任何运行时证据 |
+| `"production_approved"` | 发布后经 `release_audit --approve` 人工批准投产（仅 audit 回填，verify 不产出） |
 
-> 为什么需要：这套系统服务于 AI 协作，所以 AI 本身也是被治理对象。
+发布门禁（release.py G2）要求 `evidence == "hardware_validated"`，仿真/静态
+证据混入发布需 `--allow-non-hardware-evidence` 显式豁免并留痕；事后审计
+（release_audit.py R8）复核发布记录该字段，`production_approved` 缺批准
+留痕视同篡改。发布记录同时自带 fidelity 契约字段（`fidelity_boundaries`
+按证据等级声明"证明了什么/没证明什么"、`limitations` 缺省不虚报、
+`signature` 留空占位）。
 
-- **失败现场诚实化**：超时/卡死/部分输出全部如实落盘（`last_failure.json`），
-  绝不伪装成"程序无输出"
-- **AI 治理 AI**：`handoff_guard` 三级禁线机检外部智能体的代管分支
-  （硬件禁触/文件禁区/主流程警告），两轮外部异构智能体独立审查已实战闭环
-- **纯 mock 回归套件**：不碰硬件、零第三方依赖（仅串口工具需 pyserial）、
-  Windows/Linux 全绿（CI 每跑即验证"陌生人克隆"路径）——例数以
-  `python -m unittest discover -s tests` 实跑为准（CONTRIBUTING 约定文档不写死数字）
-- **知识沉淀**：55 外设寄存器知识库 + 寄存器级外设代码生成 + 修复事件校准链
-  （feedback_db 落账与准确率校准；Keil 期"构建错误知识库"已随 Keil 退役区
-  拆 archive，现为 archive 唤起形态，见结构节注记）
+## 效果预览（真实可回放的实录）
 
-## 效果预览
+以下输出为**历史实录工件**：版本号/哈希/数值按实录保留，不随版本推进改写
+（本仓纪律 F-034：要反映新版本须真实重跑后整段替换）。
 
 真机（STM32F103C8T6 + ST-Link，ADC 电位器 + OLED 工程）一次 `verify` 的 RTT
-采集实录节选：
+采集实录节选（0.2 时期）：
 
 ```text
 === adc-oled boot ===
@@ -124,9 +137,8 @@ ADC raw=3959 mv=3190 (3.19 V)
 ALERT HIGH mv=3190
 ```
 
-ESP32-S3（F-174 试点，idf build + esptool flash + UART 采集）同一契约引擎下的
-expect 靶命中（`capture.backend: "uart"`，esptool `--after hard_reset` 确定性
-复位后开采集窗）：
+ESP32-S3（F-174 试点，idf build + esptool flash + UART 采集，
+`capture.backend: "uart"`）同一契约引擎下的 expect 靶命中：
 
 ```text
 ESP-PILOT-BOOT ok
@@ -134,29 +146,6 @@ ESP-PILOT-OK tick=1
 ```
 
 对应的机器判定输出（`verify.py --json` 节选，全文真实可回放）：
-
-> 注：本段为 **0.2 时期**的真机实录，`toolkit_version` 字段如实保留当时的 `"0.2"`
-> （不随版本推进改写历史输出）。0.3 的输出字段结构与此一致，仅版本号与哈希值不同。
->
-> **0.5 起新增顶层 `evidence` 字段**（证据分级，输出契约的一部分；命名对齐
-> agentic-embedded-lab 的 claim+fidelity 五级、裁剪 model_dependent 后四档，
-> F-146 一次性切换不留别名）：本次判定的证据从哪来，与判定 verdict 正交——
-> FAIL 也是真机证据，PASS 也可能是静态证据。
->
-> | 取值 | 含义 |
-> |---|---|
-> | `"hardware_validated"` | capture 后端（rtt/semihosting）真机实跑采到运行时输出 |
-> | `"simulation_validated"` | sim 后端：qemu 直接加载 elf（`capture.backend: "sim"`，见 `examples/sim-demo`）——与真机平级的判定后端，**不进发布门禁**（G2 只认 hardware_validated） |
-> | `"static"` | 仅构建/lint，或 capture 未跑成——无任何运行时证据 |
-> | `"production_approved"` | 发布后经 `release_audit --approve` 人工批准投产（仅 audit 回填，verify 不产出） |
->
-> 发布门禁（release.py G2）要求 `evidence == "hardware_validated"`，仿真/静态
-> 证据混入发布需 `--allow-non-hardware-evidence` 显式豁免并留痕；事后审计
-> （release_audit.py R8）复核发布记录该字段，`production_approved` 缺批准
-> 留痕视同篡改。发布记录同时自带 fidelity 契约字段（`fidelity_boundaries`
-> 按证据等级声明"证明了什么/没证明什么"、`limitations` 缺省不虚报、
-> `signature` 留空占位）。上例若在当前版本重跑，顶层会多出
-> `"evidence": "hardware_validated"`——历史实录不加字段，不回放篡改。
 
 ```jsonc
 {
@@ -178,24 +167,14 @@ ESP-PILOT-OK tick=1
 }
 ```
 
-## 它是怎么工作的
+> 本段为 **0.2 时期**的真机实录，`toolkit_version` 字段如实保留当时的 `"0.2"`。
+> 0.5 起输出顶层新增 `evidence` 字段（含义见「判定四态与证据四档」）——上例若
+> 在当前版本重跑，会多出 `"evidence": "hardware_validated"`；历史实录不加字段，
+> 不回放篡改。
 
-```text
-需求(FSD/expectations.json) → 生成(Claude + review-code 对抗审查) → 构建(gcc_build / idf, F-174)
-  → 真机判定(RTT / semihosting / UART 采集 printf) → 门禁(release.py G0-G3, 全绿才打 tag) → 落账(feedback_db.py 校准)
-```
+## 上手
 
-三个设计支点：
-
-1. **判定外置**——"对不对"不写在 AI 的自觉里，写在版本化的契约文件里；AI 改代码
-   可以，改契约会在发布审计的契约哈希锚（R1~R8 八查中的 R7）里现形。
-2. **证据优先**——每条期望必须对应真机打印的字节（正则匹配 + 数值区间），
-   `HAL_OK ≠ 字节正确` 是本仓库用一个月黑屏 OLED 换来的教训。
-3. **异构审查**——工作台的维护者（AI）也会被换无上下文、不同模型家族的
-   外部智能体审计，`handoff_guard` 机器强制其不碰硬件与禁区
-   （历史对账记录在维护者私有仓 `<维护者私有仓>/docs/handoff/`，不在本仓）。
-
-## 环境要求
+### 环境要求
 
 | 依赖 | 用途 | 备注 |
 |---|---|---|
@@ -209,11 +188,10 @@ ESP-PILOT-OK tick=1
 | ESP32-S3 板（USB 串口） | 仅 ESP 真机步骤 | port/chip 走白名单校验（`COMn` 或 `/dev/tty*` 形态） |
 
 平台现状：**Windows 为主要开发/真机平台**；工具链预检自 F-164 起统一
-`shutil.which` 平台判定（nt 按 PATHEXT 试 `.exe`，POSIX 查可执行位），
-Linux 上测试套、离线工具与无板仿真链（sim-demo 端到端）全量可跑（CI 即证）；
-Linux **真机烧录**路径未验证（F-031，见「已知限制」），欢迎报告。
+`shutil.which` 平台判定。Linux 上测试套、离线工具与无板仿真链（sim-demo
+端到端）全量可跑（CI 即证）；Linux **真机烧录**路径未验证（见「已知限制」F-031）。
 
-## 真机路径配置（用板子之前做一次）
+### 真机路径一次性配置
 
 `machine.json` 是本机文件（不入库），是全部工具链绝对路径的**唯一合法源**：
 
@@ -223,9 +201,7 @@ cp machine.example.json machine.json
 # ESP32 后端另填 esp_idf_path / esp_tools_dir；QEMU 可选填 qemu_exe
 ```
 
-（Windows 编码告警与跑测试相关，见上文「零配置试跑」小节尾注。）
-
-## 5 分钟上手
+### STM32 工程：5 分钟到第一次绿
 
 前提：一个 CubeMX 生成、带顶层 `Makefile`（`TARGET=`/`BUILD_DIR=` 约定）的
 STM32 工程。以下 `<工程根>` 指你的固件目录，脚本从任意 cwd 用 `--project` 指定。
@@ -261,11 +237,14 @@ python scripts/expectations_lint.py --project <工程根>
 # 4. 构建 + 烧录 + 采集 + 判定（【需板子】；--json 供 AI 消费）
 python scripts/verify.py --project <工程根> --json
 
-# 4b. 没板子？见上文「无硬件快速体验」——examples/sim-demo 用同一命令与引擎
+# 4b. 没板子？见上文「先无硬件尝鲜」——examples/sim-demo 用同一命令与引擎
 
 # 5. 发布演练（【需板子】，dry-run 不打 tag 不落库）
 python scripts/release.py --project <工程根> --tag v1.0.0 --dry-run
 ```
+
+（上述第 1、2 步示例即本仓契约 fixture 的公示值——`tests/test_contract_fixtures.py`
+双处对账，示例与 loader 行为漂移会当场打红。）
 
 ### ESP32-S3 工程（F-174）
 
@@ -286,15 +265,19 @@ python scripts/release.py --project <工程根> --tag v1.0.0 --dry-run
 }
 ```
 
-ESP 模式下 OpenOCD 专属动作自动让位（F-174 终审修复波）：`post_reset` 记
-`skipped`、HardFault 层 2 双路抑制——ESP panic 的归因走采集文本中的
-`esp_panic` 标记 + AI 判定。采集窗起点纪律与 STM32 相同（烧录/复位后才开）。
-uart 采集开口即释放 DTR/RTS（F-177：CH340/CP210x 自动下载电路否则会把芯片
-按在复位里收 0 行；释放附带一次确定复位；S3 试点板为 FTDI 桥，回归双 PASS
-实证无影响）。非 S3 芯片族
-必须显式设 `capture.chip`——默认 `esp32s3`，探针判错芯片型会在复位步体面报错。
+要点：
 
-## 使用注意：采集窗纪律（真人输入类期望，如按键/旋钮）
+- 三键（`builder` / `flash.backend` / `capture.backend`）任一缺失或取值非法且
+  ESP 标记在场时，verify 在任何构建/烧录动作之前 **fail-fast 拒绝**（GAP-F-19
+  收口，规则本体 `runtime_common.esp_backend_config_errors`）
+- ESP 模式下 OpenOCD 专属动作自动让位：`post_reset` 记 `skipped`、HardFault
+  层 2 双路抑制——ESP panic 的归因走采集文本中的 `esp_panic` 标记 + AI 判定
+  （panic 帧随链接线离线 addr2line 符号化已落地，F-200）
+- uart 采集开口即释放 DTR/RTS（F-177：CH340/CP210x 自动下载电路否则会把芯片
+  按在复位里收 0 行；释放附带一次确定复位）；非 S3 芯片族必须显式设
+  `capture.chip`，探针判错芯片型会在复位步体面报错
+
+### 采集窗纪律（真人输入类期望，如按键/旋钮）
 
 1. **窗口在烧录之后才开**——全链 `verify.py --json` 前置 build+flash 约 1 分钟，
    提前按=白按。交互前先跑 `--no-build --no-flash`（板已是目标固件），窗口几秒内开。
@@ -305,7 +288,7 @@ uart 采集开口即释放 DTR/RTS（F-177：CH340/CP210x 自动下载电路否�
    动作未落在窗内/未达契约阈值（旋钮类）——先看 `captured_output` 再决定重跑。
 5. **SWD 连不上先过物理面**：先确认探针/板线在场且你当下的按键动作状态，再查软件面。
 
-## 核心工具速查
+## 工具速查
 
 ### 离线工具（无硬件即可跑）
 
@@ -317,10 +300,10 @@ uart 采集开口即释放 DTR/RTS（F-177：CH340/CP210x 自动下载电路否�
 | `scripts/release_audit.py` | 发布记录事后八查 R1~R8（tag 指向/hex 重算/契约锚/证据等级） | `python scripts/release_audit.py --project <工程根> --all` |
 | `scripts/handoff_guard.py` | 外部智能体代管分支的三级禁线机检 | `python scripts/handoff_guard.py --branch <代管分支>` |
 | `scripts/feedback_db.py` | 修复事件落账 + 每流水线准确率校准 | `python scripts/feedback_db.py --stats` |
-| `scripts/rm_lookup.py` | STM32F103 55 外设寄存器/位域速查（JSON 知识库） | `python scripts/rm_lookup.py --list` |
-| `scripts/gen_periph.py` | 参数 → 寄存器级 C 初始化代码 / 外设文档（时钟经 `--hclk` 参数化，默认 72MHz 按标准 APB 分频推导，非默认值生成物头注回显前提；`--pclk1/--pclk2` 显式 APB 时钟覆盖逐键独立，定时器内核按 RM0008 §7.3.7 随之派生；`--tim-clk` 显式值优先；生成的 `spiN_write_burst` 逐字节排空 RX（RM0008 §25.3.5 单缓冲接收，F-178） | `python scripts/gen_periph.py --help` |
-| `scripts/capture_sim.py` | sim 采集会话：qemu-system-arm 直接加载 elf（无板闭环，F-150） | 经 `verify.py` 消费（见「无硬件快速体验」） |
-| `scripts/mcp_server.py` | MCP 接入：六工具有界包装（见下节），零业务复制 | 见「MCP 接入」节 |
+| `scripts/rm_lookup.py` | STM32F103 55 外设寄存器/位域/引脚速查（JSON 知识库） | `python scripts/rm_lookup.py --list` |
+| `scripts/gen_periph.py` | 参数 → 寄存器级 C 初始化代码 / 外设文档（时钟经 `--hclk`/`--pclk1`/`--pclk2` 参数化，定时器内核时钟按 RM0008 §7.3.7 派生；SPI 帮手逐字节排空 RX，F-178；细则 `--help`） | `python scripts/gen_periph.py --help` |
+| `scripts/capture_sim.py` | sim 采集会话：qemu-system-arm 直接加载 elf（无板闭环，F-150） | 经 `verify.py` 消费（见「先无硬件尝鲜」） |
+| `scripts/mcp_server.py` | MCP 接入：六工具有界包装（见「MCP 接入」），零业务复制 | 见「MCP 接入」节 |
 
 ### 真机工具（需板子/探针）
 
@@ -332,13 +315,34 @@ uart 采集开口即释放 DTR/RTS（F-177：CH340/CP210x 自动下载电路否�
 | `scripts/esp_runtime.py` | ESP32 三后端封装：idf.py build / esptool flash / UART 定时窗采集 + esp_panic 文本标记（F-174） | 经 `verify.py` 派发（`builder=idf`） |
 | `scripts/serial_*` / `openocd_*` | 串口与探针底层族（RTT/GDB/telnet） | `python scripts/<name>.py --help` |
 
+## 工程契约（`.workbench/`）
+
+固件工程通过 `.workbench/config.json` 被发现（从 cwd 逐级向上查找，兜底识别
+旧版 `.embeddedskills/config.json`）。期望判定规则：
+
+- `id` 唯一必填；`texts`（全 substring 命中）与 `patterns`（全正则 search 命中）二选一
+- `"xfail": true` 必须携带 `xfail_reason`——待办欠债全部白纸黑字
+- 数值断言：`patterns` + `capture_group` + `min`/`max` 区间
+- **负断言（F-112）**：`forbidden_texts` / `forbidden_patterns`——捕获全文任一命中
+  即该条 FAIL（优先于正向匹配与 XPASS），对应 FSD `prohibited_outcomes` 的可机检项
+- **豁免登记（F-113）**：顶层 `"waived"` 数组登记不走 verify 闭环的需求（理由必填）；
+  `fsd_coverage.py` 对账 FSD↔断言，xfail（欠条）与 waived（豁免）两级不混用
+- 版本控制建议：`config.json` / `expectations.json` / `releases/` 入库；
+  `build/` 与 `state.json`（可再生缓存）忽略
+
+**设备锁（F-145）**：`verify` 的 flash+capture 段与 `openocd_run flash/erase`
+全程持有**机器级设备锁**（`%USERPROFILE%\.embedded-toolkit\device-locks\stlink.lock`，
+OS 级文件锁）——同一探针/板子同时只被一个 agent（或同一台机的另一份 clone）
+占用，ESP 运行同样经这把锁排队（宁多排不错排）；进程崩溃 = OS 自动放锁。
+冲突方收到 `resource_busy` + 持有者 purpose/获取时间，`--lease-wait N` 可有界
+等待。它与 `.workbench/state.json` 的写锁（F-127，防数据竞争）是两层，互不替代。
+
 ## MCP 接入（AI agent 第一接口）
 
 把六个核心工具包装成有界 MCP 工具（stdio transport）：`run_verify` /
 `lint_expectations` / `gen_peripheral` / `rm_lookup` / `diagnose_hardfault`
-（仅解析不触探针）/ `doctor`。安全设计与 agentic-hil 同源：工具=对现有脚本的
-子进程透传（零业务逻辑复制，CLI 仍是唯一事实源）、入参白名单校验、
-**不给 agent 任意 shell**。
+（仅解析不触探针）/ `doctor`。安全设计：工具=对现有脚本的子进程透传（零业务
+逻辑复制，CLI 仍是唯一事实源）、入参白名单校验、**不给 agent 任意 shell**。
 
 ```bash
 # MCP SDK 是唯一可选依赖（其余工具零第三方依赖，不受影响）
@@ -362,6 +366,10 @@ Claude Code 注册：把仓根 `.mcp.json.example` 拷为工程根（或 `~/.cla
 `run_verify` 等需要工程的工具要求 `project` 参数指向持有
 `.workbench/config.json` 的固件工程根——不存在或不是工程即拒绝。
 
+## 安全
+
+**安全漏洞请按 [SECURITY.md](SECURITY.md) 私下报告，勿开公开 issue。**
+
 ### ⚠️ 信任边界：勿对不受信的工程跑 verify / MCP `run_verify`（F-219, L-3）
 
 本工具**按"配置即意图"执行**：`.workbench/config.json` 不只是数据，它能
@@ -375,7 +383,7 @@ Claude Code 注册：把仓根 `.mcp.json.example` 拷为工程根（或 `~/.cla
 | `flash.backend` / `capture.backend` / `builder` | 换整条后端（OpenOCD / esptool / uart / idf） |
 
 **故：把 `verify.py` / MCP `run_verify` 指向一个你不知道来源的工程，等同于
-以你的权限执行那个工程的作者指定的任意命令**（Makefile 可含任意 shell
+以你的权限执行那个工程作者指定的任意命令**（Makefile 可含任意 shell
 recipe；`sim.exe` 直接是任意二进制）。设备锁、bounded argv、参数白名单
 都**不覆盖这一条**——它们防的是参数注入与并发抢占，不是"该不该信这个工程"。
 
@@ -385,33 +393,81 @@ CI 与只读工具（`rm_lookup` / `fsd_coverage` / `expectations_lint` 等纯�
 命令）不受此限——它们不读 config 决定执行面。
 
 > 登记口径：这是**设计边界不是缺陷**——工具链的职责是把声明的构建跑起来，
-> 不是替调用者判断声明可不可信。变更此项须同步更新本节与
-> `CHANGELOG` F-219。
+> 不是替调用者判断声明可不可信。变更此项须同步更新本节与 `CHANGELOG` F-219
+> （本节由 `tests/test_readme_trust_boundary.py` 存在性钉守护）。
 
-## 工程契约（`.workbench/`）
+## 质量与 CI
 
-固件工程通过 `.workbench/config.json` 被发现（从 cwd 逐级向上查找，兜底识别
-旧版 `.embeddedskills/config.json`）。期望判定规则：
+- 回归套件：`python -m unittest discover -s tests` 全绿为准（例数随修复增长，
+  以实跑为准）
+- CI 每 push 必跑（job 清单以 `.github/workflows/ci.yml` 为准）：unittest
+  四腿矩阵（ubuntu×windows × Python 3.10/3.12）、coverage-gate（棘轮下限，
+  只升不降）、lint（ruff E/F）、coverage-lint（零覆盖清单 --strict）、
+  syntax-smoke（ubuntu 真实 arm-gcc 编译生成物）、sim-demo（ubuntu qemu
+  无板端到端闭环 + test-report check run）；真机冒烟另有 `hw-smoke.yml`
+  门控形态（self-hosted runner 就绪才跑）
+- 发布记录可信度：`release_audit` 对既有真实记录跑 CLEAN/预期 WARNED，
+  篡改场景（换清单/搬记录）由测试固化
+- 贡献纪律（修 bug 必带回归测试、先红后绿、契约变更三件套、分层 import 契约）
+  以 [`.github/CONTRIBUTING.md`](.github/CONTRIBUTING.md) 为权威，本节不重复
 
-- `id` 唯一必填；`texts`（全 substring 命中）与 `patterns`（全正则 search 命中）二选一
-- `"xfail": true` 必须携带 `xfail_reason`——待办欠债全部白纸黑字
-- 数值断言：`patterns` + `capture_group` + `min`/`max` 区间
-- **负断言（F-112）**：`forbidden_texts` / `forbidden_patterns`——捕获全文任一命中
-  即该条 FAIL（优先于正向匹配与 XPASS），对应 FSD `prohibited_outcomes` 的可机检项
-- **豁免登记（F-113）**：顶层 `"waived"` 数组登记不走 verify 闭环的需求（理由必填）；
-  `fsd_coverage.py` 对账 FSD↔断言，xfail（欠条）与 waived（豁免）两级不混用
-- 版本控制建议：`config.json` / `expectations.json` / `releases/` 入库；
-  `build/` 与 `state.json`（可再生缓存）忽略
+## 已知限制
 
-**设备锁（F-145）**：`verify` 的 flash+capture 段与 `openocd_run flash/erase`
-全程持有**机器级设备锁**（`%USERPROFILE%\.embedded-toolkit\device-locks\stlink.lock`，
-Windows `msvcrt.locking` / POSIX `flock` 的 OS 级文件锁）——同一探针/板子
-同时只被一个 agent（或同一台机的另一份 clone）占用；进程崩溃 = OS 自动
-放锁，无 PID 探活、无超期回收。锁粒度当前为**机器级**（设备名固定
-`stlink`，F-174 后 ESP 运行同样经这把锁排队——宁多排不错排；多探针细粒度
-列为后续）。冲突方收到 `resource_busy` + 持有者
-purpose/获取时间，`--lease-wait N` 可有界等待。它与 `.workbench/state.json`
-的写锁（F-127，防数据竞争）是两层，互不替代。
+本区只登记**今天仍存在**的限制，每条的影响/规避/处置史一律以
+[CHANGELOG](CHANGELOG.md) 为准（已闭合项不留本区）：
+
+- **Linux 真机烧录/采集未验证**（F-031，部分闭合）——Linux 上测试套、离线工具
+  与 sim-demo 无板闭环全量可跑（CI 每 push 实证），真机烧录仅 Windows 验证过；
+  欲补 Linux 真机验证欢迎开 issue。
+- **serial_mux 仅 Linux/macOS**（F-032，socat 依赖）——直连物理串口即可满足
+  verify 全链，RTT/semihosting/UART 采集后端均不经 mux 层。
+- **v0.5 发布记录 R7 永久 FAILED**（F-169，登记语义）——历史 autocrlf 切换致
+  工作树/入库字节永久错位（构造性证据坐实，非篡改）；`release_audit --tag v0.5`
+  预期 FAILED，勿当新伤，其余发布记录不受影响。
+- **共享向量 TIM 的 ISR 向量名非 CMSIS 实名**（GAP-F-20，暂缓）——
+  TIM9/12/13/14 等共享向量外设按生成物定义的 `TIM9_IRQHandler` 不会接进向量表
+  （编译链接全绿、ISR 永不执行）；危害面以"非 C8 目标 + 手工取用生成物"为界
+  （TIM8~14 均 `available_on_c8=False`）。唤起条件=样例工厂二期/非 C8 立项。
+- **引脚映射数据仅 LQFP48/xB 切片**（GAP-F-21）——`data/pin-mapping-f103.json`
+  当前锁 LQFP48 单封装，64/100/144 脚多封装维度与 arch-facts 格式统一暂缓；
+  TIM5/ADC3/TIM8/SDIO/FSMC/DMA2 引脚映射在官方 LQFP48 表零行，宁缺毋滥不硬造
+  （F-193 查证）；架构常量（IWDG 魔数/PLLMUL 编码等）改由
+  `data/stm32f103-arch-facts.json` 带出处入册（F-179），消费方以 RCC 位名与该
+  档为准。
+- **feedback_db 为单会话假设**（WB-05 N-1）——多进程读改写无锁，跨进程并发写
+  可能互相覆盖台账。
+- **UART 串口补丁的发布门禁脆弱性**——有意搁置（成本/收益不立项，裁决记录见
+  CHANGELOG）。
+- **贡献者两坑**：PEP 701 f-string 写法在 py3.10 CI 腿上整腿炸（3.12 才放宽；
+  `tests/test_py_floor.py` tokenize 扫描钉守卫，F-181）；Windows 上 hooks 行为
+  测试的 bash 解析可能命中 `System32\bash.exe`（WSL 启动器假命中）——解析器
+  逐候选探测跳过 system32，全部不可用则带诊断 skip 不静默假红（同 F-181）。
+
+## 路线图（只登记未闭合项）
+
+已落地方向（MCP 正门、无板仿真闭环、ESP32 最小闭环与 panic 符号化、真机 CI
+冒烟门控、OpenOCD cfg 参数化）各以对应账收敛于 CHANGELOG，此不复述。在途：
+
+- **演示录屏**——一次 verify 从烧录到判 PASS 的全过程（asciinema/板载实录），
+  backlog；现 README 以「效果预览」的逐字实录为证据，不用摆拍素材
+- **分发形态**（PyPI / uvx / Claude Code 插件"一行安装"）——暂缓，唤起条件 =
+  决定对外推广 toolkit 的那天，届时先做 spike 再立项
+- **ESP 后续**——WiFi/BLE、probe-rs 调试、xiaozhi 类业务工程接入，按立项裁决后置
+- **多探针细粒度设备锁**——现锁为机器级（F-145），更细列为后续
+- **pin-mapping 多封装维度**——唤起条件 = 新封装/新芯片立项（GAP-F-21）
+
+## 生态位
+
+同类项目各有所长：agentic-hil 以有界 MCP 工具 + 硬件租约 + plan 门禁见长，
+agentic-embedded-lab 做仿真控制面（claim + fidelity 证据分级），pytest-embedded /
+Renode 把仿真做成平级判定后端，hardci / jlink-mcp 验证了 MCP 分发路径。
+
+本仓的独特处不在单点能力，而在**完整治理链**——同类项目普遍假设"固件已存在
+只管测"，本仓从需求一路管到事后审计：四态判定（XPASS 判红）→ FSD↔断言双向
+对账（`fsd_coverage.py`，欠条与豁免两级不混用）→ G0–G3 发布门禁 + R1–R8
+事后审计（证据四档，发布后篡改在契约哈希锚与批准留痕下现形）→ 反馈校准
+（`feedback_db.py` 按流水线长出准确率）→ 寄存器知识库 + 代码生成（AI 生成物
+先过门控再进编译）。
 
 ## 项目结构
 
@@ -422,376 +478,41 @@ embedded-toolkit/
 │                       #   legacy/ 空目录占位，Keil 退役区已拆 archive，F-067b）
 ├── tests/              # unittest 回归套件（纯 mock，Win/Linux 全绿）
 ├── data/               # 知识库：55 外设参考 JSON + 架构常量档（arch-facts，F-179）+ 已知限制
-│                       #   （ARMCC 错误码库 keil-error-db.json 已随 Keil 退役区拆 archive）
-├── config/             # 串口/探针族的环境级配置（keil.json 退役后已拆 archive）
+├── config/             # 串口/探针族的环境级配置
 ├── hooks/              # 固件工程侧三条 C 铁律（禁 malloc / 禁逻辑层 HAL_Delay / volatile 告警）
 ├── templates/          # FSD 需求规格书模板 + RTT 版 HardFault 现场 handler
 ├── machine.json        # 本机工具链路径（不入库；模板 machine.example.json）
-├── CHANGELOG.md        # 全账本：条目可对到 commit
+├── CHANGELOG.md        # 全账本：条目可对到 commit（状态类事实唯一权威）
 └── VERSION             # 当前 0.8（版本唯一事实源 = VERSION 文件，经 wb_common.toolkit_version() 读取）
 ```
-
-## 质量与验证
-
-- 回归套件：`python -m unittest discover -s tests` 全绿为准（例数随修复增长，
-  以实跑为准）；CI 每 push 必跑 9 job（+1 测试报告 check run）：unittest
-  四腿矩阵（ubuntu×windows × Python 3.10/3.12）、coverage-gate（棘轮下限，
-  只升不降；F-176 起与金丝雀同装声明依赖，套件跨 job 等价）、lint（ruff E/F）、
-  coverage-lint（零覆盖清单 --strict）、syntax-smoke（ubuntu 真实 arm-gcc
-  编译生成物）、sim-demo（ubuntu qemu 无板端到端闭环 + dorny/test-reporter
-  出 "Sim Verify Results" check run）；真机冒烟另有 `hw-smoke.yml` 门控形态
-  （self-hosted runner 就绪才跑）
-- 修复纪律：**修 bug 必带回归测试**；写回型工具的默认参数路径必须有测试
-- 治理机制：外部异构智能体代管两轮——机制本身（分支起点核查、guard 禁线、
-  换回五步、fresh-check 外审）持续演进；完整对账链在维护者私有仓
-  `<维护者私有仓>/docs/handoff/`，不在本仓
-- 发布记录可信度：`release_audit` 对既有真实记录跑 CLEAN/预期 WARNED，
-  篡改场景（换清单/搬记录）由测试固化
-
-## 已知限制
-
-每条按 **影响 / 规避 / 详情** 三段陈述；处置过程与证据链一律在
-[CHANGELOG](CHANGELOG.md)（本区只登记"今天仍存在的限制"）。
-
-- **Linux 真机路径未验证（F-031，部分闭合）**
-  影响：Linux 上真机烧录/采集不能开箱即用（进程终止/信号/创建标志类平台差异
-  属盲区；已知崩溃点已由 F-027 修除并带 mock 钉）。规避：Linux 侧照常跑测试套、
-  离线工具与 sim-demo 无板闭环（CI 每 push 实证）；欲补真机验证欢迎开 issue。
-  详情：CHANGELOG F-027 / F-031 / F-164。
-- **serial mux 依赖 socat（F-032，平台限制声明）**
-  影响：`serial_mux`（PTY 虚拟串口分光）仅 Linux/macOS；Windows 上 `mux_start`
-  体面拒绝（`socat_missing`），整个 mux 族不可用。规避：直连物理串口即可满足
-  verify 全链——RTT/semihosting/UART 采集后端均不经 mux 层。
-  详情：CHANGELOG F-032、`scripts/serial_mux.py` 头注。
-- **OpenOCD cfg 参数化（F-170 提前行权，WB-20260919-06；2026-10-08 结案 ✅ 真机回归兑现）**
-  影响：原 7 处硬编码 `interface/stlink.cfg` + `target/stm32f1x.cfg` 已收敛到
-  `runtime_common.resolve_openocd_cfg` 单一事实源（默认行为逐字节不变）。
-  覆盖：工程 `.workbench/config.json` openocd 段 / 工具库 `config/openocd.json`
-  的可选键 `interface_cfg` / `target_cfg`（优先级 显式参数 > 工程 > 工具库 >
-  内置默认；类型非法显式报错不回落）。规避：不配置 = 行为与收口前逐字节一致。
-  合入门禁 = 维护者真机全链回归。**2026-10-08 结案（维护者裁定）**：以两次
-  真机发布轮为回归证据——2026-09-28 v0.7 / 2026-10-08 v0.8 两轮 G0~G3 全链
-  （release.py → verify.py → OpenOCD flash + RTT 采集，全程经
-  `resolve_openocd_cfg` 默认路径）11/11 全绿，"默认行为逐字节不变"获真机实证。
-  新键（`interface_cfg`/`target_cfg`）的真机实测随唤起条件——"第二 ARM 板型
-  接入"——满足时随行，不欠账。详情：CHANGELOG F-170 / 契约变更段 + 结案注记。
-- **v0.5 发布记录 R7 永久 FAILED（F-169，登记语义）**
-  影响：`release_audit --project stm32f103-mpu6050-oled --tag v0.5` 预期恒
-  FAILED（历史 autocrlf 切换致工作树/入库字节永久错位，构造性证据坐实，
-  非篡改）。规避：勿当新伤；其余发布记录不受影响，处置=不重锚不改记录。
-  详情：CHANGELOG F-114 / F-169。
-- **F-174 开账**：deferred 票 F-174a（`_write_last_build` 无锁读改写，单进程
-  持锁场景伤害有限）/ F-174b（`build/*.bin` glob 双 OTA 分区表下可能选错展示
-  值，烧录不受影响）终审全裁"可留"；后续票两张——终审波 N-3（ESP 空捕获提示
-  语换串口/波特率/复位窗口径）/ N-4（`physical_gate` 纳入后端闸，现默认关断
-  无实害）。详情：CHANGELOG F-174 收口段。
-  **2026-09-25 订正（✅ F-188，WB-20260925-02）**：后续票两张已收口——N-3 空捕获
-  兜底文案按 `_esp_backend_mode` 分流（ESP 口径=串口/波特率/复位窗，manifest/legacy
-  两处）· N-4 `physical_gate` 入后端闸（ESP 下 skipped+reason，闸在 verify.py 调用
-  侧）；F-174a/F-174b 两笔"可留"维持原判。详情：CHANGELOG F-188 节。
-  **2026-09-26 订正（✅ F-190，WB-20260926-01）**：F-174a 已随 H-1 闭合——
-  `_write_last_build` 改调 `runtime_common.update_state_entry`，实读源码核实其锁
-  语义覆盖原判四病中的三病（无锁 RMW→持锁读改写 F-127 · truncate 非原子→.tmp+
-  os.replace 原子替换 F-020 · 损坏清空→.corrupt 隔离 F-019），第四病（嵌套
-  `artifacts` 键缺失=H-1 病灶）同单修除；F-174b（bin glob 双 OTA 分区表选错展示
-  值）"可留"维持原判。详情：CHANGELOG F-190 节。
-- **GAP-F-19（2026-09-25 登记，暂缓）**：capture/flash 两处 backend 派发缺省值
-  （`cap_backend` 缺省 semihosting、`flash.backend` 缺省 openocd）不受
-  `_esp_backend_mode` 约束——builder=idf 而漏配 backend 键的混配工程仍会走
-  OpenOCD 路径。定性=F-174"按 backend 键分流"的设计面（非 I-1 类无条件步骤，
-  F-007 守卫在烧录前拦截无 hex 场景），非紧急。裁定=暂缓登记，
-  **唤起条件 = WB-20260925-01 整批复审报告落账**（若带出更多同类缺省派发面，
-  合并一次裁决收口票；否则单独立项）。出处：CHANGELOG F-188 节"只列不改"。
-  **2026-09-26 收口（✅ F-190，WB-20260926-01）**：维护者裁定 fail-fast 落地——
-  三标记任一在场而 builder / flash.backend / capture.backend 三键不齐或取值非法，
-  verify 在任何构建/烧录动作之前 ERROR→exit 1（规则本体
-  `runtime_common.esp_backend_config_errors`，与 `esp_backend_mode` 同源单一事实）；
-  复审带出的 release G0.5 swd_probe 漏闸（M-1）同票合并收口。四存量 ESP 工程
-  （esp32-hello / esp32s3-hello / s3-voice / cam-eye）三键全显式，实跑零存量破坏。
-- **GAP-F-20（2026-09-26 登记，暂缓）**：共享向量 TIM 的 ISR 名生成面——
-  `gen_periph.py` 向量名逻辑仅对 TIM1 特判，TIM9/12/13/14 等共享向量外设生成的
-  `TIM9_IRQHandler`/`TIM9_IRQn` 等**不是 CMSIS 实名**（`TIM1_BRK_TIM9_*` 族），
-  按生成物定义的 ISR 不会接进向量表——**F-086 同族 B 类静默**（编译链接全绿、
-  ISR 永不执行）。ISER 位号面已由 F-191 修对，本条只剩**向量命名域**。危害面以
-  "非 C8 目标 + 手工取用生成物"为界（TIM8~14 均 `available_on_c8=False`）。
-  修法需 gen-maps 增 irq-name 域 + vec 命名逻辑改造，非杂项量级。
-  裁定=暂缓，**唤起条件 = 样例工厂二期 / 非 C8 目标立项 / 下次动 gen-maps irq 域设计**。
-  出处：CHANGELOG F-191 节 P 面（WB-20260926-02 §六 P-1）。
-- **WB-05 审查残量·生成器与数据面（2026-09-26 对账确认仍在，M/L 各一包；
-  对账=WB-20260926-04 报告 §一，入册经维护者批准）**
-  影响：① `phase_minus_one` 芯片支持检查不消费 `available_on_c8`——C8T6 不可用
-  的 22 个 KB 外设（TIM5/8/9、ADC3、DMA2、FSMC、SDIO 等）前置闸假 OK，白耗一轮
-  HIL（WB-05 M-1）；② `gen_periph` 引脚零校验（PA20/PA12 同半字节静默碰撞、
-  `--pin P` 裸 IndexError、小写 pa0 产 IOPaEN，WB-05 L-1）；③ 生成的 i2c 帮手
-  引用 `error_chain_t/ERR_PLAIN` 但不发射定义，照抄即编译失败（WB-05 L-4）；
-  ④ `svd_to_json --periph` 流式路径不解析 peripheral 级 derivedFrom（CMSIS 属性
-  风格），寄存器表空且与 `--all` 劈叉、零告警（WB-05 M-8）；⑤ `svd_to_json
-  merge_into_ref` 对 KB 主文件截断式裸写，中途失败即损坏 `data/stm32f103-ref.json`
-  （WB-05 M-9）；⑥ SVD 位域 lsb/msb 风格静默丢弃、基字段回填不认 bitRange
-  （WB-05 L-3）。规避：Drafter 前置闸结果人工复核 `available_on_c8`；生成物人工
-  过目；SVD 导入一律走 `--all` 并人工抽查 derivedFrom 外设；merge 前手动备份
-  ref.json。详情：WB-20260919-05 报告 §一；对账单报告 §一（现树行号）。
-  **划修（2026-09-27，F-194 / WB-20260927-02）**：① M-1 已修——`phase_minus_one`
-  消费 `available_on_c8` 三态（false→UNAVAILABLE/BLOCKED；缺字段白名单封闭集
-  {GPIO, NVIC, SysTick}），前置闸假 OK 消失，规避句"Drafter 前置闸结果人工复核
-  available_on_c8"退役；② L-1 已修——`gen_periph --pin` 入口校验（大写严格，
-  IndexError/半字节碰撞/垃圾名三病收口）；③ L-4 已修——i2c 帮手自足（int 返回 +
-  stdint include，error-chain 幽灵引用清零），"生成物人工过目"的 i2c 编译失败面
-  随之退役；④⑤⑥（M-8/M-9/L-3）仍在，SVD 两句规避维持。
-  **划修（2026-09-27，F-195 / WB-20260927-03）**：④ M-8 已修——`svd_to_json
-  --periph` 流式路径复用与 `--all` 同源的 derivedFrom 名表解析，派生外设
-  空表劈叉消失，基外设缺席响亮告警（不再静默）；⑤ M-9 已修——`merge_into_ref`
-  改 `wb_common.atomic_write_json` 原子写（dump 中途失败不再损坏 KB 主文件）
-  + `_meta` 缺键显式报错，规避句"SVD 导入一律走 `--all` 并人工抽查 derivedFrom
-  外设；merge 前手动备份 ref.json"退役；另 F-194 P-2 收口——`gen_usart`/
-  `gen_spi` 帮手自发射 `#include <stdint.h>`（自足性缺口消除，金矩阵九条
-  重基线 diff 恰 +1 行）。⑥（L-3，SVD 位域 lsb/msb 风格）仍在，属另单面。
-- **WB-05 审查残量·健壮性与防篡改面（2026-09-26 对账确认仍在）**
-  影响：① 管道编码漏网三处——`hardfault.py`/`handoff_guard.py`/`release_audit.py`
-  输出无 force_utf8（cp936 控制台下 hardfault 步骤 diagnosis 乱码实测复现）
-  （WB-05 M-4）；② `junit_xml` 不净化 XML 1.0 非法控制字符，脏 detail 产出非法
-  XML 且信封 ok=True（WB-05 M-5）；③ `release_audit` R8 只查批准时间戳非空
-  （手工填值即过）、R6 不查工作树脏状态——与头注"手工改值视同篡改"承诺不符
-  （WB-05 M-6）；④ `evidence_export` 对改坏的发布记录抛未捕获 AttributeError，
-  CI `if: always()` 步骤假红（WB-05 M-7）；⑤ `release.py _gcc_version` 配了
-  `gcc_path` 即拼 `arm-none-eabi-gcc.exe`，Linux 上恒 unknown（WB-05 L-7，
-  F-190 只分流了 ESP 面）；⑥ `mcp_server.resolve_project` 对库根本身不设防
-  （下游 preflight 兜底，无实害语义落空）（WB-05 L-8）；⑦ `doctor` fixture 漂移
-  哈希经解码-再编码往返，非法 UTF-8 误报漂移（WB-05 L-9）；⑧ `handoff_guard`
-  L2 豁免按任意层目录名匹配，`docs/tests/x.py` 全豁免（WB-05 L-10）；
-  ⑨ `fsd_coverage` config 损坏静默回退默认 FSD 且 notes 人读不可见（WB-05 L-11）；
-  ⑩ `phase_minus_one` fixed_pins 损坏谎报"没有占用表"（fail-open）、BLOCKED
-  退出码恒 0（WB-05 L-2）。规避：中文 Windows 下以 UTF-8 模式跑 verify；发布
-  记录不手工编辑；Linux 发布机 machine.json 留空 gcc_path。
-  **划修（2026-09-27，F-195 / WB-20260927-03）**：① M-4 已修——`hardfault`/
-  `handoff_guard`/`release_audit` 三脚本 main 入口收编 `force_utf8_streams`
-  （F-157 同款），cp936 管道中文乱码面消失，规避句"中文 Windows 下以 UTF-8
-  模式跑 verify"退役；② M-5 已修——`junit_xml` 净化 XML 1.0 非法控制字符
-  （→U+FFFD，合法字符逐字节不动），信封 ok=True 与内容合法性重新绑定；
-  ④ M-7 已修——`evidence_export` 对改坏记录做薄型校验（坏类型留痕不抛
-  traceback，main 并捕 AttributeError/TypeError），CI `if: always()` 步骤
-  假红面消失。③⑤⑥⑦⑧⑨⑩（M-6/L-7/L-8/L-9/L-10/L-11/L-2）仍在。
-  **划修（2026-09-27，F-196 / WB-20260927-04）**：③ M-6 已修——
-  `release_audit` R8 批准戳须留痕链（fidelity_boundaries 批准注记）或
-  git 入库版本同戳在场（手工填戳无链即 fail，真实历史档案全部无
-  evidence 字段零接触=零翻动），R6 增工作树脏 WARN 检查面；⑤ L-7 已修
-  ——`release._gcc_version` 改 shutil.which 平台化（F-164 同款），探不到
-  unknown(原因)，"Linux 发布机 machine.json 留空 gcc_path"规避句退役；
-  ⑦ L-9 已修——`doctor` fixture 漂移哈希改 git blob 原始字节直传，
-  "发布记录不手工编辑"的审计无凭面随 R6/R8 机检化退役；⑧ L-10 已修
-  ——`handoff_guard` L2 豁免收窄为仓根相对前缀锚定，`docs/tests/x.py`
-  伪 tests 目录不再穿透（仓内存量零波及）；⑨ L-11 已修——`fsd_coverage`
-  config 损坏回退人读 [W] 响亮（路径+原因），对账与退出码语义不动；
-  ⑩ L-2 已修——`phase_minus_one` fixed_pins 损坏显态 CORRUPT→BLOCKED
-  （不再谎报"没有占用表"）且 BLOCKED 退出码 1。规避句仅余（顺带退役
-  "中文 Windows 下以 UTF-8 模式跑 verify"，F-195 已收）：三条全退役。
-  ⑥（L-8，mcp_server resolve_project 库根不设防）仍在，属兄弟单/留拍板面。
-  **划修（2026-09-27，F-198 / WB-20260927-05）**：⑥ L-8 已修——
-  `mcp_server.resolve_project` 库根闸前置（realpath+normcase 双归一判
-  TOOLKIT_ROOT，尾斜杠/大小写盘符/相对段同拒），"不要传工具库自身路径"
-  防线兑现且不依赖 F-015 残留是否在场（残留本体零翻动）；同笔顺收
-  F-195 P 面 P-1（`gen_systick`/`gen_adc` 块首自发射 `#include
-  <stdint.h>`，同族第三/四笔，pclk 金矩阵六条重基线 diff 恰 +1 行）、
-  P-2（`merge_into_ref` peripherals 缺键显式 ValueError）、P-3
-  （`atomic_write_json` dump 失败清 .tmp，成功路径逐字节金钉）——
-  **至此 WB-05 对账 21 条账面全部有终态**（N-1 单会话假设维持登记）。
-- **Note 面留档（2026-09-26 对账）**：`feedback_db` 多进程 RMW 无锁（单会话假设
-  维持，WB-05 N-1）；`serial_send` hex 模式 `A0xB` 类输入剥转损坏（WB-05 N-3）。
-  引用防呆：WB-05 与 01 报告存在**同号异病**（M-1/H-1/L-2/N-3/N-4 五对），引用
-  必须带报告名前缀（对账单 §六）。
-  **划修（2026-09-27，F-196 / WB-20260927-04）**：N-3 已修——`serial_send`
-  hex 模式改 token 级解析（逐 token 去 0[xX] 前缀），`A0xB` 类显式 bad_hex
-  不再静默损坏、`0X` 大写与 `0x` 同权，既有合法用例金比对逐字节。N-1 仍在
-  （单会话假设维持）。
-- **GAP-F-13 现势口径订正（2026-09-26，对账单 §三建议采纳）**：全局打桩计数现势
-  一律以 `tests/test_stub_ratchet.py` BASELINE 为唯一事实源（**73 键/157 处/38 文件**，
-  AST 判据、机检守卫）；历史口径 98 处/22 文件（F-184）与 102 处/23 文件（01 报告
-  粗扫）退役为史料。"按需收窄、不批量清扫"裁决维持。
-- **GAP-F-21（2026-09-26 登记，暂缓）· pin-mapping 未来维度**：两面同册防丢——
-  ① `tests/test_pin_mapping.py` 前缀封闭集仍含 `DS5318`，而 F-193 已证高密度手册
-  实为 **DS5792**（DS5318 系误记，F-193 报告 E-3）：本次零行以 DS5792 为锚未进集，
-  扩集/改名=钉面变更；② 本档锁 LQFP48 单封装切片，DS5792 的 64/100/144 脚表与
-  arch-facts 格式统一属**结构变更**，另单提案（F-193 报告 §7 P-1/P-3）。
-  裁定=暂缓，**唤起条件 = 下次动 pin-mapping 域**（新封装/新芯片立项，或
-  arch-facts×pin-mapping 格式统一工单）。出处：CHANGELOG F-193 节 P 面。
-  **2026-09-27 ①收口（✅ F-199，WB-20260927-07）**：前缀封闭集 DS5318→DS5792
-  改名落地（`_ALLOWED_DS` 语义更正 + 回滚语义钉；DS5318 系误记由 F-193 T3 实证
-  结案，两号今日均零行入册，纯钉面更正零数据迁移；数据档 sha256 前后同一值），
-  rm_lookup `--pins` 消费面同单接线（CAN 四行查询/未入册指认/缺档显式报错）；
-  **②多封装维度仍暂缓**（唤起条件不变）。
-- **ref.json 数据面 GAP-D 收口状态（F-179，WB-20260920-05）**
-  影响：`data/stm32f103-ref.json` 的 `bus` 字段曾与外设 RCC 使能位归属相反
-  （TIM9 记 APB1、TIM12/13/14 记 APB2）；`_relationships` 的 IRQ 号只覆盖 12 个外设；
-  IWDG KR 魔数 / FLASH KEYR 魔数 / CRC poly·初值 / PLLMUL 编码表 / USBPRE 位 /
-  SDIO PWRCTRL 位域 / DBGMCU CR 位表等架构常量**未登记**（GAP-D-1/2/3/4/5）。
-  规避：消费方一律以 RCC 位名数据为准；需要架构常量时读新档
-  `data/stm32f103-arch-facts.json`（**每条带 source**，取值三型：
-  RM0008 节号 / CMSIS 文件行 / arch-constant 依据句）。
-  现状：`bus` 已修正并加**类级防线**（`tests/test_ref_bus_crosscheck.py` 从 ref.json
-  自身的 ENR 位名反推期望集，覆盖 46 外设）；`_relationships` IRQ 12 → 21；
-  架构常量入册 48 条（`tests/test_ref_arch_facts.py` 钉结构+出处+CRC 防循环自证）；
-  dbg 样例补做（`examples/f103-dbg/`，工厂巡检 56 绿）。**仍未入册**（本地无 RM0008 /
-  数据手册可锚，宁缺毋滥）：CAN/ADC3/TIM5/TIM8/TIM9/SDIO/FSMC/DMA2 引脚映射、
-  FSMC BCR·BTR 位名、USBPRE 与 SDIO PWRCTRL 的值语义。
-  详情：CHANGELOG F-179 / WB-20260920-05 报告 §8 弃登清单、§9 新发现缺口。
-  **2026-09-26 订正（✅ F-191，WB-20260926-02）**：F-179 的消费面随动缺口已收口——gen-maps 第二套平行 bus/IRQ 事实源 `tim_bus`/`tim_irq` 补齐
-  `_relationships` 全部 11 个 TIM（值全数 ref.json 反查逐键互证，M-2 实录
-  的 `--timer TIM9` 三层错生成随之修除）+ 类级互证钉
-  `tests/test_genmaps_ref_crosscheck.py` 防同类缺键 + `--timer` 入参收口
-  （未登记名 ERROR→exit 1，合法集随文案，F-185 P-3 同款）。详情：
-  CHANGELOG F-191 节。
-  **2026-09-26 补源订正（F-189，WB-20260925-03）**：弃登清单三态更新——
-  **语义已锚**：USBPRE 值语义（0=PLL÷1.5 / 1=不分频，RM0008 §7.3.2 p102）与
-  SDIO PWRCTRL 四态语义（00=Power-off / 11=Power-on，RM0008 §22.9.1 p607）
-  经 st.com 官方原文逐字引文入册 `arch-facts.json`（出处增第四型
-  `web:<文档号>:<节/表号>:<页>`，seed HAL 宏交叉验证一致）；**FSMC 位名已入册**：
-  新 `fsmc` 节 BCR 15 + BTR 7 位名+语义（RM0008 §21.5.6，逐位标
-  `cmsis_crosscheck`；F-179 时"seed 无 FSMC 位定义"系 grep 漏通配形态的误判，
-  seed 实有 f103xg.h:5210-5317 全套）；**映射仍弃登**：8 项请求外设仅 CAN 在
-  DS5319（F103x8/xB）覆盖内，引脚映射文件格式提案 + CAN 样本四行在
-  WB-20260925-03 报告 §T2，**待维护者批准后另单落盘**；TIM5/ADC3/TIM8/TIM9/
-  SDIO/FSMC/DMA2 在 DS5319 引脚表零行，弃登维持（需高密度数据手册另单）。
-  详情：CHANGELOG F-189 / WB-20260925-03 报告。
-  **2026-09-26 落盘订正（✅ F-193，WB-20260927-01）**：三态再更新——
-  **CAN 已入册**：新档 `data/pin-mapping-f103.json`（**LQFP48/xB 封装切片**，
-  `tests/test_pin_mapping.py` 结构/source 前缀/引文对账完备三面钉）收 CAN
-  四行：PA11=CAN_RX、PA12=CAN_TX（alternate）+ PB8=CAN_RX、PB9=CAN_TX
-  （additional=AFIO 重映射态），锚 `web:DS5319:§3:Table 5:p31/p33`；
-  **DS5319 已升版 Rev 18→Rev 20**（Table 5 重排为多封装宽表），F-189 旧锚
-  三处随今日直抓订正：节号 §8→**§3**、页位 p27/p28→**p31/p33**、PA11/PA12
-  的 LQFP48 脚号 33/34→**32/33**（F-189 疑列读串；CAN 功能/列位语义不变）；
-  **DS5318 授权已用、结论=查无此脚**：高密度数据手册实为 **DS5792**
-  （DS5318 系文档号误记），其封装自 64 脚起（§2.1 逐字 from 64 pins to
-  144 pins）、无 48 脚封装表，ADC3/TIM8/SDIO/FSMC 信号脚（PF6-10、PC6-12+
-  PD2、PE-PG，且 Table 6 注 11 明言 LQFP64 亦无 FSMC）不在 LQFP48，TIM5
-  信号脚（PA0-3）在而无 HD 器件以 48 脚封装出货（官方表无行不硬造），DMA2
-  无外引脚——7 外设弃登维持。详情：CHANGELOG F-193 / WB-20260927-01 报告。
-- **py3.10 语法地板（F-181，WB-20260921-02 已加钉）**
-  影响：CI 有 py3.10 腿，而 **PEP 701** f-string 写法（3.12 才放宽：表达式区同类
-  引号 / 反斜杠 / 跨行与注释）在本机 3.14 全绿、到 3.10 腿上整腿炸。
-  ⚠ `ast.parse(feature_version=(3,10))` **不是有效判据**（对 PEP 701 探针不报错，
-  放宽在 tokenizer 层）。
-  规避/守卫：`tests/test_py_floor.py` 用 `tokenize` 扫 `scripts/*.py` + `tests/*.py`
-  的三类违规，夹具自证（违规必咬 / 合法必零报）；<3.12 解释器上**显式 skip**，
-  由 CI 3.12 腿承接。
-  详情：CHANGELOG F-181 / WB-20260921-02 报告。
-- **hooks 行为探针依赖可用 bash（F-181，WB-20260921-02 已加固）**
-  影响：`hooks/*.sh` 是 shell 脚本，探针需 bash。Windows 上 `which("bash")` 可能
-  命中 `System32\bash.exe`（WSL 启动器，未装 WSL 时一律 rc=1）。
-  规避：解析器逐候选探测，**命中 system32 一律跳过继续向后找**（Git for Windows 等）；
-  全部不可用则 `skipTest` 并输出候选/rc 诊断（**不静默假红**）。安装 Git for Windows
-  并把其 `bin` 置于 PATH 即可正常执行。
-  详情：CHANGELOG F-181 / WB-20260919-05 报告 §六 GAP-ENV-2。
-- **有意搁置**：UART 串口补丁的发布门禁脆弱性（成本/收益不立项）。
-  详情：CHANGELOG 对应裁决记录。
-- **已闭合归档账**（不在此展开）：审核 M-4 ✅ F-162 · L-4 覆盖洞 ✅ F-163 ·
-  gcc_build 预检平台化 ✅ F-164 · 计时脆弱钉 ✅ F-165（同批 F-166 py3.10 双腿
-  + stderr pump）· CI 依赖跨 job 等价 ✅ F-176 · uart 采集桥接板握手线释放
-  ✅ F-177（初代 esp32 真机双 PASS + S3 回归同日补票双 PASS）· Agent 正门与数据
-  信任包 ✅ F-178（MCP boolean argv / cube_usercode backup-restore 事务化 /
-  spi `write_burst` 排空读 / verify 证据表 `uart` 键）· MCP 正门收口
-  ✅ F-183（rm_lookup 位置投影 / project schema 尾逗号 / mux 打桩收窄 / GAP-F-11 空值口径）· 打桩卫生收官
-  ✅ F-184（GAP-F-10 os._exit 收窄 / GAP-F-13 全仓清点与"按需收窄"裁决 / GAP-F-14 消音）· 拍板批落地
-  ✅ F-185（P-3 ERROR→rc=1 / D-6 核心块 bus="core"+封闭集钉 / P-1·P-2·F-13 结案追认）· clock 宏名根治
-  ✅ F-187（GAP-F-16 BDCR 不存在的宏 → KB 键表事实源；F-186 数据激活，取证于 WB-20260922-02）· ref.json 数据面收口
-  ✅ F-188（N-3 ESP 空捕获文案按后端分流 / N-4 `physical_gate` 入 `_esp_backend_mode` 闸）· F-174 后续票收口
-  ✅ F-179（GAP-D-5 bus 反转 + RCC 位名类级防线 / `_relationships` IRQ 9 条逐条锚
-  CMSIS xg.h / `stm32f103-arch-facts.json` 48 条带出处入册 / f103-dbg 样例解锁）· MCP
-  整型参数 argv 收口 ✅ F-180（GAP-F-1：非 boolean 参数值一律 str 化入 argv，6 个整型
-  参数 `run_verify.timeout` + `gen_peripheral` ch/freq/duty/baud/speed 由 100% 不可用转可用）·
-  测试卫生包 ✅ F-181（GAP-F-2 py3.10 语法地板钉 + GAP-D-9/D-1 槽位注记随动 +
-  GAP-ENV-2 hooks bash 解析加固 + GAP-ACC-1 backup 交换回滚支补钉）· KB 消费面随动 ✅ F-191（gen-maps tim_bus/tim_irq 补齐 11 TIM + 类级互证钉 + `--timer` 入参收口 / rm_lookup 人读 desc 三处 + clock_enable 死支反查） · 护栏棘轮与杂项捆 ✅ F-192（全局打桩静态棘轮 L-2 收口：157 处/73 键快照 + 新增即红 + EXEMPTS+note + 双枪 / rm_lookup `--recipe` 人读 KeyError / release openocd_exe 缺键分流 / uart SerialException 已收行入账 / verify swd_probe 死导入删） · pin-mapping 消费面接线 ✅ F-199（rm_lookup `--pins` 消费面：CAN 四行人读/JSON 双形态逐字金比对 + 反 CANRX 替换钉 / 未入册显式指认+动态入册集 / 缺档损坏点名报错 / GAP-F-21① 前缀封闭集 DS5318→DS5792 改名落地 + 回滚语义钉 / 两档互证恒真钉+双态自证） · ESP panic 符号化随链接线 ✅ F-200（Backtrace 帧对+ELF SHA 提取 / 嵌套键 elf 消费 fail-soft 六类点名 / addr2line 一次批量块序 zip 真工具实格式探针 / 解码框双流+SHA 漂移参考级 / 判据链零动三枚钉零扰动）
-  · 复审清尾捆 ✅ F-201（09 复审 7 项裁决 → 一钉四账、修账不修实现：9hex 截断前缀 match 双直钉堵 CI 盲区（==/endswith 变异必红）/ F-191 desc 22 空串残量登记（键在场口径订正）/ locate_addr2line 措辞收窄 + F-200 P 面⑥⑦ / 契约三件套评估追补 ×3）
-  ——证据链
-  （run/PR/钉子清单）均在 CHANGELOG 对应票。
-
-> **F-021~F-030 已在本轮收口**（原子写收口包 / R7 双布局认路 / RTT 平台守卫 /
-> 孤儿链删除 / 三 runtime 契约统一 / 头图刷新），逐条处置记录与证据 commit 见
-> [`CHANGELOG.md`](CHANGELOG.md)。新发现请开 Issue。
 
 ## 文档索引
 
 - [`CHANGELOG.md`](CHANGELOG.md) — 版本账本（每条对到证据 commit）
+- [`.github/CONTRIBUTING.md`](.github/CONTRIBUTING.md) — 环境准备 / 测试与 PR
+  纪律 / 分层契约 / 禁区 / 例外条款
 - [`templates/fsd-template-stm32.md`](templates/fsd-template-stm32.md) — 需求规格书模板
 - [`templates/hardfault_rtt.c`](templates/hardfault_rtt.c) — RTT 工程 C 级
   HardFault 现场 handler（F-115）：新工程接入 = 复制到 User/ + Makefile
   C_SOURCES 加一行 + 删除工程自有 `HardFault_Handler` 死循环桩让位强符号
-- Keil 退役区唤起（archive 物理副本）: `<d-claude-root>\archive\
-  embedded-toolkit-keil-legacy-20260905\README.md` — 2026-09-05 F-067b
-  起 Keil 退役桥（keil_build / keil_analyze / keil_project +
-  data/keil-error-db.json + scripts/error_db_grow.py + config/keil.json）
-  已从仓内拆出；按需唤起见该 README（也可走 `EMBEDDED_TOOLKIT_KEIL_ARCHIVE`
+- Keil 退役区唤起（archive 物理副本）：`<d-claude-root>\archive\
+  embedded-toolkit-keil-legacy-20260905\README.md`——2026-09-05 F-067b 起
+  Keil 退役桥（keil_build / keil_analyze / keil_project + 错误码库等）已从
+  仓内拆出；按需唤起见该 README（也可走 `EMBEDDED_TOOLKIT_KEIL_ARCHIVE`
   环境变量指 archive 路径）
-- [`docs/handoff/` `docs/superpowers/` `skills/fresh-checker/` `AGENTS.md`
-  `HANDOFF-AGENT.md`](#) — 已于 0.4 边界决策迁维护者私有仓
-  `<维护者私有仓 embedded-handoff>`，公开工具库不含维护者 ↔ Agent 协作私约
-
-## 生态位
-
-同类项目各有所长：agentic-hil 以有界 MCP 工具 + 硬件租约 + plan 门禁见长，
-agentic-embedded-lab 做仿真控制面（claim + fidelity 证据分级），pytest-embedded /
-Renode 把仿真做成平级判定后端，hardci / jlink-mcp 验证了 MCP 分发路径。
-
-本仓的独特处不在单点能力，而在**完整治理链**——同类项目普遍假设"固件已存在
-只管测"，本仓从需求一路管到事后审计：
-
-1. **四态判定 + XPASS 判红**——期望清单里 `xfail` 欠条落地瞬间判红，杜绝
-   "顺便实现了"静默混入
-2. **FSD 对账**（`fsd_coverage.py`）——需求 ↔ 断言双向对账，xfail（欠条）与
-   waived（豁免）两级不混用
-3. **G0–G3 发布门禁 + R1–R8 事后审计**——全绿才打 tag；证据等级四档
-   （`hardware_validated` / `simulation_validated` / `static` /
-   `production_approved`），仿真/静态证据进不了发布记录，发布后篡改在
-   契约哈希锚（R7）与批准留痕（R8）下现形
-4. **反馈校准**（`feedback_db.py`）——修复事件落账，按流水线长出准确率校准
-5. **寄存器知识库 + 代码生成**（`rm_lookup.py` + `gen_periph.py`）——
-   55 外设参考数据直接生成寄存器级初始化代码，AI 生成物先过五重门控再进编译
-6. **错误知识库（退役挂账形态）**——Keil 期 gcc/ARMCC 错误库已随 Keil 退役
-   区拆 archive（archive 唤起可复用）；现行反馈校准走 feedback_db（第 4 条），
-   修复纪律靠回归测试钉住
-
-## 路线图
-
-### 已落地/立项方向（2026-09-12 同类调研，见 CHANGELOG 工单二系列）
-
-调研来源除上述项目外，另按总工单 v2 D-3 点名登记一条学术引用（闭环评测论文）。
-原并列登记的 arXiv:2509.09970 已于 2026-09-14 联网核实并**撤销**：该编号实际
-解析为 Ultra-R1（文本生成图像推理模型，cs.CL），与嵌入式闭环验证无关——
-登记时网络不可达、照录工单原文未验，属引用错误（F-167 记账）。
-
-- **MCP 接口**——已落地：`scripts/mcp_server.py` 六工具有界包装（白名单校验、
-  零业务复制、不给 agent 任意 shell）；调研来源 agentic-hil / hardci / jlink-mcp
-- **无板仿真闭环**——已落地：`capture.backend: "sim"`（qemu-system-arm +
-  semihosting，`examples/sim-demo` 即跑）；调研来源 pytest-embedded / Renode；
-  spike 记录 F-149（含 M-profile SYS_EXIT 0x18 不退出的实测坑）
-- **多 MCU（ESP32）**——已落地最小闭环（F-174，09-16 试点 / 09-18 合入）：
-  idf/esptool/uart 三后端 + 真机双 PASS + 后端闸与 port/chip 白名单；
-  panic 符号化 ✅ F-200（捕获 panic 随链离线 addr2line 解码进台账与解码
-  框——只加信息不改判据；真机双板终判 PASS 已销账，09-27 板窗）；剩余
-  非目标按立项裁决后置：WiFi/BLE、probe-rs 调试、xiaozhi 类业务工程接入
-- **分发形态**（PyPI / uvx / Claude Code 插件，"一行安装"）——**暂缓（2026-09-14）**：
-  曾立项待做 spike（风险点在 `data/`、`VERSION`、machine.json 的包数据定位
-  策略），经评估当前无外部用户、git clone 自用形态够用，且其服务对象"开源
-  推广"本身是待评估期权——降级为暂缓，**唤起条件 = 决定对外推广 toolkit 的
-  那天**，届时先做 spike 再立项；调研来源 agentic-hil / hardci
-- **真机 CI 冒烟**——已落地（门控形态）：`.github/workflows/hw-smoke.yml`
-  仅在仓库配置了 self-hosted runner（`HW_RUNNER_READY` 变量）时运行；
-  调研来源 jlink-mcp 的真机徽章 + ESP32/树莓派 runner 案例
-- **演示录屏**（一次 verify 从烧录到判 PASS 的全过程，asciinema/板载实录）——
-  **backlog 待补**：README 现以逐字实录（「效果预览」）为证据，不用摆拍素材；
-  真实录好后插入本节上方
+- 维护者 ↔ Agent 协作私约（handoff 对账链、fresh-checker 模板等）自 0.4 边界
+  决策迁维护者私有仓，公开工具库不含；公开面机制本体见 `handoff_guard` 与
+  CHANGELOG 治理账
 
 ## 贡献
 
-请先读 [`.github/CONTRIBUTING.md`](.github/CONTRIBUTING.md)（环境准备 / 测试纪律 / 禁区）：
-
-- **Bug / 功能请求**：用 [Issue 模板](.github/ISSUE_TEMPLATE/) 提报（模板会要求
-  工具链版本与 OS/Python 信息；verify 相关问题请附 `verify.py --json` 完整输出，
-  失败现场另有 `.workbench/build/last_failure.json` 可一并贴上）
+- **Bug / 功能请求**：用 [Issue 模板](.github/ISSUE_TEMPLATE/) 提报（附工具链
+  版本与 OS/Python 信息；verify 相关请附 `verify.py --json` 完整输出，失败现场
+  另有 `.workbench/build/last_failure.json` 可一并贴上）
 - **PR**：按 [PULL_REQUEST_TEMPLATE.md](.github/PULL_REQUEST_TEMPLATE.md) 填写；
   提交前 `python -m unittest discover -s tests` 全绿并把统计行贴进 PR；
-  修 bug 必带回归测试
-- **安全问题**：请勿开公开 issue，按 [SECURITY.md](SECURITY.md) 私下报告
+  修 bug 必带回归测试（详见 CONTRIBUTING）
+- **安全问题**：按 [SECURITY.md](SECURITY.md) 私下报告
 - 社区行为准则见 [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)
 
 ## License
