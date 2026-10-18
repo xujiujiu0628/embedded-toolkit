@@ -55,8 +55,17 @@ def _idf_build_budget(config):
     cfg = config or {}
     if cfg.get("builder") != "idf":
         return None
-    raw = (cfg.get("idf") or {}).get("build_timeout",
-                                      IDF_BUILD_TIMEOUT_DEFAULT_S)
+    idf = cfg.get("idf")
+    if not isinstance(idf, dict):
+        # F-228/M-1 (三号复审): **段本身类型非法**此前没被兜住——旧写法
+        # `(cfg.get("idf") or {}).get(...)` 只在段为 falsy 时退成 {}, 手编
+        # 成 `"idf": "oops"` / `[1, 2]` 这类 truthy 非 dict 会抛裸
+        # AttributeError; 而调用点 gate1 在 subprocess 的 try 之外, 异常
+        # 一路穿透 run_gates → main (release 无统一信封), 报错不可归因,
+        # 与 F-204/F-216 立的"显式点名, 禁裸 traceback"正面冲突。
+        # 段类型不对 = 读不到内层预算, 按缺省值兜底 (fail-closed, 宁可多给时间)。
+        return IDF_BUILD_TIMEOUT_DEFAULT_S
+    raw = idf.get("build_timeout", IDF_BUILD_TIMEOUT_DEFAULT_S)
     try:
         val = int(raw)
     except (TypeError, ValueError):

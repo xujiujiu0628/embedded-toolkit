@@ -367,6 +367,16 @@ class _Gate1OuterProbe:
         self.assertTrue(m_run.called, "gate1 未调用 subprocess.run")
         return m_run.call_args.kwargs.get("timeout")
 
+    def _ws_with_config(self, cfg):
+        """建一个带 `.workbench/config.json` 的临时工作区。"""
+        ws = tempfile.mkdtemp(prefix="g1idf_")
+        self.addCleanup(shutil.rmtree, ws, ignore_errors=True)
+        wb = os.path.join(ws, ".workbench")
+        os.makedirs(wb, exist_ok=True)
+        with open(os.path.join(wb, "config.json"), "w", encoding="utf-8") as f:
+            json.dump(cfg, f)
+        return ws
+
 
 class Gate1OuterTimeoutTests(_Gate1OuterProbe, unittest.TestCase):
     """F-215 (订正 F-213, 三号复审 High-2): G1 外层超时不得由采集超时支配。
@@ -430,15 +440,6 @@ class Gate1IdfBuildBudgetTests(_Gate1OuterProbe, unittest.TestCase):
     本组钉的是**不等式** outer > 内层构建预算, 不是某个具体秒数。
     """
 
-    def _ws_with_config(self, cfg):
-        ws = tempfile.mkdtemp(prefix="g1idf_")
-        self.addCleanup(shutil.rmtree, ws, ignore_errors=True)
-        wb = os.path.join(ws, ".workbench")
-        os.makedirs(wb, exist_ok=True)
-        with open(os.path.join(wb, "config.json"), "w", encoding="utf-8") as f:
-            json.dump(cfg, f)
-        return ws
-
     def test_idf_outer_exceeds_inner_build_budget(self):
         """核心不等式: 外层必须严格大于内层构建预算。"""
         ws = self._ws_with_config(
@@ -488,3 +489,68 @@ class Gate1IdfBuildBudgetTests(_Gate1OuterProbe, unittest.TestCase):
         ws = self._ws_with_config({"flash": {"backend": "esptool"}})
         outer = self._outer_timeout_for(ws=ws)
         self.assertEqual(outer, release.GATE1_OUTER_TIMEOUT_S)
+
+
+class Gate1NonDictIdfSectionTests(_Gate1OuterProbe, unittest.TestCase):
+    """F-228/M-1 (三号复审): `idf` 段本身写成非 dict 时不得裸抛 AttributeError。
+
+    旧写法 `(cfg.get("idf") or {}).get(...)` 只兜住 **falsy** 段 (None / {} /
+    "" / 0 退成 {})——手编或半成品工程把段写成字符串 (拼错形态, 非罕见) 或
+    数组时是 truthy 非 dict, 直接 `AttributeError: 'str' object has no
+    attribute 'get'`; 而调用点 gate1 在 subprocess 的 try **之外**, 异常一路
+    穿透 run_gates → main (release 无统一信封), 报错不可归因, 与
+    F-204/F-216 立的"显式点名, 禁裸 traceback"正面冲突。
+
+    处置: 段类型非法 = 读不到内层预算 → 退回 IDF_BUILD_TIMEOUT_DEFAULT_S
+    (fail-closed, 宁可多给时间; 判据不翻转, 不产生假发布)。
+    """
+
+    def test_non_dict_idf_section_returns_default(self):
+        """形态钉: 非 dict 段一律退默认预算, 不抛。"""
+        for bad in ("oops", [1, 2], 5, True):
+            with self.subTest(idf=bad):
+                self.assertEqual(
+                    release._idf_build_budget({"builder": "idf", "idf": bad}),
+                    release.IDF_BUILD_TIMEOUT_DEFAULT_S,
+                    f"idf={bad!r} 应退默认预算而非抛 AttributeError "
+                    f"(三号复审 M-1)")
+
+    def test_six_shape_table_matches_third_review(self):
+        """三号复审 M-1 实测表六形态逐行复现: 前两行变化, 后四行不变。
+
+        前两行: 修前 RAISED AttributeError → 修后 900。
+        后四行: None→900 / "abc"→900 / 0→None / -3→None, 修前修后一致
+        ——本钉同时是"别把兜底改宽成吞掉非法值"的反向护栏。
+        """
+        cases = [
+            ({"builder": "idf", "idf": "oops"},
+             release.IDF_BUILD_TIMEOUT_DEFAULT_S),
+            ({"builder": "idf", "idf": [1, 2]},
+             release.IDF_BUILD_TIMEOUT_DEFAULT_S),
+            ({"builder": "idf", "idf": None},
+             release.IDF_BUILD_TIMEOUT_DEFAULT_S),
+            ({"builder": "idf", "idf": {"build_timeout": "abc"}},
+             release.IDF_BUILD_TIMEOUT_DEFAULT_S),
+            ({"builder": "idf", "idf": {"build_timeout": 0}}, None),
+            ({"builder": "idf", "idf": {"build_timeout": -3}}, None),
+        ]
+        for cfg, want in cases:
+            with self.subTest(cfg=cfg):
+                self.assertEqual(release._idf_build_budget(cfg), want)
+
+    def test_gate1_survives_non_dict_idf_section(self):
+        """行为钉: 走完整 gate1 调用链也不崩, 外层按默认预算 + 裕量抬。
+
+        只钉 `_idf_build_budget` 的返回值不够——病灶是"异常穿透 gate1",
+        故必须在 gate1 层重放一次 (探针读 subprocess.run 的 timeout 实参)。
+        """
+        want = max(release.GATE1_OUTER_TIMEOUT_S,
+                   release.IDF_BUILD_TIMEOUT_DEFAULT_S
+                   + release.IDF_OUTER_MARGIN_S)
+        for bad in ("oops", [1, 2]):
+            with self.subTest(idf=bad):
+                ws = self._ws_with_config({"builder": "idf", "idf": bad})
+                outer = self._outer_timeout_for(ws=ws)
+                self.assertEqual(
+                    outer, want,
+                    f"idf={bad!r} 时外层应 {want}s (默认构建预算 + 收尾裕量)")

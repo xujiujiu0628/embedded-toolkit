@@ -59,6 +59,29 @@ def _src(name):
         return f.read()
 
 
+def _layer2_spawn():
+    """层 2 spawn 的 (整条调用源码, `timeout=` 实参表达式源码)。
+
+    F-228/L-2: 用**语法树**定位这条调用, 而不是"文本切窗口 + 固定字数"——
+    窗口法会随注释增删/行数漂移把断言挤出视野(本文件下面 `seg[1][:900]`
+    就有此险: 窗口够不着时 `assertNotIn` 恒真, 属假绿), 而 ast 取到的
+    永远是这条调用本身。返回 `("", "")` 即未找到(调用方据此判红)。
+    """
+    import ast
+    tree = ast.parse(_src("verify.py"))
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call) or not node.args:
+            continue
+        if ast.unparse(node.func) != "subprocess.run":
+            continue
+        if ast.unparse(node.args[0]) != "hf_cmd":
+            continue
+        for kw in node.keywords:
+            if kw.arg == "timeout":
+                return ast.unparse(node), ast.unparse(kw.value)
+    return "", ""
+
+
 class D4OuterBudgetCoversInnerTests(unittest.TestCase):
     """**D4 的本体**: verify spawn 层 2 时, 外层 timeout 必须罩过内层总预算。
 
@@ -69,7 +92,7 @@ class D4OuterBudgetCoversInnerTests(unittest.TestCase):
     """
 
     def test_verify_uses_inner_budget_not_literal_60(self):
-        """形态钉: verify 的层 2 调用不得再有裸 `timeout=60`。"""
+        """形态钉: verify 的层 2 调用不得再有裸 `timeout=60`, 也不得取内层等号。"""
         src = _src("verify.py")
         self.assertIn("hardfault_budget_s()", src,
                       "verify 未引用层 2 预算常量 —— 外层 60s 会掐死内层 "
@@ -77,13 +100,49 @@ class D4OuterBudgetCoversInnerTests(unittest.TestCase):
         # 剥注释再查: 注释里出现关键词不算"代码用了它"。
         # (首版未剥注释 → 断言在自己的说明文字里命中而假红。)
         code = _code_only("verify.py")
-        self.assertIn("timeout=max(60, hardfault_budget_s())", code,
+        # F-228/L-2 (三号复审): 取等号 (= 内层总预算) 同样不可接受 ——
+        # 内层 186s 只算子进程超时与重试间隔, 不含解释器启动/模块导入/
+        # 寄存器解析/JSON 序列化; 三次全超时的最坏路径上外层仍会先杀,
+        # F-219 为可辨识性加的 [HF-DIAG-TIMEOUT] 哨兵文本永远出不来。
+        self.assertNotIn("timeout=max(60, hardfault_budget_s())", code,
+                         "层 2 外层预算取等号 (= 内层) —— 最坏路径仍被外层"
+                         "掐死, 须留收尾裕量 (三号复审 L-2)")
+        call, expr = _layer2_spawn()
+        self.assertTrue(call, "未找到层 2 spawn 处")
+        self.assertIn("hardfault_budget_s()", expr,
                       "层 2 spawn 的 timeout 未取层 2 预算")
+        self.assertIn("HARDFAULT_OUTER_MARGIN_S", expr,
+                      "层 2 spawn 的 timeout 未留收尾裕量 —— 取等号时"
+                      "最坏路径仍不可辨识 (三号复审 L-2)")
         # 剥注释后不得再有裸 timeout=60 的层 2 调用
         seg = code.split("hf_cmd = [", 1)
         self.assertGreater(len(seg), 1, "未找到层 2 spawn 处")
         self.assertNotIn("timeout=60,", seg[1][:900],
                          "层 2 spawn 处仍有裸 timeout=60 —— 错配未修")
+
+    def test_outer_budget_strictly_exceeds_inner(self):
+        """**L-2 核心判据**: 外层生效值必须**严格大于**内层总预算。
+
+        F-222 把裸 60 换成内层总预算, 取的是**等号**——即"罩过"只做到
+        不早杀, 一秒钟收尾余量都没给。判据仍 fail-soft (都超时), 损失的是
+        可归因性: 三次全超时的最坏路径上拿回来的还是"verify 超时",
+        而非 F-219 想买的 [HF-DIAG-TIMEOUT] 结构化诊断。
+
+        求值对象是**调用点原文表达式**(ast 取出后 eval), 不是测试重算一遍
+        常量——这样回退调用点即转红, 钉才咬得住。
+        """
+        _call, expr = _layer2_spawn()
+        self.assertTrue(expr, "未找到层 2 spawn 的 timeout 表达式")
+        outer = eval(  # noqa: S307 —— 求值对象是本仓 scripts/verify.py 的源码
+            expr, {"__builtins__": {}},
+            {"max": max,
+             "hardfault_budget_s": verify.hardfault_budget_s,
+             "HARDFAULT_OUTER_MARGIN_S": verify.HARDFAULT_OUTER_MARGIN_S})
+        inner = hardfault.OPENOCD_DIAG_BUDGET_S
+        self.assertGreater(
+            outer, inner,
+            f"层 2 外层生效值 {outer}s 未严格大于内层总预算 {inner}s —— "
+            f"最坏路径仍会先被外层掐死, 结构化诊断出不来 (三号复审 L-2)")
 
     def test_helper_reads_real_module_constant(self):
         """helper 必须真读到 hardfault.py 的常量, 不是硬编码副本。"""

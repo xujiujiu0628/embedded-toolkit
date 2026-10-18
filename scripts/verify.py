@@ -336,6 +336,17 @@ def _release_hw_lease(lease) -> None:
               f"(进程退出时 OS 自动放锁, 不影响本次结果)", file=sys.stderr)
 
 
+# F-228/L-2 (三号复审): 层 2 外层预算的**收尾裕量** (秒)。
+# 内层 OPENOCD_DIAG_BUDGET_S 只统计"3 次子进程超时 + 2 次重试间隔" (=186s),
+# **不含**解释器启动、模块导入、寄存器解析与 JSON 序列化; 外层取它等号时,
+# 三次全超时的最坏路径上外层仍会先杀, 拿回来的还是"verify 超时"——
+# F-219 专为可辨识性加的 `[HF-DIAG-TIMEOUT]` 哨兵文本永远出不来 (该票想买的
+# 东西只在"第 2、3 次尝试成功"的路径上买到了)。
+# 与 release.gate1 对同类嵌套留 IDF_OUTER_MARGIN_S=120s 的做法同一纪律;
+# 此处取 30s 是因为层 2 子进程的收尾面远小于构建步 (无产物落盘/无台账写回)。
+HARDFAULT_OUTER_MARGIN_S = 30
+
+
 def hardfault_budget_s() -> int:
     """层 2 诊断(hardfault.py)的总预算秒数, 取自其模块常量。
 
@@ -1310,7 +1321,12 @@ def _run_judgement(args, config, result, captured_text, captured_lines,
                     # hardfault.py 的场景)。四审抓出, 属实: 那不是"预算错配
                     # 已修复", 只做了显式化+超时可辨识, 错配本体在此。
                     # 引用常量而非重写 186 —— 两处数字若各写一份必然漂移。
-                    timeout=max(60, hardfault_budget_s()), cwd=WORKSPACE,
+                    # F-228/L-2 (三号复审): 罩过之外还要留收尾裕量——内层 186s
+                    # 只算子进程超时与重试间隔, 不含解释器启动/导入/解析/序列化,
+                    # 取等号时最坏路径外层仍先杀, 哨兵文本出不来 (详见
+                    # HARDFAULT_OUTER_MARGIN_S 定义处)。
+                    timeout=max(60, hardfault_budget_s()
+                                + HARDFAULT_OUTER_MARGIN_S), cwd=WORKSPACE,
                     **hf_kw
                 )
                 if hf_result.returncode == 0 and hf_result.stdout.strip():
