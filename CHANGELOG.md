@@ -28,6 +28,9 @@
   timer）本轮**未取到**——st.com 被网络策略挡、Web 检索无返回。本笔 desc 采用
   SVD 结构锚（三者派生自 TIM9/TIM10，含 CC 通道），**不按未经核实的功能分类
   改写**；后续若拿到 RM0008 原文，与此锚不符再单开账订正。
+  〔10-18 已由 **F-227** 销账: RM0008 Rev 21 §16 三处原文将 TIM9~14 归为
+  **general-purpose**（目录/§16.1 正文 p.425/Figure 146·147）——与本锚一致，
+  不订正；basic 另族 §17（TIM6/7），当时「是否列 basic」疑虑不成立。〕
 
 - **F-223 (fix+docs, examples): can/rtc/iwdg 三样例首次真机验收 — 真机钓出两处「host 自证」错并订正（RTC RTCSEL 枚举值 / CAN MSR INAK 位号），修复后真机复验绿**:
   背景: 三样例此前只有编译级 + host mock 证据; 本轮板窗 (2026-10-08, ST-Link +
@@ -157,6 +160,19 @@
   fixture——`test_contract_fixtures`），以及 F-034 历史实录不可变段（RTT/ESP/
   `verify --json` 节选逐字保留，`toolkit_version: "0.2"` 与哈希不改写）。
   验证：全套 1447 例绿（skipped=9，随环境变化，以实跑为准）。
+
+- **F-227 (docs, kb): RM0008 TIM12/13/14 功能分类销账 — F-212「未核实项」清空，desc 锚与手册一致维持（纯账本零代码）**:
+  取证: ST 官方 RM0008 **Rev 21**（1136 页，2021-02 编制——与本仓 IWDG PR 收口笔
+  所引「RM0008 Rev 21 表 96」同版同源）三处原文互咬：目录与节题「General-purpose
+  timers (TIM9 to TIM14)」；§16.1 首句 "The TIM9 to TIM14 general-purpose timers
+  consist of a 16-bit auto-reload counter driven by a programmable prescaler."
+  （p.425）；Figure 146/147 框图题「General-purpose timer block diagram (TIM9 and
+  TIM12)/(TIM10/11/13/14)」。旁证：memory map 将 TIM12/13/14 与 TIM9/10/11 同段
+  呈现（0x4000_1800~27FF），basic timers 系另一节 §17（TIM6/TIM7），advanced 系
+  TIM1/TIM8——F-212 当时的疑虑「RM0008 是否把 TIM12/13/14 列为 basic」**不成立**。
+  结论: ref.json TIM12/13/14 现 desc "General purpose timer"（F-212 沿 SVD
+  derivedFrom 链自祖先继承）与手册分类**一致，不开订正票**；F-212「不按未核实
+  分类改写」的处置经原文验证正确。本笔纯账本，data/代码零动。
 
 ## 0.8 — 2026-10-02（v0.7 无上下文对抗复审 H/M/L 整改十笔全闭 · 公开仓脱敏回归 + 全史身份碎片清洗 + addr2line 定位面两债清偿 + MCP --pins 接线 + stdout 泄漏两处清尾）
 
