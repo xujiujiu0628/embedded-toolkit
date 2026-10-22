@@ -433,3 +433,70 @@ class StepCaptureUartTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class StepCaptureUartResetModeTests(unittest.TestCase):
+    """F-231: STM32 串口采集 — capture.reset=openocd|none, 不走 esptool。
+
+    F-174 的 uart 后端固定用 esptool 复位 + chip 白名单, 只适用 ESP32;
+    f103-body 的证据线是 USART2→串口桥, 复位该由 OpenOCD 做 (ST-Link 在位)。
+    """
+
+    class _OkSer:
+        def __init__(self, lines):
+            self.lines = list(lines)
+            self.i = 0
+        def __init_subclass__(cls): pass
+        def __enter__(self): return self
+        def __exit__(self, *a): pass
+        def readline(self):
+            if self.i < len(self.lines):
+                self.i += 1
+                return self.lines[self.i - 1]
+            return b""
+
+    def _run(self, cap, reset_spy=None, idf_spy=None):
+        ser = self._OkSer([b"F103-BODY-BOOT ok\n"])
+        fake_time = iter([0, 0, 0, 1, 2, 3, 4, 5, 6, 6, 6, 6])
+        kw = {}
+        if reset_spy is not None:
+            kw["_reset_target"] = reset_spy
+        if idf_spy is not None:
+            kw["_run_idf"] = idf_spy
+        with mock.patch("serial.Serial", lambda *a, **k: ser), \
+             mock.patch.object(esp_runtime.time, "sleep"), \
+             mock.patch.object(esp_runtime.time, "time", lambda: next(fake_time)), \
+             mock.patch.object(esp_runtime, "load_machine",
+                               lambda: {"openocd_exe": "ocd.exe"}):
+            return esp_runtime.step_capture_uart(5, cap, workspace="W:", **kw)
+
+    def test_openocd_reset_skips_esptool(self):
+        calls = []
+        r = self._run({"port": "COM4", "reset": "openocd", "settle_sec": 0},
+                      reset_spy=lambda exe, cfg=None, **kw: (
+                          calls.append(("reset", exe)) or {"status": "ok"}),
+                      idf_spy=lambda c, **kw: calls.append(("idf", c)) or {"status": "ok"})
+        self.assertEqual(r["status"], "ok")
+        self.assertIn(("reset", "ocd.exe"), calls)
+        self.assertFalse([c for c in calls if c[0] == "idf"],
+                         "reset=openocd 时不得调用 esptool")
+
+    def test_none_reset_skips_both(self):
+        calls = []
+        r = self._run({"port": "COM4", "reset": "none", "settle_sec": 0},
+                      reset_spy=lambda *a, **kw: calls.append("reset") or {"status": "ok"},
+                      idf_spy=lambda c, **kw: calls.append("idf") or {"status": "ok"})
+        self.assertEqual(r["status"], "ok")
+        self.assertEqual(calls, [])
+
+    def test_unknown_reset_mode_errors(self):
+        r = self._run({"port": "COM4", "reset": "bogus"})
+        self.assertEqual(r["status"], "error")
+        self.assertIn("capture.reset", r["error"])
+
+    def test_openocd_reset_failure_short_circuits(self):
+        r = self._run({"port": "COM4", "reset": "openocd", "settle_sec": 0},
+                      reset_spy=lambda *a, **kw: {"status": "error",
+                                                  "message": "SWD 断"})
+        self.assertEqual(r["status"], "error")
+        self.assertIn("复位失败", r["error"])

@@ -208,9 +208,13 @@ BASELINE = {
     ('tests/test_esp_backend_gate.py', 'B', 'verify.subprocess.run'): 1,
     ('tests/test_esp_config_failfast.py', 'B', 'sys.argv'): 1,
     ('tests/test_esp_config_failfast.py', 'B', 'verify.subprocess.run'): 1,
-    ('tests/test_esp_runtime.py', 'A', 'serial.Serial'): 5,
-    ('tests/test_esp_runtime.py', 'B', 'esp_runtime.time.sleep'): 5,
-    ('tests/test_esp_runtime.py', 'B', 'esp_runtime.time.time'): 4,
+    # F-231 STM32 串口采集复位方式: 新增 StepCaptureUartResetModeTests 的共享
+    # _run 桩组合 (4 例复用同一处 with 块)。棘轮按**源出现点**计数而非例数,
+    # 故 serial.Serial / time.sleep / time.time 各 +1。三桩均沿用 F-174 既有
+    # 形态与理由 (真开串口/真等 settle 会拖慢且不可控), 无新增打桩范式。
+    ('tests/test_esp_runtime.py', 'A', 'serial.Serial'): 6,
+    ('tests/test_esp_runtime.py', 'B', 'esp_runtime.time.sleep'): 6,
+    ('tests/test_esp_runtime.py', 'B', 'esp_runtime.time.time'): 5,
     ('tests/test_evidence_export.py', 'B', 'sys.argv'): 1,
     ('tests/test_f190_release_chain.py', 'B', 'sys.argv'): 1,
     ('tests/test_fixture_doctor.py', 'A', 'subprocess.run'): 4,

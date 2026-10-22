@@ -188,8 +188,13 @@ def step_flash_esptool(flash_cfg: dict, workspace: str | None = None,
 
 def step_capture_uart(timeout_s: int, cap_cfg: dict,
                       workspace: str | None = None,
-                      *, _run_idf=None) -> dict:
-    """capture.backend=uart (F-174): esptool 复位进固件 → pyserial 定时采集.
+                      *, _run_idf=None, _reset_target=None) -> dict:
+    """capture.backend=uart (F-174): 复位进固件 → pyserial 定时采集.
+
+    F-231: `cap_cfg["reset"]` 选择复位方式——`"esptool"`(默认, ESP32) /
+    `"openocd"`(STM32/ST-Link; 复用 openocd_runtime.reset_target) /
+    `"none"`(外部已复位)。非 esptool 模式跳过 `chip` 白名单——那是 ESP
+    专属参数, 不该拦 STM32 工程。
 
     时序 (spec §7 风险"复位窗口丢日志"缓解):
       1) esptool --after hard_reset chip_id: 廉价只读命令触发确定性复位
@@ -211,8 +216,13 @@ def step_capture_uart(timeout_s: int, cap_cfg: dict,
     port_err = _esp_port_error(port)
     if port_err:
         return {"status": "error", "method": "uart", "error": port_err}
+    reset_mode = str(cap_cfg.get("reset") or "esptool").strip().lower()
+    if reset_mode not in ("esptool", "openocd", "none"):
+        return {"status": "error", "method": "uart",
+                "error": f"capture.reset 不在白名单: {reset_mode!r} "
+                         f"(支持: esptool / openocd / none)"}
     chip = _normalize_chip(cap_cfg.get("chip", "esp32s3"))
-    if chip not in _ESP_CHIPS:
+    if reset_mode == "esptool" and chip not in _ESP_CHIPS:
         return {"status": "error", "method": "uart",
                 "error": f"capture.chip 不在白名单: {chip!r} "
                          f"(支持: {', '.join(sorted(_ESP_CHIPS))})"}
@@ -226,13 +236,27 @@ def step_capture_uart(timeout_s: int, cap_cfg: dict,
     # choice: 'hard-reset'"); pip 装的 v5 仍收下划线 (仅弃用警告), 故下划线是
     # 两版通吃的安全集。若 PATH 只有 esptool.py 入口报 "not recognized", 换
     # `esptool.py ...` (Task 7 现场定; 单测 mock run_idf 不受影响)。
-    reset = run_idf_([f"esptool --chip {chip} -p {port} --after "
-                      f"hard_reset chip_id"], timeout=30, workspace=ws)
-    if reset.get("status") != "ok":
-        return {"status": "error", "method": "uart",
-                "error": ("复位失败 (端口被占/板子未上电?): "
-                          + (reset.get("message")
-                             or reset.get("output", "")[-300:]))}
+    if reset_mode == "esptool":
+        reset = run_idf_([f"esptool --chip {chip} -p {port} --after "
+                          f"hard_reset chip_id"], timeout=30, workspace=ws)
+        if reset.get("status") != "ok":
+            return {"status": "error", "method": "uart",
+                    "error": ("复位失败 (端口被占/板子未上电?): "
+                              + (reset.get("message")
+                                 or reset.get("output", "")[-300:]))}
+    elif reset_mode == "openocd":
+        rt = _reset_target
+        if rt is None:
+            from openocd_runtime import reset_target as rt
+        try:
+            reset = rt(load_machine()["openocd_exe"], None, timeout=20)
+        except Exception as e:      # 缺 machine 键/OpenOCD 缺席都走可读报错
+            reset = {"status": "error", "message": str(e)}
+        if reset.get("status") != "ok":
+            return {"status": "error", "method": "uart",
+                    "error": ("复位失败 (OpenOCD/SWD — ST-Link 在位?): "
+                              + (reset.get("message") or ""))}
+    # reset_mode == "none": 调用方已自行复位, 直接采集
 
     t0 = time.time()
     deadline = t0 + float(cap_cfg.get("settle_sec", 1.0))

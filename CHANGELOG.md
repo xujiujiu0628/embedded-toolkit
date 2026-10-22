@@ -298,6 +298,43 @@
   原两例：原 skill 钉移除、新增 fixture/absent/committed 三例）；ruff 全绿；
   N-1 变异枪亲放亲还、`git status` 还原后零改动。
 
+- **F-231 (feat+test, backend): `capture.backend=uart` 复位方式可配置 — `esptool`（默认）/ `openocd` / `none`；STM32 工程不再被 ESP 专属参数拦**:
+  背景: F-174 的 uart 采集后端把复位硬编码为
+  `esptool --after hard_reset chip_id`，并对 `capture.chip` 做 ESP 白名单
+  校验。这对 f103-body 的结构性不适配在于：它的证据线是 USART2→串口桥，
+  复位应由 ST-Link/OpenOCD 做，而旧路径要么假报 chip 非法，要么把 STM32
+  当 ESP 复位。
+  处置: `cap_cfg["reset"]` 三选一（缺省 `esptool` 保持旧行为逐字不变）：
+  1. `esptool` — 原路径保留（含 chip 白名单）；
+  2. `openocd` — 复用 `openocd_runtime.reset_target`（`cfg=None` 走
+     `resolve_openocd_cfg` 单一事实源），exe 取 `machine.json:openocd_exe`
+     （与 capture_rtt/capture_semihosting/hardfault 同源）；缺键/异常收成
+     可读 error，不让裸 traceback 穿透；
+  3. `none` — 调用方已自行复位，直接采集。
+  非 esptool 模式**跳过 `chip` 白名单**（ESP 专属参数不该拦 STM32 工程）。
+  **消费面收口（本轮实测发现）**: `runtime_common.esp_backend_mode` 原先把
+  `capture.backend=uart` **无条件**当 ESP 标记，而 verify 入口的 GAP-F-19
+  fail-fast 正以它为闸——STM32 工程配 uart 采集会在任何构建/烧录前 exit 1，
+  F-231 等于不可用（后端单测全绿也照不出这一层）。处置: 该标记收窄为
+  "`reset` 缺省或 `esptool`"形态（`_uart_capture_is_esp`，取值归一
+  strip+lower 与 esp_runtime 同口径）；`reset=openocd|none` 不再触发 ESP
+  闸。老配置不写 `reset` 时行为逐字节不变；反向钉保留（不写 reset / 显式
+  esptool 仍是 ESP 标记，混配 fail-fast 不松动）。
+  **契约变更**: `.workbench/config.json` 的 `capture` 段新增可选键
+  `reset`（`esptool`|`openocd`|`none`，缺省 `esptool`）——纯增量，旧配置
+  零影响；`toolkit_min_version` **不上调**（同 F-229 口径：只增可选键，
+  工程侧兼容闸门无需空转）。
+  测试: `StepCaptureUartResetModeTests` 4 例（openocd 不调用 esptool /
+  none 两者都不调 / 未知模式落白名单报错 / openocd 复位失败短路且错误可读）
+  + GAP-F-19 两层 3 例（`esp_backend_mode` 单测两例：STM32 放行含大小写归一、
+  老标记反向钉；`MixedConfigFailFastTests` 主流程一例：reset=openocd 时
+  build/flash 真被调用且 stderr 无 GAP-F-19）。
+  验证: 全套 **1459** 例绿（`skipped=9`）= 基线 1452 + 本单新钉 7；
+  `ruff` 全绿。棘轮新增 3 处桩（`serial.Serial` / `time.sleep` /
+  `time.time` 各 +1），按源出现点计数并带注（4 例复用同一 `_run` 组合）。
+  **未亲验（诚实披露）**: `reset=openocd` 需 ST-Link 在位，本轮无硬件，
+  仅单测覆盖；首次真机验收并入 f103-body 板窗。
+
 ## 0.8 — 2026-10-02（v0.7 无上下文对抗复审 H/M/L 整改十笔全闭 · 公开仓脱敏回归 + 全史身份碎片清洗 + addr2line 定位面两债清偿 + MCP --pins 接线 + stdout 泄漏两处清尾）
 
 > 封袋定义: 自 v0.7 标签（commit 5099ef7, 2026-09-27）之后落入本账本的

@@ -283,6 +283,13 @@ python scripts/release.py --project <工程根> --tag v1.0.0 --dry-run
 - uart 采集开口即释放 DTR/RTS（F-177：CH340/CP210x 自动下载电路否则会把芯片
   按在复位里收 0 行；释放附带一次确定复位）；非 S3 芯片族必须显式设
   `capture.chip`，探针判错芯片型会在复位步体面报错
+- **STM32 工程也能用 uart 采集（F-231）**：`capture.reset` 三选一——
+  `esptool`（缺省，ESP32 路径）、`openocd`（ST-Link 复位，复用
+  `openocd_runtime.reset_target`）、`none`（调用方已自行复位）。非 esptool
+  模式跳过 `capture.chip` 白名单，且 `capture.backend="uart"` 不再被当成 ESP
+  标记（不触发 GAP-F-19 混配拦截）；例：
+  `"capture": {"backend": "uart", "port": "COM4", "reset": "openocd",
+  "baudrate": 115200, "duration_sec": 20}`。
 
 ### 采集窗纪律（真人输入类期望，如按键/旋钮）
 

@@ -102,6 +102,30 @@ class EspConfigErrorsUnitTests(unittest.TestCase):
         self.assertIn("缺省 'gcc'", text)
         self.assertIn("缺省 'openocd'", text)
 
+    def test_stm32_uart_capture_with_explicit_reset_is_not_esp(self):
+        # F-231: uart 采集不再无条件等同 ESP——reset=openocd|none 是
+        # STM32 证据线, 不得被 GAP-F-19 在入口拦死。取值归一与
+        # esp_runtime 同口径 (strip+lower), 大小写/空白变体一并放行。
+        for reset in ("openocd", "none", "OPENOCD", " None "):
+            cfg = {"toolkit_min_version": "0.1", "builder": "gcc",
+                   "flash": {"backend": "openocd"},
+                   "capture": {"backend": "uart", "port": "COM4",
+                               "reset": reset}}
+            with self.subTest(reset=reset):
+                self.assertFalse(runtime_common.esp_backend_mode(cfg))
+                self.assertEqual(_errors(cfg), [])
+
+    def test_uart_capture_without_or_esptool_reset_stays_esp_marker(self):
+        # 反向钉: 老配置 (不写 reset) 与显式 esptool 仍是 ESP 标记,
+        # 混配 fail-fast 不因 F-231 松动。
+        for cap in ({"backend": "uart", "port": "COM4"},
+                    {"backend": "uart", "port": "COM4", "reset": "esptool"}):
+            cfg = {"builder": "gcc", "flash": {"backend": "openocd"},
+                   "capture": cap}
+            with self.subTest(cap=cap):
+                self.assertTrue(runtime_common.esp_backend_mode(cfg))
+                self.assertTrue(_errors(cfg))
+
 
 def _strip_volatile(node):
     """金比对归一: 剔时变字段 (时间戳/时长) 与本机路径, 留 wire 形态。
@@ -210,6 +234,20 @@ class MixedConfigFailFastTests(_MainFlowHarness):
         self.assertEqual(r["code"], 1, r["stderr"])
         self.assertIn("'gcc'", r["stderr"])
         r["build_mock"].assert_not_called()
+
+    def test_stm32_uart_capture_with_openocd_reset_passes_gate(self):
+        # F-231 消费面钉: reset=openocd 的 uart 采集是 STM32 证据线,
+        # GAP-F-19 必须在入口放行并让管线真正走到 build/flash。
+        cfg = {"toolkit_min_version": "0.1", "builder": "gcc",
+               "flash": {"backend": "openocd", "port": "COM4"},
+               "capture": {"backend": "uart", "port": "COM4",
+                           "reset": "openocd", "settle_sec": 0},
+               "physical_gate": {"enable": True}}
+        r = self._run(cfg)
+        self.assertNotIn("GAP-F-19", r["stderr"])
+        self.assertNotEqual(r["code"], 1, r["stderr"])
+        r["build_mock"].assert_called()
+        r["flash_mock"].assert_called()
 
 
 class GoldenBehaviorTests(_MainFlowHarness):

@@ -451,27 +451,47 @@ def update_state_entry(category: str, record: dict, workspace: str | None = None
 # 形态, 调用面不变), release G0.5 闸同源消费——两份 OR 逻辑副本即分层违例
 # (test_f190_release_chain.T2SingleSourceTests 钉 identity)。
 
+def _uart_capture_is_esp(config) -> bool:
+    """capture.backend=uart 是否为 ESP 标记 (F-231).
+
+    缺省/`reset=esptool` 沿用旧语义=ESP (老配置零变化); STM32 工程经
+    `reset=openocd|none` 显式声明"复位不归 esptool", 此时 uart 采集是
+    Cortex-M 证据线, 不该触发 ESP 闸。取值归一与 esp_runtime 同口径
+    (strip+lower), 免得大小写变体一边放行一边拦。
+    """
+    cap = (config or {}).get("capture") or {}
+    if cap.get("backend") != "uart":
+        return False
+    reset = str(cap.get("reset") or "esptool").strip().lower()
+    return reset == "esptool"
+
+
 def esp_backend_mode(config) -> bool:
     """F-174/I-1 (终审#2): ESP 后端判据——OpenOCD/ST-Link 专属动作的闸根。
 
     builder=idf / flash.backend=esptool / capture.backend=uart 任一在场
     即为 ESP 运行: post_reset 与 hardfault 层 2 都是占 ST-Link 的 Cortex-M
     动作, 必须整体抑制。三标记 OR 而非 AND: 混配 (漏写其一) 时宁可停
-    Cortex 动作, 也不能拿 ESP 目标去跑 OpenOCD。"""
+    Cortex 动作, 也不能拿 ESP 目标去跑 OpenOCD。
+
+    F-231 收窄: capture.backend=uart 只在缺省/esptool 复位形态下算 ESP
+    标记——STM32 工程的 uart 采集由 `capture.reset=openocd|none` 显式
+    声明复位归属 (f103-body 证据线), 否则 F-231 会在入口被 GAP-F-19
+    误拦。老配置不写 reset 时行为逐字节不变。"""
     cfg = config or {}
     if cfg.get("builder") == "idf":
         return True
     if (cfg.get("flash") or {}).get("backend") == "esptool":
         return True
-    if (cfg.get("capture") or {}).get("backend") == "uart":
-        return True
-    return False
+    return _uart_capture_is_esp(cfg)
+
 
 
 def esp_backend_config_errors(config) -> list:
     """GAP-F-19 (维护者裁定 fail-fast, F-190/T3): ESP 混配配置校验。
 
-    规则: 三标记任一在场 (判定根 = esp_backend_mode, 不变) → builder、
+    规则: ESP 标记任一在场 (判定根 = esp_backend_mode; F-231 起
+    capture.backend=uart 仅在 reset 缺省/esptool 时算标记) → builder、
     flash.backend、capture.backend 三键必须齐且取值在 ESP 合法集
     (builder=idf / flash.backend=esptool / capture.backend∈{uart})。
     合规返回 []; 违规返回逐条人读项 (点名键 + 当前值——键缺席时报缺省
