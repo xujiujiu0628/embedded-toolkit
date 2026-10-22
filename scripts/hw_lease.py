@@ -163,7 +163,7 @@ def acquire(device: str = DEFAULT_DEVICE, *, purpose: str = "",
 
 
 def release(lease: dict | None) -> dict:
-    """释放设备锁: 解锁 → 关 fd → 清旁车。只接受 acquire 的原返回值
+    """释放设备锁: 清旁车 → 解锁 → 关 fd（F-222 改序）。只接受 acquire 的原返回值
     (OS 锁只能由持锁 fd 解——别的进程想放也放不掉, 天然防误删)。
 
     F-161 审核退回:

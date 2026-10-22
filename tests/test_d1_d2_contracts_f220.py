@@ -27,6 +27,8 @@ import unittest
 from unittest import mock
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+D1_CONTRACT_FIXTURE = os.path.join(ROOT, "tests", "fixtures",
+                                      "d1_feedback_contract.md")
 sys.path.insert(0, os.path.join(ROOT, "scripts"))
 
 import feedback_db  # noqa: E402
@@ -45,6 +47,20 @@ def _load_valid_outcomes():
     if not m:
         return None
     return set(re.findall(r'"([a-z_]+)"', m.group(1)))
+
+
+def _d1_scan_feedback_db(path):
+    """扫描落库档, 返回 (state, payload)。
+
+    state=`"absent"` → payload 恒为 `"D1-DATA-ABSENT"`（显式可审计标记，
+    由调用方写到 stderr）；state=`"present"` → payload 为 outcome 列表。
+    三号复审 L-3: 把"档不存在"从 `skipTest` 静默改为显式状态。
+    """
+    if not os.path.isfile(path):
+        return "absent", "D1-DATA-ABSENT"
+    with open(path, encoding="utf-8") as f:
+        data = json.load(f)
+    return "present", [e.get("outcome") for e in data.get("events", [])]
 
 
 class D1OutcomeSemanticsTests(unittest.TestCase):
@@ -145,41 +161,47 @@ class D1OutcomeSemanticsTests(unittest.TestCase):
         self.assertFalse(outcome_class & {"pass", "fail"},
                          "pass/fail 不应属归宿类")
 
-    def test_verified_skill_uses_both_fields_separately(self):
-        """反向钉: skill 实际用法须与上述分工一致。
+    def test_contract_fixture_pins_two_field_division(self):
+        """反向钉: 两字段分工以**仓内 fixture** 固定, 不再读机外 skill。
 
-        若 skill 改成只记 outcome 而不记 verify_result, 说明契约变了,
-        本测试应随skill 改动更新——**钉的是分工, 不是逐字文案**。
+        三号复审 L-3: 原实现读 `~/.claude/skills/feedback-log/SKILL.md`,
+        CI/干净克隆上该路径不存在 → 100% skip = 没钉。改为钉文档契约,
+        把"机外资产"从判据链里摘出去。
         """
-        skill = os.path.expanduser("~/.claude/skills/feedback-log/SKILL.md")
-        if not os.path.isfile(skill):
-            self.skipTest("feedback-log skill 不在本机(非仓内资产)")
-        with open(skill, encoding="utf-8") as f:
+        with open(D1_CONTRACT_FIXTURE, encoding="utf-8") as f:
             text = f.read()
         self.assertIn('"verify_result"', text,
-                      "skill 未记verify_result —— 两字段分工的前提不成立")
+                      "契约 fixture 未记 verify_result —— 两字段分工的前提不成立")
         self.assertIn('"outcome"', text,
-                      "skill 未记 outcome —— 两字段分工的前提不成立")
+                      "契约 fixture 未记 outcome —— 两字段分工的前提不成立")
+        self.assertIn("still_broken", text,
+                      "契约 fixture 未列归宿类取值")
 
 
 class D1NoExistingPassDataTests(unittest.TestCase):
     """钉住「既有数据零条 pass」这一事实——它是 D1 影响面评估的基础。
 
-    若将来真的记入 pass 事件, 本例转红提醒: 届时D1 的结论需重新评估
-    (校准虽不受影响, 但落库数据形态变了, 账上的「撤案」依据要更新)。
+    三号复审 L-3: 原实现档不存在时 `skipTest`, 干净克隆上静默跳过。
+    改为显式 `D1-DATA-ABSENT` 标记写到 stderr —— "没有数据"从此可审计。
     """
 
-    def test_no_pass_outcome_in_committed_data(self):
+    def test_scan_reports_absent_explicitly(self):
+        """判据钉: 档不存在必须回 ("absent", "D1-DATA-ABSENT"), 不许沉默。"""
+        state, payload = _d1_scan_feedback_db(
+            os.path.join(ROOT, "tests", "fixtures", "__no_such_feedback_db__.json"))
+        self.assertEqual(state, "absent")
+        self.assertEqual(payload, "D1-DATA-ABSENT")
+
+    def test_committed_data_has_no_pass_or_reports_absent(self):
         db = os.path.join(ROOT, "examples", "sim-demo", ".workbench",
                           "feedback", "feedback_db.json")
-        if not os.path.isfile(db):
-            self.skipTest("本仓无落库样例(该文件本就未被跟踪)")
-        with open(db, encoding="utf-8") as f:
-            data = json.load(f)
-        outcomes = [e.get("outcome") for e in data.get("events", [])]
+        state, payload = _d1_scan_feedback_db(db)
+        if state == "absent":
+            print(f"D1-DATA-ABSENT: {db}", file=sys.stderr)
+            return
         self.assertNotIn(
-            "pass", outcomes,
-            f"落库数据已出现 outcome=pass ({outcomes}) —— D1「灌水」"
+            "pass", payload,
+            f"落库数据已出现 outcome=pass ({payload}) —— D1「灌水」"
             f"前提可能转为成立, 须重新评估而非沿用撤案结论")
 
 

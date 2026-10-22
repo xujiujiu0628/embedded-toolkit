@@ -59,6 +59,17 @@ def _src(name):
         return f.read()
 
 
+def _called_names(src):
+    """AST 取源码里所有**被调用**的函数名。
+
+    文本扫描会把 `def foo()` 与注释里的 `foo()` 都算成"引用"——三号复审
+    N-1 即此：删掉调用点、留下定义，断言仍然绿。
+    """
+    import ast
+    return {ast.unparse(n.func) for n in ast.walk(ast.parse(src))
+            if isinstance(n, ast.Call)}
+
+
 def _layer2_spawn():
     """层 2 spawn 的 (整条调用源码, `timeout=` 实参表达式源码)。
 
@@ -94,9 +105,12 @@ class D4OuterBudgetCoversInnerTests(unittest.TestCase):
     def test_verify_uses_inner_budget_not_literal_60(self):
         """形态钉: verify 的层 2 调用不得再有裸 `timeout=60`, 也不得取内层等号。"""
         src = _src("verify.py")
-        self.assertIn("hardfault_budget_s()", src,
-                      "verify 未引用层 2 预算常量 —— 外层 60s 会掐死内层 "
-                      "186s 的重试(F-222 的错配本体)")
+        # 三号复审 N-1: 原先 `assertIn("hardfault_budget_s()", src)` 会被
+        # `def hardfault_budget_s() -> int:` 自我满足——删掉调用点照样绿。
+        # 改判"**存在对它的调用**"：AST 取 Call 节点，def 行与注释都不算。
+        self.assertIn("hardfault_budget_s", _called_names(src),
+                      "verify 未调用层 2 预算常量 —— 外层 60s 会掐死内层 "
+                      "186s 的重试(F-222 的错配本体；三号复审 N-1)")
         # 剥注释再查: 注释里出现关键词不算"代码用了它"。
         # (首版未剥注释 → 断言在自己的说明文字里命中而假红。)
         code = _code_only("verify.py")

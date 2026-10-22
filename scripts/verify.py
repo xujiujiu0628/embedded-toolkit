@@ -354,9 +354,9 @@ def hardfault_budget_s() -> int:
     **罩过**被调方的总预算, 否则内层重试从未跑完就被外层掐断(F-219 只把
     186s 显式化, 却没改这里的 60 —— 错配本体在此, 四审抓出属实)。
 
-    用 `runpy` 读常量而**不 import**: import hardfault 会执行其模块级代码
-    (机器探测/常量解析), 且 import 缓存会让 monkeypatch 测试失效; runpy
-    只取值不驻留。读不到时退回 186 (= 3×60 + 2×3) 并在注释标明这是
+    用 `runpy` 读常量而**不 import**: 两者都会执行模块级代码, 真正的差别
+    是 runpy **不进 `sys.modules`**——不污染 import 缓存, monkeypatch 测试
+    不受影响; 前提是被读模块级零 IO (F-054 保证)。读不到时退回 186 (= 3×60 + 2×3) 并在注释标明这是
     **兜底副本**, 上游改预算时须同步此处——故配了
     `test_hardfault_budget_matches_module_constant` 钉住两者一致。
     """

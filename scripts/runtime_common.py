@@ -236,10 +236,10 @@ def state_write_lock(workspace: str | None = None, *, timeout: float = 5.0):
                     #   ③ 校验搬走的正是我判过的那把; 不是 → 说明搬走了
                     #      他人的活锁, 用 os.link 原子归还 (目标存在则失败)
                     # 认领成功才删除, 之后回到重试争 O_EXCL。
-                    try:
-                        ident = _lock_identity(lock_path)
-                    except OSError:
-                        ident = None      # 读不到身份 → 不敢认领, 走下面的重试
+                    # _lock_identity 内部已把 OSError 兜成 None, 此处不再
+                    # 包 try/except (三号复审 N-6: 外层 except 永不触发,
+                    # 会让人误以为有两条失败路径)。
+                    ident = _lock_identity(lock_path)
                     if ident is None:
                         time.sleep(0.01)
                         continue
