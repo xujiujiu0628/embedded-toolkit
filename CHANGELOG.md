@@ -83,7 +83,9 @@
   （若未来 ESP 路径引入 config 写回须随动）。
   修复: mpu6050-oled（`e1aa8f1`，板窗现场）· adc-oled（`a444097`）·
   button-toggle（`d8e2ad3`）三工程 .gitignore 补 `.workbench/*.lock`（工程仓
-  纯本地记录，不推远端）；新工程模板随动——esp32s3 pilot spec 的 `.gitignore`
+  纯本地记录，不推远端）。**归属注（三号复审 L-5）**: 上述三个 SHA 属兄弟仓
+  `stm32f103-{mpu6050-oled,adc-oled,button-toggle}`，**不在本仓对象库**——
+  `git cat-file` 查不到属正常，勿按"幽灵 commit"归因；新工程模板随动——esp32s3 pilot spec 的 `.gitignore`
   模板块补该行 + F-224 增补注；F103 侧 de-facto 模板=「照抄 adc-oled」
   （spec 原文即此约定），同修即随动。
   **教训**: 新增常驻副作用文件（锁哨兵/缓存/状态旁车）时，必须同步问
@@ -243,6 +245,59 @@
   验证: 全套 **1451** 例绿（`skipped=9`，随环境变化以实跑为准）= 基线 1447 + 本
   单新钉 4（`Gate1NonDictIdfSectionTests` 3 + L-2 追加 1）。
 
+- **F-229 (docs, contract): 0.8 后对外契约面变更补账 — 四笔一次列清 + `toolkit_min_version` 统一评估（三号复审 L-4；09-27 N-2 同族复发）**:
+  背景: 三号复审 `grep -n "契约变更\|toolkit_min_version"` 在本批账段
+  （F-212 起）零命中 —— CONTRIBUTING「契约变更三件套」第 2/3 条在本批
+  一次都没执行。四处实质结论均为"增量/只读消费 → 无需上调"，但"没做"与
+  "做了结论是无需"在审计上不等价。
+  **契约变更清单（四笔）**:
+  1. **F-216** verify 失败信封新增 `status="internal_error"` / `error` /
+     `error_type` / `traceback` / `agent_hint` 键（`--json` 消费方可见）——
+     **纯增量**: 旧消费方按既有键读取不受影响，新键只在异常路径出现；
+     钉 = `ExceptionEnvelopeTests` 4 例。
+  2. **F-221** `release_audit` 退出码 0/1/2 三档语义被机检固化——
+     **语义收紧（钉既有行为、不改取值）**: 0=clean/warned、1=存在 fail 项、
+     2=用法/环境错误；钉 = `D2ExitCodeContractTests`。
+  3. **F-225** `gen_periph` 生成物向量名由 naive 改为 CMSIS 实名——
+     **生成代码即契约**: 下游已粘贴的旧名需手工更新；本仓样例与 SVD 消费面
+     已同步，钉 = `test_f225_shared_vector_naming`（syntax-smoke job）。
+  4. **F-209** MCP 注册表 schema histogram `string 10→11` —— **只读元数据**:
+     注册表供 agent 自描述，消费方按字段名取值；钉 = 快照断言。
+  **`toolkit_min_version` 评估: 不上调**。理由: 四笔中三笔对旧工程零影响；
+  唯一可能影响下游的 F-225 是**新生成**的代码，既有工程里的旧名仍可编译
+  运行，且本仓从未承诺生成物跨版本逐字稳定（GAP 系列明示）。工程侧兼容
+  闸门因此无需空转。**裁定: 补账，不改任何行为**；证据面 = 上述四组既有钉。
+  同单文档面: **L-5** F-224 三个 SHA 补兄弟仓归属注（本仓对象库不可达≠
+  幽灵 commit）；**L-6** README 回填三处仍成立的结构陈述（后端行为隔离 /
+  门禁失败即回滚 / 失败现场诚实化）+ 设计支点改"四个"；**N-4** 旧锚核对
+  口径收窄为"09-28 重写涉及的旧锚"（更早旧 SHA 既不在 map 内也不可达）。
+
+- **F-230 (fix+test+docs, hygiene): 三号复审「登记档」收口 — L-3 两钉改仓内可执行 / N-1 文本钉转 AST / N-2·N-3 注释订正 / N-5 引用块断行 / N-6 死代码清理；N-7~N-10 登记**:
+  **L-3（两枚钉结构性不可执行）**: 原 `tests/test_d1_d2_contracts_f220.py`
+  读 `~/.claude/skills/feedback-log/SKILL.md`（机外资产）与
+  `examples/sim-demo/.workbench/feedback/feedback_db.json`（未被跟踪档）——
+  CI/干净克隆上 100% skip，等于没钉。处置: ①两字段分工改钉**仓内 fixture**
+  `tests/fixtures/d1_feedback_contract.md`（判据载体入仓）；②落库扫描抽
+  `_d1_scan_feedback_db()`，档不存在时回 `("absent", "D1-DATA-ABSENT")` 并由
+  测试写 stderr —— "没有数据"从静默 skip 变成可审计输出；新增
+  `test_scan_reports_absent_explicitly` 让该判据本身在 CI 咬合。
+  **N-1（文本钉自我命中）**: `assertIn("hardfault_budget_s()", src)` 被
+  `def hardfault_budget_s()` 自我满足。改用 AST `_called_names()` 判"存在
+  调用"；变异枪实测 = 调用点改字面量 216（保留 def）→ 本钉转红，还原后绿。
+  **N-2**: `hw_lease.release()` docstring 首行"解锁 → 关 fd → 清旁车"改为
+  "清旁车 → 解锁 → 关 fd（F-222 改序）"，与实现及下方长注释一致。
+  **N-3**: `hardfault_budget_s()` docstring 订正 runpy 理由——两者都执行
+  模块级代码，真差别是 runpy 不进 `sys.modules`（前提=模块级零 IO，F-054）。
+  **N-5**: `SENSITIVE_FINDINGS.md` 引用块内空行补 `>`，表格不再被截断。
+  **N-6**: `runtime_common.py` CAS 认领处删除永不触发的 `except OSError`
+  （`_lock_identity` 内部已把 OSError 兜成 None）。
+  **登记（本单不改）**: N-7 `file_lock` 无超时 / N-8 `releases/*.json` 双写入方
+  无共用锁 / N-9 CAS 依赖 `os.link` 硬链且失败静默 → 合一张"锁面收口"票；
+  N-10 `rm_lookup --pins ""` rc=0。四项均入 README「已知限制」。
+  验证: 全套 **1452** 例绿（`skipped=9`）= 基线 1451 + 净增 1（L-3 三例替换
+  原两例：原 skill 钉移除、新增 fixture/absent/committed 三例）；ruff 全绿；
+  N-1 变异枪亲放亲还、`git status` 还原后零改动。
+
 ## 0.8 — 2026-10-02（v0.7 无上下文对抗复审 H/M/L 整改十笔全闭 · 公开仓脱敏回归 + 全史身份碎片清洗 + addr2line 定位面两债清偿 + MCP --pins 接线 + stdout 泄漏两处清尾）
 
 > 封袋定义: 自 v0.7 标签（commit 5099ef7, 2026-09-27）之后落入本账本的
@@ -253,8 +308,10 @@
 > 封袋注记先例同式；封袋不搬账=零删承诺）。
 > 锚点口径: F-211 以 filter-repo 重写全史 461 提交，本文件内**一切重写前的
 > 旧 SHA 均已失效**（含 0.7 注记所引 v0.6 锚 9828f9b，现行对应 fbf925d；
-> 封袋时实测本文件 41 处 SHA 引用零可达）。核对旧锚一律查
-> `docs/history-rewrite-20260928-commit-map.txt`（旧→新对照，F-211 入仓件）。
+> 封袋时实测本文件 41 处 SHA 引用零可达）。核对 **09-28 重写涉及**的旧锚查
+> `docs/history-rewrite-20260928-commit-map.txt`（旧→新对照，F-211 入仓件）；
+> 更早（0.3/0.4 期）的旧 SHA 既不在该 map 内也不可达——按三号复审 N-4
+> 口径如实收窄，不冒充可核对。
 
 - **F-202 (fix+test, hygiene): 公开仓脱敏回归清洗 8 处 + 扫描钉三族扩面 (v0.7 无上下文复审 H-1)**:
   根因: F-175 自述回归缺口（"守卫只拦提交时点不拦叙述"）复发——09-19 后

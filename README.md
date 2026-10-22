@@ -30,6 +30,11 @@ CHANGELOG 有对应条目与证据 commit——**状态类事实以 CHANGELOG �
 - **无板闭环**——仓内自带 `examples/sim-demo`，QEMU 上同一判定引擎端到端跑绿
 - **两族真机后端**——STM32（OpenOCD 烧录 + RTT/semihosting 采集）与
   ESP32-S3（idf 构建 + esptool 烧录 + UART 定时窗采集）均有真机全链实证
+- **两族后端行为隔离**（F-174）——多平台后端矩阵**缺省配置行为逐字节不变**；
+  OpenOCD 专属动作（判定后复位 / HardFault 层 2 诊断）按后端设闸互不越界
+- **门禁失败即回滚**——G0→G3 四道检查（工作树干净 → 探针连通预检 →
+  clean rebuild 重跑判定 + xfail 翻转确认 → 落记录打 annotated tag），
+  **任一环失败自动回滚**
 - **MCP 正门**——六个核心工具有界包装：子进程透传、入参白名单、
   **不给 agent 任意 shell**
 - **纯 mock 回归套件**——不碰硬件、零第三方依赖（仅串口族需 pyserial），
@@ -81,7 +86,7 @@ semihosting 收 printf 输出——**和真机路径完全相同的契约、判�
   → 真机判定(RTT / semihosting / UART 采集 printf) → 门禁(release.py G0-G3, 全绿才打 tag) → 落账(feedback_db.py 校准)
 ```
 
-三个设计支点：
+四个设计支点：
 
 1. **判定外置**——"对不对"不写在 AI 的自觉里，写在版本化的契约文件里；AI 改代码
    可以，改契约会在发布审计的契约哈希锚（R1~R8 八查中的 R7）里现形。
@@ -89,6 +94,8 @@ semihosting 收 printf 输出——**和真机路径完全相同的契约、判�
    `HAL_OK ≠ 字节正确` 是本仓库用一个月黑屏 OLED 换来的教训。
 3. **异构审查**——工作台的维护者（AI）也会被换无上下文、不同模型家族的
    外部智能体审计，`handoff_guard` 机器强制其不碰硬件与禁区。
+4. **失败现场诚实化**——超时/卡死/部分输出全部如实落盘
+   （`last_failure.json`），绝不伪装成「程序无输出」。
 
 ### 判定四态与证据四档
 
@@ -434,6 +441,14 @@ CI 与只读工具（`rm_lookup` / `fsd_coverage` / `expectations_lint` 等纯�
   （F-193 查证）；架构常量（IWDG 魔数/PLLMUL 编码等）改由
   `data/stm32f103-arch-facts.json` 带出处入册（F-179），消费方以 RCC 位名与该
   档为准。
+- **锁面收口待办**（F-230 登记，三号复审 N-7/N-8/N-9）——`file_lock` 为无限
+  阻塞，与 `state_write_lock` 的"超时降级"策略相反（持锁方挂起会拖停所有
+  构建/写回）；`releases/<tag>.json` 有两个写入方（`release.py` 与
+  `release_audit.py --approve`）且无共用锁；CAS 归还依赖 `os.link` 硬链，
+  FAT/exFAT/部分 SMB 上失败且当前静默。三处同族，宜一张票统一收口。
+- **`rm_lookup.py --pins ""` 用法错误返回 rc=0**（F-230 登记，三号复审
+  N-10）——与 `release_audit` 已钉住的"用法/环境错误 → 2"口径不一致；属
+  批外既有行为，空串语义（未给参数 / 非法参数）待裁决。
 - **feedback_db 为单会话假设**（WB-05 N-1）——多进程读改写无锁，跨进程并发写
   可能互相覆盖台账。
 - **UART 串口补丁的发布门禁脆弱性**——有意搁置（成本/收益不立项，裁决记录见
