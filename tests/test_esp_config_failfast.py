@@ -241,8 +241,7 @@ class MixedConfigFailFastTests(_MainFlowHarness):
         cfg = {"toolkit_min_version": "0.1", "builder": "gcc",
                "flash": {"backend": "openocd", "port": "COM4"},
                "capture": {"backend": "uart", "port": "COM4",
-                           "reset": "openocd", "settle_sec": 0},
-               "physical_gate": {"enable": True}}
+                           "reset": "openocd", "settle_sec": 0}}
         r = self._run(cfg)
         self.assertNotIn("GAP-F-19", r["stderr"])
         self.assertNotEqual(r["code"], 1, r["stderr"])
