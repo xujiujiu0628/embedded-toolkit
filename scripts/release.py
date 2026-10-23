@@ -21,8 +21,9 @@ import sys
 from datetime import datetime
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from wb_common import (TOOLKIT_ROOT, atomic_write_json, find_project_root,  # noqa: E402
-                       load_machine, sha256_file, toolkit_version)
+from wb_common import (TOOLKIT_ROOT, atomic_write_json, file_lock,  # noqa: E402
+                       find_project_root, load_machine,
+                       release_record_lock_path, sha256_file, toolkit_version)
 from openocd_runtime import swd_probe  # noqa: E402  (F-041: 下沉共享层, doctor 与 G0.5 同源)
 from runtime_common import esp_backend_mode, load_json_file  # noqa: E402  (F-190/M-1: 后端判据单一事实源; config 只读窥视)
 
@@ -348,38 +349,51 @@ def finalize(ws, tag, record):
     rec_dir = os.path.join(ws, ".workbench", "releases")
     os.makedirs(rec_dir, exist_ok=True)
     rec_p = os.path.join(rec_dir, f"{tag}.json")
-    atomic_write_json(rec_p, record)  # F-022: 发布记录是 R7/M2 取证锚, 撕裂即报废
     rec_rel = os.path.relpath(rec_p, ws).replace(os.sep, "/")
+    lock_p = release_record_lock_path(ws, tag)
+    lock_rel = os.path.relpath(lock_p, ws).replace(os.sep, "/")
 
-    def _rollback():
-        os.remove(rec_p)
-        try:
-            os.rmdir(rec_dir)   # 回滚后不留空目录 (审计 L6)
-        except OSError:
-            pass
+    # F-232 N-8: 记录文件有两个写入方 (本处 G3 落盘 / release_audit.py
+    # --approve 批准回填), 锁必须按**目标文件**共用同一把哨兵 —— 各锁各的
+    # 等于没锁 (F-222 教训)。锁面罩住整段 G3 序列而非只罩写文件那一步:
+    # 记录落盘到 tag 打出之间, 若 approve 插进来读, 审计 R2 (tag 指向
+    # commit == 记录 git_head) 会判不过 —— 让它在锁外等完这一段。
+    with file_lock(rec_p, lock_path=lock_p):
+        atomic_write_json(rec_p, record)  # F-022: 发布记录是 R7/M2 取证锚, 撕裂即报废
 
-    _, head, _ = _git(["rev-parse", "HEAD"], ws)
-    # -uall: 未跟踪目录展开为单文件 — 否则新仓首发布时 porcelain 只给
-    # "?? .workbench/" 目录行, 记录文件会被误判为 foreign 而回滚
-    _, dirty, _ = _git(["status", "--porcelain", "-uall"], ws)
-    foreign = [l for l in dirty.splitlines()
-               if l.strip() and not l.strip().endswith(rec_rel)]
-    if head != record["git_head"] or foreign:
-        _rollback()
-        print(f"打 tag 前复核失败: HEAD 变动或出现其他改动 ({foreign}), 记录已回滚",
-              file=sys.stderr)
-        return False
-    r = subprocess.run(
-        ["git", "tag", "-a", tag, "-m", f"release {tag} (record: {rec_rel})"],
-        capture_output=True, text=True, encoding="utf-8",
-        errors="replace", timeout=30, cwd=ws)
-    if r.returncode != 0:
-        _rollback()
-        print(f"打 tag 失败, 记录已回滚: {(r.stderr or '').strip()}",
-              file=sys.stderr)
-        return False
-    _git(["add", rec_rel], ws)
-    return True
+        def _rollback():
+            os.remove(rec_p)
+            try:
+                os.rmdir(rec_dir)   # 回滚后不留空目录 (审计 L6)
+            except OSError:
+                pass
+
+        _, head, _ = _git(["rev-parse", "HEAD"], ws)
+        # -uall: 未跟踪目录展开为单文件 — 否则新仓首发布时 porcelain 只给
+        # "?? .workbench/" 目录行, 记录文件会被误判为 foreign 而回滚
+        _, dirty, _ = _git(["status", "--porcelain", "-uall"], ws)
+        # F-232: 锁哨兵与记录本身都是预期内的 untracked, 一并豁免 ——
+        # 否则在没抄 `.workbench/*.lock*` 那行 .gitignore 的工程里, 每次
+        # 发布都会被自己的锁文件判成 foreign 而回滚。
+        _expected = (rec_rel, lock_rel)
+        foreign = [l for l in dirty.splitlines()
+                   if l.strip() and not l.strip().endswith(_expected)]
+        if head != record["git_head"] or foreign:
+            _rollback()
+            print(f"打 tag 前复核失败: HEAD 变动或出现其他改动 ({foreign}), 记录已回滚",
+                  file=sys.stderr)
+            return False
+        r = subprocess.run(
+            ["git", "tag", "-a", tag, "-m", f"release {tag} (record: {rec_rel})"],
+            capture_output=True, text=True, encoding="utf-8",
+            errors="replace", timeout=30, cwd=ws)
+        if r.returncode != 0:
+            _rollback()
+            print(f"打 tag 失败, 记录已回滚: {(r.stderr or '').strip()}",
+                  file=sys.stderr)
+            return False
+        _git(["add", rec_rel], ws)
+        return True
 
 
 def main():

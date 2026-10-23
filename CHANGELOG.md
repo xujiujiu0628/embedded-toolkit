@@ -335,6 +335,47 @@
   **未亲验（诚实披露）**: `reset=openocd` 需 ST-Link 在位，本轮无硬件，
   仅单测覆盖；首次真机验收并入 f103-body 板窗。
 
+- **F-232 (fix+test+docs, hygiene): 锁面收口 — N-7 有界等待 / N-8 发布记录共用锁 / N-9 CAS 归还失败不再静默（三号复审同族一张票）**:
+  **N-7 无限阻塞**: `wb_common.file_lock` 原先只有 `blocking` 开关，阻塞态
+  等锁无上限——持锁方挂起会把所有构建/写回一起拖停。处置: 新增
+  `timeout`（默认 `FILE_LOCK_TIMEOUT_S = 30.0`），到期抛 `TimeoutError` 并
+  **点名哨兵路径**。超时口径刻意**不降级**无锁执行：`state_write_lock`
+  保护的是可再生 state.json（降级只丢一次更新），而 `file_lock` 保护的是
+  config.json / 发布记录这类唯一事实源，无锁并发写=静默丢更新，宁可响亮
+  失败。实现为统一的非阻塞轮询（Windows msvcrt 只锁一次、POSIX flock
+  LOCK_NB），跨平台语义一致；`timeout=None` 保留旧无限等待作为显式选择，
+  `blocking=False` 语义逐字不变。
+  **N-8 双写入方无共用锁**: `releases/<tag>.json` 由 `release.py` G3 落盘
+  （整份写）与 `release_audit.py --approve`（读-改-写）两处写入，各锁各的
+  = 没锁（F-222 同族）。处置: 哨兵路径单点派生 `release_record_lock_path()`
+  → `.workbench/releases.<tag>.json.lock`（落在 .workbench 根下，被各工程
+  既有 `.workbench/*.lock*` ignore 行罩住，releases/ 保持"只有记录"）；
+  `finalize` 的锁面罩住整段 G3 序列（记录落盘→复核→打 tag→必要时回滚），
+  `approve_record` 罩住"读记录→审计→回填"整段。为防没抄 ignore 行的工程
+  被自己的锁文件判成 foreign 而回滚，foreign 过滤同时豁免记录与哨兵两条
+  相对路径。
+  **N-9 归还失败静默**: CAS 第③步归还他人活锁依赖 `os.link`，FAT/exFAT/
+  部分 SMB 不支持硬链时抛 OSError，与"目标已存在"共用同一个
+  `except OSError: pass` —— 活锁被晾在 `.claim`、`lock_path` 空出，
+  后续进程照常 O_EXCL 建锁 = 双持锁，且现场零线索。处置: 抽
+  `_restore_claimed_lock()` 三分支——`FileExistsError` 让路（设计内，
+  不告警）/ 其它 OSError 落 stderr 告警并走 rename 退路（先探目标不存在
+  再搬）/ 成功删 claim。`state_write_lock` 改调此 helper（AST 形态钉防
+  回退成手写 os.link）。
+  测试: `tests/test_lock_surface_f232.py` 10 例（超时真跑计时 <5s / 报错
+  点名哨兵 / blocking=False 回归 / lock_path 落点 / 哨兵不进 releases/ /
+  两侧 file_lock 必带 lock_path（AST 形态钉）/ approve 真等共享锁（线程
+  并发）/ 硬链不可用告警+退路 / 让路不覆盖活锁 / state_write_lock 走
+  helper（AST））。变异枪三发实测: ①超时上限 +10s → 计时钉红（实测
+  10.21s 未小于 5.0）；②approve 侧改回裸 `file_lock(rec_p)` → 并发钉与
+  AST 钉双红；③归还失败改回静默 → 退路钉红；三枪还原后全绿。
+  打桩形态: 首版用 `mock.patch("os.link")` 被 `test_stub_ratchet` 咬出
+  A 式新增违规，改写为 F-184 钦定形态（模块引用替换
+  `mock.patch.object(runtime_common, "os", _OsWithoutLink(...))`）——棘轮
+  快照零变动。
+  验证: 全套 **1469** 例绿（`skipped=9`）= 基线 1459 + 本单新钉 10；
+  `ruff` 全绿。
+
 ## 0.8 — 2026-10-02（v0.7 无上下文对抗复审 H/M/L 整改十笔全闭 · 公开仓脱敏回归 + 全史身份碎片清洗 + addr2line 定位面两债清偿 + MCP --pins 接线 + stdout 泄漏两处清尾）
 
 > 封袋定义: 自 v0.7 标签（commit 5099ef7, 2026-09-27）之后落入本账本的

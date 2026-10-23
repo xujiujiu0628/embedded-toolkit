@@ -39,7 +39,8 @@ import subprocess
 import sys
 
 from runtime_common import now_iso, save_json_file
-from wb_common import find_project_root, force_utf8_streams, sha256_file
+from wb_common import (file_lock, find_project_root, force_utf8_streams,
+                       release_record_lock_path, sha256_file)
 
 REQUIRED_KEYS = ("tag", "git_head", "timestamp", "build_mode", "artifacts",
                  "results", "xfail_waived", "tools")
@@ -306,8 +307,18 @@ def approve_record(ws, tag):
     ③ 现有 evidence == hardware_validated (仿真/静态/已豁免记录不配"投产"
     两个字)。通过后原子改写: evidence → production_approved + 落
     production_approved_at 批准留痕 (手工改值缺留痕 = R8 fail, 防伪)。
-    signature 保持留空 — 签名机制登记不实现, 不假装已签。"""
+    signature 保持留空 — 签名机制登记不实现, 不假装已签。
+
+    F-232 N-8: 本函数据与 release.py 的 G3 落盘同为 `releases/<tag>.json`
+    的写入方, 两侧共用 `release_record_lock_path()` 派生的**同一把**锁。
+    锁面罩住"读记录 → 审计 → 回填"整段而非只罩写的那一步: 只锁写, 读进来
+    的仍可能是并发下已被覆盖的旧值, 审计就白做了。"""
     rec_p = os.path.join(ws, ".workbench", "releases", f"{tag}.json")
+    with file_lock(rec_p, lock_path=release_record_lock_path(ws, tag)):
+        return _approve_record_locked(ws, tag, rec_p)
+
+
+def _approve_record_locked(ws, tag, rec_p):
     try:
         with open(rec_p, encoding="utf-8") as f:
             record = json.load(f)

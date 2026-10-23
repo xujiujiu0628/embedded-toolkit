@@ -7,6 +7,7 @@ TOOLKIT_ROOT 从本文件位置推导（scripts/ 的父目录）。
 import json
 import os
 import sys
+import time
 
 TOOLKIT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -129,6 +130,13 @@ def _lock_fd(fd, blocking):
     # 其他平台: 无 OS 级锁 → 退化为不加锁 (best effort, 不假装有保证)
 
 
+# F-232 (N-7): 阻塞态等锁的上限。判据取"短读改写"(load→改→原子写) 的量级:
+# 正常持锁时间在毫秒级, 30s 已足够覆盖慢盘/杀软扫描的抖动。超时**不降级**
+# 无锁执行 —— file_lock 保护的 config.json / 发布记录是唯一事实源, 无锁
+# 并发写 = 静默丢更新; 宁可响亮失败让人去看谁卡住了。
+FILE_LOCK_TIMEOUT_S = 30.0
+
+
 class file_lock:
     """跨进程排他锁的上下文管理器, 锁 <path>.lock 旁路哨兵。
 
@@ -138,16 +146,43 @@ class file_lock:
             atomic_write_json(target_path, data)
 
     blocking=False 时抢不到抛 BlockingIOError (供"试一下就走"的场景);
-    blocking=True (默认) 阻塞等待。
+    blocking=True (默认) 最多等 timeout 秒, 到期抛 TimeoutError (F-232 N-7:
+    原实现是无限等, 持锁方挂起会把所有构建/写回一起拖停)。
+
+    lock_path 可把哨兵挪到别处 (F-232 N-8: 发布记录锁要落在 .workbench/
+    下, 不污染 releases/ 目录)。
 
     **不删哨兵文件**: 删了会让并发者各自新建不同 inode 而锁不到同一把锁。
     哨兵是 0 字节, 常驻无成本。
     """
 
-    def __init__(self, target_path, blocking=True):
-        self._path = str(target_path) + ".lock"
+    def __init__(self, target_path, blocking=True, timeout=FILE_LOCK_TIMEOUT_S,
+                 lock_path=None):
+        self._path = str(lock_path if lock_path is not None
+                         else str(target_path) + ".lock")
         self._blocking = blocking
+        self._timeout = timeout
         self._fh = None
+
+    def _acquire_with_deadline(self):
+        """非阻塞轮询到 deadline, 到期抛 TimeoutError。
+
+        Windows 走自己的一轮 (msvcrt.LK_LOCK 自带 10×1s 重试且在超时后抛
+        EDEADLOCK), POSIX 走 flock LOCK_NB 轮询 —— 两侧语义在此统一。"""
+        deadline = time.monotonic() + self._timeout
+        fd = self._fh.fileno()
+        while True:
+            try:
+                self._fh.seek(0)      # msvcrt 按当前位置锁, 重试前复位
+                _lock_fd(fd, blocking=False)
+                return
+            except OSError as e:
+                if time.monotonic() >= deadline:
+                    raise TimeoutError(
+                        f"锁等待超时 ({self._timeout}s): {self._path} 仍被占用 "
+                        f"— 持有者可能已挂起或死锁; 确认没有并发进程在跑后, "
+                        f"可删除该哨兵文件重试 ({e})") from e
+                time.sleep(0.05)
 
     def __enter__(self):
         d = os.path.dirname(self._path)
@@ -155,7 +190,10 @@ class file_lock:
             os.makedirs(d, exist_ok=True)
         self._fh = open(self._path, "a+b")   # a: 不截断, 跨进程共用同一 inode
         try:
-            _lock_fd(self._fh.fileno(), self._blocking)
+            if self._blocking and self._timeout is not None:
+                self._acquire_with_deadline()
+            else:
+                _lock_fd(self._fh.fileno(), self._blocking)
         except (OSError, BlockingIOError):
             self._fh.close()
             self._fh = None
@@ -174,6 +212,22 @@ class file_lock:
             self._fh.close()
             self._fh = None
         return False
+
+
+def release_record_lock_path(workspace, tag):
+    """`releases/<tag>.json` 的共用锁哨兵路径 (F-232 N-8)。
+
+    发布记录有两个写入方: `release.py` 的 G3 落盘 (整份写) 与
+    `release_audit.py --approve` 的批准回填 (读-改-写)。两个写入方各自
+    加锁等于没加 —— 必须锁**同一把**, 故路径在此单点派生, 两侧都调它。
+    (F-222 教训: 锁要按目标文件被全部写入方共用, 不是按脚本各管一段。)
+
+    哨兵落在 `.workbench/` 根下而非 `releases/` 里: ① 各工程 .gitignore
+    已有 `.workbench/*.lock*` 一行罩住 (F-228 L-1), 放进 releases/ 就得
+    再教每个工程加一条; ② releases/ 保持"只有记录"的干净语义, 记录目录
+    被 git 入库时不混入 0 字节哨兵。"""
+    return os.path.join(str(workspace), ".workbench",
+                        f"releases.{tag}.json.lock")
 
 
 REF_PATH = os.path.join(TOOLKIT_ROOT, "data", "stm32f103-ref.json")

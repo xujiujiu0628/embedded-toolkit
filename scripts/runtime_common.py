@@ -194,6 +194,51 @@ def _lock_identity(lock_path: Path) -> tuple | None:
     return (st.st_dev, st.st_ino)
 
 
+def _restore_claimed_lock(claimed: Path, lock_path: Path) -> bool:
+    """把 CAS 误搬走的**他人活锁**归还到原位; 返回是否归位。
+
+    F-215 的 CAS 第③步原写法是 `os.link(claimed, lock_path)` + 一个
+    `except OSError: pass`。三号复审 N-9 指出: 硬链在 FAT/exFAT/部分 SMB
+    上根本不被支持 (EPERM/ENOTSUP), 此时**归还失败被同一个 except 吞掉**
+    —— 活锁被晾在 `<lock>.<pid>.claim`, 而 `lock_path` 不存在, 后续竞争者
+    照常 O_EXCL 建锁 → 双持锁 (正是 CAS 要防的那件事), 且现场零线索。
+
+    F-232 拆分三条路径:
+      FileExistsError → 第三方已建新锁, **让路**是设计内行为, 不告警;
+      其它 OSError     → 落 stderr 告警 (点名 os.link 与可能的文件系统),
+                         并用 rename 退路归位 (目标不存在时);
+      成功             → 删掉 claim 副本。
+
+    退路为何不强求原子: rename 会覆盖第三方锁, 故先探 `lock_path` 不存在
+    再搬 —— 竞态窗比硬链大, 但"还原一把活锁"比"静默丢掉锁"更接近原意;
+    探到已存在则放弃归位 (放弃也是显式的, 由调用方继续重试争 O_EXCL)。
+    """
+    try:
+        os.link(claimed, lock_path)
+    except FileExistsError:
+        return False          # 第三方已建新锁 → 让路 (设计内, 不告警)
+    except OSError as e:
+        print(f"Warning: 锁归还失败, 硬链接不可用 (文件系统可能是 FAT/exFAT/"
+              f"部分 SMB; os.link: {e}); 改用 rename 退还: {lock_path}",
+              file=sys.stderr)
+        if lock_path.exists():
+            print(f"Warning: 第三方已建新锁, 放弃归还; 原活锁留痕于 {claimed}",
+                  file=sys.stderr)
+            return False
+        try:
+            os.replace(claimed, lock_path)
+            return True
+        except OSError as e2:
+            print(f"Warning: rename 退还也失败 ({e2}); 活锁遗留在 {claimed}",
+                  file=sys.stderr)
+            return False
+    try:
+        claimed.unlink()
+    except OSError:
+        pass
+    return True
+
+
 @contextmanager
 def state_write_lock(workspace: str | None = None, *, timeout: float = 5.0):
     """workspace state 读改写的进程+线程互斥锁 (best-effort)。
@@ -252,14 +297,9 @@ def state_write_lock(workspace: str | None = None, *, timeout: float = 5.0):
                     moved = _lock_identity(claimed)
                     if moved != ident:
                         # 搬走的不是我们判陈旧的那把 = 他人活锁, 立刻归还。
-                        # os.link 在目标已存在时抛 FileExistsError, 故归还
-                        # 不会覆盖掉第三方的锁。
-                        try:
-                            os.link(claimed, lock_path)
-                            claimed.unlink()
-                        except OSError:
-                            # 归还失败: 宁可留下 claim 也不删活锁
-                            pass
+                        # 归还策略与告警收在 _restore_claimed_lock 内
+                        # (F-232 N-9: 硬链不可用的失败不再静默)。
+                        _restore_claimed_lock(claimed, lock_path)
                         continue
                     try:
                         claimed.unlink()  # 确认是陈旧锁, 安全回收

@@ -448,11 +448,11 @@ CI 与只读工具（`rm_lookup` / `fsd_coverage` / `expectations_lint` 等纯�
   （F-193 查证）；架构常量（IWDG 魔数/PLLMUL 编码等）改由
   `data/stm32f103-arch-facts.json` 带出处入册（F-179），消费方以 RCC 位名与该
   档为准。
-- **锁面收口待办**（F-230 登记，三号复审 N-7/N-8/N-9）——`file_lock` 为无限
-  阻塞，与 `state_write_lock` 的"超时降级"策略相反（持锁方挂起会拖停所有
-  构建/写回）；`releases/<tag>.json` 有两个写入方（`release.py` 与
-  `release_audit.py --approve`）且无共用锁；CAS 归还依赖 `os.link` 硬链，
-  FAT/exFAT/部分 SMB 上失败且当前静默。三处同族，宜一张票统一收口。
+- **锁面收口（已闭合 2026-10-23，F-232）**——同族三处一次性收口：`file_lock`
+  加 `timeout`（默认 30s，到期抛 `TimeoutError` 并点名哨兵，**不**降级
+  无锁）；`releases/<tag>.json` 的两个写入方共用 `release_record_lock_path()`
+  派生的同一把哨兵；CAS 归还收编为 `_restore_claimed_lock`，硬链不可用时
+  落 stderr 告警 + rename 退路。改法、测试与三发变异枪见 CHANGELOG F-232。
 - **`rm_lookup.py --pins ""` 用法错误返回 rc=0**（F-230 登记，三号复审
   N-10）——与 `release_audit` 已钉住的"用法/环境错误 → 2"口径不一致；属
   批外既有行为，空串语义（未给参数 / 非法参数）待裁决。
