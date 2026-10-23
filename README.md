@@ -453,9 +453,10 @@ CI 与只读工具（`rm_lookup` / `fsd_coverage` / `expectations_lint` 等纯�
   无锁）；`releases/<tag>.json` 的两个写入方共用 `release_record_lock_path()`
   派生的同一把哨兵；CAS 归还收编为 `_restore_claimed_lock`，硬链不可用时
   落 stderr 告警 + rename 退路。改法、测试与三发变异枪见 CHANGELOG F-232。
-- **`rm_lookup.py --pins ""` 用法错误返回 rc=0**（F-230 登记，三号复审
-  N-10）——与 `release_audit` 已钉住的"用法/环境错误 → 2"口径不一致；属
-  批外既有行为，空串语义（未给参数 / 非法参数）待裁决。
+- **`rm_lookup.py --pins ""` 用法错误（已闭合 2026-10-23，F-233）**——
+  裁决口径: 空串/纯空白 = 非法参数 → rc 2（对齐 `release_audit` 的"用法/
+  环境错误 → 2"）；未给 `--pins` 与"查无此项 rc 0"两条既定契约不变。
+  改法与变异枪见 CHANGELOG F-233。
 - **feedback_db 为单会话假设**（WB-05 N-1）——多进程读改写无锁，跨进程并发写
   可能互相覆盖台账。
 - **UART 串口补丁的发布门禁脆弱性**——有意搁置（成本/收益不立项，裁决记录见

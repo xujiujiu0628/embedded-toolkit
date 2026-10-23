@@ -336,5 +336,60 @@ class PinsRefDecoupleTests(PinsLandedMixin, unittest.TestCase):
         self.assertIn("CAN_RX", r.stdout)
 
 
+
+class PinsEmptyValueUsageErrorTests(PinsLandedMixin, unittest.TestCase):
+    """F-233 (三号复审 N-10): `--pins ""` 是用法错误, 不许 rc=0 混过去。
+
+    口径三条, 本类逐条钉:
+      · 显式给了 `--pins` 但值为空串/纯空白 → **非法参数** → rc 2
+        (与 release_audit 的"用法/环境错误 → 2"同口径; argparse 对
+        `--pins` 缺值本身已回 2, 本类补的是"给了空值"这一空档);
+      · 未给 `--pins` (缺省 None) → 行为不变 (无查询词 → help, rc 0);
+      · 给了非空查询但**查无此项** → 仍是 rc 0 (查询无果不是错误, 既有契约)。
+    """
+
+    def test_empty_value_library_rc_two(self):
+        err, out = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            rc = rm_lookup.run_pins_mode("")
+        self.assertEqual(rc, 2, f"空串仍非 2 (rc={rc})")
+        self.assertIn("Error:", err.getvalue())
+        self.assertIn("--pins", err.getvalue())
+        self.assertNotIn("未入册", out.getvalue())
+
+    def test_whitespace_value_library_rc_two(self):
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            rc = rm_lookup.run_pins_mode("   ")
+        self.assertEqual(rc, 2)
+        self.assertIn("Error:", err.getvalue())
+
+    def test_cli_empty_pins_rc_two(self):
+        """真进程: 用户实际敲的那条命令 —— 修前回 0 并打 help。"""
+        r = _run_process(["--pins", ""])
+        self.assertEqual(r.returncode, 2, r.stderr[-500:])
+        self.assertIn("Error:", r.stderr)
+        self.assertIn("--pins", r.stderr)
+        self.assertNotIn("未入册", r.stdout)
+        self.assertNotIn("=== pin-mapping", r.stdout)
+
+    def test_cli_whitespace_pins_rc_two(self):
+        r = _run_process(["--pins", "   "])
+        self.assertEqual(r.returncode, 2, r.stderr[-500:])
+        self.assertIn("Error:", r.stderr)
+
+    def test_empty_pins_wins_over_sibling_branch(self):
+        """`--list --pins ""` 不许因为 --list 先跑就把非法参数咽下去。"""
+        r = _run_process(["--list", "--pins", ""])
+        self.assertEqual(r.returncode, 2, r.stderr[-500:])
+        self.assertIn("Error:", r.stderr)
+        self.assertNotIn("=== STM32F103 参考手册知识库 ===", r.stdout)
+
+    def test_flag_absent_still_help_rc_zero(self):
+        """回归钉: 不给 --pins 的裸调用仍是 help + rc 0 (未给参数 ≠ 非法参数)。"""
+        r = _run_process([])
+        self.assertEqual(r.returncode, 0, r.stderr[-500:])
+        self.assertIn("usage:", r.stdout)
+
 if __name__ == "__main__":
     unittest.main()

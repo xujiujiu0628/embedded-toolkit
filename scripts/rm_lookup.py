@@ -102,11 +102,26 @@ def format_pins_result(result):
     print()
 
 
+def _pins_query_invalid(query):
+    """`--pins` 的值是否属用法错误 (F-233, 三号复审 N-10)。
+
+    只判"给了却等于没给": 空串 / 纯空白。两个相邻语义**不**进来——
+    "未给参数"由调用方以 `args.pins is None` 判, "给了但查无此项"是既定的
+    rc 0 契约 (查询无果不是错误)。口径对齐 release_audit 的"用法/环境
+    错误 → 2": 修前 `--pins ""` 因空串 falsy 而绕过整个分支, 落到无查询词
+    的 help 路径回 0 —— 一条敲错的命令看起来像成功。"""
+    return not (query or "").strip()
+
+
 def run_pins_mode(query, json_mode=False, path=None):
     """--pins 分支主体 (与 --rel/--recipe 同级, 命中即 return); 库态可
     直调 (驱动先例: test_rm_lookup_pins.py 函数直调零打桩)。返回进程
     退出码: 查询无果=0 (未入册走显式指认), 数据档缺失/损坏=1 (stderr
-    Error 行点名文件与原因)。"""
+    Error 行点名文件与原因), **空值/纯空白=2** (F-233 N-10: 用法错误)。"""
+    if _pins_query_invalid(query):
+        print("Error: --pins 需要非空外设名 (空串/纯空白按用法错误处理, "
+              "退出码 2); 例: --pins CAN", file=sys.stderr)
+        return 2
     try:
         mapping = load_pin_mapping(path)
     except PinMappingError as exc:
@@ -369,6 +384,14 @@ def main():
     parser.add_argument("--pins", default=None, help="查外设引脚映射 (data/pin-mapping-f103.json, e.g. CAN)")
     parser.add_argument("--json", action="store_true", help="JSON 输出")
     args = parser.parse_args()
+
+    # F-233 (三号复审 N-10): 显式给了 --pins 却是空串/纯空白 = 用法错误 → 2。
+    # 拦截必须早于下面的分支路由: 否则 `--list --pins ""` 会先跑 --list,
+    # 非法参数被"同级互斥先执行前者"的提示盖过去, 仍回 0。
+    if args.pins is not None and _pins_query_invalid(args.pins):
+        print("Error: --pins 需要非空外设名 (空串/纯空白按用法错误处理, "
+              "退出码 2); 例: --pins CAN", file=sys.stderr)
+        raise SystemExit(2)
 
     # F-206 (复审 L-5): --pins 与 ref.json 数据面零依赖 — ref 档缺失/损坏
     # 不再连带 --pins 不可用 (修前无条件先 load_ref() 再进分支)。同级互斥
