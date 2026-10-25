@@ -142,8 +142,9 @@ def _save_failure_context(result: dict, max_retries: int, capture_text: str = ""
             "to check SWD connectivity, then retry."
         )
 
-    # 验证失败 (含 TIMING_FAIL): 写入 capture + verify + physical_gate 现场
-    if result.get("status") in ("fail", "timing_fail"):
+    # 验证失败 (含 TIMING_FAIL / 物理门控探测失败): 写入 capture + verify +
+    # physical_gate 现场
+    if result.get("status") in ("fail", "timing_fail", "physical_gate_failed"):
         steps = result.get("steps", {})
         ctx["steps"]["capture"] = steps.get("capture", {})
         ctx["steps"]["verify"] = steps.get("verify", {})
@@ -155,6 +156,13 @@ def _save_failure_context(result: dict, max_retries: int, capture_text: str = ""
                 "from expected. Check clock tree: HSE 8MHz -> PLL x9 -> 72MHz "
                 "(Core/Src/main.c SystemClock_Config). Roll back to Drafter "
                 "to adjust clock configuration."
+            )
+        elif result["status"] == "physical_gate_failed":
+            ctx["agent_hint"] = (
+                "Physical gate was enabled but the probe failed or collected "
+                "too few edges, so timing was not proven. Check ST-Link/SWD, "
+                "the configured GPIO address/mask, and that the firmware emits "
+                "a steady heartbeat. This run fails closed by design."
             )
         else:
             xpass_ids = steps.get("verify", {}).get("xpass_ids") or []

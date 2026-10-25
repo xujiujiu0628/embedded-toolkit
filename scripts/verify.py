@@ -65,7 +65,7 @@ from expectations import (ExpectationError, contract_hashes,  # noqa: E402,F401 
                           _expect_matched, check_forbidden_fields, _forbidden_hit)
 from capture_rtt import step_capture_rtt as _step_capture_rtt  # noqa: E402  (F-056: 拆分件再导出, 旧私有名保持——3 处测试钉兼容)
 from physical_gate import step_physical_gate  # noqa: E402  (F-057: 拆分件再导出, 同名同签名)
-from doctor import (doctor_report, fixture_health,  # noqa: E402,F401  (F-058: 拆分件再导出, 调用面不变)
+from doctor import (doctor_report, fixture_health, strict_exit_code,  # noqa: E402,F401  (F-058: 拆分件再导出, 调用面不变)
                     _print_doctor, _detect_default_branch, _fixture_main_sha)
 from checkpoint_ledger import (CHECKPOINT_STATUSES, _git_head,  # noqa: E402,F401  (F-059: 拆分件再导出, 调用面不变)
                                record_checkpoint)
@@ -470,6 +470,18 @@ def verify(output: str, expect: list[str], description: str = "", expect_pattern
     如 ["TGL \\\\d+"] — 2026-08-16 review M1: 破坏 toggle 行为但不影响 init 的
     回归此前静默 PASS, 门禁必须能断言功能级事件)
     """
+    if not expect and not expect_patterns:
+        # 空契约不能靠"没有缺失项"得到 ok — 那是任意输出都 PASS 的
+        # vacuous truth。CLI 侧另有烧录前前置拦截, 这里兜住直接 API 调用。
+        return {
+            "status": "fail",
+            "all_expected_found": False,
+            "matched": [],
+            "missing": ["<no assertions configured>"],
+            "missing_patterns": [],
+            "description": description,
+            "needs_ai_judgement": True,
+        }
     matched = []
     missing = []
     for pattern in expect:
@@ -564,7 +576,11 @@ def _parse_args(argv=None):
                         help="发布门禁发起的运行: 跳过 feedback_db 落账")
     parser.add_argument("--doctor", action="store_true",
                         help="环境预检: 打印 toolkit/Python/machine.json 三键/gcc/openocd/"
-                             "make/SWD 连通性矩阵后退出 (诊断报告, 不做门禁判定, 退出码恒 0)")
+                             "make/SWD 连通性矩阵后退出 (默认诊断报告退出码恒 0; "
+                             "加 --strict 时 warn/fail 返回 1)")
+    parser.add_argument("--strict", action="store_true",
+                        help="--doctor 用: warn/fail 任一存在则退出 1 (真机 CI 门禁用; "
+                             "默认诊断报告恒退出 0)")
     parser.add_argument("--task-origin", dest="task_origin",
                         choices=list(HIL_ORIGINS), default="manual",
                         help="F-046 HIL 任务来源 (manual=手动, schedule=定时/CI, "
@@ -594,6 +610,8 @@ def _run_doctor(args) -> None:
         output_json(report)
     else:
         _print_doctor(report)
+    if getattr(args, "strict", False) and strict_exit_code(report):
+        sys.exit(1)
 
 
 class BadPatternError(Exception):
@@ -683,6 +701,18 @@ def _prepare_context(args):
               '"port": "COM3"}}', file=sys.stderr)
         sys.exit(1)
     builder = config.get("builder", "gcc")   # 构建后端 (gcc | keil[legacy], 2026-08-28 默认翻转为 gcc)
+
+    # legacy 模式没有非空断言时, 任意捕获输出都会 vacuous PASS。构建/烧录前
+    # 拒绝, 避免先花硬件时间再得到一个无信息量的绿。
+    manifest = os.path.join(WORKSPACE, ".workbench", "expectations.json")
+    verify_cfg = config.get("verify") or {}
+    if not os.path.isfile(manifest) and not getattr(args, "require_tgl", False) \
+            and not verify_cfg.get("expect") \
+            and not verify_cfg.get("expect_patterns"):
+        print("错误: legacy 模式无任何断言 (config.verify.expect / "
+              "expect_patterns 均为空, 且未加 --require-tgl) — 空断言会产生"
+              " vacuous PASS, 已在构建/烧录前拒绝", file=sys.stderr)
+        sys.exit(1)
 
     # F-216: 期望正则的**编译期**校验 —— 必须在任何构建/烧录之前。
     # 旧实现把 re.search 放在判定阶段 (verify()), 非法正则要等烧完板子
@@ -1453,9 +1483,17 @@ def _run_judgement(args, config, result, captured_text, captured_lines,
         result["status"] = "timing_fail"
         result["error"] = physical.get("error", "Physical gate timing failure")
     elif physical.get("status") in ("probe_error", "insufficient_samples"):
-        # 探测失败不谎报 pass/fail — 保持现状验证结论, 但标记探测异常
-        result["status"] = verification_result["status"]
-        result["physical_gate_error"] = physical.get("error", physical.get("status"))
+        # 门控显式启用后, 探测失败/样本不足 = 物理时序未被证明。旧实现只
+        # 附加告警并沿用文本判定, 会让探针失联或采样不足的运行保持 PASS。
+        gate_error = physical.get("error", physical.get("status"))
+        result["status"] = "physical_gate_failed"
+        result["error"] = gate_error
+        result["physical_gate_error"] = gate_error
+        result["steps"]["verify"]["status"] = "fail"
+        rows = result["steps"]["verify"].get("results")
+        if isinstance(rows, list):
+            rows.append({"id": "PHYSICAL-GATE", "status": "fail",
+                         "detail": gate_error})
     else:
         result["status"] = verification_result["status"]
     result["elapsed_sec"] = round(time.time() - started_ts, 1)

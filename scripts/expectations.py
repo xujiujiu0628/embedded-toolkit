@@ -265,6 +265,10 @@ def _expect_matched(item, output):
             value = float(first.group(cg))
         except (IndexError, TypeError, ValueError):
             return False, f"capture_group={cg} 提取失败"
+        if not math.isfinite(value):
+            # NaN 与任何边界比较均为 False, ±Infinity 也可绕过单边边界;
+            # 固件输出 "mv=nan" 不得成为数值断言的通过证据。
+            return False, f"capture_group={cg} 提取值非有限数: {value!r}"
         lo = item.get("min")
         hi = item.get("max")
         if lo is not None and value < float(lo):

@@ -82,6 +82,17 @@ class RecordCheckpointTests(unittest.TestCase):
         self.assertEqual(entries[0]["status"], "ok")
         self.assertEqual(entries[1]["status"], "fail")
 
+    def test_physical_gate_failed_is_valid_status(self):
+        with mock.patch.object(checkpoint_ledger, "_git_head",
+                               return_value=("h1", "main")):
+            verify.record_checkpoint(self.ws, "physical_gate_failed", 1.0,
+                                     "manual", ["physical_gate"], {})
+        state_path = os.path.join(self.ws, ".workbench", "state.json")
+        with open(state_path, encoding="utf-8") as f:
+            state = json.load(f)
+        self.assertEqual(state["last_checkpoint"]["status"],
+                         "physical_gate_failed")
+
     def test_last_checkpoint_synced_with_last_jsonl_line(self):
         # 关键契约: 读 last_checkpoint 必须等于 jsonl 末行
         with mock.patch.object(checkpoint_ledger, "_git_head", return_value=("xyz", "feat/x")):
@@ -147,7 +158,7 @@ class MainFlowCheckpointTests(unittest.TestCase):
         with open(os.path.join(self.ws, ".workbench", "config.json"), "w",
                   encoding="utf-8") as f:
             # capture.backend=rtt 走 mock 路径 (避免 semihosting 分支真起 OpenOCD)
-            json.dump({"builder": "gcc", "verify": {"expect": []},
+            json.dump({"builder": "gcc", "verify": {"expect": ["[init] OK"]},
                        "capture": {"backend": "rtt"}}, f)
 
     def tearDown(self):
@@ -274,7 +285,7 @@ class EarlyExitCoverageTests(unittest.TestCase):
         os.makedirs(os.path.join(self.ws, ".workbench"))
         with open(os.path.join(self.ws, ".workbench", "config.json"), "w",
                   encoding="utf-8") as f:
-            json.dump({"builder": "gcc", "verify": {"expect": []},
+            json.dump({"builder": "gcc", "verify": {"expect": ["[init] OK"]},
                        "capture": {"backend": "rtt"}}, f)
 
     def tearDown(self):

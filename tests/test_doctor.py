@@ -1,10 +1,12 @@
 """--doctor 环境预检测试 (F-041)。全离线: SWD 探测经 mock, 不跑真 openocd;
 "占位路径永不执行"由 subprocess 守卫钉死; swd_probe 下沉契约由同对象钉死。"""
+import io
 import json
 import os
 import subprocess
 import sys
 import unittest
+from contextlib import redirect_stdout
 from unittest import mock
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "scripts"))
@@ -150,6 +152,52 @@ class DoctorCliTests(unittest.TestCase):
         doc = json.loads(r.stdout)
         self.assertEqual(doc["tool"], "doctor")
         self.assertIn("summary", doc)
+
+
+class DoctorStrictModeTests(unittest.TestCase):
+    """--strict 让真机 CI 能把环境预检失败变成 job 失败。
+
+    默认 doctor 仍是诊断报告 (rc=0); strict 只在存在 warn/fail 时返回 1,
+    skipped 是可选组件缺席, 不算失败。
+    """
+
+    @staticmethod
+    def _report(ok=0, warn=0, fail=0, skipped=0):
+        return {"tool": "doctor", "toolkit_version": "0",
+                "python": "3", "machine": {"mode": "missing", "keys": {}},
+                "tools": {}, "swd": {"status": "skipped", "detail": ""},
+                "fixtures": {},
+                "summary": {"ok": ok, "warn": warn, "fail": fail,
+                            "skipped": skipped, "fixture": "ok"}}
+
+    def _main_code(self, report, *args):
+        out = io.StringIO()
+        with mock.patch.object(sys, "argv",
+                               ["verify.py", "--doctor", "--json", *args]), \
+                mock.patch.object(verify, "doctor_report",
+                                  return_value=report), \
+                redirect_stdout(out):
+            try:
+                verify.main()
+            except SystemExit as e:
+                return e.code, out.getvalue()
+        return 0, out.getvalue()
+
+    def test_default_is_diagnostic_rc0_even_with_fail(self):
+        code, _ = self._main_code(self._report(fail=1))
+        self.assertEqual(code, 0)
+
+    def test_strict_fails_on_fail(self):
+        code, _ = self._main_code(self._report(fail=1), "--strict")
+        self.assertEqual(code, 1)
+
+    def test_strict_fails_on_warn(self):
+        code, _ = self._main_code(self._report(warn=1), "--strict")
+        self.assertEqual(code, 1)
+
+    def test_strict_allows_skipped(self):
+        code, _ = self._main_code(self._report(skipped=3), "--strict")
+        self.assertEqual(code, 0)
 
 
 if __name__ == "__main__":

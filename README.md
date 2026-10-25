@@ -318,6 +318,7 @@ python scripts/release.py --project <工程根> --tag v1.0.0 --dry-run
 | `scripts/gen_periph.py` | 参数 → 寄存器级 C 初始化代码 / 外设文档（时钟经 `--hclk`/`--pclk1`/`--pclk2` 参数化，定时器内核时钟按 RM0008 §7.3.7 派生；SPI 帮手逐字节排空 RX，F-178；细则 `--help`） | `python scripts/gen_periph.py --help` |
 | `scripts/capture_sim.py` | sim 采集会话：qemu-system-arm 直接加载 elf（无板闭环，F-150） | 经 `verify.py` 消费（见「先无硬件尝鲜」） |
 | `scripts/mcp_server.py` | MCP 接入：六工具有界包装（见「MCP 接入」），零业务复制 | 见「MCP 接入」节 |
+| `scripts/verify.py --doctor` | 环境矩阵诊断（默认恒退出 0）；`--strict` 时 warn/fail 任一存在退出 1 | `python scripts/verify.py --doctor --json --strict` |
 
 ### 真机工具（需板子/探针）
 
@@ -341,6 +342,14 @@ python scripts/release.py --project <工程根> --tag v1.0.0 --dry-run
   即该条 FAIL（优先于正向匹配与 XPASS），对应 FSD `prohibited_outcomes` 的可机检项
 - **豁免登记（F-113）**：顶层 `"waived"` 数组登记不走 verify 闭环的需求（理由必填）；
   `fsd_coverage.py` 对账 FSD↔断言，xfail（欠条）与 waived（豁免）两级不混用
+- **非空断言**：legacy 模式（无 `expectations.json`）要求
+  `config.verify.expect` / `expect_patterns` 至少一项非空，或显式加
+  `--require-tgl`；三者皆空会在构建/烧录前拒绝，避免任意输出 vacuous PASS
+- **有限数值**：`capture_group` 提取值必须是有限数；`nan` / `±inf` 判 FAIL
+  （JSON 配置里的 `min`/`max` 同样只接受有限数值）
+- **物理门控 fail-closed**：`physical_gate.enable=true` 后，探针失败或样本不足
+  （`probe_error` / `insufficient_samples`）使整次运行以 `physical_gate_failed`
+  失败——文本 PASS 不得掩盖“物理时序未被证明”
 - 版本控制建议：`config.json` / `expectations.json` / `releases/` 入库；
   `build/` 与 `state.json`（可再生缓存）忽略
 

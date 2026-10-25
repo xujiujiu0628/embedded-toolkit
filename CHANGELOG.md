@@ -5,6 +5,47 @@
 
 ## Unreleased — 0.8 封袋后新账（F-212 起）
 
+- **F-234 (fix+ci+contract): 判定链四项 fail-closed 收口 + 现役工程负断言补齐（本地改动，待提交）**:
+  **① 物理门控 fail-closed**: 启用 `physical_gate` 后 `probe_error` /
+  `insufficient_samples` 不再只附告警沿用文本 PASS，而是整体
+  `physical_gate_failed`；同步把 `physical_gate_failed` 纳入进度台账合法状态、
+  失败现场归因与 JUnit 合成 `PHYSICAL-GATE` 失败行，避免报告面板与退出码
+  互相矛盾。**② 非有限数值**: `capture_group` 提取值经 `math.isfinite`
+  检查，`nan`/`±inf` 判 FAIL（配置边界侧的 NaN 守卫此前已在，运行值侧缺失）。
+  **③ doctor 严格模式**: 新增 `--doctor --strict`，`warn`/`fail` 任一存在
+  退出 1，`skipped` 仍豁免；默认诊断模式保持恒退出 0。`hw-smoke.yml` 的
+  环境预检改走 strict，未接探针时不再可能冒烟为绿。**④ legacy 空断言**:
+  无 `expectations.json` 且 `expect`/`expect_patterns` 皆空、又未加
+  `--require-tgl` 时，在构建/烧录前拒绝，堵住任意输出的 vacuous PASS。
+  **⑤ 现役工程**: STM32 四工程、ESP 两工程与 robot-platform 三工程补齐
+  `no-fatal`/`FR-SAFE-01` 负断言（HardFault、ESP panic、brownout、Rebooting
+  等）；esp32-hello / esp32s3-hello 由 legacy 迁移到 expectations manifest；
+  MPU6050 的 FSD 补 `FR-SAFE-01` 需求出处，消除孤儿断言。
+  九份清单全部 `expectations_lint` CLEAN；MPU6050 `fsd_coverage` 仅余既有
+  NFR-01~04 提醒（无 C1 孤儿/无 C3 漂移）。
+  验证: 新回归在 HEAD 基线副本上先红（物理门控 3 红、非有限值 3 红、
+  legacy 空断言 2 红、doctor strict 3 红），修复后转绿；`sim-demo`
+  QEMU 端到端 `status=ok / evidence=simulation_validated`；Ruff E/F 全绿；
+  `coverage_lint --strict` 零未覆盖文件；完整 unittest **1488 例
+  OK（skipped=9）**。
+  真机验收 (2026-10-25): `doctor --strict` 通过 (SWD 探到 stm32f1x.cpu)；
+  ADC+OLED 工程 build/flash/RTT 采集 **5/5 PASS**（含新增 FR-SAFE-01）；
+  MPU6050 工程修正接线后 `MPU6050 OK @ 0x68`，35s 人工采集窗
+  **12/12 PASS**（含 SHORT/LONG/CAL/STATE=3 与 FR-SAFE-01）；
+  button-toggle 工程 build/flash/RTT 采集 **3/3 PASS**（TGL 计数 25 行）。
+  诚实边界: MPU6050 首轮全链的 post_reset 曾报一次 `init mode failed`
+  （不影响当轮 verdict）；随后单独复测 `reset_target` 已成功，判断为
+  ST-Link 释放/重连的瞬时故障，仍建议板窗多做一次全链复跑。
+  button-pa1 因硬件无法接 PA1 且无独立验证价值，经维护者 2026-10-25
+  裁定整目录删除，不保留 archive 副本。
+  ESP32-S3 真机 (2026-10-25): `esp32s3-hello` 的旧路径 build 缓存导致首轮
+  build_failed，`--rebuild` fullclean 后 idf build **0 errors / 0 warnings**；
+  修正 UART 接线后 esptool 识别 **ESP32-S3 QFN56 rev0.2 / 8MB PSRAM**
+  (MAC e0:72:a1:d2:68:d8) 并烧录成功，UART 采集 79 行，
+  **3/3 PASS**（BOOT/TICK/FR-SAFE-01），evidence=hardware_validated。
+  前一次 `Download mode successfully detected, but getting no sync reply`
+  系硬件 TX 路径，修正接线后消失。
+
 - **F-212 (data+test, kb): 外设 desc 22/55 空串补齐 — 沿 SVD derivedFrom 继承祖先描述 + 两条回归钉（09 复审 L-1 候补票）**:
   根因: 数据面从 ST 官方 SVD 继承，而**这 22 个外设在 SVD 中本身就没有
   `<description>`**——逐条比对两空集合完全一致（ADC3/DMA2/GPIOB~G/I2C2/

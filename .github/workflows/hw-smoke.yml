@@ -36,8 +36,8 @@ jobs:
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: "3.12"
-      - name: "环境预检 (doctor: toolkit/Python/machine.json/gcc/openocd/make/SWD)"
-        run: python scripts/verify.py --doctor --json
+      - name: "环境预检 (doctor --strict: toolkit/Python/machine.json/gcc/openocd/make/SWD)"
+        run: python scripts/verify.py --doctor --json --strict
       # HW_VERIFY_PROJECT 未设置时只冒烟 doctor (SWD 连通性已在其中);
       # 设置后对指定真机工程跑完整闭环 (schedule origin 审计可辨)
       - name: 真机闭环 verify (HW_VERIFY_PROJECT 在场时)

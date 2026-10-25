@@ -133,7 +133,7 @@ class MainFlowGuardTests(unittest.TestCase):
         os.makedirs(os.path.join(self.ws, ".workbench"))
         with open(os.path.join(self.ws, ".workbench", "config.json"), "w",
                   encoding="utf-8") as f:
-            json.dump({"builder": "gcc", "verify": {"expect": []}}, f)
+            json.dump({"builder": "gcc", "verify": {"expect": ["[init] OK"]}}, f)
         # worktree 里的 verify.py 才包含本次新增的 HIL_ORIGINS
         # sys.path 在 import 时已插, 沿用模块级 verify
 

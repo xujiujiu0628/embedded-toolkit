@@ -1,7 +1,8 @@
 r"""环境预检 --doctor (F-058) — verify.py 拆分件（防腐方案 §3.3 步骤 5a）.
 
 打印工具链环境矩阵: toolkit/Python/machine.json 三键/gcc/openocd/make/SWD
-连通性/契约 fixture 健康。诊断专用——报告不是门禁, 退出码恒 0; 占位路径
+连通性/契约 fixture 健康。诊断专用——默认退出码恒 0; `--strict` 时可作
+CI 门禁 (warn/fail → 1); 占位路径
 永不执行 (test_doctor 安全钉死)。
 
 自 verify.py 整体搬迁（F-041 引入的原块逐字搬运），仅 import 收归本模块：
@@ -22,7 +23,8 @@ from wb_common import (TOOLKIT_ROOT, load_machine,
 # ---------------------------------------------------------------------------
 # 环境预检 --doctor (F-041): 打印工具链环境矩阵, 诊断专用。
 # 定位: release.py G0.5 "区分环境未备/固件真坏" 之前的自检; 报障随 issue 附
-# --doctor --json, 消灭"环境不同"类往返。是报告不是门禁 —— 退出码恒 0,
+# --doctor --json, 消灭"环境不同"类往返。默认是报告不是门禁 —— 退出码恒 0;
+# --strict 供真机 CI 用, warn/fail 任一存在退出 1。
 # 占位路径永不执行 (test_doctor 安全钉死)。
 
 # F-131 (工单 P2-2): uv4_exe 随 Keil 退役移出预检键——与 machine.example.json
@@ -273,6 +275,12 @@ def doctor_report(probe: bool = True, *, skip_drift_check: bool = False) -> dict
             "tools": tools, "swd": swd, "fixtures": fixture, "summary": summary}
 
 
+def strict_exit_code(report: dict) -> int:
+    """--strict 门禁口径: warn/fail 任一存在即 1; skipped 是可选组件缺席。"""
+    summary = report.get("summary") or {}
+    return 1 if summary.get("warn", 0) or summary.get("fail", 0) else 0
+
+
 def _print_doctor(rep: dict) -> None:
     print("== embedded-toolkit doctor ==")
     print(f"toolkit : {rep['toolkit_version']}   python: {rep['python']}")
@@ -310,6 +318,6 @@ def _print_doctor(rep: dict) -> None:
     s = rep["summary"]
     print(f"summary : ok={s['ok']} warn={s['warn']} fail={s['fail']} skipped={s['skipped']}"
           + (f" fixture={s['fixture']}" if "fixture" in s else ""))
-    print("(doctor 为诊断报告, 不做门禁判定; 报障请附 --doctor --json 输出)")
+    print("(doctor 默认是诊断报告, 退出 0; 真机 CI 请加 --strict)")
 
 

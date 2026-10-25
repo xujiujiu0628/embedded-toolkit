@@ -29,9 +29,9 @@ from wb_common import atomic_write_json
 #     duration_sec/origin/step_keys/contract_hashes) — 审计链
 #   - state.json last_checkpoint: 覆盖式, 与 jsonl 末行同步 — 消费方读
 # 落盘失败不阻断 (与 F-046 audit.jsonl 同款审计非门禁纪律)
-CHECKPOINT_STATUSES = ("ok", "fail", "timing_fail", "hardfault",
-                       "build_failed", "build_has_errors", "flash_failed",
-                       "capture_failed", "build_clean_skipped")
+CHECKPOINT_STATUSES = ("ok", "fail", "timing_fail", "physical_gate_failed",
+                       "hardfault", "build_failed", "build_has_errors",
+                       "flash_failed", "capture_failed", "build_clean_skipped")
 
 
 def _git_head(workspace: str) -> tuple[str, str]:

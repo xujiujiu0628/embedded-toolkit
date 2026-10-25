@@ -20,6 +20,12 @@
   qemu 无板端到端闭环
 - **Linux 真机烧录/采集路径未验证**（F-031 盲区：进程终止/信号/创建标志类
   平台差异），欢迎带报告的 PR 补这一格
+- **判定必须 fail-closed**：`physical_gate.enable=true` 时探测失败或样本不足
+  整次运行判 `physical_gate_failed`；legacy 工程至少要有
+  `config.verify.expect` / `expect_patterns` 之一，或显式 `--require-tgl`；
+  `capture_group` 提取值必须是有限数（`nan`/`±inf` 判 FAIL）
+- **doctor 默认是诊断报告**（恒退出 0）；真机 CI 门禁使用 `--strict`，
+  `warn`/`fail` 任一存在即退出 1（`skipped` 是可选组件缺席，不判红）
 
 ## 测试与 PR 纪律
 

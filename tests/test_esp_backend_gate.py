@@ -230,6 +230,9 @@ class EmptyCaptureNoteTests(_MainFlowHarness):
         if not manifest:
             os.remove(os.path.join(self.ws, ".workbench",
                                    "expectations.json"))
+            # legacy 空断言已被 fail-fast 拒绝; 本组只测空捕获归因文案,
+            # 给一个不会命中的非空断言即可走到判定段。
+            config = dict(config, verify={"expect": ["BOOT"]})
         result, _, _ = self._run(config, capture_text=capture_text)
         return result["steps"]["verify"]["description"]
 
