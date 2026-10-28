@@ -5,7 +5,7 @@
 
 ## Unreleased — 0.8 封袋后新账（F-212 起）
 
-- **F-234 (fix+ci+contract): 判定链四项 fail-closed 收口 + 现役工程负断言补齐（本地改动，待提交）**:
+- **F-234 (fix+ci+contract): 判定链四项 fail-closed 收口 + 现役工程负断言补齐（`e0d80b6`）**:
   **① 物理门控 fail-closed**: 启用 `physical_gate` 后 `probe_error` /
   `insufficient_samples` 不再只附告警沿用文本 PASS，而是整体
   `physical_gate_failed`；同步把 `physical_gate_failed` 纳入进度台账合法状态、
