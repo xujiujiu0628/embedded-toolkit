@@ -3,8 +3,10 @@
 import io
 import json
 import os
+import shutil
 import subprocess
 import sys
+import tempfile
 import unittest
 from contextlib import redirect_stdout
 from unittest import mock
@@ -198,6 +200,80 @@ class DoctorStrictModeTests(unittest.TestCase):
     def test_strict_allows_skipped(self):
         code, _ = self._main_code(self._report(skipped=3), "--strict")
         self.assertEqual(code, 0)
+
+
+class WchDoctorKeysTests(unittest.TestCase):
+    """F-235 (R5 收口): wch 工程的体检报 wch_* 三键, 工具行选 wch openocd。
+
+    修前 machine 键区恒三臂键、tools.openocd 恒报 arm 的 openocd —— 对
+    toolchain=wch 的工程是"看着 ok, 看的却是另一套工具链"。arm 工程的
+    键集与选键逐字节不变 (上一类 DoctorReportTests 已钉三键集合)。"""
+
+    MACHINE = {"openocd_exe": "/arm/openocd", "gcc_path": "/arm/bin",
+               "make_exe": "/make", "wch_gcc_path": "/wch/bin",
+               "wch_openocd_exe": "/wch/openocd",
+               "wch_openocd_cfg": "/wch/wch-riscv.cfg"}
+
+    def _ws(self, gcc_section=None):
+        d = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, d, True)
+        os.makedirs(os.path.join(d, ".workbench"))
+        with open(os.path.join(d, ".workbench", "config.json"), "w",
+                  encoding="utf-8") as f:
+            json.dump({"gcc": gcc_section or {}}, f)
+        return d
+
+    def _report(self, ws):
+        with mock.patch.object(doctor, "load_machine", return_value=self.MACHINE):
+            return verify.doctor_report(probe=False, skip_drift_check=True,
+                                        workspace=ws)
+
+    def test_wch_workspace_reports_wch_keys_and_openocd(self):
+        rep = self._report(self._ws({"toolchain": "wch"}))
+        self.assertEqual(set(rep["machine"]["keys"]),
+                         {"openocd_exe", "gcc_path", "make_exe",
+                          "wch_gcc_path", "wch_openocd_exe", "wch_openocd_cfg"})
+        # 选键可见: 路径不存在时报的是被检查的那个键名
+        self.assertIn("wch_gcc_path", rep["tools"]["gcc"]["detail"])
+        self.assertIn("wch_openocd_exe", rep["tools"]["openocd"]["detail"])
+        # 探测面与工具行同键 (探针不做, probe=False)
+        self.assertIn("wch_openocd_exe", rep["swd"]["detail"])
+        self.assertEqual(rep["summary"]["fail"], 0)
+
+    def test_wch_gcc_check_uses_wch_prefix(self):
+        """键名与二进制基名成对: wch_gcc_path + riscv-wch-elf-gcc。
+
+        基名只在目录在场时才出现在 detail 里, 直接观测 _check_tool 实参
+        比伪造一个假编译器可执行文件可靠 (也不触发子进程)。"""
+        seen = []
+
+        def fake_check(machine, key, bare, args):
+            seen.append((key, bare))
+            return {"status": "skipped", "detail": key}
+
+        with mock.patch.object(doctor, "_check_tool", fake_check), \
+                mock.patch.object(doctor, "load_machine", return_value=self.MACHINE):
+            verify.doctor_report(probe=False, skip_drift_check=True,
+                                 workspace=self._ws({"toolchain": "wch"}))
+        self.assertIn(("wch_gcc_path", "riscv-wch-elf-gcc"), seen)
+        self.assertIn(("wch_openocd_exe", "openocd"), seen)
+
+    def test_arm_workspace_keeps_three_keys(self):
+        rep = self._report(self._ws())
+        self.assertEqual(set(rep["machine"]["keys"]),
+                         {"openocd_exe", "gcc_path", "make_exe"})
+        self.assertIn("openocd_exe", rep["tools"]["openocd"]["detail"])
+
+    def test_wch_key_state_flags_configuration(self):
+        """wch 键配没配/是不是占位 —— 这一行就是收口要的答案。"""
+        mach = dict(self.MACHINE, wch_openocd_cfg="<可选: wch-riscv.cfg>")
+        with mock.patch.object(doctor, "load_machine", return_value=mach):
+            rep = verify.doctor_report(probe=False, skip_drift_check=True,
+                                       workspace=self._ws({"toolchain": "wch"}))
+        keys = rep["machine"]["keys"]
+        self.assertTrue(keys["wch_gcc_path"]["value_set"])
+        self.assertTrue(keys["wch_openocd_cfg"]["placeholder"])
+        self.assertFalse(keys["wch_openocd_cfg"]["path_exists"])
 
 
 if __name__ == "__main__":

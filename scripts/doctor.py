@@ -35,6 +35,12 @@ from wb_runtime import load_project_config  # noqa: E402  (F-235: 读工程 gcc 
 # (按下标取键只遍历本表, 多余键无害不报错)。
 _DOCTOR_KEYS = ("openocd_exe", "gcc_path", "make_exe")
 
+# F-235 (R5 挂账收口): wch 工程另报 wch_* 三键的配置状态。修前 machine 键区
+# 恒只列 arm 三键, 一台只配了 wch_* 的机器在体检里看不出"wch 工具链配没配",
+# 而 tools.openocd 又恒报 arm 的 openocd —— 对一个 toolchain=wch 的工程,
+# 那是**错的行**。arm 工程键集与行内容逐字节不变 (test_doctor 钉三键集合)。
+_DOCTOR_KEYS_WCH = ("wch_gcc_path", "wch_openocd_exe", "wch_openocd_cfg")
+
 
 def _first_version_line(cmd: list) -> tuple:
     """运行版本命令, 返回 (ok, 首个非空行或错误串)。stdout/stderr 合并取行
@@ -264,8 +270,8 @@ def doctor_report(probe: bool = True, *, skip_drift_check: bool = False,
     在场时做单次 SWD 探测 (attempts=1; 门禁 G0.5 用 3 次重试版)。
 
     F-235: workspace 给定 (非 None) 时按该工程 gcc.toolchain 报工具链与
-    openocd 目标 (wch 工程单文件 cfg); 不给 (既有调用方/测试) 即 arm 缺省
-    语义, 与修前逐字节同。"""
+    openocd 目标 (wch 工程单文件 cfg, 且 machine 键区/工具行改列 wch_* 键);
+    不给 (既有调用方/测试) 即 arm 缺省语义, 与修前逐字节同。"""
     machine = load_machine()
     machine_file = os.path.join(TOOLKIT_ROOT, "machine.json")
     example_file = os.path.join(TOOLKIT_ROOT, "machine.example.json")
@@ -276,24 +282,24 @@ def doctor_report(probe: bool = True, *, skip_drift_check: bool = False,
     else:
         mode = "missing"
 
+    gcc_cfg = load_project_config(workspace, skill="gcc") if workspace else {}
+    kind = _toolchain_kind(gcc_cfg)
     keys = {}
-    for k in _DOCTOR_KEYS:
+    for k in _DOCTOR_KEYS + (_DOCTOR_KEYS_WCH if kind == "wch" else ()):
         v = (machine.get(k) or "").strip()
         keys[k] = {"value_set": bool(v),
                    "placeholder": v.startswith("<"),
                    "path_exists": os.path.exists(v) if v else None}
 
-    gcc_cfg = load_project_config(workspace, skill="gcc") if workspace else {}
+    oc_exe_key = "wch_openocd_exe" if kind == "wch" else "openocd_exe"
     tools = {"gcc": _gcc_tool_check(machine, gcc_cfg),
-             "openocd": _check_tool(machine, "openocd_exe", "openocd", ("--version",)),
+             "openocd": _check_tool(machine, oc_exe_key, "openocd", ("--version",)),
              "make": _check_tool(machine, "make_exe", "make", ("--version",))}
 
     # F-235: openocd exe 与 cfg 随 toolchain 分流 —— wch 工程用 MounRiver
     # 单文件 cfg, 探测命令不再追加 `transport select swd` (见 swd_probe)。
     # "未配置/占位/不存在"维持既有 skipped 口径 (不把缺键升格成 fail);
     # cfg 非法 (如 toolchain=wch 却缺 wch_openocd_cfg) 才是 fail。
-    oc_exe_key = ("wch_openocd_exe" if _toolchain_kind(gcc_cfg) == "wch"
-                  else "openocd_exe")
     oc = (machine.get(oc_exe_key) or "").strip()
     if not oc or oc.startswith("<") or not os.path.isfile(oc):
         swd = {"status": "skipped",
@@ -340,7 +346,7 @@ def _print_doctor(rep: dict) -> None:
         flags = [lbl for lbl, on in (("空", not v["value_set"]),
                                      ("占位", v["placeholder"]),
                                      ("路径在场", v["path_exists"])) if on]
-        print(f"  {k:<11}: {', '.join(flags) if flags else '-'}")
+        print(f"  {k:<15}: {', '.join(flags) if flags else '-'}")
     for name in ("gcc", "openocd", "make"):
         t = rep["tools"][name]
         line = f"  {name:<9}: {t['status']}"

@@ -198,6 +198,14 @@ ESP-PILOT-OK tick=1
 `shutil.which` 平台判定。Linux 上测试套、离线工具与无板仿真链（sim-demo
 端到端）全量可跑（CI 即证）；Linux **真机烧录**路径未验证（见「已知限制」F-031）。
 
+非 ARM 目标：**CH32V307（RISC-V）经 `gcc.toolchain=wch` 受支持**（F-235）——
+`machine.json` 填 `wch_gcc_path` / `wch_openocd_exe` / `wch_openocd_cfg`
+（MounRiver Studio 自带的 riscv-wch-elf GCC12 + OpenOCD + 单文件
+`wch-riscv.cfg`），构建/烧录/复位/发布门禁全线按 toolchain 分流；
+`capture.backend=uart` 配 `open_before_reset: true`（CDC 类适配器丢 banner
+根治）与 `capture.reset: openocd`。真机先例：`hw-projects/ch32v307-hello`
+（tag v0.1，hardware_validated 3/3）。
+
 ### 真机路径一次性配置
 
 `machine.json` 是本机文件（不入库），是全部工具链绝对路径的**唯一合法源**：
@@ -328,6 +336,7 @@ python scripts/release.py --project <工程根> --tag v1.0.0 --dry-run
 | `scripts/release.py` | G0→G3 门禁发布：全绿才打 tag，记录含双重哈希锚 | `python scripts/release.py --project <工程根> --tag vX.Y.Z --dry-run` |
 | `scripts/hardfault.py` | HardFault 现场：寄存器 + 符号表定位出错函数 | `python scripts/hardfault.py --json` |
 | `scripts/esp_runtime.py` | ESP32 三后端封装：idf.py build / esptool flash / UART 定时窗采集 + esp_panic 文本标记（F-174） | 经 `verify.py` 派发（`builder=idf`） |
+| `scripts/mutation.py` | 变异枪：改一处 → 指定期望必须变红 → 字节级还原 → 必须复绿（F-235） | `python scripts/mutation.py --project <工程> --expect-red <id> --edit <file> --find <串> --replace <串>` |
 | `scripts/serial_*` / `openocd_*` | 串口与探针底层族（RTT/GDB/telnet） | `python scripts/<name>.py --help` |
 
 ## 工程契约（`.workbench/`）
@@ -335,7 +344,12 @@ python scripts/release.py --project <工程根> --tag v1.0.0 --dry-run
 固件工程通过 `.workbench/config.json` 被发现（从 cwd 逐级向上查找，兜底识别
 旧版 `.embeddedskills/config.json`）。期望判定规则：
 
-- `id` 唯一必填；`texts`（全 substring 命中）与 `patterns`（全正则 search 命中）二选一
+- `id` 唯一必填；正向判据 `texts`（全 substring 命中）/ `patterns`（全正则 search
+  命中）/ `sequence`（**三选一**）——`sequence` 形如
+  `{"pattern": "TICK (\\d+)", "strict": true, "min_count": 3}`：对 pattern 全量
+  finditer 抽第 1 个捕获组的值，样本数 < `min_count`（缺省 2）或 `strict`
+  （缺省 true）下非严格递增即 FAIL；它与 `capture_group` / `record` /
+  `min` / `max` 互斥（那三件只看首个 match，语义不可叠加，E15）
 - `"xfail": true` 必须携带 `xfail_reason`——待办欠债全部白纸黑字
 - 数值断言：`patterns` + `capture_group` + `min`/`max` 区间
 - **负断言（F-112）**：`forbidden_texts` / `forbidden_patterns`——捕获全文任一命中
