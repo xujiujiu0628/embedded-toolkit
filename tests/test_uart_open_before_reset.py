@@ -3,8 +3,11 @@
 WCH-Link 属 CDC 类, Windows 在句柄打开前不缓存; 复位早于开串口
 ⇒ banner 必丢 (试点 Critical 1+2 的原症状)。
 """
+import json
 import os
+import shutil
 import sys
+import tempfile
 import unittest
 from unittest import mock
 
@@ -134,6 +137,72 @@ class OpenBeforeResetTests(unittest.TestCase):
         self.assertEqual(got["status"], "error")
         self.assertIn("复位失败", got["error"])
         self.assertEqual(_FakeSerial.events, ["open", "close"])
+
+
+class WchResetDispatchTests(unittest.TestCase):
+    """F-235: capture.reset=openocd 的复位目标随工程 gcc.toolchain 分流。
+
+    修前恒取 machine.openocd_exe 且 cfg=None (reset_target 内部的 arm
+    默认链) —— 对 CH32V307 (RISC-V) 目标, 那是拿 ST-Link 的 openocd 与
+    stm32f1x.cfg 去连 wch_riscv 核, 必失败。arm 的调用形态按既有裁决
+   保持不变 (exe + cfg=None)。
+    """
+
+    MACHINE = {"openocd_exe": "/arm/openocd",
+               "wch_openocd_exe": "/wch/openocd",
+               "wch_openocd_cfg": "/wch/wch-riscv.cfg"}
+
+    def setUp(self):
+        self.serial_mod = mock.Mock()
+        self.serial_mod.Serial = _FakeSerial
+        self.serial_mod.SerialException = OSError
+        _FakeSerial.events = []
+
+    def _ws(self, gcc_section=None):
+        d = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, d, True)
+        os.makedirs(os.path.join(d, ".workbench"))
+        with open(os.path.join(d, ".workbench", "config.json"), "w",
+                  encoding="utf-8") as f:
+            json.dump({"gcc": gcc_section or {}}, f)
+        return d
+
+    def _run(self, workspace, machine=None):
+        calls = []
+
+        def fake_reset(exe, cfg=None, timeout=20):
+            calls.append((exe, cfg))
+            return {"status": "ok"}
+
+        cfg = {"port": "COM15", "baudrate": 115200, "settle_sec": 0,
+               "reset": "openocd", "open_before_reset": True}
+        with mock.patch.dict(sys.modules, {"serial": self.serial_mod}), \
+             mock.patch.object(esp_runtime, "load_machine",
+                               return_value=machine or self.MACHINE), \
+             mock.patch("openocd_runtime.reset_target", fake_reset):
+            got = esp_runtime.step_capture_uart(0.1, cfg, workspace=workspace)
+        return got, calls
+
+    def test_wch_workspace_resets_with_wch_target(self):
+        got, calls = self._run(self._ws({"toolchain": "wch"}))
+        self.assertEqual(got["status"], "ok")
+        self.assertEqual(calls, [("/wch/openocd", ["/wch/wch-riscv.cfg"])])
+
+    def test_arm_workspace_keeps_legacy_call(self):
+        got, calls = self._run(self._ws())
+        self.assertEqual(got["status"], "ok")
+        self.assertEqual(calls, [("/arm/openocd", None)])
+
+    def test_wch_missing_keys_reports_readable_error(self):
+        """wch 缺键 → 复位失败的可读报错 (点名键名), 不是裸 KeyError。"""
+        got, calls = self._run(
+            self._ws({"toolchain": "wch"}),
+            machine={"openocd_exe": "/arm/openocd",
+                     "wch_openocd_cfg": "/wch/wch-riscv.cfg"})
+        self.assertEqual(calls, [])
+        self.assertEqual(got["status"], "error")
+        self.assertIn("复位失败", got["error"])
+        self.assertIn("wch_openocd_exe", got["error"])
 
 
 if __name__ == "__main__":

@@ -14,8 +14,8 @@ import re
 import subprocess
 import time
 
-from runtime_common import (load_workspace_state, update_state_entry,  # noqa: E402  (F-190/H-1: last_build 经共享层持锁读改写; F-200 A2 嵌套键消费)
-                            workspace_root)
+from runtime_common import (load_workspace_state, resolve_openocd_target,  # noqa: E402  (F-190/H-1: last_build 经共享层持锁读改写; F-200 A2 嵌套键消费; F-235: 复位目标按 toolchain 分流)
+                            update_state_entry, workspace_root)
 from serial_port import resolve_port  # noqa: E402  (F-235: 端口发现)
 from wb_common import load_machine
 
@@ -193,7 +193,8 @@ def step_capture_uart(timeout_s: int, cap_cfg: dict,
     """capture.backend=uart (F-174): 复位进固件 → pyserial 定时采集.
 
     F-231: `cap_cfg["reset"]` 选择复位方式——`"esptool"`(默认, ESP32) /
-    `"openocd"`(STM32/ST-Link; 复用 openocd_runtime.reset_target) /
+    `"openocd"`(STM32/ST-Link, 或 CH32 的 WCH-Link —— F-235 起 exe+cfg 按
+    工程 gcc.toolchain 分流, 复用 openocd_runtime.reset_target) /
     `"none"`(外部已复位)。非 esptool 模式跳过 `chip` 白名单——那是 ESP
     专属参数, 不该拦 STM32 工程。
 
@@ -270,7 +271,17 @@ def step_capture_uart(timeout_s: int, cap_cfg: dict,
             if rt is None:
                 from openocd_runtime import reset_target as rt
             try:
-                reset = rt(load_machine()["openocd_exe"], None, timeout=20)
+                # F-235: exe+cfg 随工程 toolchain 分流。旧写法硬取
+                # machine.openocd_exe 且 cfg=None (reset_target 内部的 arm
+                # 默认链) —— 对 RISC-V 目标 (CH32V307) 这条必失败: 拿
+                # ST-Link 的 openocd 与 stm32f1x.cfg 去连 wch_riscv 核。
+                # arm 保持原调用形态 (exe + cfg=None, 内部解析), 与
+                # release G0.5 的 arm/wch 分流先例同构。
+                oc = resolve_openocd_target(load_machine(), workspace=ws)
+                if oc["source"] == "wch":
+                    reset = rt(oc["exe"], oc["cfg_list"], timeout=20)
+                else:
+                    reset = rt(oc["exe"], None, timeout=20)
             except Exception as e:      # 缺 machine 键/OpenOCD 缺席都走可读报错
                 reset = {"status": "error", "message": str(e)}
             if reset.get("status") != "ok":
