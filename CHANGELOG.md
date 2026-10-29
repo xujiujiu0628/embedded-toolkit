@@ -5,6 +5,43 @@
 
 ## Unreleased — 0.9 封袋后新账（F-235 起）
 
+- **F-235 (feat+fix, 七 commit + 真机收尾): CH32V307 后端接入 — 工具链派发 / openocd 统一解析 / 端口发现 / open_before_reset / sequence 断言 / 变异枪 + 工程侧迁移真机发布**:
+  **工具库面（六项）**: ① `gcc.toolchain` 派发（arm 缺省逐字节不变 / wch =
+  MounRiver `riscv-wch-elf-`，CC/OBJCOPY/SIZE 绝对路径注入 make，缺键点名不
+  静默回落）；② openocd exe+cfg 统一解析器 `resolve_openocd_target`（wch 走
+  MounRiver OpenOCD + 单文件 `wch-riscv.cfg`，flash / G0.5 / post_reset / 复位
+  同源）；③ `capture.port` 支持 `auto:<描述子串>`（pyserial description/hwid
+  大小写不敏感子串匹配，0/多命中拒绝并列现场，解析结果仍过端口白名单）；
+  ④ `capture.open_before_reset`（先开串口再复位，CDC 类适配器 Windows 不缓存
+  字节的丢 banner 根治；与 `reset=esptool` 配置期显式互斥）；⑤ `sequence`
+  期望断言（`{"pattern", "strict", "min_count"}` 全量抽值严格单调，texts/
+  patterns/sequence 三选一，lint E15 码随判据走）；⑥ `scripts/mutation.py`
+  变异枪（改一处→指定 id 必红→字节级还原→必复绿；读 `steps.verify.results`，
+  legacy 工程显式拒绝）。
+  **工程侧收尾（真机两修）**: ⑦ `esp_runtime` capture.reset=openocd 的复位
+  目标原恒取 arm 链（machine.openocd_exe + cfg=None），对 RISC-V 目标必失败
+  —— 改经 `resolve_openocd_target` 按 toolchain 分流（arm 调用形态不变）；
+  ⑧ `gcc_build._makefile_vars` 的 TARGET 正则原只认 `KEY =`，`TARGET :=`
+  落空致产物名被猜成 main.hex、烧录前报 hex 不存在 —— 赋值算符收 `:=`/`?=`。
+  **文档/体检收口（评审挂账）**: README 期望判据改三选一；gcc_build 模块
+  docstring/argparse 补 wch；doctor 对 wch 工程报 `wch_*` 三键状态且工具行/
+  探测选 wch 键（arm 报告逐字节不变）。
+  **发布记录 tools.gcc 分流（v0.1 发布实锤的缺陷，事后修复+披露）**:
+  `release.build_record` 的 tools.gcc 此前恒按 arm 探测（machine.gcc_path +
+  arm-none-eabi-gcc），toolchain=wch 的工程构建用 riscv-wch-elf-gcc 12.2，
+  记录却落 arm 版本串（`arm-none-eabi-gcc.exe (GNU Arm Embedded Toolchain
+  10.3-2021.10)`），属工具链证据失真。修后经 `resolve_toolchain` 按工程
+  gcc.toolchain 派发探测；wch 缺键 unknown 点名、绝不回落 arm 冒充。**披露**:
+  已封袋的 v0.1 发布记录（工程仓 `.workbench/releases/v0.1.json`，commit
+  `b1d466e` 落档） carries 该 stale arm 串——按零删承诺不改历史，本条即勘误
+  锚；修复向前生效。
+  **真机与发布锚点**: CH32V307 试点工程 `hw-projects/ch32v307-hello` 迁入
+  toolkit 全链（toolchain=wch / auto 端口 / sequence / HardFault 指纹，工程仓
+  master `f83167a`）：verify 三期望 3/3 PASS（evidence=hardware_validated），
+  mutation bite OK，拔探针 G0.5 fail-closed（报"SWD 预检失败 (环境未备?)"
+  退出 1），正式发布 `G0~G2 全过`，tag `v0.1`（peel=`f83167a`），发布记录
+  commit `b1d466e`，release_audit CLEAN。
+
 ## 0.9 — 2026-10-29（三号复审全链收口 + 判定链四项 fail-closed · 三样例首次真机验收三笔纠错 · CI 假绿根治与统一异常信封 · 锁面/构建预算/采集后端三面收口 · KB 外设 desc 22 条补齐）
 
 > 封袋定义: 自 v0.8 标签（commit 96faef5, 2026-10-08）之后落入本账本的
