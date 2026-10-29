@@ -4,11 +4,18 @@ R1 补充: 往返必须字节级无损。本工作区存在 CR-only 行尾的工
 (`ch32v307-hello/Ld/Link.ld`), 读写不加 newline="" 会把整份文件换行改掉。
 R2 补充: run_verify 抛异常时 finally 仍须还原 (异常照常上抛)。
 R3 补充: find 不唯一时错误里要带实际出现次数。
+
+复审修正 (C/I): 真实 verify 信封的 per-id 行在 `steps.verify.results`
+(verify.py:1464 → :1491), 不在顶层; legacy 工程压根没有 per-id 行, 必须
+显式拒绝而不是报「未变红」。verify 自身崩 (status=error/internal_error/
+interrupted) 也必须单独报, 不能伪装成负面结论。
 """
 import os
+import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(
     os.path.abspath(__file__))), "scripts"))
@@ -170,6 +177,143 @@ class MutationNewlineTests(unittest.TestCase):
             mutation.mutate_and_run(self.proj, "BOOT-01", "main.c",
                                     "boot", "bootX", run_verify, 5)
         self.assertEqual(self._read_bytes(path), raw)
+
+
+class MutationEnvelopeTests(unittest.TestCase):
+    """真实 verify 信封: per-id 结果行在 steps.verify.results, 不在顶层。
+
+    顶层 results 只存在于注入式 runner (单测/外部调用方), 两种形状都要认。
+    """
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.proj = self.tmp.name
+        self.src = os.path.join(self.proj, "main.c")
+        with open(self.src, "w", encoding="utf-8") as f:
+            f.write('printf("=== boot ===\\n");\n')
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def _manifest(self, status, rows):
+        """真实 verify.py --json 的 per-id 信封形状 (steps.verify.results)。"""
+        return {"status": status,
+                "steps": {"verify": {"status": status, "results": rows}}}
+
+    def _no_call(self):
+        def run_verify():
+            raise AssertionError("不应跑到 verify")
+        return run_verify
+
+    def test_manifest_envelope_bite_detected(self):
+        seen = []
+
+        def run_verify():
+            with open(self.src, encoding="utf-8") as f:
+                body = f.read()
+            seen.append(body)
+            red = "boot" not in body
+            return self._manifest(
+                "fail" if red else "ok",
+                [{"id": "BOOT-01", "status": "fail" if red else "pass"}])
+
+        got = mutation.mutate_and_run(self.proj, "BOOT-01", "main.c",
+                                      "boot", "MUT", run_verify, 5)
+        self.assertTrue(got["ok"], got)           # 顶层无 results 也要认得出
+        self.assertEqual(len(seen), 2)            # 红跑 + 绿跑
+        self.assertIn("boot", seen[-1])           # 绿跑时已还原
+
+    def test_legacy_envelope_refused_explicitly(self):
+        # legacy expect/expect_patterns 工程: 只有 matched/missing, 无 per-id 行
+        legacy = {"status": "fail",
+                  "steps": {"verify": {"status": "fail", "matched": [],
+                                       "missing": ["boot"],
+                                       "missing_patterns": [],
+                                       "description": "legacy"}}}
+        got = mutation.mutate_and_run(self.proj, "BOOT-01", "main.c",
+                                      "boot", "MUT", lambda: legacy, 5)
+        self.assertFalse(got["ok"])
+        self.assertNotIn("未变红", got["error"])   # 不能伪装成负面结论
+        self.assertIn("没有 id 级断言", got["error"])
+        self.assertIn("BOOT-01", got["error"])
+        with open(self.src, encoding="utf-8") as f:
+            self.assertIn("boot", f.read())        # 仍须还原
+
+    def test_verify_crash_on_red_run_is_reported_as_crash(self):
+        crash = {"status": "internal_error", "steps": {},
+                 "error": "Traceback ...\nKeyError: 'firmware'"}
+        got = mutation.mutate_and_run(self.proj, "BOOT-01", "main.c",
+                                      "boot", "MUT", lambda: crash, 5)
+        self.assertFalse(got["ok"])
+        self.assertNotIn("未变红", got["error"])   # 不是「没红」, 是「没判成」
+        self.assertIn("verify 自身失败", got["error"])
+        self.assertIn("KeyError", got["error"])    # 原文可引
+        with open(self.src, encoding="utf-8") as f:
+            self.assertIn("boot", f.read())
+
+    def test_verify_crash_on_green_run_is_reported(self):
+        def run_verify():
+            return self._manifest("fail", [{"id": "BOOT-01", "status": "fail"}])
+
+        def run_verify_second():
+            # 第一次红跑正常, 第二次 (还原后) verify 自身崩
+            return {"status": "error", "error": "ImportError: no pyserial",
+                    "steps": {}}
+
+        calls = []
+
+        def dispatch():
+            calls.append(1)
+            return (run_verify() if len(calls) == 1
+                    else run_verify_second())
+
+        got = mutation.mutate_and_run(self.proj, "BOOT-01", "main.c",
+                                      "boot", "MUT", dispatch, 5)
+        self.assertFalse(got["ok"])
+        self.assertIn("verify 自身失败", got["error"])
+        self.assertIn("ImportError: no pyserial", got["error"])
+        with open(self.src, encoding="utf-8") as f:
+            self.assertIn("boot", f.read())
+
+    def test_empty_find_rejected(self):
+        with open(self.src, "rb") as f:
+            before = f.read()
+        got = mutation.mutate_and_run(self.proj, "BOOT-01", "main.c",
+                                      "", "X", self._no_call(), 5)
+        self.assertFalse(got["ok"])
+        self.assertIn("为空", got["error"])
+        with open(self.src, "rb") as f:
+            self.assertEqual(f.read(), before)
+
+
+class _FakeSubprocess:
+    """subprocess 模块引用替换件 (F-184/GAP-F-9 形态: 桩落在 mutation 命名空间,
+    不动全局 subprocess —— 全局打桩被 test_stub_ratchet 判违规)。"""
+
+    def __init__(self, proc):
+        self.proc = proc
+        self.calls = []
+
+    def run(self, *args, **kwargs):
+        self.calls.append((args, kwargs))
+        return self.proc
+
+
+class RunVerifyCliTests(unittest.TestCase):
+    """_run_verify_cli: verify.py 非 JSON 退出时须保留 stderr 尾巴与退出码。"""
+
+    def test_non_json_stdout_keeps_stderr_tail(self):
+        fake = subprocess.CompletedProcess(
+            args=[], returncode=2, stdout="",
+            stderr="Traceback (most recent call last):\nKeyError: 'x'\n")
+        stub = _FakeSubprocess(fake)
+        with mock.patch.object(mutation, "subprocess", stub):
+            got = mutation._run_verify_cli("proj", 5)()
+        self.assertEqual(got["status"], "error")
+        self.assertEqual(got["results"], [])
+        self.assertIn("KeyError", got["error"])
+        self.assertIn("2", got["error"])          # 退出码可查
+        self.assertEqual(len(stub.calls), 1)      # 调用确实走到桩上
 
 
 if __name__ == "__main__":

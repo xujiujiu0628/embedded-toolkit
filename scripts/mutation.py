@@ -14,6 +14,12 @@
   - run_verify 由调用方注入, 单测可替换; CLI 走 subprocess 调 verify.py。
     run_verify 抛异常时 finally 照常还原, 异常原样上抛 (不吞, 调用方自己
     决定怎么报)。
+  - verify 的 per-id 结果行在 `steps.verify.results` (verify.py:1464 → :1491),
+    顶层没有 results; 顶层 results 只认作注入式 runner 的便利形状。legacy 工程
+    (expect/expect_patterns) 压根没有 per-id 行, 只能显式拒绝——不能落成
+    「未变红」这种负面结论。
+  - verify 自身失败 (status ∈ error/internal_error/interrupted) 单独报并带原文,
+    否则工具会把「没判成」伪装成「没有变红」, 属于伪造证据。
 """
 from __future__ import annotations
 
@@ -22,6 +28,9 @@ import json
 import os
 import subprocess
 import sys
+
+# verify 自身没跑成 (配置错 / 内部异常 / 用户中断) 的 status 取值
+_VERIFY_BROKEN = ("error", "internal_error", "interrupted")
 
 
 def _read_text(path: str) -> str:
@@ -38,13 +47,32 @@ def _write_text(path: str, text: str) -> None:
         f.write(text)
 
 
+def _result_rows(payload: dict):
+    """取 per-id 结果行; 拿不到 (legacy 信封) 返回 None。
+
+    真实 verify.py 把结果行挂在 steps.verify.results (verify.py:1464 → :1491);
+    顶层 results 只是注入式 runner 的便利形状, 两处都没有才算「没有 id 级断言」。
+    """
+    inner = (payload.get("steps") or {}).get("verify") or {}
+    rows = inner.get("results")
+    if rows is None:
+        rows = payload.get("results")
+    return rows
+
+
+def _detail(payload: dict, limit: int = 300) -> str:
+    """截取 verify 自报的错误原文 (可引用), 供失败信息携带。"""
+    txt = payload.get("error") or payload.get("message") or ""
+    return str(txt).strip()[-limit:]
+
+
 def mutate_and_run(project: str, expect_red: str, edit: str,
                    find: str, replace: str, run_verify, timeout: int) -> dict:
     """改一处 → 该期望必须变红 → 还原 → 必须整体复绿。
 
     project: 工程根目录; edit: 相对工程根的目标文件。
     expect_red: 变异后必须变红的期望 id。
-    run_verify: 无参可调用, 返回 verify 的 JSON (含 status / results)。
+    run_verify: 无参可调用, 返回 verify 的 JSON (含 status / steps.verify.results)。
     timeout: 由调用方注入的 runner 自行消费 (本函数不用), 保留以便签名稳定。
 
     返回 {"ok": bool, ...}; 不 ok 时必有 "error"。run_verify 抛出的异常
@@ -53,6 +81,8 @@ def mutate_and_run(project: str, expect_red: str, edit: str,
     path = os.path.join(project, edit)
     if not os.path.isfile(path):
         return {"ok": False, "error": f"目标文件不存在: {path}"}
+    if not find:
+        return {"ok": False, "error": "find 串为空 (拒绝执行: 空串会命中一切位置)"}
     original = _read_text(path)
     hits = original.count(find)
     if hits != 1:
@@ -61,17 +91,32 @@ def mutate_and_run(project: str, expect_red: str, edit: str,
     try:
         _write_text(path, original.replace(find, replace, 1))
         red = run_verify()
-        red_ids = [r["id"] for r in (red.get("results") or [])
-                   if r.get("status") == "fail"]
+        if red.get("status") in _VERIFY_BROKEN:
+            return {"ok": False,
+                    "error": f"变异后 verify 自身失败 "
+                             f"(status={red.get('status')}): {_detail(red)}"}
+        rows = _result_rows(red)
+        if rows is None:
+            return {"ok": False,
+                    "error": f"{edit} 所在工程没有 id 级断言 (verify 未返回 "
+                             f"per-id 结果行): 无法判定 {expect_red} 是否变红。"
+                             f"legacy expect/expect_patterns 工程请改用显式断言"}
+        red_ids = [r["id"] for r in rows if r.get("status") == "fail"]
         if expect_red not in red_ids:
             return {"ok": False,
                     "error": f"变异后未变红在 {expect_red} (实际红: {red_ids})"}
     finally:
         _write_text(path, original)
     green = run_verify()
-    if green.get("status") != "ok":
+    if green.get("status") in _VERIFY_BROKEN:
         return {"ok": False,
-                "error": f"还原后未转绿: status={green.get('status')}"}
+                "error": f"还原后 verify 自身失败 "
+                         f"(status={green.get('status')}): {_detail(green)}"}
+    if green.get("status") != "ok":
+        msg = f"还原后未转绿: status={green.get('status')}"
+        if _detail(green):
+            msg += f" ({_detail(green)})"
+        return {"ok": False, "error": msg}
     return {"ok": True, "expect_red": expect_red, "edit": edit,
             "find": find, "replace": replace,
             "summary": f"mutation bite OK: {edit} '{find}'→'{replace}' "
@@ -79,7 +124,7 @@ def mutate_and_run(project: str, expect_red: str, edit: str,
 
 
 def _run_verify_cli(project: str, timeout: int):
-    """把 verify.py 的 CLI 包成 run_verify 回调 (JSON 解析失败降级为 error)。"""
+    """把 verify.py 的 CLI 包成 run_verify 回调 (非 JSON 输出降级为 error)。"""
     def run():
         proc = subprocess.run(
             [sys.executable, os.path.join(os.path.dirname(os.path.abspath(__file__)),
@@ -89,8 +134,12 @@ def _run_verify_cli(project: str, timeout: int):
         try:
             return json.loads(proc.stdout or "")
         except json.JSONDecodeError:
+            # 退出码与 stderr 尾巴都留下: verify 崩掉时 traceback 才是可引证据
+            tail = ((proc.stdout or "").strip() + "\n"
+                    + (proc.stderr or "").strip()).strip()
             return {"status": "error", "results": [],
-                    "error": (proc.stdout or "")[-300:]}
+                    "error": f"verify.py 输出非 JSON (rc={proc.returncode}): "
+                             f"{tail[-300:]}"}
     return run
 
 
