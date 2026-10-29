@@ -241,6 +241,21 @@ class StepCaptureUartTests(unittest.TestCase):
         self.assertIn("auto:wch-link serial", r["error"])   # 子串已归一为小写
         self.assertIn("COM5", r["error"])                   # 现场列出现有端口
 
+    def test_auto_resolved_device_still_whitelisted(self):
+        """F-235 复审: auto: 解析出的 device 名也过 _esp_port_error —— 端口名
+        随后拼进 PowerShell 命令串, 解析器出口不是信任边界终点。"""
+        import serial_port
+        fake = SimpleNamespace(comports=lambda: [
+            SimpleNamespace(device="COM15; calc",
+                            description="WCH-Link SERIAL", hwid="")])
+        with mock.patch.object(serial_port, "list_ports", fake):
+            r = esp_runtime.step_capture_uart(
+                5, {"port": "auto:WCH-Link SERIAL", "reset": "none",
+                    "settle_sec": 0}, workspace="W:")
+        self.assertEqual(r["status"], "error")
+        self.assertIn("不在白名单", r["error"])
+        self.assertIn("COM15; calc", r["error"])            # 点名被拒的 device
+
     def test_reset_then_capture_then_contract(self):
         seen = []
         def spy(cmds, **kw):

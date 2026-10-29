@@ -74,5 +74,29 @@ class MissingPyserialTests(unittest.TestCase):
         self.assertIn("pyserial", got["error"])
 
 
+class ImportWithoutPyserialTests(unittest.TestCase):
+    """偏差 A 的 import 期契约 (复审 Finding 2): 无 pyserial 宿主上
+    `import serial_port` 本身不得抛 —— verify 顶层 import esp_runtime,
+    退化成裸 `from serial.tools import list_ports` 时这条链直接崩, 而
+    MissingPyserialTests 只造运行时态 (import 之后再置 None), 钉不住 import 期。"""
+
+    POISONED = {"serial": None, "serial.tools": None,
+                "serial.tools.list_ports": None}
+
+    def test_import_and_auto_path_survive_without_pyserial(self):
+        import importlib
+        try:
+            with mock.patch.dict(sys.modules, self.POISONED):
+                importlib.reload(serial_port)       # 模拟首次 import 的模块体执行
+                self.assertIsNone(serial_port.list_ports)
+                self.assertEqual(serial_port.resolve_port("COM15"),
+                                 {"port": "COM15"})
+                got = serial_port.resolve_port("auto:WCH-Link SERIAL")
+                self.assertIn("pyserial", got["error"])
+        finally:
+            importlib.reload(serial_port)           # 还原真模块, 不污染后续用例
+        self.assertIsNotNone(serial_port.list_ports)
+
+
 if __name__ == "__main__":
     unittest.main()
