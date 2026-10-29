@@ -97,11 +97,26 @@ def mutate_and_run(project: str, expect_red: str, edit: str,
                              f"(status={red.get('status')}): {_detail(red)}"}
         rows = _result_rows(red)
         if rows is None:
+            status = red.get("status")
+            if status is not None and status not in ("ok", "fail"):
+                # F-235 SHOULD-FIX: build_failed / flash_failed / hardfault /
+                # physical_gate_failed 等前置失败会让 verify 在逐项判定前退出,
+                # steps.verify 压根不存在 —— 此时报「没有 id 级断言」会把运维
+                # 引去查一个不存在的配置问题。点名实际 status 并带原文。
+                msg = (f"verify 在逐项判定前失败 (status={status}): "
+                       f"见 verify 输出的 error 字段")
+                detail = _detail(red)
+                if detail:
+                    msg += f" — {detail}"
+                return {"ok": False, "error": msg}
             return {"ok": False,
                     "error": f"{edit} 所在工程没有 id 级断言 (verify 未返回 "
                              f"per-id 结果行): 无法判定 {expect_red} 是否变红。"
                              f"legacy expect/expect_patterns 工程请改用显式断言"}
-        red_ids = [r["id"] for r in rows if r.get("status") == "fail"]
+        # F-235 SHOULD-FIX: xpass (xfail 条目意外通过) 在四态判定里是严格红,
+        # verdict 同样不 ok; 只收 "fail" 会对 xfail 条目误报「未变红」。
+        red_ids = [r["id"] for r in rows
+                   if r.get("status") in ("fail", "xpass")]
         if expect_red not in red_ids:
             return {"ok": False,
                     "error": f"变异后未变红在 {expect_red} (实际红: {red_ids})"}
