@@ -16,6 +16,7 @@ import time
 
 from runtime_common import (load_workspace_state, update_state_entry,  # noqa: E402  (F-190/H-1: last_build 经共享层持锁读改写; F-200 A2 嵌套键消费)
                             workspace_root)
+from serial_port import AUTO_PREFIX, resolve_port  # noqa: E402  (F-235: 端口发现)
 from wb_common import load_machine
 
 _PANIC_MARKERS = ("Guru Meditation", "Backtrace:", "abort() was called",
@@ -209,13 +210,15 @@ def step_capture_uart(timeout_s: int, cap_cfg: dict,
     """
     run_idf_ = _run_idf or run_idf
     ws = workspace or os.getcwd()
-    port = (cap_cfg.get("port") or "").strip()
-    if not port:
-        return {"status": "error", "method": "uart",
-                "error": "capture.port 未配置 (uart 后端需要串口号, 如 COM3)"}
-    port_err = _esp_port_error(port)
-    if port_err:
-        return {"status": "error", "method": "uart", "error": port_err}
+    raw_port = cap_cfg.get("port")
+    resolved = resolve_port(raw_port)
+    if "error" in resolved:
+        return {"status": "error", "method": "uart", "error": resolved["error"]}
+    port = resolved["port"]
+    if not str(raw_port or "").strip().lower().startswith(AUTO_PREFIX):
+        port_err = _esp_port_error(port)     # 字面量保持原校验, auto 已由解析器兜住
+        if port_err:
+            return {"status": "error", "method": "uart", "error": port_err}
     reset_mode = str(cap_cfg.get("reset") or "esptool").strip().lower()
     if reset_mode not in ("esptool", "openocd", "none"):
         return {"status": "error", "method": "uart",

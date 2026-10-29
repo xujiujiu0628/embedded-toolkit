@@ -96,8 +96,13 @@ class SerialScanChipMapTests(unittest.TestCase):
     def test_scan_ports_filters_non_serial_errors(self):
         """枚举失败 (无 pyserial/无端口) 应返回可序列化结构而非抛异常。
         F-156: scan_ports 委托 serial_runtime.scan_serial_ports 后, 错误态
-        ports 由 None 收敛为 [] (main 只判 err, 行为不变)。"""
-        with mock.patch.dict(sys.modules, {"serial": None}):
+        ports 由 None 收敛为 [] (main 只判 err, 行为不变)。
+        F-235: 只毒 "serial" 已不够——serial_port 在 import 期就拉进了
+        serial.tools.list_ports, 而 importlib 对已在 sys.modules 的名字直接
+        返回、不看父包 (`_find_and_load`), 模拟失效。故连子模块一起毒。"""
+        poisoned = {"serial": None, "serial.tools": None,
+                    "serial.tools.list_ports": None}
+        with mock.patch.dict(sys.modules, poisoned):
             try:
                 ports, error = serial_scan.scan_ports()
             except Exception as e:

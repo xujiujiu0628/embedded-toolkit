@@ -222,6 +222,25 @@ class StepCaptureUartTests(unittest.TestCase):
         self.assertEqual(r["status"], "error")
         self.assertIn("capture.port", r["error"])
 
+    def test_literal_port_keeps_whitelist(self):
+        """F-235 裁决 R2: auto: 由解析器兜住, 字面量仍走 _esp_port_error。"""
+        r = esp_runtime.step_capture_uart(
+            5, {"port": "COM3; rm -rf /"}, workspace="W:")
+        self.assertEqual(r["status"], "error")
+        self.assertIn("不在白名单", r["error"])
+
+    def test_auto_port_unmatched_errors_via_resolver(self):
+        """F-235: 端口段接的是 serial_port.resolve_port (模块引用替换式打桩)。"""
+        import serial_port
+        fake = SimpleNamespace(comports=lambda: [
+            SimpleNamespace(device="COM5", description="蓝牙", hwid="")])
+        with mock.patch.object(serial_port, "list_ports", fake):
+            r = esp_runtime.step_capture_uart(
+                5, {"port": "auto:WCH-Link SERIAL"}, workspace="W:")
+        self.assertEqual(r["status"], "error")
+        self.assertIn("auto:wch-link serial", r["error"])   # 子串已归一为小写
+        self.assertIn("COM5", r["error"])                   # 现场列出现有端口
+
     def test_reset_then_capture_then_contract(self):
         seen = []
         def spy(cmds, **kw):
