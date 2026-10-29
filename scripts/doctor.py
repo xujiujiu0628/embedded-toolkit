@@ -243,6 +243,25 @@ def _toolchain_kind(gcc_cfg: dict) -> str:
     return kind if kind in TOOLCHAINS else "arm"
 
 
+def _load_doctor_gcc_cfg(workspace: str | None) -> tuple[dict, str | None]:
+    """读工程 gcc 段; 结构非法时返回 ({}, 错误串) 交调用方报 fail 行 (F-235)。
+
+    --doctor 是诊断报告不是门禁: config.json 写成 `[]` / {"gcc": "wch"} 这类
+    非对象时 load_project_config / _toolchain_kind 会抛 AttributeError, 而
+    --doctor 早退路径不在 _fail_with_envelope 的 try 内 —— 修前直接裸
+    traceback。这里转成可读结果 (gcc 行 fail + 异常原文), 不静默假装 arm。"""
+    if not workspace:
+        return {}, None
+    try:
+        cfg = load_project_config(workspace, skill="gcc")
+        if not isinstance(cfg, dict):
+            raise TypeError(f"gcc 段实得 {type(cfg).__name__}")
+        return cfg, None
+    except (AttributeError, TypeError, ValueError) as e:
+        # ValueError 覆盖 load_project_config 可能抛的解析错 (JSONCorruptError)
+        return {}, f"工程 .workbench/config.json 结构非法 (期望对象): {e}"
+
+
 def _gcc_tool_check(machine: dict, gcc_cfg: dict) -> dict:
     """按 gcc.toolchain 选 gcc 检查键 (F-235)。
 
@@ -282,7 +301,9 @@ def doctor_report(probe: bool = True, *, skip_drift_check: bool = False,
     else:
         mode = "missing"
 
-    gcc_cfg = load_project_config(workspace, skill="gcc") if workspace else {}
+    # F-235 SHOULD-FIX: 畸形 config.json 不得裸崩 —— 结构非法时 gcc 行报
+    # fail (带原文), 其余行按空 gcc 段继续出报告; --strict 见 fail 即退出 1。
+    gcc_cfg, gcc_cfg_error = _load_doctor_gcc_cfg(workspace)
     kind = _toolchain_kind(gcc_cfg)
     keys = {}
     for k in _DOCTOR_KEYS + (_DOCTOR_KEYS_WCH if kind == "wch" else ()):
@@ -292,7 +313,9 @@ def doctor_report(probe: bool = True, *, skip_drift_check: bool = False,
                    "path_exists": os.path.exists(v) if v else None}
 
     oc_exe_key = "wch_openocd_exe" if kind == "wch" else "openocd_exe"
-    tools = {"gcc": _gcc_tool_check(machine, gcc_cfg),
+    tools = {"gcc": ({"status": "fail", "detail": gcc_cfg_error}
+                     if gcc_cfg_error
+                     else _gcc_tool_check(machine, gcc_cfg)),
              "openocd": _check_tool(machine, oc_exe_key, "openocd", ("--version",)),
              "make": _check_tool(machine, "make_exe", "make", ("--version",))}
 
