@@ -1,4 +1,9 @@
-"""GNU 工具链构建后端 (make + arm-none-eabi-gcc)。
+"""GNU 工具链构建后端 (make + gcc.toolchain 派发的编译器)。
+
+F-235 起支持两套工具链, 由工程 .workbench/config.json 的 gcc.toolchain 选:
+  - arm (缺省) → arm-none-eabi-* —— 存量工程零改动
+  - wch        → riscv-wch-elf-* (MounRiver 自带 RISC-V GCC12, CH32V307)
+非 arm 工具链以命令行变量 (CC/OBJCOPY/SIZE 绝对路径) 注入 make。
 
 2026-09-05 F-067b 起 Keil 退役区拆 archive, 本脚本是仓内唯一构建后端;
 与 keil_build.py 同构契约 (历史, Keil 已退役) 仅作两份实现对照参考,
@@ -7,8 +12,9 @@
   - 写工程 .workbench/state.json last_build (provider="gcc")
   - 写回工程级配置 gcc 段 (project/target/log_dir)
 
-机器路径唯一来源: toolkit/machine.json (gcc_path / make_exe; 本机文件不入库,
-模板=machine.example.json, 缺失时经 wb_common.load_machine 回退占位并警告)。
+机器路径唯一来源: toolkit/machine.json (arm: gcc_path / make_exe;
+wch: wch_gcc_path + 同样读 make_exe; 本机文件不入库, 模板=machine.example.json,
+缺失时经 wb_common.load_machine 回退占位并警告)。
 """
 
 from __future__ import annotations
@@ -103,14 +109,20 @@ def _resolve_makefile(project: str, workspace: Path) -> tuple[Path, Path]:
 
 
 def _makefile_vars(makefile: Path) -> dict:
-    """从 Makefile 提取 TARGET / BUILD_DIR (最简正则, 足够 CubeMX 生成物)。"""
+    """从 Makefile 提取 TARGET / BUILD_DIR (最简正则, 足够 CubeMX 生成物)。
+
+    F-235 真机首跑: 正则原先只认 `KEY =` / `KEY  =`, 不认 `:=` / `?=` ——
+    CH32 工程写 `TARGET  := ch32v307-hello`, 于是 target 落空、产物名被
+    猜成 `main.hex`, 烧录步骤报 hex 不存在。赋值算符一并收 (值仍取首个
+    非空白 token, 语义不变)。
+    """
     vars_: dict[str, str] = {}
     try:
         text = makefile.read_text(encoding="utf-8", errors="replace")
     except OSError:
         return vars_
     for key in ("TARGET", "BUILD_DIR"):
-        m = re.search(rf"^{key}\s*=\s*(\S+)", text, re.M)
+        m = re.search(rf"^{key}\s*[:?]?=\s*(\S+)", text, re.M)
         if m:
             vars_[key] = m.group(1)
     return vars_
@@ -214,7 +226,9 @@ def _run_make(project_dir: Path, action: str, target: str, log_file: Path,
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="GNU 工具链构建 (make + arm-none-eabi-gcc)")
+    parser = argparse.ArgumentParser(
+        description="GNU 工具链构建 (make + gcc.toolchain 派发的编译器: "
+                    "arm-none-eabi / riscv-wch-elf)")
     parser.add_argument("action", choices=["build", "rebuild", "clean"])
     parser.add_argument("--project", default=None, help="Makefile 路径或工程目录")
     parser.add_argument("--target", default=None, help="make TARGET (可选, 默认读 Makefile)")
