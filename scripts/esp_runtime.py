@@ -230,6 +230,14 @@ def step_capture_uart(timeout_s: int, cap_cfg: dict,
     if not isinstance(open_first, bool):
         return {"status": "error", "method": "uart",
                 "error": "capture.open_before_reset 须为布尔 (true/false)"}
+    if open_first and reset_mode == "esptool":
+        # esptool 复位要独占串口, 先开句柄则 chip_id 必抢不到口 —— 该组合
+        # 永远失败, 且要在配置期点名, 否则现场报"复位失败 (端口被占…)""把
+        # 用户引去查板子。控制者裁决 (Task 4 复评): 显式互斥。
+        return {"status": "error", "method": "uart",
+                "error": ("capture.open_before_reset 与 capture.reset=esptool "
+                          "互斥: esptool 复位需独占串口, 先开句柄必抢不到口; "
+                          "改用 capture.reset=openocd 或 none")}
     chip = _normalize_chip(cap_cfg.get("chip", "esp32s3"))
     if reset_mode == "esptool" and chip not in _ESP_CHIPS:
         return {"status": "error", "method": "uart",

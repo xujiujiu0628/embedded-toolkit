@@ -92,6 +92,21 @@ class OpenBeforeResetTests(unittest.TestCase):
         self.assertEqual(got["status"], "error")
         self.assertIn("open_before_reset", got["error"])
 
+    def test_esptool_reset_rejected_as_mutually_exclusive(self):
+        """esptool 复位要独占串口, 与"先开口"不可兼得 —— 配置期即拒,
+        不许拖到复位现场报"复位失败 (端口被占…)" 把用户引去查板子。"""
+        cfg = {"port": "COM15", "settle_sec": 0, "reset": "esptool",
+               "open_before_reset": True}
+        with mock.patch.dict(sys.modules, {"serial": self.serial_mod}):
+            got = esp_runtime.step_capture_uart(
+                0.1, cfg, workspace=".",
+                _run_idf=lambda c, **kw: {"status": "ok", "output": ""})
+        self.assertEqual(got["status"], "error")
+        self.assertEqual(got["method"], "uart")
+        self.assertIn("capture.open_before_reset", got["error"])
+        self.assertIn("capture.reset", got["error"])
+        self.assertNotIn("复位失败", got["error"])
+
     def test_open_failure_reports_readable_error(self):
         """先开口分支的打开失败自己出可读错, 不落到"复位失败"外套里。"""
         def boom(*a, **kw):
