@@ -679,3 +679,42 @@ def resolve_openocd_cfg(interface=None, target=None, workspace=None, *,
             out[short + "_source"] = source
             break
     return out
+
+
+def resolve_openocd_target(machine: dict, workspace=None, gcc_cfg=None) -> dict:
+    """按工程 toolchain 选 openocd 可执行与 cfg 列表 (F-235)。
+
+    arm(缺省) → machine.openocd_exe + resolve_openocd_cfg 的双文件 (行为不变)
+    wch       → machine.wch_openocd_exe + [machine.wch_openocd_cfg] 单文件
+    返回 {"exe", "cfg_list", "source"}; 缺键抛 OpenocdCfgError, 不静默回落。
+
+    wch 分支的歧义纪律: CH32V307 工程若缺 wch_* 两键, 静默回落 arm 会拿
+    ST-Link 的 openocd 去连 RISC-V 目标 —— 报错点名缺的 machine.json 键名,
+    不猜。单文件 cfg (MounRiver 的 wch-riscv.cfg) 自带 adapter/transport
+    声明, 调用方 (swd_probe) 因此不再追加 `transport select swd`。
+
+    工程 toolchain 读法: gcc_cfg 未给时按 workspace 读 .workbench/config.json
+    的 gcc 段。此处不走 wb_runtime.load_project_config —— 那是 Layer 1
+    (test_layering_gates 禁令 1: 本模块不得 import 上游), 其函数体正是
+    load_skill_section(project_config_file(workspace), skill), 结果等价。
+    """
+    if gcc_cfg is None and workspace:
+        gcc_cfg = load_skill_section(project_config_file(str(workspace)), "gcc")
+    kind = str((gcc_cfg or {}).get("toolchain") or "arm").strip().lower()
+    if kind == "wch":
+        exe = (machine.get("wch_openocd_exe") or "").strip()
+        cfg = (machine.get("wch_openocd_cfg") or "").strip()
+        if not exe:
+            raise OpenocdCfgError(
+                "machine.json 缺 wch_openocd_exe 键 (toolchain=wch 必需)")
+        if not cfg:
+            raise OpenocdCfgError(
+                "machine.json 缺 wch_openocd_cfg 键 (toolchain=wch 必需)")
+        return {"exe": exe, "cfg_list": [cfg], "source": "wch"}
+    exe = (machine.get("openocd_exe") or "").strip()
+    if not exe:
+        raise OpenocdCfgError("machine.json 缺 openocd_exe 键")
+    pair = resolve_openocd_cfg(workspace=workspace)
+    return {"exe": exe,
+            "cfg_list": [pair["interface"], pair["target"]],
+            "source": "arm"}

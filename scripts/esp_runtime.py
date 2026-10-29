@@ -14,8 +14,9 @@ import re
 import subprocess
 import time
 
-from runtime_common import (load_workspace_state, update_state_entry,  # noqa: E402  (F-190/H-1: last_build 经共享层持锁读改写; F-200 A2 嵌套键消费)
-                            workspace_root)
+from runtime_common import (load_workspace_state, resolve_openocd_target,  # noqa: E402  (F-190/H-1: last_build 经共享层持锁读改写; F-200 A2 嵌套键消费; F-235: 复位目标按 toolchain 分流)
+                            update_state_entry, workspace_root)
+from serial_port import resolve_port  # noqa: E402  (F-235: 端口发现)
 from wb_common import load_machine
 
 _PANIC_MARKERS = ("Guru Meditation", "Backtrace:", "abort() was called",
@@ -192,7 +193,8 @@ def step_capture_uart(timeout_s: int, cap_cfg: dict,
     """capture.backend=uart (F-174): 复位进固件 → pyserial 定时采集.
 
     F-231: `cap_cfg["reset"]` 选择复位方式——`"esptool"`(默认, ESP32) /
-    `"openocd"`(STM32/ST-Link; 复用 openocd_runtime.reset_target) /
+    `"openocd"`(STM32/ST-Link, 或 CH32 的 WCH-Link —— F-235 起 exe+cfg 按
+    工程 gcc.toolchain 分流, 复用 openocd_runtime.reset_target) /
     `"none"`(外部已复位)。非 esptool 模式跳过 `chip` 白名单——那是 ESP
     专属参数, 不该拦 STM32 工程。
 
@@ -204,16 +206,20 @@ def step_capture_uart(timeout_s: int, cap_cfg: dict,
          收 0 行; 释放附带一次 POWERON 复位=确定起点; 不支持设控制线
          的设备吞掉)
       3) readline 到 deadline: 端口异常即 error (COM3 被占/拔线给可读报错)
+    F-235 `cap_cfg["open_before_reset"]`(默认 false) 为 true 时改序: 先开串口
+    再复位——CDC 类适配器 (WCH-Link) 在 Windows 上句柄未开时不缓存字节,
+    复位早于开口 ⇒ banner 必丢 (CH32 试点 Critical 1+2 原症状)。缺省 false
+    = 存量时序零变化。
     panic 不拦截: 只打 esp_panic 文本标记, 定性交 AI judge (spec §4.3)。
     正文经私有键 "_text" 带回, 契约与 step_capture_rtt 一致。
     """
     run_idf_ = _run_idf or run_idf
     ws = workspace or os.getcwd()
-    port = (cap_cfg.get("port") or "").strip()
-    if not port:
-        return {"status": "error", "method": "uart",
-                "error": "capture.port 未配置 (uart 后端需要串口号, 如 COM3)"}
-    port_err = _esp_port_error(port)
+    resolved = resolve_port(cap_cfg.get("port"))
+    if "error" in resolved:
+        return {"status": "error", "method": "uart", "error": resolved["error"]}
+    port = resolved["port"]
+    port_err = _esp_port_error(port)     # 字面量与 auto 解析出的 device 同一白名单
     if port_err:
         return {"status": "error", "method": "uart", "error": port_err}
     reset_mode = str(cap_cfg.get("reset") or "esptool").strip().lower()
@@ -221,6 +227,18 @@ def step_capture_uart(timeout_s: int, cap_cfg: dict,
         return {"status": "error", "method": "uart",
                 "error": f"capture.reset 不在白名单: {reset_mode!r} "
                          f"(支持: esptool / openocd / none)"}
+    open_first = cap_cfg.get("open_before_reset", False)
+    if not isinstance(open_first, bool):
+        return {"status": "error", "method": "uart",
+                "error": "capture.open_before_reset 须为布尔 (true/false)"}
+    if open_first and reset_mode == "esptool":
+        # esptool 复位要独占串口, 先开句柄则 chip_id 必抢不到口 —— 该组合
+        # 永远失败, 且要在配置期点名, 否则现场报"复位失败 (端口被占…)""把
+        # 用户引去查板子。控制者裁决 (Task 4 复评): 显式互斥。
+        return {"status": "error", "method": "uart",
+                "error": ("capture.open_before_reset 与 capture.reset=esptool "
+                          "互斥: esptool 复位需独占串口, 先开句柄必抢不到口; "
+                          "改用 capture.reset=openocd 或 none")}
     chip = _normalize_chip(cap_cfg.get("chip", "esp32s3"))
     if reset_mode == "esptool" and chip not in _ESP_CHIPS:
         return {"status": "error", "method": "uart",
@@ -231,63 +249,83 @@ def step_capture_uart(timeout_s: int, cap_cfg: dict,
     except ImportError:
         return {"status": "error", "method": "uart",
                 "error": "缺 pyserial: pip install pyserial"}
-    # 复位兼探活用 esptool 只读命令。控制者裁决: 用下划线形式 chip_id + hard_reset
-    # —— IDF 5.4 自带 esptool v4.x 的 --after 只认下划线 (真机首跑报 "invalid
-    # choice: 'hard-reset'"); pip 装的 v5 仍收下划线 (仅弃用警告), 故下划线是
-    # 两版通吃的安全集。若 PATH 只有 esptool.py 入口报 "not recognized", 换
-    # `esptool.py ...` (Task 7 现场定; 单测 mock run_idf 不受影响)。
-    if reset_mode == "esptool":
-        reset = run_idf_([f"esptool --chip {chip} -p {port} --after "
-                          f"hard_reset chip_id"], timeout=30, workspace=ws)
-        if reset.get("status") != "ok":
-            return {"status": "error", "method": "uart",
-                    "error": ("复位失败 (端口被占/板子未上电?): "
-                              + (reset.get("message")
-                                 or reset.get("output", "")[-300:]))}
-    elif reset_mode == "openocd":
-        rt = _reset_target
-        if rt is None:
-            from openocd_runtime import reset_target as rt
-        try:
-            reset = rt(load_machine()["openocd_exe"], None, timeout=20)
-        except Exception as e:      # 缺 machine 键/OpenOCD 缺席都走可读报错
-            reset = {"status": "error", "message": str(e)}
-        if reset.get("status") != "ok":
-            return {"status": "error", "method": "uart",
-                    "error": ("复位失败 (OpenOCD/SWD — ST-Link 在位?): "
-                              + (reset.get("message") or ""))}
-    # reset_mode == "none": 调用方已自行复位, 直接采集
+    lines: list[str] = []
 
-    t0 = time.time()
-    deadline = t0 + float(cap_cfg.get("settle_sec", 1.0))
-    try:
-        while time.time() < deadline:
-            time.sleep(0.05)
-    except Exception:
-        pass
-    t0 = time.time()
-    lines = []
-    try:
-        with serial.Serial(port, int(cap_cfg.get("baudrate", 115200)),
-                           timeout=0.5) as ser:
-            # F-177: pyserial 开串口默认断言 DTR/RTS——CH340/CP210x 自动
-            # 下载电路把该组合等价于拉低 EN, 芯片被按在复位里静默 0 行
-            # (初代 esp32 真机首跑钓出; S3 试点板为 FTDI 桥 0403:6001,
-            # 其对断言双线不拉 EN——旧代码在该板一向有行, 09-19 回归
-            # 2× PASS 实证释放亦兼容)。开口后立即释放; CH340 板上
-            # "断言→释放"本身就是一次 POWERON 复位, 反而给出确定起点。
-            # 不支持设控制线的设备吞掉。
+    def _do_reset():
+        """复位一次; 返错误 dict 或 None (reset_mode 三分支原样搬入)。"""
+        # 复位兼探活用 esptool 只读命令。控制者裁决: 用下划线形式 chip_id + hard_reset
+        # —— IDF 5.4 自带 esptool v4.x 的 --after 只认下划线 (真机首跑报 "invalid
+        # choice: 'hard-reset'"); pip 装的 v5 仍收下划线 (仅弃用警告), 故下划线是
+        # 两版通吃的安全集。若 PATH 只有 esptool.py 入口报 "not recognized", 换
+        # `esptool.py ...` (Task 7 现场定; 单测 mock run_idf 不受影响)。
+        if reset_mode == "esptool":
+            reset = run_idf_([f"esptool --chip {chip} -p {port} --after "
+                              f"hard_reset chip_id"], timeout=30, workspace=ws)
+            if reset.get("status") != "ok":
+                return {"status": "error", "method": "uart",
+                        "error": ("复位失败 (端口被占/板子未上电?): "
+                                  + (reset.get("message")
+                                     or reset.get("output", "")[-300:]))}
+        elif reset_mode == "openocd":
+            rt = _reset_target
+            if rt is None:
+                from openocd_runtime import reset_target as rt
             try:
-                ser.dtr = False
-                ser.rts = False
-            except Exception:
-                pass
-            while time.time() - t0 < timeout_s:
-                raw = ser.readline()
-                if raw:
-                    lines.append(raw.decode("utf-8", errors="replace")
-                                 .rstrip("\r\n"))
-    except serial.SerialException as e:
+                # F-235: exe+cfg 随工程 toolchain 分流。旧写法硬取
+                # machine.openocd_exe 且 cfg=None (reset_target 内部的 arm
+                # 默认链) —— 对 RISC-V 目标 (CH32V307) 这条必失败: 拿
+                # ST-Link 的 openocd 与 stm32f1x.cfg 去连 wch_riscv 核。
+                # arm 保持原调用形态 (exe + cfg=None, 内部解析), 与
+                # release G0.5 的 arm/wch 分流先例同构。
+                oc = resolve_openocd_target(load_machine(), workspace=ws)
+                if oc["source"] == "wch":
+                    reset = rt(oc["exe"], oc["cfg_list"], timeout=20)
+                else:
+                    reset = rt(oc["exe"], None, timeout=20)
+            except Exception as e:      # 缺 machine 键/OpenOCD 缺席都走可读报错
+                reset = {"status": "error", "message": str(e)}
+            if reset.get("status") != "ok":
+                return {"status": "error", "method": "uart",
+                        "error": ("复位失败 (OpenOCD/SWD — ST-Link 在位?): "
+                                  + (reset.get("message") or ""))}
+        # reset_mode == "none": 调用方已自行复位, 直接采集
+        return None
+
+    def _settle():
+        """复位后、开始读取前的静默期 (settle_sec, 默认 1.0s)。"""
+        t_settle = time.time()
+        deadline = t_settle + float(cap_cfg.get("settle_sec", 1.0))
+        try:
+            while time.time() < deadline:
+                time.sleep(0.05)
+        except Exception:
+            pass
+
+    def _release_lines(ser_):
+        """F-177: 开口即释放 DTR/RTS (原注释原样搬入)。"""
+        # F-177: pyserial 开串口默认断言 DTR/RTS——CH340/CP210x 自动
+        # 下载电路把该组合等价于拉低 EN, 芯片被按在复位里静默 0 行
+        # (初代 esp32 真机首跑钓出; S3 试点板为 FTDI 桥 0403:6001,
+        # 其对断言双线不拉 EN——旧代码在该板一向有行, 09-19 回归
+        # 2× PASS 实证释放亦兼容)。开口后立即释放; CH340 板上
+        # "断言→释放"本身就是一次 POWERON 复位, 反而给出确定起点。
+        # 不支持设控制线的设备吞掉。
+        try:
+            ser_.dtr = False
+            ser_.rts = False
+        except Exception:
+            pass
+
+    def _read(ser_, t0):
+        """读满 timeout_s, 追加解码行进 lines (原读取循环原样搬入)。"""
+        while time.time() - t0 < timeout_s:
+            raw = ser_.readline()
+            if raw:
+                lines.append(raw.decode("utf-8", errors="replace")
+                             .rstrip("\r\n"))
+
+    def _partial_error(e):
+        """串口故障出口 — 已收行进账 (F-192 原注释与信封原样搬入)。"""
         # F-192 (WB-20260926-03 T4, 收 N-5): 已收行入账 — F-003"回收部分
         # 输出"纪律补齐 uart 异常路径 (此前只做了超时路径), 信封形态对齐
         # verify._finish_capture_timeout 的部分输出账 (lines 计数 +
@@ -303,6 +341,41 @@ def step_capture_uart(timeout_s: int, cap_cfg: dict,
             "error": f"串口 {port} 采集失败 (已收 {n_kept} 行一并入账): {e}",
             "partial_output": text[:2000],
         }
+
+    if open_first:
+        # F-235: 先开口再复位 —— CDC 类适配器 (WCH-Link) 在 Windows 上
+        # 句柄打开前不缓存字节, 后开口必丢 banner。复位失败也须关回句柄。
+        try:
+            ser = serial.Serial(port, int(cap_cfg.get("baudrate", 115200)),
+                                timeout=0.5)
+        except serial.SerialException as e:
+            return {"status": "error", "method": "uart",
+                    "error": f"串口打开失败 ({port}): {e}"}
+        _release_lines(ser)
+        err = _do_reset()
+        if err:
+            ser.close()
+            return err
+        _settle()
+        t0 = time.time()
+        try:
+            with ser:
+                _read(ser, t0)
+        except serial.SerialException as e:
+            return _partial_error(e)
+    else:
+        err = _do_reset()
+        if err:
+            return err
+        _settle()
+        t0 = time.time()
+        try:
+            with serial.Serial(port, int(cap_cfg.get("baudrate", 115200)),
+                               timeout=0.5) as ser:
+                _release_lines(ser)
+                _read(ser, t0)
+        except serial.SerialException as e:
+            return _partial_error(e)
     text = "\n".join(lines)
     return {
         "status": "ok", "method": "uart", "port": port,

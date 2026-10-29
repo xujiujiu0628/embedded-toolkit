@@ -1,4 +1,9 @@
-"""GNU 工具链构建后端 (make + arm-none-eabi-gcc)。
+"""GNU 工具链构建后端 (make + gcc.toolchain 派发的编译器)。
+
+F-235 起支持两套工具链, 由工程 .workbench/config.json 的 gcc.toolchain 选:
+  - arm (缺省) → arm-none-eabi-* —— 存量工程零改动
+  - wch        → riscv-wch-elf-* (MounRiver 自带 RISC-V GCC12, CH32V307)
+非 arm 工具链以命令行变量 (CC/OBJCOPY/SIZE 绝对路径) 注入 make。
 
 2026-09-05 F-067b 起 Keil 退役区拆 archive, 本脚本是仓内唯一构建后端;
 与 keil_build.py 同构契约 (历史, Keil 已退役) 仅作两份实现对照参考,
@@ -7,8 +12,9 @@
   - 写工程 .workbench/state.json last_build (provider="gcc")
   - 写回工程级配置 gcc 段 (project/target/log_dir)
 
-机器路径唯一来源: toolkit/machine.json (gcc_path / make_exe; 本机文件不入库,
-模板=machine.example.json, 缺失时经 wb_common.load_machine 回退占位并警告)。
+机器路径唯一来源: toolkit/machine.json (arm: gcc_path / make_exe;
+wch: wch_gcc_path + 同样读 make_exe; 本机文件不入库, 模板=machine.example.json,
+缺失时经 wb_common.load_machine 回退占位并警告)。
 """
 
 from __future__ import annotations
@@ -43,6 +49,54 @@ from wb_runtime import (  # noqa: E402
 
 MAKE_JOBS = 8
 
+# F-235: 工具链派发表。arm = 既有链路(缺省, 行为逐字节不变);
+# wch = MounRiver 自带 riscv-wch-elf 工具链。
+TOOLCHAINS = {
+    "arm": {"machine_key": "gcc_path", "prefix": "arm-none-eabi-"},
+    "wch": {"machine_key": "wch_gcc_path", "prefix": "riscv-wch-elf-"},
+}
+
+
+def resolve_toolchain(gcc_cfg: dict, machine: dict) -> dict:
+    """gcc.toolchain → {kind, bin_dir, prefix}; 未知值/缺键抛 ValueError。
+
+    F-235: 缺省 arm 保证存量工程零改动; wch 缺键必须点名键名,
+    不静默回落 arm (那会把 CH32 工程悄悄按 ARM 工具链构建)。
+    """
+    kind = str((gcc_cfg or {}).get("toolchain") or "arm").strip().lower()
+    spec = TOOLCHAINS.get(kind)
+    if spec is None:
+        raise ValueError(f"gcc.toolchain 不在白名单: {kind!r} "
+                         f"(支持: {', '.join(sorted(TOOLCHAINS))})")
+    bin_dir = machine.get(spec["machine_key"]) or ""
+    if not bin_dir:
+        if kind == "arm":
+            # 既有口径, test_gcc_build.py:164 按子串断言
+            raise ValueError(
+                f"gcc_path invalid in machine.json: {machine.get('gcc_path')}")
+        raise ValueError(f"{spec['machine_key']} invalid in machine.json: "
+                         f"{machine.get(spec['machine_key'])!r} (toolchain={kind} 必需)")
+    return {"kind": kind, "bin_dir": bin_dir, "prefix": spec["prefix"]}
+
+
+def _tool_exe(bin_dir: str, name: str) -> str:
+    """工具绝对路径: 优先 which (尊重 PATHEXT), 否则拼裸名。"""
+    return shutil.which(name, path=bin_dir) or str(Path(bin_dir) / name)
+
+
+def _tool_vars(toolchain: dict) -> list[str]:
+    """注入给 make 的 CC/OBJCOPY/SIZE (F-235)。
+
+    只对非 arm 工具链注入 —— arm 工程走 PATH 前置即可, 命令行变量会
+    覆盖 Makefile 里的 `CC :=`(含 ccache 包装类工程), 对存量是行为变化。
+    """
+    if toolchain["kind"] == "arm":
+        return []
+    bin_dir, prefix = toolchain["bin_dir"], toolchain["prefix"]
+    return [f"CC={_tool_exe(bin_dir, prefix + 'gcc')}",
+            f"OBJCOPY={_tool_exe(bin_dir, prefix + 'objcopy')}",
+            f"SIZE={_tool_exe(bin_dir, prefix + 'size')}"]
+
 
 def _resolve_makefile(project: str, workspace: Path) -> tuple[Path, Path]:
     """project 可为 Makefile 路径或工程目录; 返回 (Makefile, 工程目录)。"""
@@ -55,14 +109,20 @@ def _resolve_makefile(project: str, workspace: Path) -> tuple[Path, Path]:
 
 
 def _makefile_vars(makefile: Path) -> dict:
-    """从 Makefile 提取 TARGET / BUILD_DIR (最简正则, 足够 CubeMX 生成物)。"""
+    """从 Makefile 提取 TARGET / BUILD_DIR (最简正则, 足够 CubeMX 生成物)。
+
+    F-235 真机首跑: 正则原先只认 `KEY =` / `KEY  =`, 不认 `:=` / `?=` ——
+    CH32 工程写 `TARGET  := ch32v307-hello`, 于是 target 落空、产物名被
+    猜成 `main.hex`, 烧录步骤报 hex 不存在。赋值算符一并收 (值仍取首个
+    非空白 token, 语义不变)。
+    """
     vars_: dict[str, str] = {}
     try:
         text = makefile.read_text(encoding="utf-8", errors="replace")
     except OSError:
         return vars_
     for key in ("TARGET", "BUILD_DIR"):
-        m = re.search(rf"^{key}\s*=\s*(\S+)", text, re.M)
+        m = re.search(rf"^{key}\s*[:?]?=\s*(\S+)", text, re.M)
         if m:
             vars_[key] = m.group(1)
     return vars_
@@ -142,36 +202,33 @@ def merge_gcc_config(config_file: Path, makefile: Path, target: str,
 
 
 def _run_make(project_dir: Path, action: str, target: str, log_file: Path,
-              machine: dict) -> subprocess.CompletedProcess[str]:
-    """执行 make (PATH 前置 gcc/make 目录), 输出写入 log_file。"""
-    gcc_path = machine.get("gcc_path", "")
+              machine: dict, toolchain: dict) -> subprocess.CompletedProcess[str]:
+    """执行 make (PATH 前置所选工具链目录), 输出写入 log_file。"""
     make_exe = machine.get("make_exe", "make")
     env = os.environ.copy()
-    bin_dirs = [d for d in (gcc_path, str(Path(make_exe).parent)) if d]
+    bin_dirs = [d for d in (toolchain["bin_dir"], str(Path(make_exe).parent)) if d]
     if bin_dirs:
         env["PATH"] = os.pathsep.join(bin_dirs + [env.get("PATH", "")])
+    target_arg = [f"TARGET={target}"] if target else []
+    tool_args = _tool_vars(toolchain)   # F-235
 
     def run(cmd: list[str]) -> subprocess.CompletedProcess[str]:
         with open(log_file, "a", encoding="utf-8", errors="replace") as log_fp:
-            return subprocess.run(
-                cmd,
-                stdout=log_fp,
-                stderr=subprocess.STDOUT,
-                cwd=str(project_dir),
-                env=env,
-                timeout=300,
-                **hidden_subprocess_kwargs(),
-            )
+            return subprocess.run(cmd, stdout=log_fp, stderr=subprocess.STDOUT,
+                                  cwd=str(project_dir), env=env, timeout=300,
+                                  **hidden_subprocess_kwargs())
 
     if action == "clean":
-        return run([make_exe, "clean"] + ([f"TARGET={target}"] if target else []))
+        return run([make_exe, "clean"] + target_arg)
     if action == "rebuild":
-        run([make_exe, "clean"] + ([f"TARGET={target}"] if target else []))
-    return run([make_exe, f"-j{MAKE_JOBS}"] + ([f"TARGET={target}"] if target else []))
+        run([make_exe, "clean"] + target_arg)
+    return run([make_exe, f"-j{MAKE_JOBS}"] + target_arg + tool_args)
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="GNU 工具链构建 (make + arm-none-eabi-gcc)")
+    parser = argparse.ArgumentParser(
+        description="GNU 工具链构建 (make + gcc.toolchain 派发的编译器: "
+                    "arm-none-eabi / riscv-wch-elf)")
     parser.add_argument("action", choices=["build", "rebuild", "clean"])
     parser.add_argument("--project", default=None, help="Makefile 路径或工程目录")
     parser.add_argument("--target", default=None, help="make TARGET (可选, 默认读 Makefile)")
@@ -209,6 +266,13 @@ def main() -> None:
     stem = makefile.parent.name or "gcc"
     log_file = log_path / f"{stem}-{target or 'default'}-{args.action}.log"
 
+    try:
+        toolchain = resolve_toolchain(gcc_cfg, machine)
+    except ValueError as e:
+        output_json({"status": "error", "action": args.action,
+                     "error": {"code": "toolchain", "message": str(e)}})
+        return
+
     # 预检
     errors: list[str] = []
     if not makefile.is_file():
@@ -216,11 +280,11 @@ def main() -> None:
     # F-164: 预检平台化 —— 旧判定写死 "arm-none-eabi-gcc.exe", ubuntu runner
     # 上二进制无后缀必败 (sim-demo job 速败 errors=-1)。统一 shutil.which:
     # nt 下自动试 PATHEXT(.exe); POSIX 查存在+可执行位; 裸名查 PATH, 带目录查该路径。
-    gcc_ok = shutil.which("arm-none-eabi-gcc",
-                          path=machine.get("gcc_path") or "")
+    gcc_ok = shutil.which(toolchain["prefix"] + "gcc", path=toolchain["bin_dir"])
     make_ok = shutil.which(machine.get("make_exe") or "")
-    if not machine.get("gcc_path") or not gcc_ok:
-        errors.append(f"gcc_path invalid in machine.json: {machine.get('gcc_path')}")
+    if not gcc_ok:
+        errors.append(f"{TOOLCHAINS[toolchain['kind']]['machine_key']} invalid "
+                      f"in machine.json: {toolchain['bin_dir']}")
     if not machine.get("make_exe") or not make_ok:
         errors.append(f"make_exe invalid in machine.json: {machine.get('make_exe')}")
     if errors:
@@ -234,7 +298,7 @@ def main() -> None:
     # 执行构建
     try:
         log_file.write_text("", encoding="utf-8")  # 清空旧日志
-        proc = _run_make(project_dir, args.action, target, log_file, machine)
+        proc = _run_make(project_dir, args.action, target, log_file, machine, toolchain)
     except subprocess.TimeoutExpired:
         output_json({
             "status": "error",

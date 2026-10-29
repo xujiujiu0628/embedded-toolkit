@@ -209,6 +209,34 @@ class PrecheckPlatformPortableTests(unittest.TestCase):
                          "main() 预检段仍有 .exe 字面量 — F-164 回潮")
 
 
+class MakefileVarsTests(unittest.TestCase):
+    """F-235 真机首跑: TARGET 的赋值算符不止 `=` (CH32 工程写 `TARGET :=`)。
+
+    修前正则只认 `KEY =` / `KEY  =`, `:=` 落空 → target="" → 产物名被
+    猜成 main.elf/main.hex → 烧录前报"hex 不存在"。"""
+
+    def _vars(self, body):
+        tmp = tempfile.mkdtemp()
+        self.addCleanup(__import__("shutil").rmtree, tmp, True)
+        mk = os.path.join(tmp, "Makefile")
+        with open(mk, "w", encoding="utf-8") as f:
+            f.write(body)
+        from pathlib import Path
+        return gcc_build._makefile_vars(Path(mk))
+
+    def test_plain_assignment_still_parsed(self):
+        got = self._vars("TARGET = blink\nBUILD_DIR = obj\n")
+        self.assertEqual(got, {"TARGET": "blink", "BUILD_DIR": "obj"})
+
+    def test_immediate_and_conditional_assignment_parsed(self):
+        got = self._vars("TARGET  := ch32v307-hello\nBUILD_DIR ?= build\n")
+        self.assertEqual(got, {"TARGET": "ch32v307-hello", "BUILD_DIR": "build"})
+
+    def test_missing_file_returns_empty(self):
+        from pathlib import Path
+        self.assertEqual(gcc_build._makefile_vars(Path("/nonexistent/Makefile")), {})
+
+
 if __name__ == "__main__":
     # F-125 (工单 P1-2): unittest.main() 必须在全部类定义之后 —— 旧位置在
     # MakeTimingScaleTests 之前, 单文件直跑时该类不被收集, F-099 回归钉形同虚设

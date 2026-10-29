@@ -16,8 +16,11 @@ import subprocess
 import sys
 
 from openocd_runtime import swd_probe  # noqa: E402  (F-041: doctor 与 G0.5 同源)
+from runtime_common import OpenocdCfgError, resolve_openocd_target  # noqa: E402  (F-235: exe+cfg 按 toolchain 分流)
 from wb_common import (TOOLKIT_ROOT, load_machine,
                        toolkit_version)
+from gcc_build import TOOLCHAINS, resolve_toolchain  # noqa: E402  (F-235: toolchain 派发)
+from wb_runtime import load_project_config  # noqa: E402  (F-235: 读工程 gcc 段)
 
 
 # ---------------------------------------------------------------------------
@@ -31,6 +34,12 @@ from wb_common import (TOOLKIT_ROOT, load_machine,
 # "仓内零 Keil 引用"声明对齐。旧 machine.json 里残留的 uv4_exe 键被容忍
 # (按下标取键只遍历本表, 多余键无害不报错)。
 _DOCTOR_KEYS = ("openocd_exe", "gcc_path", "make_exe")
+
+# F-235 (R5 挂账收口): wch 工程另报 wch_* 三键的配置状态。修前 machine 键区
+# 恒只列 arm 三键, 一台只配了 wch_* 的机器在体检里看不出"wch 工具链配没配",
+# 而 tools.openocd 又恒报 arm 的 openocd —— 对一个 toolchain=wch 的工程,
+# 那是**错的行**。arm 工程键集与行内容逐字节不变 (test_doctor 钉三键集合)。
+_DOCTOR_KEYS_WCH = ("wch_gcc_path", "wch_openocd_exe", "wch_openocd_cfg")
 
 
 def _first_version_line(cmd: list) -> tuple:
@@ -225,10 +234,44 @@ def fixture_health(fixture_dir: str, *, skip_drift_check: bool = False) -> dict:
     }
 
 
-def doctor_report(probe: bool = True, *, skip_drift_check: bool = False) -> dict:
+def _toolchain_kind(gcc_cfg: dict) -> str:
+    """gcc.toolchain 段值 → 白名单内的 kind (缺省/未知值一律 arm)。
+
+    只用于选 machine.json 键名; 未知值的"配置非法"由 resolve_toolchain 在
+    真正检查工具链时报 (_gcc_tool_check 的 detail)。"""
+    kind = str((gcc_cfg or {}).get("toolchain") or "arm").strip().lower()
+    return kind if kind in TOOLCHAINS else "arm"
+
+
+def _gcc_tool_check(machine: dict, gcc_cfg: dict) -> dict:
+    """按 gcc.toolchain 选 gcc 检查键 (F-235)。
+
+    arm(缺省) → gcc_path / arm-none-eabi-*; wch → wch_gcc_path /
+    riscv-wch-elf-*。resolve_toolchain 对未知值/缺键抛 ValueError, 而 doctor
+    是诊断报告不是门禁 (空 machine.json 也得出报告): 解析失败时按配置里能
+    读到的 kind 选键继续检查, 错误串挂 detail 留痕 —— 显式可见, 不静默。"""
+    try:
+        toolchain = resolve_toolchain(gcc_cfg, machine)
+    except ValueError as e:
+        spec = TOOLCHAINS[_toolchain_kind(gcc_cfg)]
+        check = _check_tool(machine, spec["machine_key"],
+                            spec["prefix"] + "gcc", ("--version",))
+        check["detail"] = f"{check.get('detail', '')} " \
+                          f"(gcc.toolchain 解析失败: {e})"
+        return check
+    return _check_tool(machine, TOOLCHAINS[toolchain["kind"]]["machine_key"],
+                       toolchain["prefix"] + "gcc", ("--version",))
+
+
+def doctor_report(probe: bool = True, *, skip_drift_check: bool = False,
+                  workspace: str | None = None) -> dict:
     """环境矩阵收集 (F-041)。machine.json 缺失时经 load_machine 回退链取占位值,
     各工具按占位/缺失跳过 —— 本函数永不执行占位路径。probe=True 且 openocd
-    在场时做单次 SWD 探测 (attempts=1; 门禁 G0.5 用 3 次重试版)。"""
+    在场时做单次 SWD 探测 (attempts=1; 门禁 G0.5 用 3 次重试版)。
+
+    F-235: workspace 给定 (非 None) 时按该工程 gcc.toolchain 报工具链与
+    openocd 目标 (wch 工程单文件 cfg, 且 machine 键区/工具行改列 wch_* 键);
+    不给 (既有调用方/测试) 即 arm 缺省语义, 与修前逐字节同。"""
     machine = load_machine()
     machine_file = os.path.join(TOOLKIT_ROOT, "machine.json")
     example_file = os.path.join(TOOLKIT_ROOT, "machine.example.json")
@@ -239,26 +282,40 @@ def doctor_report(probe: bool = True, *, skip_drift_check: bool = False) -> dict
     else:
         mode = "missing"
 
+    gcc_cfg = load_project_config(workspace, skill="gcc") if workspace else {}
+    kind = _toolchain_kind(gcc_cfg)
     keys = {}
-    for k in _DOCTOR_KEYS:
+    for k in _DOCTOR_KEYS + (_DOCTOR_KEYS_WCH if kind == "wch" else ()):
         v = (machine.get(k) or "").strip()
         keys[k] = {"value_set": bool(v),
                    "placeholder": v.startswith("<"),
                    "path_exists": os.path.exists(v) if v else None}
 
-    tools = {"gcc": _check_tool(machine, "gcc_path", "arm-none-eabi-gcc", ("--version",)),
-             "openocd": _check_tool(machine, "openocd_exe", "openocd", ("--version",)),
+    oc_exe_key = "wch_openocd_exe" if kind == "wch" else "openocd_exe"
+    tools = {"gcc": _gcc_tool_check(machine, gcc_cfg),
+             "openocd": _check_tool(machine, oc_exe_key, "openocd", ("--version",)),
              "make": _check_tool(machine, "make_exe", "make", ("--version",))}
 
-    oc = (machine.get("openocd_exe") or "").strip()
+    # F-235: openocd exe 与 cfg 随 toolchain 分流 —— wch 工程用 MounRiver
+    # 单文件 cfg, 探测命令不再追加 `transport select swd` (见 swd_probe)。
+    # "未配置/占位/不存在"维持既有 skipped 口径 (不把缺键升格成 fail);
+    # cfg 非法 (如 toolchain=wch 却缺 wch_openocd_cfg) 才是 fail。
+    oc = (machine.get(oc_exe_key) or "").strip()
     if not oc or oc.startswith("<") or not os.path.isfile(oc):
         swd = {"status": "skipped",
-               "detail": "openocd_exe 未配置/占位/不存在, 跳过 SWD 探测"}
-    elif probe:
-        ok, tail = swd_probe(oc, attempts=1)
-        swd = {"status": "ok" if ok else "fail", "detail": tail}
-    else:
+               "detail": f"{oc_exe_key} 未配置/占位/不存在, 跳过 SWD 探测"}
+    elif not probe:
         swd = {"status": "skipped", "detail": "未请求探测"}
+    else:
+        try:
+            oc_target = resolve_openocd_target(machine, workspace=workspace,
+                                               gcc_cfg=gcc_cfg)
+        except OpenocdCfgError as e:
+            swd = {"status": "fail", "detail": str(e)}
+        else:
+            ok, tail = swd_probe(oc_target["exe"], attempts=1,
+                                 cfg_list=oc_target["cfg_list"])
+            swd = {"status": "ok" if ok else "fail", "detail": tail}
 
     # F-048: fixture 体检 (2026-09-02 方案四-5) — 复用 TOOLKIT_ROOT 的 fixture 目录
     #   不传 workspace 是因为 fixture 跟工具库同仓, 体检只看 tests/fixtures/contract/
@@ -289,7 +346,7 @@ def _print_doctor(rep: dict) -> None:
         flags = [lbl for lbl, on in (("空", not v["value_set"]),
                                      ("占位", v["placeholder"]),
                                      ("路径在场", v["path_exists"])) if on]
-        print(f"  {k:<11}: {', '.join(flags) if flags else '-'}")
+        print(f"  {k:<15}: {', '.join(flags) if flags else '-'}")
     for name in ("gcc", "openocd", "make"):
         t = rep["tools"][name]
         line = f"  {name:<9}: {t['status']}"

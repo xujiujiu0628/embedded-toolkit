@@ -554,3 +554,84 @@ class Gate1NonDictIdfSectionTests(_Gate1OuterProbe, unittest.TestCase):
                 self.assertEqual(
                     outer, want,
                     f"idf={bad!r} 时外层应 {want}s (默认构建预算 + 收尾裕量)")
+
+
+class GccVersionToolchainDispatchTests(unittest.TestCase):
+    """F-235: 发布记录 tools.gcc 随工程 gcc.toolchain 分流。
+
+    v0.1 发布记录实锤的缺陷: toolchain=wch 的 CH32V307 工程构建用
+    riscv-wch-elf-gcc 12.2, 记录却落 `arm-none-eabi-gcc.exe (GNU Arm
+    Embedded Toolchain 10.3-2021.10)` —— 探的是 machine.gcc_path, 与工程
+    实际工具链无关, 属工具链证据失真。修向: 经 gcc_build.resolve_toolchain
+    派发后探 prefix+gcc @ bin_dir; arm 语义与探不到时的 unknown(原因) 不变。
+    """
+
+    MACHINE = {"gcc_path": "/arm/bin", "make_exe": "/make",
+               "openocd_exe": "/arm/openocd",
+               "wch_gcc_path": "/wch/bin", "wch_openocd_exe": "/wch/openocd",
+               "wch_openocd_cfg": "/wch/wch-riscv.cfg"}
+    WCH_LINE = "riscv-wch-elf-gcc.exe (xPack GNU RISC-V Embedded GCC i386) 12.2.0"
+    ARM_LINE = "arm-none-eabi-gcc.exe (GNU Arm Embedded Toolchain 10.3-2021.10) 10.3.1"
+
+    def setUp(self):
+        self.ws = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.ws, True)
+
+    def _write_config(self, gcc):
+        os.makedirs(os.path.join(self.ws, ".workbench"), exist_ok=True)
+        with open(os.path.join(self.ws, ".workbench", "config.json"), "w",
+                  encoding="utf-8") as f:
+            json.dump({"builder": "gcc", "gcc": gcc}, f)
+
+    def _record(self, machine, version_line):
+        """模块引用替换式打桩 (棘轮钦定形态): 不碰全局 shutil/subprocess 对象。"""
+        whiches, runs = [], []
+
+        class FakeShutil:
+            @staticmethod
+            def which(name, path=None):
+                whiches.append((name, path))
+                return os.path.join(path or "", name)
+
+        class FakeProc:
+            returncode = 0
+            stdout = version_line + "\n"
+            stderr = ""
+
+        class FakeSubprocess:
+            @staticmethod
+            def run(cmd, **kw):
+                runs.append(cmd)
+                return FakeProc()
+
+        with mock.patch.object(release, "load_machine", return_value=machine), \
+                mock.patch.object(release, "shutil", FakeShutil), \
+                mock.patch.object(release, "subprocess", FakeSubprocess):
+            rec = release.build_record(self.ws, "v9.9.9", [], [])
+        return rec, whiches, runs
+
+    def test_wch_project_records_wch_gcc_version(self):
+        self._write_config({"toolchain": "wch"})
+        rec, whiches, runs = self._record(self.MACHINE, self.WCH_LINE)
+        self.assertEqual(rec["tools"]["gcc"], self.WCH_LINE)
+        self.assertIn(("riscv-wch-elf-gcc", "/wch/bin"), whiches)
+        gcc_runs = [cmd for cmd in runs if cmd and cmd[0].endswith("gcc")]
+        self.assertEqual(len(gcc_runs), 1)
+        self.assertIn("riscv-wch-elf-gcc", gcc_runs[0][0])
+
+    def test_arm_project_records_arm_gcc_version(self):
+        self._write_config({})
+        rec, whiches, _ = self._record(self.MACHINE, self.ARM_LINE)
+        self.assertEqual(rec["tools"]["gcc"], self.ARM_LINE)
+        self.assertIn(("arm-none-eabi-gcc", "/arm/bin"), whiches)
+
+    def test_wch_missing_key_never_falls_back_to_arm(self):
+        """wch 缺键 → unknown 点名键名, 绝不拿 arm 的版本串冒充。"""
+        self._write_config({"toolchain": "wch"})
+        machine = {"gcc_path": "/arm/bin", "make_exe": "/make"}
+        rec, whiches, runs = self._record(machine, self.ARM_LINE)
+        self.assertTrue(rec["tools"]["gcc"].startswith("unknown ("))
+        self.assertIn("wch_gcc_path", rec["tools"]["gcc"])
+        self.assertEqual(whiches, [])
+        self.assertFalse([cmd for cmd in runs if cmd and cmd[0].endswith("gcc")],
+                         "unknown 路径不得再探任何 gcc")

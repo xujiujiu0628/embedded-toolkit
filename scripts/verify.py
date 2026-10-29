@@ -40,16 +40,28 @@ WORKSPACE = None  # 工程根, main() 中 --project 或 cwd 向上发现后设�
 from wb_common import (TOOLKIT_ROOT, find_project_root, load_machine,
                        toolkit_version, version_ok)
 
+def _openocd_target() -> dict:
+    """F-235: exe + cfg 随工程 toolchain 分流 (替代原 _openocd_exe)。
+
+    F-054 惰性纪律不变——import 期零 IO, machine.json 与工程 gcc 段都在
+    调用时读; 缺键抛 OpenocdCfgError (step_flash 落 error 信封)。"""
+    return resolve_openocd_target(load_machine(), workspace=WORKSPACE)
+
+
 def _openocd_exe() -> str:
     """F-054: 原 OPENOCD_EXE 模块级常量惰性化——import 期零 IO。
 
     旧形态在 import 期读 machine.json，缺失时还向 stderr 吐回退警告，
     6 个测试文件被迫以注释豁免（CONTRIBUTING 禁令 #2 的存在理由之一）。
-    惰性化后 import 卫生由 test_import_hygiene 钉死。"""
-    return load_machine()["openocd_exe"]
+    惰性化后 import 卫生由 test_import_hygiene 钉死。
+
+    F-235: 实体已移到 _openocd_target (exe 随 toolchain 分流), 本函数
+    保留为薄包装——既有调用面与测试 patch 点 (_openocd_exe) 不消失。"""
+    return _openocd_target()["exe"]
 
 from runtime_common import now_iso, output_json  # noqa: E402  (F-041: doctor --json 复用共享层; F-157: now_iso 收编)
-from runtime_common import OpenocdCfgError, resolve_openocd_cfg  # noqa: E402  (WB-20260919-06: cfg 组装单一事实源)
+from runtime_common import (OpenocdCfgError,  # noqa: E402  (WB-20260919-06: cfg 组装单一事实源; F-235: exe+cfg 一并由该解析器给出)
+                            resolve_openocd_target)
 from runtime_common import (esp_backend_mode as _esp_backend_mode)  # noqa: E402  (F-190/M-1: 三标记 OR 上收单一事实源, F-057 再导出形态——release G0.5 同源消费)
 from runtime_common import esp_backend_config_errors  # noqa: E402  (F-190/T3: GAP-F-19 混配 fail-fast 规则单一事实源)
 from openocd_runtime import reset_target  # noqa: E402  (F-041/F-129: 判定后复位; F-192/N-4: swd_probe 死名已删 — verify 主链零调用, G0.5 探测面归 release/doctor 直连 openocd_runtime)
@@ -241,13 +253,13 @@ def step_flash(hex_file: str, config: dict | None = None) -> dict:
 
     hex_abs = os.path.join(WORKSPACE, hex_file)
     try:
-        pair = resolve_openocd_cfg(workspace=WORKSPACE)
+        oc_target = _openocd_target()
     except OpenocdCfgError as e:
         return {"status": "error", "message": str(e)}
-    cmd = [
-        _openocd_exe(),
-        "-f", pair["interface"],
-        "-f", pair["target"],
+    cmd = [oc_target["exe"]]
+    for c in oc_target["cfg_list"]:
+        cmd.extend(["-f", c])
+    cmd.extend([
         # F-163 (L-4): program 串拆序 — verify 不带 reset, 串尾 echo 构造性标记
         # 先于 exit (exit 截胡时标记 echo 不会在场, 这正是"脚本没跑完"的构造性
         # 证据方向); reset 由主流程 post_reset (F-129) 与 capture 会话各自的
@@ -255,7 +267,7 @@ def step_flash(hex_file: str, config: dict | None = None) -> dict:
         "-c", f"program {{{hex_abs}}} verify",
         "-c", ACTION_DONE_CMD,
         "-c", "exit",
-    ]
+    ])
     result = run_cmd(cmd, timeout=30)
     if result["status"] == "ok" and not marker_present(
             result.get("stdout", "") + result.get("stderr", "")):
@@ -604,8 +616,12 @@ def _parse_args(argv=None):
 
 
 def _run_doctor(args) -> None:
-    """F-041: 诊断分支先于工程发现 —— doctor 不依赖 .workbench 工程。"""
-    report = doctor_report()
+    """F-041: 诊断分支先于工程发现 —— doctor 不依赖 .workbench 工程。
+
+    F-235: 显式给了工程路径 (--project, 或模块级 WORKSPACE 已钉) 时按该工程
+    的 gcc.toolchain 报对应工具链 (wch 工程报 riscv-wch-elf 与 wch openocd);
+    都没有时保持 arm 缺省语义 (R3)。"""
+    report = doctor_report(workspace=args.project or WORKSPACE)
     if args.json:
         output_json(report)
     else:
@@ -1516,7 +1532,10 @@ def _finalize_run(args, config, result, lease, max_retries, captured_text):
         # 碰巧无害只因 ST-Link 失联, 同机插着 STM32 时就是跨设备副作用。
         result["post_reset"] = "skipped"
     elif flash_ok and (config.get("capture", {}) or {}).get("post_reset", True):
-        rs = reset_target(_openocd_exe())
+        # F-235: 复位与 flash 用同一 exe/cfg 解析结果 (wch 目标是单文件 cfg,
+        # 不能再走 reset_target 的 arm 默认链)
+        oc = _openocd_target()
+        rs = reset_target(oc["exe"], oc["cfg_list"])
         result["post_reset"] = "ok" if rs.get("status") == "ok" else "failed"
         if rs.get("status") != "ok":
             print(f"[warn] 判定后复位失败 (不影响 verdict): {rs.get('message', '')}",

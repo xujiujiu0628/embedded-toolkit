@@ -165,7 +165,8 @@ def emit_stream_record(*, source: str, channel_type: str, text: str, as_json: bo
         print(text, end="" if text.endswith(("\n", "\r")) else "\n", flush=True)
 
 
-def swd_probe(openocd_exe: str, attempts: int = 3) -> tuple[bool, str]:
+def swd_probe(openocd_exe: str, attempts: int = 3,
+              cfg_list: list[str] | None = None) -> tuple[bool, str]:
     """SWD 连通性探测 (秒级)。原 release.py 私有实现下沉共享 (F-041):
     发布门禁 G0.5 与 verify.py --doctor 共用同一命令与判据, 防两处口径漂移。
 
@@ -173,16 +174,24 @@ def swd_probe(openocd_exe: str, attempts: int = 3) -> tuple[bool, str]:
     克隆适配器偶发非零退出; 连接失败形态是 "init mode failed / unable to connect"。
     attempts: 门禁默认 3 次重试 (ST-Link 释放竞态纪律); doctor 传 1 做单次快探。
     cfg 组装经 resolve_openocd_cfg 单一事实源 (WB-20260919-06); 非法配置按
-    探测失败返回 (显式报错不静默回落, F-103)。"""
-    try:
-        pair = resolve_openocd_cfg()
-    except OpenocdCfgError as e:
-        return False, f"openocd cfg 非法: {e}"
-    cmd = [openocd_exe,
-           "-f", pair["interface"],
-           "-f", pair["target"],
-           "-c", "transport select swd",
-           "-c", "init", "-c", "targets", "-c", "shutdown"]
+    探测失败返回 (显式报错不静默回落, F-103)。
+
+    F-235: cfg_list 由调用方按工程 toolchain 给 (见
+    runtime_common.resolve_openocd_target); 未给时走 resolve_openocd_cfg
+    默认链 (arm 形态)。单文件 cfg 自带 adapter/transport 声明, 不再追加
+    `transport select swd` —— 双文件形态 (STM32) 保持原命令逐字节不变。"""
+    if cfg_list is None:
+        try:
+            pair = resolve_openocd_cfg()
+        except OpenocdCfgError as e:
+            return False, f"openocd cfg 非法: {e}"
+        cfg_list = [pair["interface"], pair["target"]]
+    cmd = [openocd_exe]
+    for c in cfg_list:
+        cmd.extend(["-f", c])
+    if len(cfg_list) > 1:
+        cmd.extend(["-c", "transport select swd"])
+    cmd.extend(["-c", "init", "-c", "targets", "-c", "shutdown"])
     last = ""
     for attempt in range(max(1, attempts)):
         try:

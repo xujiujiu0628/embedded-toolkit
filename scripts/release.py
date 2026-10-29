@@ -25,7 +25,9 @@ from wb_common import (TOOLKIT_ROOT, atomic_write_json, file_lock,  # noqa: E402
                        find_project_root, load_machine,
                        release_record_lock_path, sha256_file, toolkit_version)
 from openocd_runtime import swd_probe  # noqa: E402  (F-041: 下沉共享层, doctor 与 G0.5 同源)
-from runtime_common import esp_backend_mode, load_json_file  # noqa: E402  (F-190/M-1: 后端判据单一事实源; config 只读窥视)
+from runtime_common import (OpenocdCfgError,  # noqa: E402  (F-235: 目标解析失败按 G0.5 失败返回)
+                            esp_backend_mode, load_json_file,  # noqa: E402  (F-190/M-1: 后端判据单一事实源; config 只读窥视)
+                            resolve_openocd_target)
 
 VERIFY = os.path.join(TOOLKIT_ROOT, "scripts", "verify.py")
 
@@ -185,23 +187,45 @@ def gate1(ws, timeout):
 # F-157 (P2-3): 本地 sha256_file 删除, 收编 wb_common 共享版
 
 
-def _gcc_version():
+def _gcc_version(ws=None):
     """工具链版本首行; 探不到返回 unknown(原因) — F-196 T4 (L-7)。
 
     F-164 同款平台化探测: 旧形态配了 gcc_path 即硬拼 arm-none-eabi-gcc.exe,
     Linux 发布机恒 unknown。现 shutil.which 优先 (nt 自动试 PATHEXT/.exe,
     POSIX 查存在+可执行位; 裸名查 PATH, 带目录查该路径), gcc_path 落空再退
     PATH; 两处皆探不到仍 unknown 但原因入输出 (记录 tools.gcc 可见)。
-    ESP not_applicable 分流 (F-190/M-1) 在 build_record 侧, 本函数不动。"""
-    m = load_machine()
-    gcc_path = (m.get("gcc_path") or "").strip()
-    exe = shutil.which("arm-none-eabi-gcc", path=gcc_path) if gcc_path else None
+    ESP not_applicable 分流 (F-190/M-1) 在 build_record 侧, 本函数不动。
+
+    F-235 (v0.1 发布实锤的缺陷, 事后修复+披露): tools.gcc 此前恒按 arm
+    探测 —— toolchain=wch 的工程 (CH32V307) 构建用 riscv-wch-elf-gcc, 发布
+    记录却落 arm 的版本串, 属工具链证据失真。修法与其余分流点同构: ws 给出
+    (build_record 调用面) 时经 gcc_build.resolve_toolchain 按工程
+    gcc.toolchain 派发, 探 prefix+gcc @ bin_dir; 探不到仍 unknown 且原因
+    入输出。不传 ws (既有调用面/测试) 保持 arm 语义逐字节不变。"""
+    machine = load_machine()
+    gcc_name = "arm-none-eabi-gcc"
+    gcc_path = (machine.get("gcc_path") or "").strip()
+    if ws is not None:
+        gcc_cfg = _project_config(ws).get("gcc")
+        try:
+            from gcc_build import resolve_toolchain  # 局部引入: release 不顶层依赖 gcc_build
+            toolchain = resolve_toolchain(gcc_cfg, machine)
+            gcc_path = toolchain["bin_dir"]
+            gcc_name = toolchain["prefix"] + "gcc"
+        except ValueError as e:
+            # 非 arm 工具链缺键/取值非法: unknown 点名原因, 不静默回落 arm
+            # (那会把 RISC-V 工程误标成 arm 工具链, 正是本单要消灭的形态)。
+            # arm 缺 gcc_path 维持 F-164 既有行为 (退 PATH 探测)。
+            kind = str((gcc_cfg or {}).get("toolchain") or "arm").strip().lower()
+            if kind != "arm":
+                return f"unknown ({e})"
+    exe = shutil.which(gcc_name, path=gcc_path) if gcc_path else None
     if exe is None:
-        exe = shutil.which("arm-none-eabi-gcc")
+        exe = shutil.which(gcc_name)
     if exe is None:
-        why = (f"gcc_path={gcc_path!r} 与 PATH 均探不到 arm-none-eabi-gcc"
+        why = (f"gcc_path={gcc_path!r} 与 PATH 均探不到 {gcc_name}"
                if gcc_path else
-               "machine.json 未配 gcc_path 且 PATH 探不到 arm-none-eabi-gcc")
+               f"machine.json 未配 gcc_path 且 PATH 探不到 {gcc_name}")
         return f"unknown ({why})"
     if os.name == "nt":
         # which 经 PATHEXT 命中会回传 .EXE 大写形态, 而 gcc 版本行回显
@@ -235,7 +259,20 @@ def run_gates(ws, tag, allow_xfail, timeout, openocd_exe,
     if is_esp:
         g0_5 = {"status": "skipped", "reason": _G05_ESP_SKIP_REASON}
     else:
-        ok, msg = swd_probe(openocd_exe)
+        # F-235: exe + cfg 随工程 toolchain 分流 —— wch 工程用 MounRiver
+        # openocd + 单文件 wch-riscv.cfg。arm 保持原命令行逐字节不变
+        # (exe 由 main() 透传, cfg 仍走 swd_probe 内部默认链; 钉见
+        # test_f190_release_chain.T2G05GateTests 与 test_release)。
+        # wch 键缺/非法按门禁失败返回 (release 无统一信封, 不吐 traceback)。
+        try:
+            oc_target = resolve_openocd_target(load_machine(), workspace=ws)
+        except OpenocdCfgError as e:
+            return False, f"G0.5 openocd 目标解析失败: {e}", {}
+        if oc_target["source"] == "wch":
+            ok, msg = swd_probe(oc_target["exe"],
+                                cfg_list=oc_target["cfg_list"])
+        else:
+            ok, msg = swd_probe(openocd_exe)
         if not ok:
             return False, f"G0.5 SWD 预检失败 (环境未备?): {msg}", {}
     res = gate1(ws, timeout)
@@ -335,7 +372,7 @@ def build_record(ws, tag, results, waived, contracts=None, evidence="static",
         "tools": {"toolkit": toolkit_version(),
                   "python": sys.version.split()[0],
                   "gcc": ("not_applicable(esp-idf project)" if is_esp
-                          else _gcc_version())},
+                          else _gcc_version(ws))},
     }
     if is_esp:
         record["g0_5"] = {"status": "skipped", "reason": _G05_ESP_SKIP_REASON}

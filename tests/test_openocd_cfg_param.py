@@ -149,9 +149,13 @@ class VerifyStepFlashSiteTests(unittest.TestCase):
         rel = os.path.join("build", "app.hex")
         os.makedirs(os.path.join(td, "build"), exist_ok=True)
         open(os.path.join(td, rel), "w").close()
+        # F-235/R1: exe+cfg 解析点由 _openocd_exe 移入 _openocd_target
+        # (后者返回三元组); arm 分支的 cfg 对即 DEFAULT_PAIR, 本钉身份不变。
         with mock.patch.object(verify, "WORKSPACE", td), \
-             mock.patch.object(verify, "_openocd_exe",
-                               return_value=FAKE_EXE), \
+             mock.patch.object(verify, "_openocd_target",
+                               return_value={"exe": FAKE_EXE,
+                                             "cfg_list": list(DEFAULT_PAIR),
+                                             "source": "arm"}), \
              mock.patch.object(verify, "run_cmd",
                                return_value={"status": "ok", "returncode": 0,
                                              "stdout": openocd_run.ACTION_DONE_MARKER + "\n",
@@ -258,8 +262,12 @@ def _flash_capture(td):
     rel = os.path.join("build", "app.hex")
     os.makedirs(os.path.join(td, "build"), exist_ok=True)
     open(os.path.join(td, rel), "w").close()
+    # F-235/R1: 解析点随迁 _openocd_target (cfg 对仍是 arm 缺省对)
     with mock.patch.object(verify, "WORKSPACE", td), \
-         mock.patch.object(verify, "_openocd_exe", return_value=FAKE_EXE), \
+         mock.patch.object(verify, "_openocd_target",
+                           return_value={"exe": FAKE_EXE,
+                                         "cfg_list": list(DEFAULT_PAIR),
+                                         "source": "arm"}), \
          mock.patch.object(verify, "run_cmd",
                            return_value={"status": "ok", "returncode": 0,
                                          "stdout": openocd_run.ACTION_DONE_MARKER + "\n",
@@ -480,11 +488,15 @@ class ConvergenceTests(unittest.TestCase):
             rel = os.path.join("build", "app.hex")
             os.makedirs(os.path.join(td, "build"), exist_ok=True)
             open(os.path.join(td, rel), "w").close()
-            with mock.patch.object(verify, "resolve_openocd_cfg",
+            # F-235/R1: 解析入口迁到 _openocd_target (verify) → 其内部仍走
+            # resolve_openocd_cfg (runtime_common 模块级); 本钉的"该点经过
+            # 解析器"判据因此改钉 runtime_common 侧, 并桩掉 load_machine
+            # 保持离线 (patch 面仍是被测模块自身命名空间, 不触棘轮)。
+            with mock.patch.object(runtime_common, "resolve_openocd_cfg",
                                    self._wrap(calls)), \
                  mock.patch.object(verify, "WORKSPACE", td), \
-                 mock.patch.object(verify, "_openocd_exe",
-                                   return_value=FAKE_EXE), \
+                 mock.patch.object(verify, "load_machine",
+                                   return_value={"openocd_exe": FAKE_EXE}), \
                  mock.patch.object(verify, "run_cmd",
                                    return_value={"status": "ok",
                                                  "returncode": 0,

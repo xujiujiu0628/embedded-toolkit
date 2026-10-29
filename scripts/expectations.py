@@ -17,7 +17,7 @@ import re
 
 
 class ExpectationError(ValueError):
-    """期望清单非法 (id 重复 / 缺 xfail_reason / texts+patterns 并存等)"""
+    """期望清单非法 (id 重复 / 缺 xfail_reason / 判据字段并存等)"""
 
 
 def check_forbidden_fields(item):
@@ -89,7 +89,7 @@ def contract_hashes(workspace: str, has_manifest: bool) -> dict:
 
 
 def item_rule_errors(item) -> list:
-    """F-157 (P2-3): 单条目规则判据 E2(缺失)/E3~E8/E12/E13 — loader 与
+    """F-157 (P2-3): 单条目规则判据 E2(缺失)/E3~E8/E12/E13/E15 — loader 与
     lint 的双写判据收敛到单一事实源 (check_forbidden_fields 同款模式)。
 
     返回 [(code, core)]; core 不含条目标签, 消费方自行拼接:
@@ -111,8 +111,29 @@ def item_rule_errors(item) -> list:
         all(isinstance(t, str) and t for t in texts)
     ok_pats = isinstance(pats, list) and len(pats) > 0 and \
         all(isinstance(p, str) and p for p in pats)
-    if ok_texts == ok_pats:  # 并存或皆缺均非法
-        errors.append(("E4", "texts 与 patterns 须二选一(非空字符串数组)"))
+    # F-235: sequence (抽取数值须严格递增) — 与 texts/patterns 同为"正向判据",
+    # 结构校验归 E15 (码随判据走); 三选一由下方 E4 统一判
+    seq = item.get("sequence")
+    ok_seq = (isinstance(seq, dict)
+              and isinstance(seq.get("pattern"), str) and seq["pattern"].strip())
+    if seq is not None:
+        if not ok_seq:
+            errors.append(("E15", "sequence 须为对象且含非空 pattern"))
+        else:
+            try:
+                re.compile(seq["pattern"])
+            except re.error as e:
+                # 与 E5 同理: 惰性编译会把非法正则拖到烧录后才炸
+                errors.append(("E15", f"sequence.pattern 非法正则 "
+                               f"{seq['pattern']!r}: {e}"))
+            mc = seq.get("min_count", 2)
+            if isinstance(mc, bool) or not isinstance(mc, int) or mc < 2:
+                errors.append(("E15", "sequence.min_count 须为 >=2 的整数"))
+            st = seq.get("strict", True)
+            if not isinstance(st, bool):
+                errors.append(("E15", "sequence.strict 须为布尔"))
+    if int(bool(ok_texts)) + int(bool(ok_pats)) + int(bool(ok_seq)) != 1:
+        errors.append(("E4", "texts / patterns / sequence 须三选一(非空)"))
     if ok_pats:
         for p in pats:
             try:
@@ -160,6 +181,16 @@ def item_rule_errors(item) -> list:
             if missing:
                 errors.append(("E12", f"record 引用未定义的命名捕获组: {missing} "
                                f"(patterns[0] 须写 (?P<{missing[0]}>...) 形态)"))
+    # F-235: sequence 与 capture_group/record/min/max 互斥 — sequence 对
+    # 全量匹配逐个抽值比单调, capture_group/min/max 只定界首个 match,
+    # record 只落原样字符串, 三者语义不可叠加; 出现即 E15 (码随判据走)
+    if seq is not None:
+        clash = [k for k in ("capture_group", "record", "min", "max")
+                 if item.get(k) is not None]
+        if clash:
+            errors.append(("E15", f"sequence 与 {'/'.join(clash)} 互斥 — "
+                           "序号序列用 sequence 全量校验, 单值定界用 "
+                           "capture_group/min/max, 二选一"))
     return errors
 
 
@@ -192,7 +223,7 @@ def load_expectations(workspace):
             if eid in seen:
                 raise ExpectationError(f"id 重复: {eid}")
             seen.add(eid)
-        # F-157: E2缺失/E3~E8/E13/E12 判据走 item_rule_errors 单一事实源
+        # F-157: E2缺失/E3~E8/E13/E12/E15 判据走 item_rule_errors 单一事实源
         errs = item_rule_errors(item)
         if errs:
             code, core = errs[0]
@@ -227,7 +258,29 @@ def _expect_matched(item, output):
 
     F-148 ②: 条目带 ordered=true 时按序命中 — texts 依次 find(从上一命中
     之后), patterns 依次 search(从上一 match.end() 之后); 默认 False,
-    既有"任意位置命中"语义零改动。"""
+    既有"任意位置命中"语义零改动。
+
+    F-235: 条目带 sequence 时改判"抽取数值严格递增" — 对 pattern 做
+    finditer 全量抽值, 样本数不足 min_count 或 strict 下非严格单调即
+    FAIL; 这是 texts/patterns 看不见的静默复位 (tick 重启回 0) 的唯一判据。"""
+    seq = item.get("sequence")
+    if seq:
+        nums = []
+        for m in re.finditer(seq["pattern"], output):
+            if not m.groups():
+                return False, "sequence.pattern 缺捕获组 (须含 (\\d+))"
+            try:
+                nums.append(int(m.group(1)))
+            except (TypeError, ValueError):
+                return False, f"sequence 捕获值非整数: {m.group(1)!r}"
+        min_count = seq.get("min_count", 2)
+        if len(nums) < min_count:
+            return False, f"sequence 样本数 {len(nums)} < min_count {min_count}"
+        if seq.get("strict", True):
+            for prev, cur in zip(nums, nums[1:]):
+                if cur <= prev:
+                    return False, f"sequence 不满足严格单调: {prev} → {cur}"
+        return True, ""
     ordered = bool(item.get("ordered"))
     texts = item.get("texts", [])
     if ordered and texts:
