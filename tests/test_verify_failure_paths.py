@@ -258,7 +258,11 @@ class StepFlashN3MarkerTests(unittest.TestCase):
             f.write(":00000001FF\n")
 
     @mock.patch.object(verify, "run_cmd")
-    @mock.patch.object(verify, "_openocd_exe", return_value="openocd")
+    @mock.patch.object(verify, "_openocd_target",
+                       return_value={"exe": "openocd",
+                                     "cfg_list": ["interface/stlink.cfg",
+                                                  "target/stm32f1x.cfg"],
+                                     "source": "arm"})
     def _flash(self, m_exe, m_run, returncode=0, stdout_tail="", stderr_tail=""):
         m_run.return_value = {"status": "ok" if returncode == 0 else "error",
                               "returncode": returncode,
@@ -330,8 +334,12 @@ class FlashAttemptsMessageFallbackTests(unittest.TestCase):
                          task_origin="manual",
                          require_schedule_origin=False)
         with mock.patch.object(verify, "run_cmd") as m_run, \
-             mock.patch.object(verify, "_openocd_exe",
-                               return_value="openocd"), \
+             mock.patch.object(verify, "_openocd_target",
+                               return_value={
+                                   "exe": "openocd",
+                                   "cfg_list": ["interface/stlink.cfg",
+                                                "target/stm32f1x.cfg"],
+                                   "source": "arm"}), \
              mock.patch.object(verify, "hw_lease") as m_lease, \
              mock.patch.object(verify, "_output"), \
              mock.patch.object(verify, "_record_checkpoint_early_exit"):
