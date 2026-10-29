@@ -62,7 +62,12 @@ class StepFlashDispatchTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             rel = self._mk_artifact(td)
             with mock.patch.object(verify, "WORKSPACE", td), \
-                 mock.patch.object(verify, "_openocd_exe", return_value="ocd.exe"), \
+                 mock.patch.object(verify, "_openocd_target",
+                                   return_value={
+                                       "exe": "ocd.exe",
+                                       "cfg_list": ["interface/stlink.cfg",
+                                                    "target/stm32f1x.cfg"],
+                                       "source": "arm"}), \
                  mock.patch.object(verify, "run_cmd",
                                    return_value={"status": "ok", "returncode": 0,
                                                  "stdout": openocd_run.ACTION_DONE_MARKER + "\n",

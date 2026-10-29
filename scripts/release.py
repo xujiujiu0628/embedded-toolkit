@@ -25,7 +25,9 @@ from wb_common import (TOOLKIT_ROOT, atomic_write_json, file_lock,  # noqa: E402
                        find_project_root, load_machine,
                        release_record_lock_path, sha256_file, toolkit_version)
 from openocd_runtime import swd_probe  # noqa: E402  (F-041: 下沉共享层, doctor 与 G0.5 同源)
-from runtime_common import esp_backend_mode, load_json_file  # noqa: E402  (F-190/M-1: 后端判据单一事实源; config 只读窥视)
+from runtime_common import (OpenocdCfgError,  # noqa: E402  (F-235: 目标解析失败按 G0.5 失败返回)
+                            esp_backend_mode, load_json_file,  # noqa: E402  (F-190/M-1: 后端判据单一事实源; config 只读窥视)
+                            resolve_openocd_target)
 
 VERIFY = os.path.join(TOOLKIT_ROOT, "scripts", "verify.py")
 
@@ -235,7 +237,20 @@ def run_gates(ws, tag, allow_xfail, timeout, openocd_exe,
     if is_esp:
         g0_5 = {"status": "skipped", "reason": _G05_ESP_SKIP_REASON}
     else:
-        ok, msg = swd_probe(openocd_exe)
+        # F-235: exe + cfg 随工程 toolchain 分流 —— wch 工程用 MounRiver
+        # openocd + 单文件 wch-riscv.cfg。arm 保持原命令行逐字节不变
+        # (exe 由 main() 透传, cfg 仍走 swd_probe 内部默认链; 钉见
+        # test_f190_release_chain.T2G05GateTests 与 test_release)。
+        # wch 键缺/非法按门禁失败返回 (release 无统一信封, 不吐 traceback)。
+        try:
+            oc_target = resolve_openocd_target(load_machine(), workspace=ws)
+        except OpenocdCfgError as e:
+            return False, f"G0.5 openocd 目标解析失败: {e}", {}
+        if oc_target["source"] == "wch":
+            ok, msg = swd_probe(oc_target["exe"],
+                                cfg_list=oc_target["cfg_list"])
+        else:
+            ok, msg = swd_probe(openocd_exe)
         if not ok:
             return False, f"G0.5 SWD 预检失败 (环境未备?): {msg}", {}
     res = gate1(ws, timeout)
