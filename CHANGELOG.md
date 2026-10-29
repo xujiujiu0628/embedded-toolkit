@@ -41,6 +41,14 @@
   mutation bite OK，拔探针 G0.5 fail-closed（报"SWD 预检失败 (环境未备?)"
   退出 1），正式发布 `G0~G2 全过`，tag `v0.1`（peel=`f83167a`），发布记录
   commit `b1d466e`，release_audit CLEAN。
+  **终审续账（2026-10-30，`fix/f235-should-fix` 五 commit）**: 最终整支评审的
+  SHOULD-FIX-SOON 六条全闭 —— ① E15 补 `sequence.pattern` 捕获组检查（坏模式
+  从"真机才炸"提前到 lint）；② mutation 报错区分 legacy 与"判定前失败"并点名
+  实际 status（原一律说"没有 id 级断言"）；③ mutation 的 `red_ids` 计入 `xpass`
+  （严格红不再误报"未变红"）；④ `--doctor --project` 遇非对象 config.json 报
+  `gcc=fail` 行而非裸 AttributeError；⑤ `requirements.txt` 串口族清单补
+  `serial_port.py`；⑥ 预检补探 `objcopy`/`size`（缺哪个点哪个名，arm/wch 共用）。
+  新增 6 例行为测试，全量 1574 绿。
 
 ## 0.9 — 2026-10-29（三号复审全链收口 + 判定链四项 fail-closed · 三样例首次真机验收三笔纠错 · CI 假绿根治与统一异常信封 · 锁面/构建预算/采集后端三面收口 · KB 外设 desc 22 条补齐）
 

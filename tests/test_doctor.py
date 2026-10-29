@@ -276,5 +276,34 @@ class WchDoctorKeysTests(unittest.TestCase):
         self.assertFalse(keys["wch_openocd_cfg"]["path_exists"])
 
 
+class MalformedProjectConfigTests(unittest.TestCase):
+    """F-235 SHOULD-FIX: --doctor --project 遇畸形 config.json 不得裸崩。
+
+    `[]` / {"gcc": "wch"} 这类非对象结构会让 load_project_config 或
+    _toolchain_kind 抛 AttributeError, 而该调用在 --doctor 早退路径上、
+    不在 _fail_with_envelope 的 try 内 —— 修前用户拿到裸 traceback。"""
+
+    def _ws(self, body):
+        d = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, d, True)
+        os.makedirs(os.path.join(d, ".workbench"))
+        with open(os.path.join(d, ".workbench", "config.json"), "w",
+                  encoding="utf-8") as f:
+            f.write(body)
+        return d
+
+    def test_non_object_config_reports_fail_not_crash(self):
+        for body in ("[]", '{"gcc": "wch"}'):
+            with self.subTest(body=body):
+                with mock.patch.object(doctor, "load_machine",
+                                       return_value={}):
+                    rep = verify.doctor_report(probe=False,
+                                               skip_drift_check=True,
+                                               workspace=self._ws(body))
+                self.assertEqual(rep["tools"]["gcc"]["status"], "fail")
+                self.assertIn("结构非法", rep["tools"]["gcc"]["detail"])
+                self.assertEqual(verify.strict_exit_code(rep), 1)
+
+
 if __name__ == "__main__":
     unittest.main()

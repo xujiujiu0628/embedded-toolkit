@@ -239,6 +239,36 @@ class MutationEnvelopeTests(unittest.TestCase):
         with open(self.src, encoding="utf-8") as f:
             self.assertIn("boot", f.read())        # 仍须还原
 
+    def test_early_fail_envelope_names_actual_status(self):
+        # F-235 SHOULD-FIX: 构建/烧录/HardFault/物理门控失败时 verify 提前
+        # 退出, steps.verify 压根不存在 —— 报「没有 id 级断言」会把运维引去
+        # 查一个不存在的配置问题。必须点名实际 status 并带 error 原文。
+        env = {"status": "build_failed", "error": "make: *** [all] Error 2"}
+        got = mutation.mutate_and_run(self.proj, "BOOT-01", "main.c",
+                                      "boot", "MUT", lambda: env, 5)
+        self.assertFalse(got["ok"])
+        self.assertIn("build_failed", got["error"])
+        self.assertIn("make: ***", got["error"])       # 原文可引
+        self.assertNotIn("没有 id 级断言", got["error"])
+        with open(self.src, encoding="utf-8") as f:
+            self.assertIn("boot", f.read())            # 仍须还原
+
+    def test_xpass_counts_as_red(self):
+        # F-235 SHOULD-FIX: xfail 条目意外通过 (xpass) 在四态判定里是严格
+        # 红, verdict 同样不 ok; 只收 "fail" 会对 xfail 条目误报「未变红」。
+        calls = []
+
+        def run_verify():
+            calls.append(1)
+            if len(calls) == 1:
+                return self._manifest("fail",
+                                      [{"id": "BOOT-01", "status": "xpass"}])
+            return self._manifest("ok", [])
+
+        got = mutation.mutate_and_run(self.proj, "BOOT-01", "main.c",
+                                      "boot", "MUT", run_verify, 5)
+        self.assertTrue(got["ok"], got)
+
     def test_verify_crash_on_red_run_is_reported_as_crash(self):
         crash = {"status": "internal_error", "steps": {},
                  "error": "Traceback ...\nKeyError: 'firmware'"}

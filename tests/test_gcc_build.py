@@ -165,13 +165,37 @@ class PrecheckPlatformPortableTests(unittest.TestCase):
 
     def test_make_not_found_reports_make_exe_invalid(self):
         # gcc 查得到、make 查不到 → 只报 make_exe
+        # F-235 SHOULD-FIX: 预检同时探 objcopy/size, 三者都得命中才算 gcc 面 OK
         env = self._run_main(
             self._machine(),
             {"side_effect": lambda name, *a, **k:
-             "/usr/bin/arm-none-eabi-gcc" if "gcc" in str(name) else None})
+             "/usr/bin/" + str(name)
+             if str(name).startswith("arm-none-eabi-") else None})
         self.assertEqual(env["error"]["code"], "precheck")
         self.assertIn("make_exe invalid", env["error"]["message"])
         self.assertNotIn("gcc_path invalid", env["error"]["message"])
+
+    def test_objcopy_missing_reported_by_name(self):
+        # F-235 SHOULD-FIX: 修前只探 gcc, wch_gcc_path 缺 objcopy 时预检放行,
+        # 直到 make 跑 objcopy 才报 "No such file or directory" (错误来自
+        # make 而非 toolkit 预检)。缺哪个点哪个名。
+        env = self._run_main(
+            self._machine(),
+            {"side_effect": lambda name, *a, **k:
+             "/usr/bin/" + str(name) if str(name).endswith("gcc") else None})
+        self.assertEqual(env["error"]["code"], "precheck")
+        self.assertIn("objcopy", env["error"]["message"])
+
+    def test_size_missing_reported_by_name(self):
+        # 同一条预检对 size 同样生效: 只缺 size 时点 size, 不连坐 objcopy
+        env = self._run_main(
+            self._machine(),
+            {"side_effect": lambda name, *a, **k:
+             "/usr/bin/" + str(name)
+             if str(name).endswith("gcc") or "objcopy" in str(name) else None})
+        self.assertEqual(env["error"]["code"], "precheck")
+        self.assertIn("size", env["error"]["message"])
+        self.assertNotIn("objcopy", env["error"]["message"])
 
     def test_both_found_passes_precheck(self):
         # 双命中 → 不再报 precheck（会走 _run_make, mock 掉防真跑）
