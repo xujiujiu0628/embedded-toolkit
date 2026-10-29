@@ -121,11 +121,17 @@ def item_rule_errors(item) -> list:
             errors.append(("E15", "sequence 须为对象且含非空 pattern"))
         else:
             try:
-                re.compile(seq["pattern"])
+                n_groups = re.compile(seq["pattern"]).groups
             except re.error as e:
                 # 与 E5 同理: 惰性编译会把非法正则拖到烧录后才炸
                 errors.append(("E15", f"sequence.pattern 非法正则 "
                                f"{seq['pattern']!r}: {e}"))
+            else:
+                # F-235 SHOULD-FIX: 求值期 _expect_matched 靠捕获组取序号;
+                # 无组 pattern 旧版能过 lint、真机才炸, 故编译成功后补判。
+                if n_groups < 1:
+                    errors.append(("E15", f"sequence.pattern 须含至少一个捕获组 "
+                                   f"(如 TICK (\\d+)): {seq['pattern']!r}"))
             mc = seq.get("min_count", 2)
             if isinstance(mc, bool) or not isinstance(mc, int) or mc < 2:
                 errors.append(("E15", "sequence.min_count 须为 >=2 的整数"))

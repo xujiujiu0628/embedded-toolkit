@@ -67,6 +67,14 @@ class SequenceLintTests(unittest.TestCase):
         errs = expectations.item_rule_errors(_item())
         self.assertEqual(errs, [])
 
+    def test_pattern_without_capture_group_rejected(self):
+        # F-235 SHOULD-FIX: 求值期 _expect_matched 靠捕获组取序号, 无组
+        # pattern 旧版能过 lint、真机才炸 —— 编译成功后须补这一条。
+        errs = expectations.item_rule_errors(
+            _item(sequence={"pattern": r"TICK \d+", "min_count": 3}))
+        self.assertTrue(any(e[0] == "E15" and "捕获组" in e[1] for e in errs),
+                        errs)
+
     def test_bad_pattern_rejected(self):
         errs = expectations.item_rule_errors(
             _item(sequence={"pattern": "T (", "min_count": 3}))
