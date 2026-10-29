@@ -282,9 +282,19 @@ def main() -> None:
     # nt 下自动试 PATHEXT(.exe); POSIX 查存在+可执行位; 裸名查 PATH, 带目录查该路径。
     gcc_ok = shutil.which(toolchain["prefix"] + "gcc", path=toolchain["bin_dir"])
     make_ok = shutil.which(machine.get("make_exe") or "")
+    gcc_key = TOOLCHAINS[toolchain["kind"]]["machine_key"]
     if not gcc_ok:
-        errors.append(f"{TOOLCHAINS[toolchain['kind']]['machine_key']} invalid "
-                      f"in machine.json: {toolchain['bin_dir']}")
+        errors.append(f"{gcc_key} invalid in machine.json: "
+                      f"{toolchain['bin_dir']}")
+    # F-235 SHOULD-FIX: 同时探 objcopy / size —— 缺了 make 会在规则里报
+    # "No such file or directory", 错误来自 make 而非 toolkit 预检, 运维得
+    # 翻日志才知道缺哪个工具。缺哪个点哪个名, 与 gcc 那条同形 (含实际 bin 目录)。
+    for bare in ("objcopy", "size"):
+        if not shutil.which(toolchain["prefix"] + bare,
+                            path=toolchain["bin_dir"]):
+            errors.append(f"{gcc_key} invalid in machine.json: "
+                          f"{toolchain['bin_dir']} "
+                          f"(缺 {toolchain['prefix']}{bare})")
     if not machine.get("make_exe") or not make_ok:
         errors.append(f"make_exe invalid in machine.json: {machine.get('make_exe')}")
     if errors:
