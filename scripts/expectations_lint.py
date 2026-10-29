@@ -8,7 +8,7 @@
   E1  文件可解析 (UTF-8 JSON, 顶层含非空 expectations 数组)
   E2  条目为对象; id 非空字符串且全表唯一
   E3  desc 非空字符串
-  E4  texts 与 patterns 二选一 (非空字符串数组)
+  E4  texts / patterns / sequence 三选一 (非空字符串数组 / sequence 对象)
   E5  patterns 可编译 (非法正则曾拖到烧录后才炸, 审计 M1)
   E6  xfail=true 时 xfail_reason 必填
   E7  capture_group 为正整数且仅与 patterns 搭配
@@ -21,6 +21,8 @@
       与 capture_group/min/max 互斥 (全量记录 vs 首匹配定界, 二选一) +
       引用的命名捕获组须在 patterns[0] 中定义 (F-148)
   E13 ordered 须为布尔 (F-148)
+  E15 sequence 结构与取值: pattern 非空且可编译 / min_count >=2 整数 /
+      strict 布尔; 且与 capture_group/record/min/max 互斥 (F-235)
 
 退出码: 0 = 干净/仅警告, 1 = 存在 error（含文件不存在/不可解析 E0/E1）, 2 = 用法错误
 
@@ -38,13 +40,13 @@ import math
 import os
 import sys
 
-from expectations import (  # F-157 (P2-3): E2~E8/E12/E13 判据单一事实源
+from expectations import (  # F-157 (P2-3): E2~E8/E12/E13/E15 判据单一事实源
     check_forbidden_fields, item_rule_errors)
 from wb_common import find_project_root, force_utf8_streams
 
 
 def lint_expectations(expectations):
-    """对已解析的 expectations 数组做 E2~E11 检查, 返回 (errors, warnings)。"""
+    """对已解析的 expectations 数组做 E2~E15 检查, 返回 (errors, warnings)。"""
     errors = []
     warnings = []
     seen = set()
@@ -57,7 +59,7 @@ def lint_expectations(expectations):
             continue
         eid = item.get("id")
         label = eid if isinstance(eid, str) and eid.strip() else f"<idx {i}>"
-        # F-157 (P2-3): E2缺失/E3~E8/E13/E12 判据收敛 item_rule_errors
+        # F-157 (P2-3): E2缺失/E3~E8/E13/E12/E15 判据收敛 item_rule_errors
         # 单一事实源 (loader 同源); E2 id 重复与 E9 结构矛盾仍归 lint 专项
         for code, core in item_rule_errors(item):
             errors.append(f"{code}: {label} {core}")
