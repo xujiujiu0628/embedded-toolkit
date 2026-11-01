@@ -3,7 +3,18 @@
 格式约定: 每条含发现编号（代管期 findings 编目）与证据 commit。当前版本以
 `VERSION` 文件为准（`wb_common.toolkit_version()` 读取）。
 
-## Unreleased — 0.9 封袋后新账（F-235 起）
+## Unreleased — 0.10 封袋后新账（F-236 起）
+
+## 0.10 — 2026-11-01（CH32V307 / WCH RISC-V 后端正式接入 · 工具链派发与 openocd 目标统一解析 · 端口自动发现与先开串口再复位 · sequence 严格单调断言 · 变异枪原语 · 终审 SHOULD-FIX 六条收口）
+
+> 封袋定义: 自 v0.9 标签（commit 5343b11, 2026-10-29）之后落入本账本的
+> 全部账归入 0.10——含本节起手的 F-235 一笔发现 / 23 个 commit（7 Task
+> 分支合并 + 终审 SHOULD-FIX 六条收口，末笔 d4f2ae8 为合并提交）。
+> 账目物理位置说明（F-092 单堆制 + 封袋不搬账=零删承诺）: 本节即 0.9 封袋时
+> 新开的 Unreleased 段原样归入，未搬位未删行。核对以 git 锚点为准、
+> 勿以本文件行位置为准（0.9/0.8/0.7 封袋注记先例同式）。
+> 锚点口径: v0.9 tag 对象 f499d75，peel 5343b11（封袋 commit，2026-10-29）。
+> 锚值经 git rev-parse / git ls-remote 对远端亲取，不抄记忆。
 
 - **F-235 (feat+fix, 七 commit + 真机收尾): CH32V307 后端接入 — 工具链派发 / openocd 统一解析 / 端口发现 / open_before_reset / sequence 断言 / 变异枪 + 工程侧迁移真机发布**:
   **工具库面（六项）**: ① `gcc.toolchain` 派发（arm 缺省逐字节不变 / wch =
