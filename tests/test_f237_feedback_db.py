@@ -38,7 +38,7 @@ def _run(cwd: str, *args: str) -> subprocess.CompletedProcess:
 
 class FeedbackQueryTests(unittest.TestCase):
     def setUp(self):
-        self.tmp = tempfile.TemporaryDirectory()
+        self.tmp = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
         self.addCleanup(self.tmp.cleanup)
         self.proj = os.path.join(self.tmp.name, "proj")
         os.makedirs(os.path.join(self.proj, ".workbench"))
@@ -106,7 +106,7 @@ class FeedbackQueryTests(unittest.TestCase):
 
 class PipelineStatsUnitTests(unittest.TestCase):
     def test_unknown_pipeline_returns_zeroes(self):
-        with tempfile.TemporaryDirectory() as tmp:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
             os.makedirs(os.path.join(tmp, ".workbench"))
             with open(os.path.join(tmp, ".workbench", "config.json"), "w", encoding="utf-8") as fh:
                 fh.write("{}")

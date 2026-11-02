@@ -621,6 +621,14 @@ def _parse_args(argv=None):
                              "preflight error; 写失败记 junit_xml_error "
                              "并拉低退出码)")
 
+    # F-236 后续: -I/--help 在 Windows 控制台默认 cp1252 下打印中文
+    # help 文本会 UnicodeEncodeError (rc=1)。argparse 直写 sys.stdout,
+    # 不经 _output 的 reconfigure —— 这里提前切 UTF-8 (StringIO 等无
+    # reconfigure 的流静默跳过)。
+    try:
+        sys.stdout.reconfigure(encoding="utf-8")
+    except (AttributeError, ValueError):
+        pass
     return parser.parse_args(argv)
 
 

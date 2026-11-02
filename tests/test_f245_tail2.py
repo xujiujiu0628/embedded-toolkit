@@ -33,7 +33,7 @@ class CoverageLintEdgeTests(unittest.TestCase):
             os.path.join(tempfile.gettempdir(), "no-such-tests")), set())
 
     def test_syntax_error_script_has_empty_graph_node(self):
-        with tempfile.TemporaryDirectory() as tmp:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
             path = os.path.join(tmp, "broken.py")
             with open(path, "w", encoding="utf-8") as fh:
                 fh.write("def broken(:\n")
@@ -54,7 +54,7 @@ class CoverageLintEdgeTests(unittest.TestCase):
                 sys.modules["coverage"] = saved
 
     def test_analysis_errors_and_zero_statement_files(self):
-        with tempfile.TemporaryDirectory() as tmp:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
             for name, body in (("bad.py", "x = 1\n"),
                                ("empty.py", "# only comment\n"),
                                ("half.py", "y = 2\n")):
@@ -91,7 +91,7 @@ class CoverageLintEdgeTests(unittest.TestCase):
         self.assertEqual(pct["half.py"], 50.0)
 
     def test_main_infers_tests_dir(self):
-        with tempfile.TemporaryDirectory() as tmp:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
             scripts = os.path.join(tmp, "scripts")
             os.makedirs(scripts)
             with open(os.path.join(scripts, "a.py"), "w", encoding="utf-8") as fh:
@@ -169,7 +169,7 @@ class DurationProfileTailTests(unittest.TestCase):
         self.assertIn("source: demo", out)
 
     def test_real_legacy_warning_printed(self):
-        with tempfile.TemporaryDirectory() as ws:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as ws:
             os.makedirs(os.path.join(ws, ".workbench", "state"))
             with open(os.path.join(ws, ".workbench", "state", "checkpoints.jsonl"),
                       "w", encoding="utf-8") as fh:

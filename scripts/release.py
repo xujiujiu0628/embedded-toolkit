@@ -446,6 +446,13 @@ def main():
                     help="豁免 G2 证据等级门 (F-128: 仿真/静态证据) — "
                          "evidence_waiver 留痕入档, 审计 R8 降级警告")
     ap.add_argument("--timeout", type=int, default=10, help="采集超时秒数")
+    # F-236 后续: -I/--help 在 Windows cp1252 控制台打印中文 help 会
+    # UnicodeEncodeError (rc=1) —— argparse 直写 sys.stdout。提前切 UTF-8
+    # (无 reconfigure 的流静默跳过)。
+    try:
+        sys.stdout.reconfigure(encoding="utf-8")
+    except (AttributeError, ValueError):
+        pass
     args = ap.parse_args()
 
     ws = args.project or find_project_root(os.getcwd())

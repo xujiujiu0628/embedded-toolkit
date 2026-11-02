@@ -66,7 +66,7 @@ def _call(main_func, *argv):
 
 class SvdCliInProcessTests(unittest.TestCase):
     def setUp(self):
-        self.tmp = tempfile.TemporaryDirectory()
+        self.tmp = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
         self.addCleanup(self.tmp.cleanup)
         self.svd = os.path.join(self.tmp.name, "mini.svd")
         with open(self.svd, "w", encoding="utf-8") as fh:
@@ -129,7 +129,7 @@ class PhaseMinusOneCliInProcessTests(unittest.TestCase):
 
 class FeedbackDbCliInProcessTests(unittest.TestCase):
     def setUp(self):
-        self.tmp = tempfile.TemporaryDirectory()
+        self.tmp = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
         self.addCleanup(self.tmp.cleanup)
         os.makedirs(os.path.join(self.tmp.name, ".workbench"))
         with open(os.path.join(self.tmp.name, ".workbench", "config.json"), "w", encoding="utf-8") as fh:
@@ -167,7 +167,7 @@ class CubeUsercodeCliInProcessTests(unittest.TestCase):
     """main() 会 os.chdir 到工程根并缓存模块全局，用例间必须复位。"""
 
     def setUp(self):
-        self.tmp = tempfile.TemporaryDirectory()
+        self.tmp = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
         self.addCleanup(self.tmp.cleanup)
         self.proj = os.path.join(self.tmp.name, "proj")
         os.makedirs(os.path.join(self.proj, ".workbench"))

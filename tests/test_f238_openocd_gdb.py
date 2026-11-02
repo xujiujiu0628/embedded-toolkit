@@ -79,7 +79,7 @@ def _run_main(argv, *, params=None, resolve_param=None, ready=(True, []),
             # 独立 workspace：绝不能指 tempfile.gettempdir() —— 成功路径会
             # 调 save_project_config 在 workspace 下建 .workbench/，写进系统
             # 临时根会污染其他"无工程根"用例（2026-11-02 实锤）。
-            workspace = stack.enter_context(tempfile.TemporaryDirectory())
+            workspace = stack.enter_context(tempfile.TemporaryDirectory(ignore_cleanup_errors=True))
             patch(openocd_gdb, "workspace_root", return_value=workspace)
             patch(openocd_gdb, "save_project_config")
             patch(openocd_gdb, "default_config_path", return_value="cfg.json")

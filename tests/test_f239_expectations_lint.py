@@ -50,7 +50,7 @@ class LintFileMissingTests(unittest.TestCase):
 
 class MainPathTests(unittest.TestCase):
     def setUp(self):
-        self.tmp = tempfile.TemporaryDirectory()
+        self.tmp = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
         self.addCleanup(self.tmp.cleanup)
         self.path = os.path.join(self.tmp.name, "expectations.json")
         with open(self.path, "w", encoding="utf-8") as fh:

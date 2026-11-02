@@ -34,7 +34,7 @@ class AtomicWriteFailureTests(unittest.TestCase):
         old = runtime_common.os
         runtime_common.os = fake_os
         try:
-            with tempfile.TemporaryDirectory() as tmp:
+            with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
                 path = os.path.join(tmp, "x.json")
                 with self.assertRaises(OSError):
                     runtime_common.save_json_file(path, {"a": 1})
@@ -51,7 +51,7 @@ class AtomicWriteFailureTests(unittest.TestCase):
         old = runtime_common.os
         runtime_common.os = fake_os
         try:
-            with tempfile.TemporaryDirectory() as tmp:
+            with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
                 with self.assertRaises(OSError):
                     runtime_common.save_json_file(
                         os.path.join(tmp, "x.json"), {"a": 1})
@@ -61,7 +61,7 @@ class AtomicWriteFailureTests(unittest.TestCase):
 
 class StaleLockSelfPidTests(unittest.TestCase):
     def test_own_pid_uses_age(self):
-        with tempfile.TemporaryDirectory() as tmp:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
             lock = Path(tmp) / "state.json.lock"
             lock.write_text(str(os.getpid()), encoding="utf-8")
             self.assertFalse(runtime_common._state_lock_is_stale(lock))
@@ -72,7 +72,7 @@ class StaleLockSelfPidTests(unittest.TestCase):
 
 class RestoreClaimedLockTests(unittest.TestCase):
     def _run(self, link_impl, replace_impl=None, lock_exists=False):
-        with tempfile.TemporaryDirectory() as tmp:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
             claimed = Path(tmp) / "state.json.lock.1.claim"
             lock = Path(tmp) / "state.json.lock"
             claimed.write_text("1", encoding="utf-8")
@@ -126,7 +126,7 @@ class RestoreClaimedLockTests(unittest.TestCase):
 
 class StaleReclaimTests(unittest.TestCase):
     def test_stale_lock_reclaimed_then_acquired(self):
-        with tempfile.TemporaryDirectory() as ws:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as ws:
             lock_path = runtime_common._state_lock_path(ws)
             lock_path.parent.mkdir(parents=True, exist_ok=True)
             lock_path.write_text("999999", encoding="utf-8")
@@ -139,7 +139,7 @@ class StaleReclaimTests(unittest.TestCase):
 
 class SerializeListTests(unittest.TestCase):
     def test_list_values_serialized(self):
-        with tempfile.TemporaryDirectory() as ws:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as ws:
             base = Path(ws)
             value = [os.path.join(ws, "a.txt"), "plain"]
             out = runtime_common._serialize_state_value(value, base)
@@ -149,7 +149,7 @@ class SerializeListTests(unittest.TestCase):
 
 class CorruptIsolationFailureTests(unittest.TestCase):
     def test_isolation_failure_warns_and_rebuilds(self):
-        with tempfile.TemporaryDirectory() as ws:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as ws:
             os.makedirs(os.path.join(ws, ".workbench"))
             path = os.path.join(ws, ".workbench", "state.json")
             with open(path, "w", encoding="utf-8") as fh:

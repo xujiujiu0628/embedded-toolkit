@@ -238,6 +238,13 @@ def main() -> None:
     parser.add_argument("--workspace", default=None,
                         help="workspace 根目录 (显式给最优先; 给了 --project 则跟随工程根; 否则 cwd)")
     parser.add_argument("--json", action="store_true", dest="as_json")
+    # F-236 后续: -I/--help 在 Windows cp1252 控制台打印中文 help 会
+    # UnicodeEncodeError (rc=1) —— argparse 直写 sys.stdout。提前切 UTF-8
+    # (无 reconfigure 的流静默跳过)。
+    try:
+        sys.stdout.reconfigure(encoding="utf-8")
+    except (AttributeError, ValueError):
+        pass
     args = parser.parse_args()
 
     started_at = now_iso()

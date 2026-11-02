@@ -30,7 +30,7 @@ import wb_runtime  # noqa: E402
 
 class WbRuntimeTests(unittest.TestCase):
     def test_save_local_config_refuses_corrupt(self):
-        with tempfile.TemporaryDirectory() as tmp:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
             path = os.path.join(tmp, "wb.json")
             with open(path, "w", encoding="utf-8") as fh:
                 fh.write("{broken")
@@ -43,7 +43,7 @@ class WbRuntimeTests(unittest.TestCase):
         self.assertIn("拒绝写回", err.getvalue())
 
     def test_save_local_config_creates_file(self):
-        with tempfile.TemporaryDirectory() as tmp:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
             path = os.path.join(tmp, "wb.json")
             with mock.patch.object(wb_runtime, "default_config_path",
                                    return_value=__import__("pathlib").Path(path)):
@@ -62,7 +62,7 @@ class WbRuntimeTests(unittest.TestCase):
 
 class FailureContextTests(unittest.TestCase):
     def _ctx(self, status, steps=None):
-        with tempfile.TemporaryDirectory() as ws:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as ws:
             os.makedirs(os.path.join(ws, ".workbench"))
             result = {"status": status, "steps": steps or {}}
             failure_context._save_failure_context(result, 1, "cap", workspace=ws)
@@ -127,7 +127,7 @@ class ReleaseAuditMainTests(unittest.TestCase):
         return rc, out.getvalue(), err.getvalue()
 
     def test_text_clean(self):
-        with tempfile.TemporaryDirectory() as ws:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as ws:
             rc, out, _ = self._run(
                 ["--project", ws, "--tag", "v1"],
                 {"project": ws, "verdict": "clean", "records": [
@@ -136,7 +136,7 @@ class ReleaseAuditMainTests(unittest.TestCase):
         self.assertIn("[clean] v1", out)
 
     def test_json_failed_exit_one(self):
-        with tempfile.TemporaryDirectory() as ws:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as ws:
             rc, out, _ = self._run(
                 ["--project", ws, "--all", "--json"],
                 {"project": ws, "verdict": "failed", "records": []})

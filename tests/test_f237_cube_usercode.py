@@ -56,7 +56,7 @@ def _run(proj: str, *args: str) -> subprocess.CompletedProcess:
 
 class ProjectRootTests(unittest.TestCase):
     def test_missing_workbench_marker_exits_one(self):
-        with tempfile.TemporaryDirectory() as tmp:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
             proc = _run(tmp, "diff")
         self.assertEqual(proc.returncode, 1)
         self.assertIn("未找到工程根", proc.stderr)
@@ -64,7 +64,7 @@ class ProjectRootTests(unittest.TestCase):
 
 class EmptyProjectTests(unittest.TestCase):
     def test_backup_without_cubemx_files_exits_one(self):
-        with tempfile.TemporaryDirectory() as tmp:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
             proj = os.path.join(tmp, "proj")
             _write(os.path.join(proj, ".workbench", "config.json"), "{}")
             proc = _run(proj, "backup")
@@ -72,21 +72,21 @@ class EmptyProjectTests(unittest.TestCase):
         self.assertIn("没有找到 CubeMX 生成的文件", proc.stdout)
 
     def test_restore_without_backup_exits_one(self):
-        with tempfile.TemporaryDirectory() as tmp:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
             proj = _make_project(tmp, with_backup=False)
             proc = _run(proj, "restore")
         self.assertEqual(proc.returncode, 1)
         self.assertIn("没有找到备份目录", proc.stdout)
 
     def test_default_action_is_restore(self):
-        with tempfile.TemporaryDirectory() as tmp:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
             proj = _make_project(tmp, with_backup=False)
             proc = _run(proj)
         self.assertEqual(proc.returncode, 1)
         self.assertIn("没有找到备份目录", proc.stdout)
 
     def test_invalid_action_rejected_by_argparse(self):
-        with tempfile.TemporaryDirectory() as tmp:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
             proj = _make_project(tmp)
             proc = _run(proj, "bogus")
         self.assertEqual(proc.returncode, 2)
@@ -94,14 +94,14 @@ class EmptyProjectTests(unittest.TestCase):
 
 class DiffTests(unittest.TestCase):
     def test_diff_without_backup_exits_one(self):
-        with tempfile.TemporaryDirectory() as tmp:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
             proj = _make_project(tmp, with_backup=False)
             proc = _run(proj, "diff")
         self.assertEqual(proc.returncode, 1)
         self.assertIn("没有找到备份目录", proc.stdout)
 
     def test_changed_block_reported(self):
-        with tempfile.TemporaryDirectory() as tmp:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
             proj = _make_project(tmp)
             proc = _run(proj, "diff")
         self.assertEqual(proc.returncode, 0)
@@ -109,7 +109,7 @@ class DiffTests(unittest.TestCase):
         self.assertIn("USER CODE 2", proc.stdout)
 
     def test_identical_blocks_are_silent(self):
-        with tempfile.TemporaryDirectory() as tmp:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
             proj = _make_project(tmp, with_backup=False)
             _write(os.path.join(proj, ".cube_backup", "Core", "Src", "main.c"),
                    _block("2", "int x = 1;"))
@@ -118,7 +118,7 @@ class DiffTests(unittest.TestCase):
         self.assertNotIn("[CHANGED]", proc.stdout)
 
     def test_new_file_reported(self):
-        with tempfile.TemporaryDirectory() as tmp:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
             proj = _make_project(tmp)
             _write(os.path.join(proj, "Core", "Src", "gpio.c"),
                    _block("2", "int g = 0;"))
@@ -128,7 +128,7 @@ class DiffTests(unittest.TestCase):
         self.assertIn("gpio.c", proc.stdout)
 
     def test_cleared_block_warns(self):
-        with tempfile.TemporaryDirectory() as tmp:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
             proj = _make_project(tmp)
             _write(os.path.join(proj, "Core", "Src", "main.c"), _block("2", ""))
             proc = _run(proj, "diff")
@@ -136,7 +136,7 @@ class DiffTests(unittest.TestCase):
         self.assertIn("清空了此区块", proc.stdout)
 
     def test_added_block_notes_new_content(self):
-        with tempfile.TemporaryDirectory() as tmp:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
             proj = _make_project(tmp, with_backup=False)
             _write(os.path.join(proj, ".cube_backup", "Core", "Src", "main.c"),
                    _block("2", ""))

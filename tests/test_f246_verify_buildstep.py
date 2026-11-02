@@ -66,7 +66,7 @@ class BuildStepTests(unittest.TestCase):
         self.assertEqual(result["steps"]["build"]["status"], "ok")
 
     def test_no_build_reads_state_artifacts(self):
-        with tempfile.TemporaryDirectory() as ws:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as ws:
             os.makedirs(os.path.join(ws, ".workbench"))
             with open(os.path.join(ws, ".workbench", "state.json"), "w", encoding="utf-8") as fh:
                 json.dump({"last_build": {"hex_file": "fw.hex", "elf_file": "fw.elf"}}, fh)
@@ -75,7 +75,7 @@ class BuildStepTests(unittest.TestCase):
         self.assertEqual(result["steps"]["build"]["status"], "skipped")
 
     def test_no_build_without_state(self):
-        with tempfile.TemporaryDirectory() as ws:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as ws:
             rc, result = self._run(build={}, no_build=True, ws=ws)
         self.assertIsNone(rc)
         self.assertEqual(result["steps"]["build"]["status"], "skipped")

@@ -54,7 +54,7 @@ int main(void) {
 
 class CubeMoreTests(unittest.TestCase):
     def setUp(self):
-        self.tmp = tempfile.TemporaryDirectory()
+        self.tmp = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
         self.addCleanup(self.tmp.cleanup)
         self.proj = Path(self.tmp.name) / "proj"
         _write(self.proj / ".workbench" / "config.json", "{}")
@@ -140,7 +140,7 @@ class CubeMoreTests(unittest.TestCase):
 
 class DiffNewAndClearedTests(unittest.TestCase):
     def setUp(self):
-        self.tmp = tempfile.TemporaryDirectory()
+        self.tmp = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
         self.addCleanup(self.tmp.cleanup)
         self.proj = Path(self.tmp.name) / "proj"
         _write(self.proj / ".workbench" / "config.json", "{}")

@@ -45,18 +45,18 @@ class FixedPinsTests(unittest.TestCase):
         self.assertIsNone(phase_minus_one.load_fixed_pins(None))
 
     def test_missing_file_returns_none(self):
-        with tempfile.TemporaryDirectory() as tmp:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
             self.assertIsNone(phase_minus_one.load_fixed_pins(tmp))
 
     def test_valid_map_returned(self):
-        with tempfile.TemporaryDirectory() as tmp:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
             os.makedirs(os.path.join(tmp, ".workbench"))
             with open(os.path.join(tmp, ".workbench", "fixed_pins.json"), "w", encoding="utf-8") as fh:
                 json.dump({"PB6": "I2C1 SCL"}, fh)
             self.assertEqual(phase_minus_one.load_fixed_pins(tmp), {"PB6": "I2C1 SCL"})
 
     def test_corrupt_json_returns_sentinel(self):
-        with tempfile.TemporaryDirectory() as tmp:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
             os.makedirs(os.path.join(tmp, ".workbench"))
             path = os.path.join(tmp, ".workbench", "fixed_pins.json")
             with open(path, "w", encoding="utf-8") as fh:
@@ -66,7 +66,7 @@ class FixedPinsTests(unittest.TestCase):
         self.assertEqual(result.path, path)
 
     def test_non_object_returns_sentinel(self):
-        with tempfile.TemporaryDirectory() as tmp:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
             os.makedirs(os.path.join(tmp, ".workbench"))
             with open(os.path.join(tmp, ".workbench", "fixed_pins.json"), "w", encoding="utf-8") as fh:
                 json.dump(["PB6"], fh)
@@ -92,7 +92,7 @@ class CmdListTests(unittest.TestCase):
 
 class CliTests(unittest.TestCase):
     def setUp(self):
-        self.tmp = tempfile.TemporaryDirectory()
+        self.tmp = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
         self.addCleanup(self.tmp.cleanup)
         self.proj = os.path.join(self.tmp.name, "proj")
         os.makedirs(os.path.join(self.proj, ".workbench"))

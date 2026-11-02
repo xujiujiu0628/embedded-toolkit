@@ -60,7 +60,7 @@ class FormatTextTests(unittest.TestCase):
 
 class RealPathTests(unittest.TestCase):
     def setUp(self):
-        self.tmp = tempfile.TemporaryDirectory()
+        self.tmp = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
         self.addCleanup(self.tmp.cleanup)
         self.ws = os.path.join(self.tmp.name, "proj")
         state = os.path.join(self.ws, ".workbench", "state")

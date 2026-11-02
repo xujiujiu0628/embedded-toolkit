@@ -57,13 +57,13 @@ class ChipMapTests(unittest.TestCase):
         self.assertEqual(chip_map[("1A86", "7523")], "CH340")
 
     def test_missing_file_returns_empty_map(self):
-        with tempfile.TemporaryDirectory() as tmp:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
             with mock.patch.object(serial_scan, "COMMON_DEVICES_PATH",
                                    Path(tmp) / "nope.json"):
                 self.assertEqual(serial_scan.load_chip_map(), {})
 
     def test_corrupt_file_returns_empty_map(self):
-        with tempfile.TemporaryDirectory() as tmp:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
             path = Path(tmp) / "bad.json"
             path.write_text("{not json", encoding="utf-8")
             with mock.patch.object(serial_scan, "COMMON_DEVICES_PATH", path):
