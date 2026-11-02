@@ -134,6 +134,40 @@
   1031→970）；`ruff check scripts tests` 零告；`test_stub_ratchet` 快照零新增。
   **未提交**；未 bump VERSION。
 
+- **F-244 (test): 覆盖率 90%→92% — 全仓剩余模块批量补测（13 文件）**:
+  `verify`（run_py/step_build·analyze 的 keil 桥/信封/预检）、`openocd_telnet`
+  main 九条校验与错误出口、`runtime_common`（state 锁判据/原子写/openocd
+  目标解析）、`svd_to_json`（中断/寄存器属性/人读）、`cube_usercode`（编码
+  回落/备份回收）、`feedback_db`（目录解析/损坏重建/ID）、`mcp_server`
+  （参数校验/计划层/子进程透传）、`openocd_runtime`（配置/命令/进程启停）、
+  `rm_lookup`（pin-mapping 校验/互斥提示）、`release`（G0 拒绝条件）、
+  `serial_mux`（启动链/失败回收）、`serial_runtime`（配置/连接骨架）、以及
+  `physical_gate`/`capture_sim`/`serial_monitor`/`duration_profile` 零散分支。
+  **验证**: 全套 2167 例全绿；TOTAL 90%→92%；ruff 零告；ratchet 零新增。
+
+- **F-245 (test): 覆盖率 92%→94% — 尾部模块收口（8 文件）**:
+  `hardfault`（符号表两版式/诊断文本/捕获读取）、`cube_usercode`（自定义
+  main 提取注入/落盘回滚）、`feedback_db`+`mcp_server`（find_similar/校准
+  导出 + build_server 用假 SDK 驱动）、`serial_mux`（服务循环/关闭异常/
+  serve 子命令）、`verify`（构建/烧录派发、早退落账、信封现场、命令超时、
+  审计落盘失败、人读输出）、`wb_runtime`/`failure_context`/`evidence_export`/
+  `release_audit` 尾部。
+  **验证**: 全套 2229 例全绿；TOTAL 92%→94%；ruff 零告；ratchet 零新增。
+
+- **F-246 (test+ci): 覆盖率 94%→95% — 收掉全部低于 92% 的模块 + 棘轮 88→93**:
+  ① `tests/test_f246_runtime_common2.py`（原子写失败清理/锁归还四态/陈旧锁
+  回收/损坏隔离失败）；② `tests/test_f246_capture_rtt.py`（cfg 非法/启动即
+  退出/重试回收）；③ `tests/test_f246_release_gates.py`（gate1 解析与超时/
+  gcc 版本回落/run_gates 十分支）；④ `tests/test_f246_verify_buildstep.py`
+  （build_has_errors / build_failed 早退、--no-build 产物读取）；
+  ⑤ `tests/test_f246_verify_judgement.py`（HardFault marker/auto/失败/异常、
+  物理门控 TIMING_FAIL、manifest/legacy 判定、空捕获兜底）；
+  ⑥ 连同 F-244/F-245 的 `duration_profile`/`coverage_lint` 边界。
+  **棘轮**: CI `--fail-under` 88→93（实测 95%，留 2 点平台余量）。
+  **验证**: 全套 2279 例全绿（三批新增 152）；TOTAL 90%→95%（9447 语句，
+  未覆盖 970→477）；**47/47 模块全部 ≥92%**；ruff 零告；ratchet 零新增。
+  **未提交**；未 bump VERSION。
+
 ## 0.10 — 2026-11-01（CH32V307 / WCH RISC-V 后端正式接入 · 工具链派发与 openocd 目标统一解析 · 端口自动发现与先开串口再复位 · sequence 严格单调断言 · 变异枪原语 · 终审 SHOULD-FIX 六条收口）
 
 > 封袋定义: 自 v0.9 标签（commit 5343b11, 2026-10-29）之后落入本账本的
