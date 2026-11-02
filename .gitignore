@@ -20,6 +20,10 @@ dist/
 build/
 target/
 *.egg-info/
+# 覆盖率报告（F-237: 本地跑 coverage 的产物，CI 在 job 内即跑即弃）
+.coverage
+.coverage.*
+htmlcov/
 
 # 日志
 logs/
