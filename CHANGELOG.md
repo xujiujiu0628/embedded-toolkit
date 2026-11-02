@@ -96,6 +96,19 @@
   1515→1389）；`ruff check scripts tests` 零告；`test_stub_ratchet` 快照零新增。
   **未提交**；未 bump VERSION。
 
+- **F-241 (test+ci): 覆盖率 85%→88%，hardfault/串口服务/发布审计补测 + 棘轮 83→86**:
+  **补测批次**: ① `tests/test_f241_hardfault.py`（main live 路径/--raw/
+  --fault-text/--no-probe/人读报告，61%→87%）；② `tests/test_f241_serial_mux_server.py`
+  （服务 run 成败/accept/serial/client 循环/广播/关闭/读循环死亡留痕，50%→73%）；
+  ③ `tests/test_f241_serial_log.py`（默认输出路径/--console/--max-size/summary，
+  78%→92%）；④ `tests/test_f241_openocd_run.py`（main 校验链与结果封装/flash
+  落账，72%→79%）；⑤ `tests/test_f241_release_audit.py`（approve 四前置/幂等/
+  回填 + main 路由，78%→90%）。
+  **棘轮**: ⑥ CI `--fail-under` 83→86（实测 88%，留 2 点平台余量）。
+  **验证**: 全套 1961 例全绿（新增 45）；TOTAL 85%→88%（9447 语句，未覆盖
+  1389→1152）；`ruff check scripts tests` 零告；`test_stub_ratchet` 快照零新增。
+  **未提交**；未 bump VERSION。
+
 ## 0.10 — 2026-11-01（CH32V307 / WCH RISC-V 后端正式接入 · 工具链派发与 openocd 目标统一解析 · 端口自动发现与先开串口再复位 · sequence 严格单调断言 · 变异枪原语 · 终审 SHOULD-FIX 六条收口）
 
 > 封袋定义: 自 v0.9 标签（commit 5343b11, 2026-10-29）之后落入本账本的
