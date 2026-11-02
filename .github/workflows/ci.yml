@@ -62,14 +62,14 @@ jobs:
         run: pip install -r requirements.txt
       - name: Run suite under coverage
         run: python -m coverage run --source=scripts --omit="*/legacy/*" -m unittest discover -s tests
-      # 棘轮下限: 2026-11-02 实测 TOTAL 84% (windows 3.14, 有 machine.json +
+      # 棘轮下限: 2026-11-02 实测 TOTAL 85% (windows 3.14, 有 machine.json +
       # arm-gcc; CI 条件模拟 = 移走 machine.json + PATH 去 ARM 工具链,
-      # F-237 批次实测两者只差 14 行, 故留 2 点平台余量取 82)。
+      # F-237 批次实测两者只差 14 行, 故留 2 点平台余量取 83)。
       # 纪律: 只升不降——提升覆盖率后应同步上调此值并入 CHANGELOG 账目。
       # 历史: 2026-09-08 实测 40% 取 38 (F-084 起点); F-237 升到 73;
-      # F-238 升到 80; F-239 升到 82。
+      # F-238 升到 80; F-239 升到 82; F-240 升到 83。
       - name: Coverage floor (ratchet, only goes up)
-        run: python -m coverage report --include="scripts/*" --omit="*/legacy/*" --fail-under=82
+        run: python -m coverage report --include="scripts/*" --omit="*/legacy/*" --fail-under=83
 
   # F-126 (工单 P1-5): lint 门禁零起步——ruff E/F 规则集, 正确性类已清零,
   # 存量风格债白名单见 ruff.toml (登记制, 只降不升)。
