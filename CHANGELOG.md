@@ -3,7 +3,20 @@
 格式约定: 每条含发现编号（代管期 findings 编目）与证据 commit。当前版本以
 `VERSION` 文件为准（`wb_common.toolkit_version()` 读取）。
 
-## Unreleased — 0.10 封袋后新账（F-236 起）
+## 0.11 — 2026-11-02（可安装形态与 `-I` 修复 · 覆盖率棘轮 38→93（实测 95%）· CI 3.10/Windows 平台差异收口）
+
+> 封袋定义: 自 v0.10 标签（commit 3cea333, 2026-11-01）之后落入本账本的
+> 全部账归入 0.11——F-236~F-246 共 11 笔 / 22 个 commit（末笔 fcb27fa 为
+> 第五轮 CI 修复、九个 job 全绿）。账目物理位置说明（F-092 单堆制 + 封袋
+> 不搬账=零删承诺）: 本节即 0.10 封袋时新开的 Unreleased 段原样归入，未
+> 搬位未删行。核对以 git 锚点为准、勿以本文件行位置为准（0.10/0.9 封袋
+> 注记先例同式）。
+> 锚点口径: v0.10 tag 对象 4b51a0c，peel 3cea333（封袋 commit, 2026-11-01）。
+> 锚值经 git rev-parse / git ls-remote 对远端亲取，不抄记忆。
+> 证据口径: 本轮为工具库内部质量批次，**无新增真机门禁**；真机基线沿用
+> 0.10 的 G1 真人时序 13/13 hardware_validated（记录在工程仓 a82ffbd,
+> tag v0.10）。CI: run 41467433030 九 job 全绿（ubuntu/windows ×
+> Python 3.10/3.12 + coverage-gate 实测 TOTAL 95% ≥ 地板 93）。
 
 - **F-236 (feat): 可安装形态与隔离模式入口自引导 — pyproject.toml / `etk-*` console 入口 / `python -I` 修复**:
   **可安装面**: ① 新增 `pyproject.toml`（setuptools>=77；`package-dir={""="scripts"}` +
