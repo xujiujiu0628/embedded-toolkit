@@ -109,6 +109,18 @@
   1389→1152）；`ruff check scripts tests` 零告；`test_stub_ratchet` 快照零新增。
   **未提交**；未 bump VERSION。
 
+- **F-242 (test+ci): 覆盖率 88%→89%，mux 启动链/OpenOCD 命令面/CLI 路由补测 + 棘轮 86→87**:
+  **补测批次**: ① `tests/test_f242_serial_mux_start.py`（start_mux 十条分支：
+  socat 缺失/已在运行/僵尸清理/配置缺失/无端口/TCP 未就绪/PTY 早退/链接未建/
+  成功落账/异常回收，73%→82%）；② `tests/test_f242_openocd_run_helpers.py`
+  （build_action_commands 全动作 + infer_mass_erase + parse_output 六类解析，
+  79%→94%）；③ `tests/test_f242_cli_mains.py`（mutation / handoff_guard /
+  fsd_coverage 的 main 路由与退出码，82%/82%/80%→95%/96%/93%）。
+  **棘轮**: ④ CI `--fail-under` 86→87（实测 89%，留 2 点平台余量）。
+  **验证**: 全套 1992 例全绿（新增 31）；TOTAL 88%→89%（9447 语句，未覆盖
+  1152→1031）；`ruff check scripts tests` 零告；`test_stub_ratchet` 快照零新增。
+  **未提交**；未 bump VERSION。
+
 ## 0.10 — 2026-11-01（CH32V307 / WCH RISC-V 后端正式接入 · 工具链派发与 openocd 目标统一解析 · 端口自动发现与先开串口再复位 · sequence 严格单调断言 · 变异枪原语 · 终审 SHOULD-FIX 六条收口）
 
 > 封袋定义: 自 v0.9 标签（commit 5343b11, 2026-10-29）之后落入本账本的
