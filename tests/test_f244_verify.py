@@ -209,7 +209,8 @@ class EnvelopeTests(unittest.TestCase):
         verify.WORKSPACE = None
         try:
             with redirect_stdout(out), redirect_stderr(io.StringIO()), \
-                    mock.patch.object(verify, "_output") as output:
+                    mock.patch.object(verify, "_output") as output, \
+                    mock.patch.object(verify, "_save_failure_context"):
                 with self.assertRaises(SystemExit) as ctx:
                     verify._fail_with_envelope(RuntimeError("boom"), self._args())
             self.assertEqual(ctx.exception.code, 1)
@@ -220,17 +221,19 @@ class EnvelopeTests(unittest.TestCase):
             verify.WORKSPACE = old_ws
 
     def test_keyboard_interrupt_reraises(self):
+        old_ws = getattr(verify, "WORKSPACE", None)
         verify.WORKSPACE = None
         try:
             with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()), \
-                    mock.patch.object(verify, "_output"):
+                    mock.patch.object(verify, "_output"), \
+                    mock.patch.object(verify, "_save_failure_context"):
                 try:
                     raise KeyboardInterrupt()
                 except KeyboardInterrupt as exc:
                     with self.assertRaises(KeyboardInterrupt):
                         verify._fail_with_envelope(exc, self._args())
         finally:
-            verify.WORKSPACE = None
+            verify.WORKSPACE = old_ws
 
 
 class PrepareContextTests(unittest.TestCase):

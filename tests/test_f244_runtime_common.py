@@ -104,7 +104,7 @@ class StateWriteLockTests(unittest.TestCase):
     def test_timeout_degrades_with_warning(self):
         lock_path = runtime_common._state_lock_path(self.tmp.name)
         lock_path.parent.mkdir(parents=True, exist_ok=True)
-        lock_path.write_text(str(os.getpid() + 1000), encoding="utf-8")
+        lock_path.write_text(str(os.getpid()), encoding="utf-8")
         err = io.StringIO()
         with redirect_stderr(err):
             with runtime_common.state_write_lock(self.tmp.name, timeout=0.05):

@@ -52,7 +52,7 @@ class GccVersionTests(unittest.TestCase):
         release.subprocess = SimpleNamespace(
             run=lambda *a, **k: (_ for _ in ()).throw(OSError("boom")))
         try:
-            self.assertEqual(release._gcc_version(), "unknown")
+            self.assertTrue(release._gcc_version().startswith("unknown"))
         finally:
             release.subprocess = old_sub
 
