@@ -52,7 +52,7 @@ SVD = """<?xml version="1.0" encoding="utf-8"?>
 
 class SvdExtraTests(unittest.TestCase):
     def setUp(self):
-        self.tmp = tempfile.TemporaryDirectory()
+        self.tmp = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
         self.addCleanup(self.tmp.cleanup)
         self.svd = os.path.join(self.tmp.name, "x.svd")
         with open(self.svd, "w", encoding="utf-8") as fh:

@@ -21,7 +21,7 @@ import socket
 import sys
 import tempfile
 import unittest
-from contextlib import redirect_stderr, redirect_stdout
+from contextlib import ExitStack, redirect_stderr, redirect_stdout
 from unittest import mock
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(
@@ -104,28 +104,33 @@ def _run_main(argv, *, params=None, resolve_param=None, ready=(True, []),
     sys.argv = ["openocd_itm.py", *argv]
     openocd_itm.socket = _FakeSocketModule(_connect)
     try:
-        with mock.patch.object(openocd_itm, "workspace_root", return_value=tempfile.gettempdir()), \
-                mock.patch.object(openocd_itm, "default_config_path", return_value="cfg.json"), \
-                mock.patch.object(openocd_itm, "normalize_path", side_effect=str), \
-                mock.patch.object(openocd_itm, "load_json_file", return_value={}), \
-                mock.patch.object(openocd_itm, "load_workspace_state", return_value={}), \
-                mock.patch.object(openocd_itm, "load_project_config", return_value={}), \
-                mock.patch.object(openocd_itm, "_state_lookup", return_value={}), \
-                mock.patch.object(openocd_itm, "resolve_openocd_params",
-                                  return_value=params if params is not None else _params()), \
-                mock.patch.object(openocd_itm, "resolve_param", side_effect=rp), \
-                mock.patch.object(openocd_itm, "build_openocd_cmd", return_value=["openocd"]), \
-                mock.patch.object(openocd_itm, "start_openocd_server", side_effect=_start), \
-                mock.patch.object(openocd_itm, "wait_itm_ready", return_value=ready), \
-                mock.patch.object(openocd_itm, "emit_stream_record",
-                                  side_effect=lambda **kw: records["stream"].append(kw)), \
-                mock.patch.object(openocd_itm, "update_state_entry",
-                                  side_effect=lambda *a, **k: records["state"].append(a)), \
-                mock.patch.object(openocd_itm, "save_project_config",
-                                  side_effect=lambda *a, **k: records["config"].append(a)), \
-                mock.patch.object(openocd_itm, "cleanup",
-                                  side_effect=lambda p: records["cleanup"].append(p)), \
-                redirect_stdout(out), redirect_stderr(err):
+        with ExitStack() as stack:
+            def patch(obj, name, **kwargs):
+                stack.enter_context(mock.patch.object(obj, name, **kwargs))
+
+            patch(openocd_itm, "workspace_root", return_value=tempfile.gettempdir())
+            patch(openocd_itm, "default_config_path", return_value="cfg.json")
+            patch(openocd_itm, "normalize_path", side_effect=str)
+            patch(openocd_itm, "load_json_file", return_value={})
+            patch(openocd_itm, "load_workspace_state", return_value={})
+            patch(openocd_itm, "load_project_config", return_value={})
+            patch(openocd_itm, "_state_lookup", return_value={})
+            patch(openocd_itm, "resolve_openocd_params",
+                  return_value=params if params is not None else _params())
+            patch(openocd_itm, "resolve_param", side_effect=rp)
+            patch(openocd_itm, "build_openocd_cmd", return_value=["openocd"])
+            patch(openocd_itm, "start_openocd_server", side_effect=_start)
+            patch(openocd_itm, "wait_itm_ready", return_value=ready)
+            patch(openocd_itm, "emit_stream_record",
+                  side_effect=lambda **kw: records["stream"].append(kw))
+            patch(openocd_itm, "update_state_entry",
+                  side_effect=lambda *a, **k: records["state"].append(a))
+            patch(openocd_itm, "save_project_config",
+                  side_effect=lambda *a, **k: records["config"].append(a))
+            patch(openocd_itm, "cleanup",
+                  side_effect=lambda p: records["cleanup"].append(p))
+            stack.enter_context(redirect_stdout(out))
+            stack.enter_context(redirect_stderr(err))
             try:
                 rc = openocd_itm.main()
             except SystemExit as exc:

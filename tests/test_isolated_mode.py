@@ -52,6 +52,11 @@ class IsolatedModeImportTests(unittest.TestCase):
     def test_entries_import_under_isolated_mode(self):
         for name in ENTRY_SCRIPTS:
             with self.subTest(entry=name):
+                env = dict(os.environ)
+                # CI Windows 子进程默认 cp1252，--help 里的中文会
+                # UnicodeEncodeError → rc=1；与 ci.yml 的 UTF-8 咒语同款。
+                env["PYTHONIOENCODING"] = "utf-8"
+                env["PYTHONUTF8"] = "1"
                 proc = subprocess.run(
                     [sys.executable, "-I", os.path.join(SCRIPTS, name), "--help"],
                     capture_output=True,
@@ -60,6 +65,7 @@ class IsolatedModeImportTests(unittest.TestCase):
                     errors="replace",
                     timeout=120,
                     cwd=ROOT,
+                    env=env,
                 )
                 combined = (proc.stdout or "") + (proc.stderr or "")
                 self.assertNotIn(

@@ -131,7 +131,7 @@ class ParseDimElementGroupTests(unittest.TestCase):
 
 class ExtractTests(unittest.TestCase):
     def setUp(self):
-        self.tmp = tempfile.TemporaryDirectory()
+        self.tmp = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
         self.addCleanup(self.tmp.cleanup)
         self.svd = _write_svd(self.tmp.name)
 
@@ -166,7 +166,7 @@ class ExtractTests(unittest.TestCase):
 
 class CliTests(unittest.TestCase):
     def setUp(self):
-        self.tmp = tempfile.TemporaryDirectory()
+        self.tmp = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
         self.addCleanup(self.tmp.cleanup)
         self.svd = _write_svd(self.tmp.name)
 
