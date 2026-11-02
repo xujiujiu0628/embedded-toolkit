@@ -82,6 +82,20 @@
   1725→1515）；`ruff check scripts tests` 零告；`test_stub_ratchet` 快照零新增。
   **未提交**；未 bump VERSION。
 
+- **F-240 (test+ci): 覆盖率 84%→85%，工具链小模块补测 + 棘轮 82→83**:
+  **补测批次**: ① `tests/test_f240_mutation.py`（`_run_verify_cli` 的 JSON/非 JSON
+  两条路径、`_emit` 三态、"还原后 verify 自身失败"分支，74%→82%）；②
+  `tests/test_f240_hw_lease.py`（元数据缺失/损坏/非对象、冲突文案、CLI
+  status/acquire/release，75%→93%）；③ `tests/test_f240_doctor.py`（报告渲染
+  drift/missing 注记、strict 退出码、gcc 配置错误行与 SWD 三态，72%→92%）；
+  ④ `tests/test_f240_openocd_gdb.py`（legacy 模式、gdb_exe 三级解析、run 子命令、
+  文本输出与 exe 缺失出口，76%→89%）；⑤ `tests/test_f240_cube_extract.py`
+  （初始化/循环/头文件提取器主路径，74%→84%）。
+  **棘轮**: ⑥ CI `--fail-under` 82→83（实测 85%，留 2 点平台余量）。
+  **验证**: 全套 1916 例全绿（新增 49）；TOTAL 84%→85%（9447 语句，未覆盖
+  1515→1389）；`ruff check scripts tests` 零告；`test_stub_ratchet` 快照零新增。
+  **未提交**；未 bump VERSION。
+
 ## 0.10 — 2026-11-01（CH32V307 / WCH RISC-V 后端正式接入 · 工具链派发与 openocd 目标统一解析 · 端口自动发现与先开串口再复位 · sequence 严格单调断言 · 变异枪原语 · 终审 SHOULD-FIX 六条收口）
 
 > 封袋定义: 自 v0.9 标签（commit 5343b11, 2026-10-29）之后落入本账本的
