@@ -29,6 +29,15 @@ import subprocess
 import sys
 import time
 
+# F-236: Python 3.11+ 的 -I 隐含 -P，脚本目录不再自动进 sys.path[0]；
+# 显式自引导，隔离模式下也能解析同目录兄弟模块。
+import sys as _sys
+from pathlib import Path as _Path
+
+_SCRIPTS_DIR = _Path(__file__).resolve().parent
+if str(_SCRIPTS_DIR) not in _sys.path:
+    _sys.path.insert(0, str(_SCRIPTS_DIR))
+
 from wb_common import find_project_root, force_utf8_streams, load_machine
 from runtime_common import OpenocdCfgError, now_iso, resolve_openocd_cfg  # F-157 收编 + WB-20260919-06 cfg 单一事实源
 

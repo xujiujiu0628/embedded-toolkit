@@ -30,8 +30,10 @@ from pathlib import Path
 
 
 ROOT_DIR = Path(__file__).resolve().parents[1]  # embedded-toolkit/ (machine.json 所在)
-if str(ROOT_DIR) not in sys.path:
-    sys.path.insert(0, str(ROOT_DIR))
+SCRIPTS_DIR = Path(__file__).resolve().parent     # F-236: 兄弟模块所在目录
+for _p in (SCRIPTS_DIR, ROOT_DIR):
+    if str(_p) not in sys.path:
+        sys.path.insert(0, str(_p))
 
 from wb_common import file_lock, load_machine  # noqa: E402  (单一实现, 含 example 回退链; file_lock = F-219 D3 跨进程 RMW 锁)
 from wb_runtime import (  # noqa: E402

@@ -5,6 +5,27 @@
 
 ## Unreleased — 0.10 封袋后新账（F-236 起）
 
+- **F-236 (feat): 可安装形态与隔离模式入口自引导 — pyproject.toml / `etk-*` console 入口 / `python -I` 修复**:
+  **可安装面**: ① 新增 `pyproject.toml`（setuptools>=77；`package-dir={""="scripts"}` +
+  `py-modules` 平铺 47 个模块，**不搬目录**，README 中全部 `python scripts/xxx.py`
+  用法保持原样；`dynamic.version` 读 `VERSION`，版本唯一事实源不变；依赖仅
+  `pyserial>=3.5`）；② 8 个 `etk-*` console 入口（verify / release / release-audit /
+  gcc-build / expectations-lint / gen-periph / rm-lookup / hardfault）。
+  **隔离模式修复**: ③ Python 3.11+ 的 `-I` 隐含 `-P`，脚本目录不再进 `sys.path[0]`，
+  25 个入口脚本补显式自引导（`_SCRIPTS_DIR` 块）——修复前
+  `python -I scripts/verify.py --help` 报 `ModuleNotFoundError: No module named 'wb_common'`，
+  修复后 rc=0；`gcc_build.py` 原引导只插 `parents[1]`（工具库根）而非 `scripts/`，
+  隔离模式下同样失效，本轮一并订正为双目录插入。
+  **钉与账**: ④ 新增 `tests/test_isolated_mode.py`（8 入口在 `-I` 下跑 `--help`，
+  stderr 不得出现 ModuleNotFoundError）与 `tests/test_pyproject_manifest.py`
+  （`py-modules` ↔ `scripts/*.py` 双向相等 + console 目标确有顶层 `def main` +
+  `etk-` 前缀 + 版本源为 `VERSION`）；⑤ `.gitignore` 补 `*.egg-info/`；
+  README 增「安装方式（可选）」节。
+  **验证**: 全套 1578 例全绿（1574 + 4）、`ruff check scripts tests` 零告；
+  临时 venv 内 `pip install -e .` 与 `pip install .` 两种装法各实测
+  `etk-verify --help` 通过、`importlib.metadata.version` 读出 `0.10`。
+  **未提交**；**未 bump VERSION**；**未发布 PyPI**（F-168 继续挂起）。
+
 ## 0.10 — 2026-11-01（CH32V307 / WCH RISC-V 后端正式接入 · 工具链派发与 openocd 目标统一解析 · 端口自动发现与先开串口再复位 · sequence 严格单调断言 · 变异枪原语 · 终审 SHOULD-FIX 六条收口）
 
 > 封袋定义: 自 v0.9 标签（commit 5343b11, 2026-10-29）之后落入本账本的

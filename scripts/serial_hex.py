@@ -6,6 +6,15 @@ import sys
 import time
 from datetime import datetime
 
+# F-236: Python 3.11+ 的 -I 隐含 -P，脚本目录不再自动进 sys.path[0]；
+# 显式自引导，隔离模式下也能解析同目录兄弟模块。
+import sys as _sys
+from pathlib import Path as _Path
+
+_SCRIPTS_DIR = _Path(__file__).resolve().parent
+if str(_SCRIPTS_DIR) not in _sys.path:
+    _sys.path.insert(0, str(_SCRIPTS_DIR))
+
 from serial_runtime import (
     connect_serial,          # F-156 (P2-1): 公共骨架 ②
     output_jsonl as output_json,  # F-156: JSON Lines 紧凑态收编 (字节不变)

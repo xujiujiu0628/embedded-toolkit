@@ -12,6 +12,15 @@ import time
 # F-133/h: 旧 ROOT_DIR=parents[2] 无效锚清除 — parents[2] 指向仓外 (D:\ 层),
 # 插进 sys.path 从不命中; 直接脚本运行时 sys.path[0]=scripts/ 已覆盖 import 需求
 
+# F-236: Python 3.11+ 的 -I 隐含 -P，脚本目录不再自动进 sys.path[0]；
+# 显式自引导，隔离模式下也能解析同目录兄弟模块。
+import sys as _sys
+from pathlib import Path as _Path
+
+_SCRIPTS_DIR = _Path(__file__).resolve().parent
+if str(_SCRIPTS_DIR) not in _sys.path:
+    _sys.path.insert(0, str(_SCRIPTS_DIR))
+
 from openocd_runtime import (  # noqa: E402
     resolve_openocd_params,  # noqa: F401  (F-091 再导出, 调用面不变)
     build_openocd_cmd,  # noqa: F401  (F-123 再导出; 无端口调用传 gdb_port=None)

@@ -5,6 +5,15 @@ import json
 import sys
 from pathlib import Path
 
+# F-236: Python 3.11+ 的 -I 隐含 -P，脚本目录不再自动进 sys.path[0]；
+# 显式自引导，隔离模式下也能解析同目录兄弟模块。
+import sys as _sys
+from pathlib import Path as _Path
+
+_SCRIPTS_DIR = _Path(__file__).resolve().parent
+if str(_SCRIPTS_DIR) not in _sys.path:
+    _sys.path.insert(0, str(_SCRIPTS_DIR))
+
 from serial_runtime import get_mux_info, output_json, scan_serial_ports
 
 COMMON_DEVICES_PATH = Path(__file__).parent.parent / "data" / "common_devices.json"
