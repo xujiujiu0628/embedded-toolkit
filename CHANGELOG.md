@@ -48,6 +48,26 @@
   未覆盖 2643→2326）；`ruff check scripts tests` 零告；`test_stub_ratchet`
   快照零新增。**未 bump VERSION**；提交锚点按封袋口径回填。
 
+- **F-238 (test+ci): 覆盖率 75%→82%，串口/OpenOCD 八模块补测 + 棘轮 73→80**:
+  **补测批次（假串口 / 假 socket / 假 OpenOCD，不接真机）**: ①
+  `tests/test_f238_serial_hex.py`（读循环/空闲冲刷/退出冲刷/错误出口，28%→96%）；
+  ② `tests/test_f238_serial_send.py`（发送/重复/等响应/写失败，30%→92%）；
+  ③ `tests/test_f238_serial_monitor.py`（行切分/过滤 fail-closed/CRLF，28%→89%）；
+  ④ `tests/test_f238_serial_scan.py`（芯片映射/空列表/Mux 信息，42%→96%）；
+  ⑤ `tests/test_f238_serial_mux.py`（端口探测/状态/停止/CLI 派发，37%→50%）；
+  ⑥ `tests/test_f238_openocd_itm.py`（参数解析/build_openocd_cmd/trace 循环/五错误出口，32%→94%）；
+  ⑦ `tests/test_f238_openocd_telnet.py`（地址与寄存器解析/IAC/连接重试/execute_action
+  全动作/print_result，44%→84%）；⑧ `tests/test_f238_openocd_gdb.py`（辅助函数/
+  main 错误面/server 就绪/one-shot 解析，58%→76%）。
+  **棘轮**: ⑨ CI `--fail-under` 73→80（实测 82%，留 2 点平台余量）。
+  **过程教训**: ⑩ 进程内 main() 测试若把 workspace 指到 `tempfile.gettempdir()`，
+  成功路径的 `save_project_config` 会在系统临时根建 `.workbench/`，污染所有
+  "无工程根"用例（本轮 5 例假失败实锤：`test_wb_common` / `test_duration_profile` /
+  `test_feedback_db` / F-237 两例）；已改为每用例独立 TemporaryDirectory 并屏蔽写回。
+  **验证**: 全套 1811 例全绿（新增 127）；TOTAL 75%→82%（9447 语句，未覆盖
+  2326→1725）；`ruff check scripts tests` 零告；`test_stub_ratchet` 快照零新增。
+  **未提交**；未 bump VERSION。
+
 ## 0.10 — 2026-11-01（CH32V307 / WCH RISC-V 后端正式接入 · 工具链派发与 openocd 目标统一解析 · 端口自动发现与先开串口再复位 · sequence 严格单调断言 · 变异枪原语 · 终审 SHOULD-FIX 六条收口）
 
 > 封袋定义: 自 v0.9 标签（commit 5343b11, 2026-10-29）之后落入本账本的
