@@ -33,9 +33,14 @@ jobs:
           # test_f196_tamper_semantics._base_ref 的显式 skip)。全量取
           # 以让基准分支可达, 该比对才真正跑起来。
           fetch-depth: 0
-      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
-        with:
-          python-version: "3.12"
+      # 自托管 runner = 维护者本机: 直接用本机 Python, 不用 setup-python。
+      # 首次真跑实测 setup-python 在"经代理/镜像的 github.com"上取版本时
+      # 报 unable to verify the first certificate（Node 不认本机 MITM CA），
+      # 属环境性不可用; 本机工具链版本由 machine.json + doctor 负责核对。
+      - name: 本机 Python 自检 (self-hosted 不走 setup-python)
+        run: |
+          python --version
+          python -c "import sys; assert sys.version_info >= (3, 10), sys.version; print(sys.executable)"
       # machine.json 是本机文件（.gitignore 覆盖），checkout 不带它。
       # 真机 runner 上由仓库变量 HW_MACHINE_JSON 指向本机源文件注入；
       # 未设则 doctor --strict 会因占位值失败——显式点名而不是静默。
