@@ -36,12 +36,27 @@ jobs:
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: "3.12"
+      # machine.json 是本机文件（.gitignore 覆盖），checkout 不带它。
+      # 真机 runner 上由仓库变量 HW_MACHINE_JSON 指向本机源文件注入；
+      # 未设则 doctor --strict 会因占位值失败——显式点名而不是静默。
+      - name: Provision machine.json (自托管本机文件, 不入库)
+        run: |
+          if (-not "${{ vars.HW_MACHINE_JSON }}") {
+            Write-Error "仓库变量 HW_MACHINE_JSON 未设置 — 无法为 checkout 注入 machine.json"
+            exit 1
+          }
+          Copy-Item -LiteralPath "${{ vars.HW_MACHINE_JSON }}" -Destination "$env:GITHUB_WORKSPACE\machine.json" -Force
+          Write-Host "machine.json <- ${{ vars.HW_MACHINE_JSON }}"
       - name: "环境预检 (doctor --strict: toolkit/Python/machine.json/gcc/openocd/make/SWD)"
         run: python scripts/verify.py --doctor --json --strict
       # HW_VERIFY_PROJECT 未设置时只冒烟 doctor (SWD 连通性已在其中);
       # 设置后对指定真机工程跑完整闭环 (schedule origin 审计可辨)
       - name: 真机闭环 verify (HW_VERIFY_PROJECT 在场时)
         if: vars.HW_VERIFY_PROJECT != ''
+        env:
+          # 仓库变量不会自动进环境；旧版直读 $env: 恒为空 → verify 落回
+          # checkout 根、判据错位（workflow 从未跑过，此缺陷一直潜伏）。
+          HW_VERIFY_PROJECT: ${{ vars.HW_VERIFY_PROJECT }}
         run: |
           python scripts/verify.py --project "$env:HW_VERIFY_PROJECT" --json --task-origin schedule --require-schedule-origin | Tee-Object -FilePath verify-result.json
       - name: Export evidence summary (F-151)
