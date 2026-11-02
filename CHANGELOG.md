@@ -68,6 +68,20 @@
   2326→1725）；`ruff check scripts tests` 零告；`test_stub_ratchet` 快照零新增。
   **未提交**；未 bump VERSION。
 
+- **F-239 (test+ci): 覆盖率 82%→84%，六模块补测 + 棘轮 80→82**:
+  **补测批次**: ① `tests/test_f239_duration_profile.py`（真数据路径/文本报告/
+  legacy 告警，60%→89%）；② `tests/test_f239_expectations_lint.py`（main 的
+  --path/--project/cwd 发现与三种 verdict，67%→94%）；③ `tests/test_f239_rm_lookup.py`
+  （关系查询全分支/format_rel_result/--rel/--list/帮助，71%→89%）；④
+  `tests/test_f239_coverage_lint.py`（文本报告 + main 进程内，71%→91%）；
+  ⑤ `tests/test_f239_cube_usercode.py`（backup/restore 落盘与冲突提示进程内，
+  69%→74%）；⑥ `tests/test_f239_serial_runtime.py`（配置优先级/自动扫描/
+  连接骨架/mux 探测，64%→87%）。
+  **棘轮**: ⑦ CI `--fail-under` 80→82（实测 84%，留 2 点平台余量）。
+  **验证**: 全套 1867 例全绿（新增 56）；TOTAL 82%→84%（9447 语句，未覆盖
+  1725→1515）；`ruff check scripts tests` 零告；`test_stub_ratchet` 快照零新增。
+  **未提交**；未 bump VERSION。
+
 ## 0.10 — 2026-11-01（CH32V307 / WCH RISC-V 后端正式接入 · 工具链派发与 openocd 目标统一解析 · 端口自动发现与先开串口再复位 · sequence 严格单调断言 · 变异枪原语 · 终审 SHOULD-FIX 六条收口）
 
 > 封袋定义: 自 v0.9 标签（commit 5343b11, 2026-10-29）之后落入本账本的
