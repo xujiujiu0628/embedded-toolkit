@@ -24,7 +24,29 @@
   **验证**: 全套 1578 例全绿（1574 + 4）、`ruff check scripts tests` 零告；
   临时 venv 内 `pip install -e .` 与 `pip install .` 两种装法各实测
   `etk-verify --help` 通过、`importlib.metadata.version` 读出 `0.10`。
-  **未提交**；**未 bump VERSION**；**未发布 PyPI**（F-168 继续挂起）。
+  **已提交**: 54a3092（可安装面）+ c29727f（隔离修复）；**未 bump VERSION**；
+  **未发布 PyPI**（F-168 继续挂起）。
+
+- **F-237 (test+ci): 覆盖率棘轮校准 38→73 — 实测 75%，补测五模块并抓出 GDB 线程解析丢行**:
+  **棘轮校准**: ① CI `--fail-under` 由 38 升到 73（2026-11-02 实测 TOTAL 75%，
+  windows 3.14、有 machine.json + arm-gcc；CI 条件模拟 = 移走 machine.json +
+  PATH 去 ARM 工具链，两者只差 14 行，故留 2 点平台余量）。旧值系 2026-09-08
+  的 40%，落后实测 34 点，棘轮实际失效。
+  **补测批次（只碰纯逻辑/可 mock，不接真机）**: ② `tests/test_f237_gdb_common.py`
+  （命令构造/输出解析/假 GDB 子进程，13%→96%）；③ `tests/test_f237_svd_to_json.py`
+  （CLI 全出口 + dimElementGroup 数组偏移，63%→86%）；④
+  `tests/test_f237_cube_usercode.py`（diff/main/空目录分支，58%→69%）；⑤
+  `tests/test_f237_phase_minus_one.py`（占用表三态 + BLOCKED 退出码，63%→84%）；
+  ⑥ `tests/test_f237_feedback_db.py`（stats/similar/calibrate，68%→85%）；
+  ⑦ `tests/test_f237_cli_inprocess.py` —— `coverage run` 默认不追踪子进程，
+  子进程 CLI 用例不计入报告，故对 CLI 另加进程内 `main()` 层（argv 直接赋值 +
+  finally 恢复，避免 `test_stub_ratchet` 新增 B 式全局打桩）。
+  **真 bug**: ⑧ `openocd_gdb_common._parse_threads` 用 `line.strip()` 吃掉
+  未选中线程行首的空格标记，导致只解析当前线程、其余线程整行丢失；改
+  `rstrip()` 并留回归钉（`ParseThreadsTests`）。
+  **验证**: 全套 1684 例全绿（新增 106 例）；TOTAL 72%→75%（9447 语句，
+  未覆盖 2643→2326）；`ruff check scripts tests` 零告；`test_stub_ratchet`
+  快照零新增。**未 bump VERSION**；提交锚点按封袋口径回填。
 
 ## 0.10 — 2026-11-01（CH32V307 / WCH RISC-V 后端正式接入 · 工具链派发与 openocd 目标统一解析 · 端口自动发现与先开串口再复位 · sequence 严格单调断言 · 变异枪原语 · 终审 SHOULD-FIX 六条收口）
 

@@ -161,7 +161,9 @@ def _parse_registers(stdout: str) -> dict[str, str]:
 def _parse_threads(stdout: str) -> list[dict[str, Any]]:
     threads: list[dict[str, Any]] = []
     for line in stdout.splitlines():
-        match = re.match(r"^([* ])\s*(\d+)\s+Thread\s+(.+)$", line.strip())
+        # F-237: 未选中线程行以空格开头，strip() 会吃掉选择标记导致整行丢失；
+        # 只去行尾空白，保留行首的 "*"/" " 语义。
+        match = re.match(r"^([* ])\s*(\d+)\s+Thread\s+(.+)$", line.rstrip())
         if match:
             threads.append(
                 {
