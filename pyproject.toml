@@ -1,0 +1,100 @@
+# F-236: 让工具库可安装、可出 etk-* console 命令，并补齐包元数据。
+#
+# 设计取舍（2026-11-02 维护者拍板）:
+#   - scripts/ 平铺安装（package-dir = scripts），**不搬目录**——README /
+#     CONTRIBUTING 里所有 `python scripts/xxx.py` 用法保持原样。
+#   - 版本唯一事实源仍是 VERSION（wb_common.toolkit_version() 同源）。
+#   - 不发布 PyPI：F-168 继续挂起，本文件只保证 `pip install -e .` 可用。
+#   - 新增/删除 scripts/*.py 时必须同步 py-modules；tests/test_pyproject_manifest.py
+#     会双向钉住这份清单，漏改即红。
+
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "embedded-toolkit"
+description = "AI 写嵌入式固件的闭环验证工作台：代码可以由 AI 生成，但“算不算对”由真机说了算。"
+readme = "README.md"
+requires-python = ">=3.10"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "xujiujiu0628" }]
+dynamic = ["version"]
+dependencies = ["pyserial>=3.5"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.12",
+    "Operating System :: Microsoft :: Windows",
+    "Operating System :: POSIX :: Linux",
+    "Topic :: Software Development :: Embedded Systems",
+]
+
+[project.urls]
+Homepage = "https://github.com/xujiujiu0628/embedded-toolkit"
+
+[project.scripts]
+etk-verify = "verify:main"
+etk-release = "release:main"
+etk-release-audit = "release_audit:main"
+etk-gcc-build = "gcc_build:main"
+etk-expectations-lint = "expectations_lint:main"
+etk-gen-periph = "gen_periph:main"
+etk-rm-lookup = "rm_lookup:main"
+etk-hardfault = "hardfault:main"
+
+[tool.setuptools]
+package-dir = { "" = "scripts" }
+py-modules = [
+    "capture_rtt",
+    "capture_semihosting",
+    "capture_sim",
+    "checkpoint_ledger",
+    "coverage_lint",
+    "cube_usercode",
+    "doctor",
+    "duration_profile",
+    "esp_runtime",
+    "evidence_export",
+    "expectations",
+    "expectations_lint",
+    "failure_context",
+    "feedback_db",
+    "fsd_coverage",
+    "gcc_build",
+    "gen_periph",
+    "handoff_guard",
+    "hardfault",
+    "hw_lease",
+    "junit_xml",
+    "mcp_server",
+    "mutation",
+    "openocd_gdb",
+    "openocd_gdb_common",
+    "openocd_itm",
+    "openocd_run",
+    "openocd_runtime",
+    "openocd_telnet",
+    "phase_minus_one",
+    "physical_gate",
+    "release",
+    "release_audit",
+    "rm_lookup",
+    "runtime_common",
+    "serial_hex",
+    "serial_log",
+    "serial_monitor",
+    "serial_mux",
+    "serial_port",
+    "serial_runtime",
+    "serial_scan",
+    "serial_send",
+    "svd_to_json",
+    "verify",
+    "wb_common",
+    "wb_runtime",
+]
+
+[tool.setuptools.dynamic]
+version = { file = "VERSION" }

@@ -19,6 +19,7 @@ node_modules/
 dist/
 build/
 target/
+*.egg-info/
 
 # 日志
 logs/

@@ -206,6 +206,24 @@ ESP-PILOT-OK tick=1
 根治）与 `capture.reset: openocd`。真机先例：`hw-projects/ch32v307-hello`
 （tag v0.1，hardware_validated 3/3）。
 
+### 安装方式（可选）
+
+源码树里直接用 `python scripts/xxx.py` 即可，**不安装也能跑全链路**。
+想要全局命令、或把工具库装进别的 venv：
+
+```bash
+pip install -e .          # 开发态：改源码立即生效
+pip install .             # 安装态：模块进 site-packages
+etk-verify --help         # 8 个 etk-* 入口，清单见 pyproject.toml
+```
+
+- 入口：`etk-verify` / `etk-release` / `etk-release-audit` / `etk-gcc-build` /
+  `etk-expectations-lint` / `etk-gen-periph` / `etk-rm-lookup` / `etk-hardfault`
+- 版本唯一事实源仍是 `VERSION`（pip 元数据与 `wb_common.toolkit_version()` 同源）
+- 入口脚本自带 `sys.path` 自引导（F-236）：`python -I scripts/verify.py`
+  在隔离模式下同样可用（Python 3.11+ 的 `-I` 隐含 `-P`，脚本目录不再进
+  `sys.path[0]`）
+
 ### 真机路径一次性配置
 
 `machine.json` 是本机文件（不入库），是全部工具链绝对路径的**唯一合法源**：
