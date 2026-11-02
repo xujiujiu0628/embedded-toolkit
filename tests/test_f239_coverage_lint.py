@@ -89,10 +89,12 @@ class MainTests(unittest.TestCase):
         self.assertIn("uncovered.py", payload["uncovered"])
 
     def test_missing_coverage_data_exits_two(self):
+        """coverage 包缺失或数据文件不存在都走 exit 2（两条 EnvironmentError）。
+        CI 的 unittest 腿不装 coverage，本机装了 → 断言两条文案都接受。"""
         rc, _, err = _run(["--scripts-dir", self.scripts, "--tests-dir", self.tests,
                            "--coverage-data", os.path.join(self.tmp.name, "no.coverage")])
         self.assertEqual(rc, 2)
-        self.assertIn("不存在", err)
+        self.assertTrue("不存在" in err or "coverage 包" in err, err)
 
 
 if __name__ == "__main__":
