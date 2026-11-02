@@ -121,6 +121,19 @@
   1152→1031）；`ruff check scripts tests` 零告；`test_stub_ratchet` 快照零新增。
   **未提交**；未 bump VERSION。
 
+- **F-243 (test+ci): 覆盖率 89%→90%，openocd_runtime/gcc_build/phase 补测 + 棘轮 87→88**:
+  **补测批次**: ① `tests/test_f243_openocd_runtime.py`（`load_local_config`
+  调用栈推断、`resolve_param` 的 machine/path/default 三级回落、
+  `emit_stream_record` JSON/文本、`swd_probe` 成功/失败/超时/异常四态，
+  80%→88%）；② `tests/test_f243_phase_and_gcc.py`（phase 人读输出；
+  gcc_build 的 `_run_make` 三动作 + wch 工具变量注入、`main` 的 toolchain
+  失败与预检缺工具两条出口、`_makefile_vars` 的 `:=`/`?=`、日志指标缺失
+  回落，gcc 80%→93% / phase 84%→91%）。
+  **棘轮**: ③ CI `--fail-under` 87→88（实测 90%，留 2 点平台余量）。
+  **验证**: 全套 2019 例全绿（新增 27）；TOTAL 89%→90%（9447 语句，未覆盖
+  1031→970）；`ruff check scripts tests` 零告；`test_stub_ratchet` 快照零新增。
+  **未提交**；未 bump VERSION。
+
 ## 0.10 — 2026-11-01（CH32V307 / WCH RISC-V 后端正式接入 · 工具链派发与 openocd 目标统一解析 · 端口自动发现与先开串口再复位 · sequence 严格单调断言 · 变异枪原语 · 终审 SHOULD-FIX 六条收口）
 
 > 封袋定义: 自 v0.9 标签（commit 5343b11, 2026-10-29）之后落入本账本的
