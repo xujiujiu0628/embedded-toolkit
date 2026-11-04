@@ -68,7 +68,11 @@ jobs:
           # checkout 根、判据错位（workflow 从未跑过，此缺陷一直潜伏）。
           HW_VERIFY_PROJECT: ${{ vars.HW_VERIFY_PROJECT }}
         run: |
-          python scripts/verify.py --project "$env:HW_VERIFY_PROJECT" --json --task-origin schedule --require-schedule-origin | Tee-Object -FilePath verify-result.json
+          # F-249（维护者决策 B）: FR-ALERT-01 要求采样 >3V 时打印告警行。
+          # workflow_dispatch 由人工值守触发——采集窗开启后请把 PA5 电位器
+          # 旋过 3V；缺省窗 10s 对人工操作太紧，本步骤显式放宽到 30s。
+          Write-Host "[operator] build/烧录完成后将开启 30s 采集窗 — 请在此期间把 PA5 电位器旋过 3V (FR-ALERT-01)"
+          python scripts/verify.py --project "$env:HW_VERIFY_PROJECT" --json --timeout 30 --task-origin schedule --require-schedule-origin | Tee-Object -FilePath verify-result.json
       - name: Export evidence summary (F-151)
         if: always()
         env:
