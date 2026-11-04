@@ -44,14 +44,19 @@ jobs:
       # machine.json 是本机文件（.gitignore 覆盖），checkout 不带它。
       # 真机 runner 上由仓库变量 HW_MACHINE_JSON 指向本机源文件注入；
       # 未设则 doctor --strict 会因占位值失败——显式点名而不是静默。
+      # F-248: 变量一律经 env 映射，脚本内不内联表达式——Actions 会把展开后
+      # 的整段脚本回显进 Job Log，内联写法等于把本机绝对路径写进公开日志
+      # （与 SENSITIVE_FINDINGS F-2 的工作区根脱敏纪律冲突）；输出只留 basename。
       - name: Provision machine.json (自托管本机文件, 不入库)
+        env:
+          HW_MACHINE_JSON: ${{ vars.HW_MACHINE_JSON }}
         run: |
-          if (-not "${{ vars.HW_MACHINE_JSON }}") {
+          if (-not "$env:HW_MACHINE_JSON") {
             Write-Error "仓库变量 HW_MACHINE_JSON 未设置 — 无法为 checkout 注入 machine.json"
             exit 1
           }
-          Copy-Item -LiteralPath "${{ vars.HW_MACHINE_JSON }}" -Destination "$env:GITHUB_WORKSPACE\machine.json" -Force
-          Write-Host "machine.json <- ${{ vars.HW_MACHINE_JSON }}"
+          Copy-Item -LiteralPath "$env:HW_MACHINE_JSON" -Destination "$env:GITHUB_WORKSPACE\machine.json" -Force
+          Write-Host "machine.json <- $(Split-Path -Leaf $env:HW_MACHINE_JSON)"
       - name: "环境预检 (doctor --strict: toolkit/Python/machine.json/gcc/openocd/make/SWD)"
         run: python scripts/verify.py --doctor --json --strict
       # HW_VERIFY_PROJECT 未设置时只冒烟 doctor (SWD 连通性已在其中);
@@ -66,9 +71,15 @@ jobs:
           python scripts/verify.py --project "$env:HW_VERIFY_PROJECT" --json --task-origin schedule --require-schedule-origin | Tee-Object -FilePath verify-result.json
       - name: Export evidence summary (F-151)
         if: always()
+        env:
+          HW_VERIFY_PROJECT: ${{ vars.HW_VERIFY_PROJECT }}
         run: |
           if (Test-Path verify-result.json) {
             python scripts/evidence_export.py --verify-file verify-result.json
-          } else {
+          } elseif (-not "$env:HW_VERIFY_PROJECT") {
             Write-Host "verify 未运行 (HW_VERIFY_PROJECT 未设置) — 仅 doctor 冒烟"
+          } else {
+            # F-248: 已配置工程却无产物 = 前置步骤失败（注入/doctor 等），
+            # 不再一律归因为「变量未设置」——那会把排查带偏。
+            Write-Host "verify 未产出 verify-result.json — 前置步骤失败，见上方各步骤日志"
           }

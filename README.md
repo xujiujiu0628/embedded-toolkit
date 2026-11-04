@@ -538,14 +538,21 @@ Renode 把仿真做成平级判定后端，hardci / jlink-mcp 验证了 MCP 分�
 
 ```text
 embedded-toolkit/
-├── scripts/            # 40+ 个 .py（入口 verify.py；共享层 wb_common + runtime_common
+├── scripts/            # 47 个 .py（入口 verify.py；共享层 wb_common + runtime_common
 │                       #   单一事实源 + wb/openocd/serial 三 runtime，F-029；
-│                       #   legacy/ 空目录占位，Keil 退役区已拆 archive，F-067b）
+│                       #   legacy/ 仅存说明文件，Keil 退役区已拆 archive，F-067b）
 ├── tests/              # unittest 回归套件（纯 mock，Win/Linux 全绿）
+├── examples/           # 43 个示例工程：42 个 F103 外设样例 + sim-demo（QEMU 无板闭环）
 ├── data/               # 知识库：55 外设参考 JSON + 架构常量档（arch-facts，F-179）+ 已知限制
 ├── config/             # 串口/探针族的环境级配置
 ├── hooks/              # 固件工程侧三条 C 铁律（禁 malloc / 禁逻辑层 HAL_Delay / volatile 告警）
 ├── templates/          # FSD 需求规格书模板 + RTT 版 HardFault 现场 handler
+├── docs/               # 设计与计划档（docs/specs/）+ hooks 安装说明 + 历史重写 commit-map
+├── spikes/             # 探索性验证（c1-qemu-spike，非交付面）
+├── .github/            # CI 工作流 + CONTRIBUTING + Issue/PR 模板
+├── pyproject.toml      # 可安装形态（F-236：pip install -e . 与 etk-* 入口；不发布 PyPI）
+├── requirements.txt    # 串口工具族可选依赖（pyserial；核心闭环链零第三方）
+├── machine.example.json  # 本机工具链路径模板（复制为 machine.json，不入库）
 ├── machine.json        # 本机工具链路径（不入库；模板 machine.example.json）
 ├── CHANGELOG.md        # 全账本：条目可对到 commit（状态类事实唯一权威）
 └── VERSION             # 当前 0.11（版本唯一事实源 = VERSION 文件，经 wb_common.toolkit_version() 读取）
