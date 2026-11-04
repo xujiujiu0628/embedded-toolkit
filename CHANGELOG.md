@@ -3,6 +3,41 @@
 格式约定: 每条含发现编号（代管期 findings 编目）与证据 commit。当前版本以
 `VERSION` 文件为准（`wb_common.toolkit_version()` 读取）。
 
+## Unreleased
+
+> 口径: v0.11 封袋（commit 16e3c0b）之后、尚未进版本封袋的账目。版本号仍以
+> `VERSION` 为准，封袋时才 bump；每条附证据 commit。
+
+- **F-247 (ci, 补账): hw-smoke 真机 runner 启用两笔 — machine.json 注入 + 自托管 runner 改用本机 Python**:
+  **① 注入步骤**（`3371aef`）: 新增 Provision 步骤，由仓库变量
+  `HW_MACHINE_JSON` 指向本机源文件复制进 `GITHUB_WORKSPACE`；未设置即
+  `Write-Error` + exit 1（不让 doctor 拿占位值静默失败）。同时修潜伏缺陷：
+  verify 步骤条件读 `vars.HW_VERIFY_PROJECT`、命令却读
+  `$env:HW_VERIFY_PROJECT`——仓库变量不会自动进环境，旧版恒为空、verify
+  落回 checkout 根、判据错位（workflow 从未跑过，故一直未暴露）。
+  **② 本机 Python**（`3dd8452`）: 自托管 runner 上 `actions/setup-python`
+  取版本时 Node 报 `unable to verify the first certificate`（不认本机
+  MITM CA），改为直接使用本机 Python 并断言 >=3.10；工具链版本核对仍由
+  machine.json + `doctor --strict` 负责。
+  **实测**: run 41474633453 注入与 doctor 通过，verify 落到
+  `hw-projects/stm32f103-adc-oled`，因 `FR-ALERT-01`（>3V 物理输入未接）
+  exit 1。两笔此前只存在于 git 历史、未入账，本条补记（F-234 教训：
+  状态类事实以 CHANGELOG 为准，漏记即断链）。
+- **F-248 (fix+docs): 自审收口 — hw-smoke 公开日志本机路径脱敏 + 证据步骤归因 + README 结构节校正**（`7e1ec93`）:
+  **① 路径脱敏**: Provision 步骤的仓库变量改走 `env:` 映射，脚本内不再
+  内联 `${{ vars.* }}`——Actions 回显的是展开后的整段脚本，实测 run
+  41474633453 的公开 Job Log 写入了 `D:\...\machine.json`（与
+  SENSITIVE_FINDINGS F-2 的工作区根脱敏纪律冲突）；日志输出只留 basename。
+  **② 归因订正**: 证据步骤的 `else` 分支原一律打印「HW_VERIFY_PROJECT 未
+  设置」，注入/doctor 失败同样命中（2026-11-02 15:42 实测变量已设置却仍
+  如此归因）；现区分「变量未设置」与「已配置但前置步骤失败」。
+  **③ README 结构节**: 补 `examples/`、`docs/`、`spikes/`、`.github/`、
+  `pyproject.toml`、`requirements.txt`、`machine.example.json`；`legacy/`
+  描述由「空目录」更正为「仅存说明文件」；`scripts/` 例数改为实测 47。
+  **验证**: 全套回归全绿（`OK (skipped=4)`）、`ruff check scripts tests`
+  零告；`tests/test_workflows_valid.py` 与 `test_version_single_source.py`
+  单跑通过。
+
 ## 0.11 — 2026-11-02（可安装形态与 `-I` 修复 · 覆盖率棘轮 38→93（实测 95%）· CI 3.10/Windows 平台差异收口）
 
 > 封袋定义: 自 v0.10 标签（commit 3cea333, 2026-11-01）之后落入本账本的
