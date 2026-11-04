@@ -38,6 +38,20 @@
   零告；`tests/test_workflows_valid.py` 与 `test_version_single_source.py`
   单跑通过。
 
+- **F-249 (ci, decision): FR-ALERT-01 处置定为「人工值守 + 30s 采集窗」— 不改为 xfail，也不固定接 3V3**（`16b5c59`）:
+  **背景**: run 41474633453 的唯一红项是 FR-ALERT-01（契约要求采样 >3.0V 时
+  打印 `ALERT HIGH mv=<n>`，固件按 `mv > 3000U` 触发）；捕获窗内 16 行采样
+  最高 2849mV，未越阈值。同一运行其余 4 条全 pass、`post_reset: ok`、
+  `evidence: hardware_validated`——链路本身通，只缺物理输入。
+  **决策**（维护者 2026-11-04 选定 B）: workflow_dispatch 由人工值守触发，
+  采集窗内把 PA5 电位器旋过 3V。理由: 保留原契约语义（可变输入 + 超压告警），
+  不把用例降级为固定 3V3；不改 xfail——四态模型下 XPASS 判红，手动旋过反而红。
+  **落地**: hw-smoke.yml 的 verify 步骤显式 `--timeout 30`（缺省 10s 对人工
+  操作太紧）并在步骤开头打印操作提示；固件、expectations 契约与工程
+  config.json 零改动。
+  **残余风险**: 无人值守 dispatch 仍会红——这是 B 的已知代价，靠流程约束而非
+  代码兜底；若日后改为定期自动跑，需重新处置（改台架接线或换用例）。
+
 ## 0.11 — 2026-11-02（可安装形态与 `-I` 修复 · 覆盖率棘轮 38→93（实测 95%）· CI 3.10/Windows 平台差异收口）
 
 > 封袋定义: 自 v0.10 标签（commit 3cea333, 2026-11-01）之后落入本账本的
