@@ -119,13 +119,37 @@ class SequencingTests(unittest.TestCase):
         self.assertEqual(telnet_sent[:7], [
             "reset halt", "resume", "sleep 300",
             'rtt setup 0x20000000 2048 "SEGGER RTT"',
-            "rtt start", "rtt polling_interval 100",
+            "rtt start", "rtt polling_interval 10",
             "rtt server start 19021 0",
         ])
         # 成功路径 finally 对存活会话的礼貌清理 (原有行为): halt + shutdown
         self.assertEqual(telnet_sent[7:], ["halt", "shutdown"])
         # workspace 参数化: OpenOCD 子进程 cwd 必须是工程根
         self.assertEqual(popen_kwargs[0]["cwd"], "W")
+
+
+class StallDetectionTests(unittest.TestCase):
+    """2026-11-17: 采集只回 4 行却报 status=ok，我据此把固件误判成卡死。
+    停顿必须显式出现在结果里，所以判据单独钉住（含边界）。"""
+
+    def test_no_data_is_not_a_stall(self):
+        self.assertEqual(capture_rtt._stall_seconds(None, 100.0, False), 0.0)
+
+    def test_short_idle_below_threshold(self):
+        self.assertEqual(capture_rtt._stall_seconds(100.0, 101.0, True), 0.0)
+
+    def test_idle_above_threshold_reported(self):
+        self.assertEqual(capture_rtt._stall_seconds(100.0, 103.4, True), 3.4)
+
+    def test_threshold_boundary_inclusive(self):
+        self.assertEqual(capture_rtt._stall_seconds(100.0, 102.0, True), 2.0)
+
+    def test_custom_threshold(self):
+        self.assertEqual(capture_rtt._stall_seconds(100.0, 100.5, True, threshold=0.5), 0.5)
+
+    def test_poll_interval_is_fast(self):
+        # 环指针死锁的缓解手段: 轮询必须明显快于固件写满 512B 环的速度
+        self.assertLessEqual(capture_rtt._RTT_POLL_INTERVAL_MS, 20)
 
 
 class FailurePathTests(unittest.TestCase):

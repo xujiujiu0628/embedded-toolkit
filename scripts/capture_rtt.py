@@ -23,9 +23,31 @@ from runtime_common import OpenocdCfgError, resolve_openocd_cfg
 from wb_common import load_machine
 
 _RTT_TELNET_PORT = 4444
+# 环指针死锁（2026-11-17 实测）: 固件 ~1.2KB/s 写入、上行环只有 512B 时，
+# OpenOCD 每 100ms 才排空一次，目标侧在两次轮询之间把环写回绕，RdOff 会
+# 越过 WrOff（实测 RdOff=93 > WrOff=87），SEGGER 判定"空间不足 5 字节"，
+# 之后每条 120B 的行被整条丢弃 —— 表现为"固件活着但采集只回启动几行"。
+# 拉快到 10ms 从源头降低概率；端到端的判定见 _stall_seconds()。
+_RTT_POLL_INTERVAL_MS = 10
+# 窗口结束前若已静默这么久且有数据，判定为可疑停顿（不是异常，是告警）
+_RTT_STALL_SEC = 2.0
 # 与 hardfault.py 同源的适配器致命错误串
 _RTT_CRITICAL_ERRORS = ["open failed", "init mode failed", "no device found",
                         "cannot connect", "error connecting dp", "examination failed"]
+
+
+def _stall_seconds(last_data_at, now, have_data: bool,
+                   threshold: float = _RTT_STALL_SEC) -> float:
+    """窗口结束时的静默秒数；无数据或不足阈值返回 0.0。
+
+    分开成纯函数是为了能单测——这个判据的价值全在"别把停顿当正常"：
+    2026-11-17 采集只回 4 行却报 status=ok，我据此把"固件卡死"当成了结论，
+    白查了一轮。停顿必须显式出现在结果里。
+    """
+    if not have_data or last_data_at is None:
+        return 0.0
+    idle = now - last_data_at
+    return round(idle, 1) if idle >= threshold else 0.0
 
 
 def _rtt_read_until_prompt(sock: socket.socket) -> str:
@@ -147,7 +169,7 @@ def step_capture_rtt(timeout_s: int, rtt_cfg: dict, workspace=None) -> dict:
             resp = _rtt_telnet(_RTT_TELNET_PORT, [
                 "reset halt", "resume", f"sleep {boot_delay_ms}",
                 f'rtt setup {sram_base} {sram_size} "{cb_id}"',
-                "rtt start", "rtt polling_interval 100",
+                "rtt start", f"rtt polling_interval {_RTT_POLL_INTERVAL_MS}",
                 f"rtt server start {port} 0"])
             blob = "\n".join(resp)
             low = blob.lower()
@@ -170,6 +192,7 @@ def step_capture_rtt(timeout_s: int, rtt_cfg: dict, workspace=None) -> dict:
                 raise TimeoutError(f"rtt tcp connect timeout ({connect_wait}s)")
 
             buf = bytearray()
+            last_data_at = None
             deadline = time.time() + timeout_s
             while time.time() < deadline:
                 data_sock.settimeout(max(0.05, min(0.5, deadline - time.time())))
@@ -177,12 +200,13 @@ def step_capture_rtt(timeout_s: int, rtt_cfg: dict, workspace=None) -> dict:
                     chunk = data_sock.recv(4096)
                     if chunk:
                         buf += chunk
+                        last_data_at = time.time()
                 except socket.timeout:
                     pass
             data_sock.close()
 
             text = buf.decode("utf-8", errors="replace")
-            return {
+            result = {
                 "status": "ok", "method": "rtt",
                 "timeout_sec": timeout_s,
                 "lines": len([ln for ln in text.splitlines() if ln.strip()]),
@@ -190,6 +214,14 @@ def step_capture_rtt(timeout_s: int, rtt_cfg: dict, workspace=None) -> dict:
                 "raw_length": len(text),
                 "_text": text,
             }
+            stall = _stall_seconds(last_data_at, time.time(), bool(buf))
+            if stall:
+                result["stall_sec"] = stall
+                result["warning"] = (
+                    f"RTT 输出在窗口结束前已静默 {stall}s —— 先怀疑环指针死锁"
+                    "(RdOff>WrOff, 写入被整条跳过) 或固件停止输出，"
+                    "不要据此判定固件卡死；复位/断电重上再采一次")
+            return result
 
         except ValueError as e:
             last_err = str(e)

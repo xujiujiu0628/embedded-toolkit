@@ -1788,6 +1788,8 @@ def _output(result: dict, as_json: bool):
         capture_s = steps.get("capture", {})
         print(f"[4] Capture:  {capture_s.get('status', '?').upper()}"
               f"  lines={capture_s.get('lines','?')}  method={capture_s.get('method','?')}")
+        if capture_s.get("warning"):
+            print(f"    >>> {capture_s['warning']}")
 
         pg_s = steps.get("physical_gate", {})
         if pg_s.get("status") != "skipped":
