@@ -158,6 +158,20 @@
   拔点阵 VCC 后 1.5/3/6s 全通 ⇒ 根因是供电负载。**环指针死锁是后果，不是原因。**
   **未做**: 自动修复环指针（需跨进程写目标内存，且根因在固件侧）。
 
+- **F-254 (feat, 故障路径): adc-oled 的 ADC 超时不再当有效值 + `--strict` 收口**（`fb4b719`）:
+  **发现**: 做 F-252 的 R4 收口时看到 `BSP_ADC_ReadRaw()` 调 `HAL_ADC_PollForConversion`
+  后**不看返回值**，直接返回 `HAL_ADC_GetValue()` —— 转换超时时读的是上次的陈旧值，
+  上层拿它算电压、还可能误触发 FR-ALERT-01。R1 规则此前把 ADC 排除在"对外总线"
+  之外（那是对的），所以这条洞只能靠故障用例发现。
+  **工程侧**（`4d9368f`）: 新增 `BSP_ADC_ReadRawChecked()`（超时返回 -1、不写出结果、
+  Stop 释放），旧接口保留为兼容壳；main 改为保留上次数值 + 1s 一条
+  `[ADC] timeout, hold last`；新增 `tests/test_fault_adc.c` + `tests/stub/`
+  最小 HAL 替身（`fault_shim_adc_timeout/value/polls/stops`），9 例断言。
+  **工具侧**: `.github/workflows/hw-smoke.yml` 的 fault_lint 步骤升级 `--strict`
+  —— 本机对 adc-oled 实测 `0 error / 0 warn`、`--strict` rc=0。
+  **验证**: host 用例 9/9；`make` 0 warning；`tests/test_workflows_valid.py` 3 例通过。
+  **未验证**: adc-oled 真机 —— 板不在手边，超时路径只经 host 替身验证。
+
 ## 0.11 — 2026-11-02（可安装形态与 `-I` 修复 · 覆盖率棘轮 38→93（实测 95%）· CI 3.10/Windows 平台差异收口）
 
 > 封袋定义: 自 v0.10 标签（commit 3cea333, 2026-11-01）之后落入本账本的
