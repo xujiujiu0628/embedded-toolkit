@@ -58,6 +58,7 @@ py-modules = [
     "esp_runtime",
     "evidence_export",
     "expectations",
+    "fault_lint",
     "expectations_lint",
     "failure_context",
     "feedback_db",
