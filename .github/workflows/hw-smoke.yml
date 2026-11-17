@@ -64,12 +64,14 @@ jobs:
       # 相对路径, 不把本机绝对路径写进公开 Job Log (F-248 同款纪律)。
       # 暂不带 --strict: R4(没有故障注入用例) 仍是告警, 等对应工程补上
       # tests 里的 fault_shim 用例后再升级为错误。
-      - name: 故障路径静态闸 (fault_lint, HW_VERIFY_PROJECT 在场时)
+      # 2026-11-17 已升级: adc-oled 补了 tests/test_fault_adc.c 与 tests/stub,
+      # 本机 `--strict` 实测 rc=0(0 error/0 warn), 故打开 --strict。
+      - name: 故障路径静态闸 (fault_lint --strict, HW_VERIFY_PROJECT 在场时)
         if: vars.HW_VERIFY_PROJECT != ''
         env:
           HW_VERIFY_PROJECT: ${{ vars.HW_VERIFY_PROJECT }}
         run: |
-          python scripts/fault_lint.py --project "$env:HW_VERIFY_PROJECT"
+          python scripts/fault_lint.py --project "$env:HW_VERIFY_PROJECT" --strict
       # HW_VERIFY_PROJECT 未设置时只冒烟 doctor (SWD 连通性已在其中);
       # 设置后对指定真机工程跑完整闭环 (schedule origin 审计可辨)
       - name: 真机闭环 verify (HW_VERIFY_PROJECT 在场时)
