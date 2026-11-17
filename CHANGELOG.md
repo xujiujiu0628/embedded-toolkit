@@ -102,6 +102,14 @@
   **未做**: 未接进任何 workflow。接上会让现有工程立刻红（R4 + 上述 9 条），
   接不接、接在哪个工程属维护者决定；CI 片段写在模板 README。
 
+  **推广（同日）**: 其余 8 个 verify 驱动工程的清单落地 —— ch32v307-envmon 11 条
+  （引脚事实取自 `User/pin_map.h:6-27`）、hello 7、rtc 8（含本板 LSE 不起振走
+  LSI）、selftest 8（IWDG 关不掉）、esp32-hello 8、esp32s3-hello 8、
+  stm32f103-adc-oled 9（含 FR-ALERT-01 必须把电位器旋过 3.0V 的物理前提）、
+  button-toggle 8；各工程仓分别提交（`8a70b6a`/`eb07621`/`6f5dc08`/`8abb8e6`/
+  `c14ab5f`/`b7997f5`/`2b06a40`/`3e36897`）。verify 实跑：esp32-hello 与
+  ch32v307-envmon 均在第 0 步被拦（约 0.5s，未构建）。
+
 ## 0.11 — 2026-11-02（可安装形态与 `-I` 修复 · 覆盖率棘轮 38→93（实测 95%）· CI 3.10/Windows 平台差异收口）
 
 > 封袋定义: 自 v0.10 标签（commit 3cea333, 2026-11-01）之后落入本账本的
