@@ -59,6 +59,17 @@ jobs:
           Write-Host "machine.json <- $(Split-Path -Leaf $env:HW_MACHINE_JSON)"
       - name: "环境预检 (doctor --strict: toolkit/Python/machine.json/gcc/openocd/make/SWD)"
         run: python scripts/verify.py --doctor --json --strict
+      # F-252: 故障路径静态闸 — 在烧板之前拦住"没有错误恢复"的固件
+      # (R1 丢弃对外总线返回值 / R2 无界忙等 / R3 ISR 阻塞)。只输出工程内
+      # 相对路径, 不把本机绝对路径写进公开 Job Log (F-248 同款纪律)。
+      # 暂不带 --strict: R4(没有故障注入用例) 仍是告警, 等对应工程补上
+      # tests 里的 fault_shim 用例后再升级为错误。
+      - name: 故障路径静态闸 (fault_lint, HW_VERIFY_PROJECT 在场时)
+        if: vars.HW_VERIFY_PROJECT != ''
+        env:
+          HW_VERIFY_PROJECT: ${{ vars.HW_VERIFY_PROJECT }}
+        run: |
+          python scripts/fault_lint.py --project "$env:HW_VERIFY_PROJECT"
       # HW_VERIFY_PROJECT 未设置时只冒烟 doctor (SWD 连通性已在其中);
       # 设置后对指定真机工程跑完整闭环 (schedule origin 审计可辨)
       - name: 真机闭环 verify (HW_VERIFY_PROJECT 在场时)

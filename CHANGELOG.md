@@ -110,6 +110,20 @@
   `c14ab5f`/`b7997f5`/`2b06a40`/`3e36897`）。verify 实跑：esp32-hello 与
   ch32v307-envmon 均在第 0 步被拦（约 0.5s，未构建）。
 
+- **F-252 (ci): hw-smoke 接入故障路径静态闸 — 烧板之前先过 R1-R3**（`COMMIT`）:
+  **落点**: `.github/workflows/hw-smoke.yml` 在 doctor 之后、真机 verify 之前插入
+  `python scripts/fault_lint.py --project "$env:HW_VERIFY_PROJECT"`，只在仓库
+  变量指定了真机工程时执行。
+  **判据取舍**: 暂不带 `--strict` —— 当前冒烟工程 adc-oled 是 0 error / 1 warn
+  （R4：还没有故障注入用例），本地实跑 rc=0；带 `--strict` 是 rc=1，等该工程
+  补上 `fault_shim_` 用例后再升级为错误。
+  **纪律**: 只输出工程内相对路径，不把本机绝对路径写进公开 Job Log（F-248 同款）。
+  **风险与预期**: 若 HW_VERIFY_PROJECT 指向的工程有 R1-R3 缺陷（例：mpu6050 的
+  `HAL_SPI_Init` 返回值被丢弃，实测 rc=1），CI 会在烧板前红 —— 这是本闸的本意，
+  不是误报。
+  **验证**: `tests/test_workflows_valid.py` 3 例通过；本地对 adc-oled 实跑 rc=0、
+  对 mpu6050 实跑 rc=1。
+
 ## 0.11 — 2026-11-02（可安装形态与 `-I` 修复 · 覆盖率棘轮 38→93（实测 95%）· CI 3.10/Windows 平台差异收口）
 
 > 封袋定义: 自 v0.10 标签（commit 3cea333, 2026-11-01）之后落入本账本的
