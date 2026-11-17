@@ -77,6 +77,31 @@
   `physical_checklist.py --attest --note "..."` → verify 全链 PASS（沿用
   v0.10 的 13/13 基线）。
 
+- **F-251 (feat, 故障路径): 静态闸 R1-R3 + R4 告警 + 故障注入模板 — 「不写错误恢复」在 CI 里红**（`37726d5`）:
+  **背景**: 我只写 happy path。初始化写得顺，掉电、从机不应答、总线被钳死、
+  超时回退、错误上报很弱，通常由真机先撞出来。这一层此前没有任何机械检查。
+  **静态闸** `scripts/fault_lint.py`（退出码 1 可直接当门禁）:
+  R1 对外总线调用返回值被丢弃（I2C/SPI/UART/CAN；取值函数、赋值右值、函数定义
+  都不算）；R2 无界忙等（条件含调用/寄存器 + 循环体空转 + 无 tick/CNT 判据）；
+  R3 ISR 内阻塞（HAL_Delay / while(1) / HAL_MAX_DELAY）；R4 告警——有通信模块
+  却没有故障注入用例，`--strict` 升级为 error。压制写
+  `fault-lint:ignore R<n> — 理由`，**理由为空按违规计数**（闸自己的防腐）。
+  **模板** `templates/fault_injection/`: HAL 形状的故障垫片 + 五条用例
+  （NACK / SCL 钳低 / 时基冻结 / 数据 0xFF / 正常路径）。时基冻结那条专门钉
+  「超时只依赖 tick」：时基不动时再大的 timeout 也不会超时。
+  **校准（11 个真工程实测）**: 首轮误报三种——Tetris_HardDrop 的搜索循环、
+  WCH vendor 时钟轮询（envmon 33 条里 28 条在 Peripheral/src 与 Debug/）、
+  Fault_Puts 的故障上下文轮询；逐条修掉后 8/11 工程零 error，剩余 9 条均为真洞
+  （ch32v307-examples 7 条 USART/ADC 空转、rtc 1 条、mpu6050 的 HAL_SPI_Init
+  返回值被丢弃）。
+  **模板自检（host，无需板子）**: MSYS2 gcc 16.1.0 下好实现 GREEN 5/5；
+  `-DDEMO_NO_ERROR_HANDLING` 的 happy-only 版本 RED 4 failure(s)，且正常路径
+  仍 PASS——证明用例不是"全红"。
+  **验证**: 新增 `tests/test_fault_lint.py` 17 例；`ruff check scripts tests`
+  零告；pyproject py-modules 同步。
+  **未做**: 未接进任何 workflow。接上会让现有工程立刻红（R4 + 上述 9 条），
+  接不接、接在哪个工程属维护者决定；CI 片段写在模板 README。
+
 ## 0.11 — 2026-11-02（可安装形态与 `-I` 修复 · 覆盖率棘轮 38→93（实测 95%）· CI 3.10/Windows 平台差异收口）
 
 > 封袋定义: 自 v0.10 标签（commit 3cea333, 2026-11-01）之后落入本账本的
