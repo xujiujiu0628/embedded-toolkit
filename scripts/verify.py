@@ -86,6 +86,7 @@ from expectations import (ExpectationError, contract_hashes,  # noqa: E402,F401 
                           _expect_matched, check_forbidden_fields, _forbidden_hit)
 from capture_rtt import step_capture_rtt as _step_capture_rtt  # noqa: E402  (F-056: 拆分件再导出, 旧私有名保持——3 处测试钉兼容)
 from physical_gate import step_physical_gate  # noqa: E402  (F-057: 拆分件再导出, 同名同签名)
+from physical_checklist import step_physical_checklist  # noqa: E402  (F-250: 物理检查清单闸, Step 0)
 from doctor import (doctor_report, fixture_health, strict_exit_code,  # noqa: E402,F401  (F-058: 拆分件再导出, 调用面不变)
                     _print_doctor, _detect_default_branch, _fixture_main_sha)
 from checkpoint_ledger import (CHECKPOINT_STATUSES, _git_head,  # noqa: E402,F401  (F-059: 拆分件再导出, 调用面不变)
@@ -620,6 +621,11 @@ def _parse_args(argv=None):
                              "用; preflight 拒绝 = 期望全 skipped + 一条 "
                              "preflight error; 写失败记 junit_xml_error "
                              "并拉低退出码)")
+    parser.add_argument("--skip-physical", dest="skip_physical",
+                        action="store_true",
+                        help="F-250: 跳过物理检查清单闸 (接线未经核对)。"
+                             "跳过不静默 —— steps.physical_checklist 记 "
+                             "skipped_by_flag, 人读输出打 SKIPPED")
 
     # F-236 后续: -I/--help 在 Windows 控制台默认 cp1252 下打印中文
     # help 文本会 UnicodeEncodeError (rc=1)。argparse 直写 sys.stdout,
@@ -916,13 +922,34 @@ def _run_pipeline(args):
         "steps": {}
     }
 
-    hex_file, elf_file = _run_build_step(
-        args, config, builder, result, max_retries, retry_delay)
-
     # F-150: sim 后端在 Step 1 前就由 config 决定 — 全程无烧录无探针
     cap_backend = (config.get("capture", {}) or {}).get("backend", "semihosting")
     sim_cfg = (config.get("capture", {}) or {}).get("sim", {}) or {}
     sim_mode = (cap_backend == "sim")
+
+    # F-250: 物理检查清单闸 —— 任何硬件动作之前, 也在花构建时间之前。
+    # 判据三条: 确认过 / 清单没改过 (内容哈希) / 没过 TTL。未配置的工程
+    # 不拦 (落 skipped + 原因), 让存量工程与 CI 不被一刀切打断。
+    _pcl = step_physical_checklist(WORKSPACE,
+                                   skip=getattr(args, "skip_physical", False),
+                                   hardware_expected=not sim_mode)
+    result["steps"]["physical_checklist"] = _pcl
+    if _pcl.get("status") == "blocked":
+        print("错误: 物理检查清单未通过 —— 这次不烧 (F-250)。", file=sys.stderr)
+        print(f"  {_pcl.get('reason', '')}", file=sys.stderr)
+        for _it in _pcl.get("items") or []:
+            print(f"  [{_it['id']}] {_it['cat']}: {_it['text']}", file=sys.stderr)
+            if _it.get("source"):
+                print(f"        出处: {_it['source']}", file=sys.stderr)
+        print(f"  清单: {_pcl.get('checklist_path', '?')}", file=sys.stderr)
+        print("  核对接线后登记: python scripts/physical_checklist.py "
+              f'--project "{WORKSPACE}" --attest --note "<确认了什么>"',
+              file=sys.stderr)
+        print("  确实要先跑一次未核对的: 加 --skip-physical (会记进证据)", file=sys.stderr)
+        sys.exit(1)
+
+    hex_file, elf_file = _run_build_step(
+        args, config, builder, result, max_retries, retry_delay)
 
     lease = _run_flash_step(args, config, result, hex_file, sim_mode,
                             max_retries, retry_delay)
@@ -1738,6 +1765,13 @@ def _output(result: dict, as_json: bool):
             print("  Verdict: INTERNAL ERROR")
             print("=" * 60)
             return
+
+        pcl_s = steps.get("physical_checklist", {})
+        if pcl_s.get("status") == "ok":
+            print(f"\n[0] Physical: OK       attested {pcl_s.get('attested_at', '?')}"
+                  f" by {pcl_s.get('by', '?')}  items={pcl_s.get('items', '?')}")
+        elif pcl_s.get("status") == "skipped":
+            print(f"\n[0] Physical: SKIPPED  ({pcl_s.get('reason', '')})")
 
         build_s = steps.get("build", {})
         print(f"\n[1] Build:    {build_s.get('status', '?').upper()}"

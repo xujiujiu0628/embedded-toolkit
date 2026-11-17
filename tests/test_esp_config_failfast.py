@@ -273,6 +273,7 @@ class GoldenBehaviorTests(_MainFlowHarness):
   "retry_config": {"max_retries": 0, "retry_delay": 2},
   "status": "ok",
   "steps": {
+   "physical_checklist": {"reason": "未配置 .workbench/physical-checklist.json（可用 --init 生成模板）", "status": "skipped"},
    "analyze": {"errors": 0, "matched": 0, "status": "ok", "unmatched": 0, "warnings": 0},
    "build": {
     "attempts": [{"attempt": 1, "errors": 0, "status": "ok", "warnings": 0}],
@@ -315,6 +316,7 @@ class GoldenBehaviorTests(_MainFlowHarness):
   "retry_config": {"max_retries": 0, "retry_delay": 2},
   "status": "ok",
   "steps": {
+   "physical_checklist": {"reason": "未配置 .workbench/physical-checklist.json（可用 --init 生成模板）", "status": "skipped"},
    "analyze": {"errors": 0, "matched": 0, "status": "ok", "unmatched": 0, "warnings": 0},
    "build": {
     "attempts": [{"attempt": 1, "errors": 0, "status": "ok", "warnings": 0}],
