@@ -73,9 +73,21 @@
   `test_esp_config_failfast` 两条 golden 随新增 `steps.physical_checklist`
   更新（reason 用正斜杠，避免平台分隔符焊进金面）。真机实跑: 未确认状态
   0.46s 内 exit 1，构建未启动。
-  **未做（不冒充验收）**: 真机端到端未跑——板不在身边。复测: 先被拦一次 →
+  **当时未做（板不在身边）**: 真机端到端未跑。复测: 先被拦一次 →
   `physical_checklist.py --attest --note "..."` → verify 全链 PASS（沿用
   v0.10 的 13/13 基线）。
+  **实测（2026-11-17 20:12，板到位后首验）**: 未确认状态 `verify` 564ms `exit 1`、
+  构建未启动（`.workbench/build/` 无当日产物）；人工逐条核对 11 条后 `--attest`，
+  重跑通过 Step 0（`[0] Physical: OK  attested 20:12:29 by user  items=11`），
+  同会话第二次未再问。全链 build/flash/capture 全绿（capture 476 行 RTT），
+  期望 **14 PASS / 3 MISSING**——缺的三条全是遥控器项（FR-IR-02/03/04），
+  原因=**遥控器无电未验证**，非固件缺陷（FR-IR-01 `[IR] init pin=PB12` 通过，
+  接收电路本身正常）。
+  **物理输入的可引用证据**（`.workbench/build/last_failure.json` 内 44030 字符捕获）:
+  `[KEY] SHORT state=1`×5、`[KEY] LONG state=4`×1、
+  `[CAL] done gx=-6.37 gy=-0.20 gz=-0.56`×1、`[STATE=3 last=`×15。
+  **复测（换电池后）**: `verify.py --project ... --timeout 40`，窗口内按
+  MODE→旋转→硬降，期望 17/17。
 
 - **F-251 (feat, 故障路径): 静态闸 R1-R3 + R4 告警 + 故障注入模板 — 「不写错误恢复」在 CI 里红**（`37726d5`）:
   **背景**: 我只写 happy path。初始化写得顺，掉电、从机不应答、总线被钳死、
