@@ -110,7 +110,7 @@
   `c14ab5f`/`b7997f5`/`2b06a40`/`3e36897`）。verify 实跑：esp32-hello 与
   ch32v307-envmon 均在第 0 步被拦（约 0.5s，未构建）。
 
-- **F-252 (ci): hw-smoke 接入故障路径静态闸 — 烧板之前先过 R1-R3**（`COMMIT`）:
+- **F-252 (ci): hw-smoke 接入故障路径静态闸 — 烧板之前先过 R1-R3**（`7f03c47`）:
   **落点**: `.github/workflows/hw-smoke.yml` 在 doctor 之后、真机 verify 之前插入
   `python scripts/fault_lint.py --project "$env:HW_VERIFY_PROJECT"`，只在仓库
   变量指定了真机工程时执行。
