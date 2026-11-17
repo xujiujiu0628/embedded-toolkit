@@ -52,6 +52,31 @@
   **残余风险**: 无人值守 dispatch 仍会红——这是 B 的已知代价，靠流程约束而非
   代码兜底；若日后改为定期自动跑，需重新处置（改台架接线或换用例）。
 
+- **F-250 (feat, 物理层): verify.py Step 0 物理检查清单闸 — 接线未核对不进烧录**（`d81479a`）:
+  **背景**: 物理故障最难排除、也最容易先入为主——2026-08-26/27 两次把「用户
+  自己拔的线」写成「克隆 ST-Link 间歇失联」（第二次还是抄了自己旧记忆的结论）。
+  此前「接线核过了」没有任何机械检查，全靠自觉。
+  **判据**: 清单 `<工程>/.workbench/physical-checklist.json`（工程资产，条目
+  带 `why`/`source`）+ 确认记录 `.workbench/state/physical-attest.json`（运行时
+  状态，`state/` 已忽略）。三种失效在 build 之前拦（exit 1）: 没确认过 / 清单
+  内容哈希变了 / 超 TTL（默认 12h）。哈希按规范化 JSON 算——改缩进不作废，
+  改条目作废。
+  **放行口**: 未配置清单的工程 skipped + 原因（不打断存量工程与 CI）；
+  `--skip-physical` 记 `skipped_by_flag`（跳过不静默）；sim 后端不适用；闸自身
+  异常降级 skipped + 原因（闸坏掉不该拖死流水线，但必须留痕）。
+  **首例**: stm32f103-mpu6050-oled 11 条（6 通用 + 5 专属），引脚事实取自
+  `User/MyI2C.c:16-19`、`User/key/key.c:31-32`、`User/adc_brt.c:6`、
+  `User/ir/ir_rx.c:4` 与 `docs/FSD.md`，不凭记忆填。
+  **验证**: 新增 `tests/test_physical_checklist.py` 15 例；全量 2289 passed /
+  2 failed，两红为 `test_f244_mcp.py` 的环境问题（本机新版 mcp SDK 的
+  `Server` 无 `list_tools`），已在干净 HEAD worktree 复现同样两红、非本次引入；
+  `test_esp_config_failfast` 两条 golden 随新增 `steps.physical_checklist`
+  更新（reason 用正斜杠，避免平台分隔符焊进金面）。真机实跑: 未确认状态
+  0.46s 内 exit 1，构建未启动。
+  **未做（不冒充验收）**: 真机端到端未跑——板不在身边。复测: 先被拦一次 →
+  `physical_checklist.py --attest --note "..."` → verify 全链 PASS（沿用
+  v0.10 的 13/13 基线）。
+
 ## 0.11 — 2026-11-02（可安装形态与 `-I` 修复 · 覆盖率棘轮 38→93（实测 95%）· CI 3.10/Windows 平台差异收口）
 
 > 封袋定义: 自 v0.10 标签（commit 3cea333, 2026-11-01）之后落入本账本的
