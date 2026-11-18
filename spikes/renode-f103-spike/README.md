@@ -142,7 +142,7 @@ Key1: Miscellaneous.Button @ gpioPortB
 
 ## 阶段 3：C# 外设可行性（已验到一半）
 
-.NET SDK 8.0.428 装在 `D:	oolchains\dotnet`（用户级，未改系统 PATH）。
+.NET SDK 8.0.428 装在 `D:/toolchains/dotnet`（用户级，未改系统 PATH）。
 
 已验证（可复现）：
 
