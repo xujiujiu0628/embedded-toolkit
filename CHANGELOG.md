@@ -181,6 +181,25 @@
   **验证**: host 用例 9/9；`make` 0 warning；`tests/test_workflows_valid.py` 3 例通过。
   **未验证**: adc-oled 真机 —— 板不在手边，超时路径只经 host 替身验证。
 
+- **F-255 (feat, 故障路径): fault_lint R1 覆盖 ADC 层 — 「闸看不见被测代码」收口**（`4f4c2ca`）:
+  **发现**: 2026-11-18 对 adc-oled 做无上下文审计（`tools/audit-contract` 三值
+  findings 门禁）时，审计员指出 `HAL_ADC_ConfigChannel/Start/Stop`、
+  `HAL_ADCEx_Calibration_Start` 的返回值被丢弃，而 `fault_lint --strict`
+  仍 rc=0 —— R1 的调用白名单只匹配 I2C/SPI/UART/CAN，闸的视野不覆盖本次
+  改动所在的层。"闸报绿"被当成了"故障路径已收口"的证据，属证据边界的过度解读。
+  **工具侧**（`4f4c2ca`）: `COMM_CALL` 增加 `ADCEx|ADC` 分支（ADCEx 在前，
+  避免被 ADC 前缀截断）；R1 语义由"通信调用"扩到"通信/外设调用"；补 5 条
+  边界用例（Start / ConfigChannel+Stop / ADCEx 必须报，GetValue 与赋值不报），
+  TDD 红 3 失败 → 绿 22 全过。
+  **校准（12 个 hw-projects，old→new）**: 新增命中仅 2 工程 9 条
+  （adc-oled +4、mpu6050-oled +5），其余 10 个零影响。
+  **工程侧**: 两个工程已按新闸补齐返回值检查 —— adc-oled（`3d662c0`，
+  4 处含 RCCEx 分频）、mpu6050-oled（`3aca003`，5 处含校准下线）。
+  **验证**: adc-oled `make test` 10/10+7/7、`make` 0 warning、
+  `fault_lint --strict` `ERROR 0 WARN 0`；mpu6050 `make test`
+  25/25+33/33+35/35、0 warning、R1 归零（R4 为其既有债）。
+  **未验证**: 两工程真机 —— 本次只改返回值检查，行为在错误路径上，未烧板。
+
 ## 0.11 — 2026-11-02（可安装形态与 `-I` 修复 · 覆盖率棘轮 38→93（实测 95%）· CI 3.10/Windows 平台差异收口）
 
 > 封袋定义: 自 v0.10 标签（commit 3cea333, 2026-11-01）之后落入本账本的
