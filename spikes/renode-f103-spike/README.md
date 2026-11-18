@@ -140,6 +140,51 @@ Key1: Miscellaneous.Button @ gpioPortB
 效果：`[KEY] PB15 long: tetris restarted` 这条**假事件消失**，`[DIAG] PA0=0` 保持 0
 （与真机空闲态一致）。这是本项目里第一个"仿真输出不再撒谎"的检查点。
 
+## 阶段 3：C# 外设可行性（已验到一半）
+
+.NET SDK 8.0.428 装在 `D:	oolchains\dotnet`（用户级，未改系统 PATH）。
+
+已验证（可复现）：
+
+1. **Renode 自带 Roslyn**，`include @xxx.cs` 能直接编译 C# 源码并加载，不需要预编译 dll。
+2. **插件类契约**：`[Plugin(Name=..., Version=..., Description=..., Vendor=...)]` +
+   构造函数收 `Monitor` + 实现 `IDisposable`。没有 `IPlugin` 接口。
+3. **外设类型能被平台描述解析**，但要同时满足三条，缺一不可：
+   - 命名空间在 `knownDirectories` 内（用 `Antmicro.Renode.Peripherals.Miscellaneous` 实测通过）；
+   - 类**直接**实现 `IPeripheral`（`AnalyzeAssembly` 只看直接接口，不认 `IDoubleWordPeripheral` 的间接继承）；
+   - 平台描述里用**全限定名**：`p: Antmicro.Renode.Peripherals.Miscellaneous.XxxPeriph @ sysbus 0x...`，短名会报 `E04 Could not resolve type`。
+
+```csharp
+[Plugin(Name = "probe", Description = "plumbing probe", Version = "0.1", Vendor = "local")]
+public sealed class ProbePlugin : IDisposable
+{
+    public ProbePlugin(Monitor monitor) { }
+    public void Dispose() { }
+}
+
+namespace Antmicro.Renode.Peripherals.Miscellaneous
+{
+    public class ProbePeriph : IPeripheral, IDoubleWordPeripheral, IKnownSize
+    {
+        public long Size { get { return 0x10; } }
+        public uint ReadDoubleWord(long offset) { return 0xDEADBEEF; }
+        public void WriteDoubleWord(long offset, uint value) { }
+        public void Reset() { }
+    }
+}
+```
+
+实测输出（`peripherals` 命令）：
+
+```
+p (ProbePeriph)  <0xE00FD000, 0xE00FD00F>
+```
+
+**未通**：给自定义外设接 GPIO。`GpioProbe : IGPIOReceiver, IGPIOSender` 再写
+`-> gpioPortB@11`，平台加载静默卡死（与 `.repl` 那几个坑同症状，无错误信息）。
+下一步要么走 `emulation CreateGPIOConnector` 外部件，要么让插件在机器创建后
+用 C# 直接 `AttachTo`。
+
 ## 仍然缺的
 
 | 缺口 | 状态 | 说明 |
