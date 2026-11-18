@@ -1,6 +1,6 @@
-# Renode 跑 STM32F103 — 阶段 1 + 2a + 2b（2026-11-18）
+# Renode 跑 STM32F103 — 阶段 1 / 2a / 2b / 2c（2026-11-18）
 
-结论：**boot 通、主循环在跑、bit-band 已补**。剩下的缺口是 GPIO 输入与软 I2C 从设备。
+结论：**boot 通、主循环在跑、bit-band 与 GPIO 输入已补**。软 I2C 从设备在 Renode 1.17 上撞到架构限制，见最后一节。
 
 本目录是可回放的 spike 现场，**不入 CI、不属于运行时工具**。
 
@@ -118,15 +118,49 @@ peripheral_bb: Miscellaneous.BitBanding @ sysbus <0x42000000, 0x43FFFFFF>
 
 排查这些时唯一可靠的信号是"进程超时 + 日志停在 `System bus created`"——Renode 不会报错。
 
+## 阶段 2c：GPIO 输入（按键假事件已消除）
+
+`Miscellaneous.Button` 可直接驱动 GPIO 输入线，按工程极性表接：
+
+```
+Key0: Miscellaneous.Button @ gpioPortA
+    -> gpioPortA@0
+
+Key1: Miscellaneous.Button @ gpioPortB
+    invert: true
+    -> gpioPortB@15
+```
+
+- KEY0 = PA0 **高电平按下**（`key.c:29`，下拉）→ 不 invert，空闲=低
+- KEY1 = PB15 **低电平按下**（`key.c:30`，上拉）→ `invert: true`，空闲=高
+
+效果：`[KEY] PB15 long: tetris restarted` 这条**假事件消失**，`[DIAG] PA0=0` 保持 0
+（与真机空闲态一致）。这是本项目里第一个"仿真输出不再撒谎"的检查点。
+
 ## 仍然缺的
 
-| 缺口 | 影响 | 补法 | 估时 |
-|---|---|---|---|
-| **GPIO 输入** | 按键恒 0 → 假按键事件（见上） | 需要能驱动 `IDR` 的手段；monitor 没有 `gpioPortX` 命令，可能得用 Python 外设替掉 `GPIOPort` 或写 GPIO 连接件 | 1 天 |
-| **RCC 时钟位** | `__HAL_RCC_*` 写不落盘（读由 SVD Tag 假供值） | 写一个 RCC Python 桩，维护 CR/CFGR/APBxENR 位并提供"ready"位 | 半天 |
-| **软 I2C 从设备** | MPU6050/OLED 无应答，`init FAIL` | 给 PB8/9、PB10/11 挂状态机外设 | 1~2 天 |
+| 缺口 | 状态 | 说明 |
+|---|---|---|
+| **软 I2C 从设备** | **卡住（架构限制）** | MPU6050/OLED 仍无应答，`MPU6050 init FAIL` 是预期 |
+| **RCC 时钟位** | 不做 | `__HAL_RCC_*` 写不落盘，但 Renode 的外设模型不检查时钟使能，补了也不改变行为；读值由 SVD `Tag` 供 |
+
+### 为什么软 I2C 从设备卡住
+
+要模拟 bit-bang I2C，必须能**观察并驱动 GPIO 线电平**。当前器材里没有这条路：
+
+1. **Python 外设接不了 GPIO**：声明 `Python.PythonPeripheral @ sysbus ...` 再加
+   `-> gpioPortB@10`，Renode 1.17 静默卡死（和 `.repl` 解析坑同一症状）。
+   对照实验：`Miscellaneous.Button` 用同样写法能加载并生效，说明不是语法问题，
+   而是 Python 外设不实现 GPIO 接收/驱动接口。
+2. **替换 `gpioPortB` 也不行**：原厂平台里 `gpioPortB` 被 EXTI、TIM1/2/3/4、
+   DMA 等 20+ 处引用（`stm32f103.repl:187-245`），整块替掉会让这些连接全部失效，
+   平台直接解析失败。
+3. 因此只有两条真路：写一个实现 Renode GPIO 接口的 **C# 外设**（需编译进 Renode），
+   或等上游支持 Python 外设挂 GPIO。
+
+在补齐之前，**任何依赖 MPU6050/OLED 读回的仿真结论都不能采信**。
 
 ## 边界
 
 这是 **L1 预检**，永远不升级成验收：电气层、上电时序、真实外设的非理想行为都测不到。
-在有 GPIO 输入模型之前，任何依赖按键/传感器的仿真结论都不能采信。
+按键输入已有模型；在补上 I2C 从设备之前，任何依赖 MPU6050/OLED 读回的仿真结论都不能采信。

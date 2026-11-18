@@ -292,6 +292,13 @@ sysbus:
 peripheral_bb: Miscellaneous.BitBanding @ sysbus <0x42000000, 0x43FFFFFF>
     peripheralBase: 0x40000000
 
+Key0: Miscellaneous.Button @ gpioPortA
+    -> gpioPortA@0
+
+Key1: Miscellaneous.Button @ gpioPortB
+    invert: true
+    -> gpioPortB@15
+
 dwt: Python.PythonPeripheral @ sysbus 0xE0001000
     size: 0x1000
     script: '''
