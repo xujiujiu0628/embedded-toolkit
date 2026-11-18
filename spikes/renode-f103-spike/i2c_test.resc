@@ -1,0 +1,11 @@
+include @D:/claude-embed/embedded-toolkit/spikes/renode-f103-spike/cs/mpu6050_slave.cs
+mach create "f103"
+machine LoadPlatformDescription @D:/claude-embed/embedded-toolkit/spikes/renode-f103-spike/stm32f103-i2c.repl
+python "mpu = monitor.Machine['sysbus.mpu']"
+python "port = monitor.Machine['sysbus.gpioPortB']"
+python "mpu.Sda.Connect(port, 11)"
+python "print('WIRED sda->PB11')"
+sysbus LoadELF @D:/claude-embed/hw-projects/stm32f103-mpu6050-oled/build/mpu6050-oled.elf
+start
+sleep 3
+quit

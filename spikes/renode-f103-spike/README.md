@@ -214,6 +214,46 @@ GPIO-IN number=0 value=False
 可以在插件里程序化接线——插件构造拿到 `Monitor`，在机器创建后把自建 `GPIO`
 连到 `gpioPortB` 的 11 脚，绕开 `.repl` 解析器。这条路还没验证。
 
+### 程序化接线：通了
+
+`.repl` 连线走不通，但**从 IronPython 里接**可以，且不碰解析器：
+
+```
+python "port = monitor.Machine['sysbus.gpioPortB']"
+python "from Antmicro.Renode.Core import GPIO"
+python "g = GPIO(); g.Connect(port, 11)"
+python "g.Set(True)"   → sysbus ReadDoubleWord 0x40010C08 = 0x00000800
+python "g.Set(False)"  → sysbus ReadDoubleWord 0x40010C08 = 0x00000000
+```
+
+要点：`Machine['gpioPortB']` 找不到，必须写 `Machine['sysbus.gpioPortB']`；
+`IGPIO.Connect(IGPIOReceiver, pin)` 建立驱动。
+
+**端口语义实测**：IDR 直接跟随接入的 GPIO 值（外接 true → IDR 1，外接 false → IDR 0），
+**与自身 ODR 无关**——不是开漏的线与，是覆盖。对 I2C 来说这意味着从机一旦持有
+SDA，主控就"看不见"自己的驱动，需要额外处理（见下）。
+
+### MPU6050 从机模型
+
+`cs/mpu6050_slave.cs`：地址 0x68、WHO_AM_I=0x68、寄存器可读写，实现
+`IPeripheral, IGPIOReceiver, IDoubleWordPeripheral, IKnownSize`（**必须有总线接口**，
+否则 `@ sysbus 0x...` 报 `E21 没有合适的构造函数`）。接收方向接线在平台里：
+
+```
+gpioPortB:
+    10 -> timer2@02 | mpu@0
+    11 -> timer2@03 | mpu@1
+mpu: Antmicro.Renode.Peripherals.Miscellaneous.Mpu6050Slave @ sysbus 0xE00FD200
+```
+
+实测：平台能加载，从机收到引脚变化。**但接上之后固件表现退化了**——只打出
+`[BOOT] stm32f103-mpu6050-oled v0.1` 就停住，比不接从机时（能打到主循环）更早。
+原因指向上面的覆盖语义：从机持有 SDA 时主控读不到自己的电平。
+
+下一步二选一：
+1. 从机只在 ACK 时隙驱动，其余时刻 `Disconnect()`（模拟高阻），而不是 `Set(true)`；
+2. 不依赖 IDR 采样，改从端口对象读 ODR 作为"主控电平"。
+
 ## 仍然缺的
 
 | 缺口 | 状态 | 说明 |
