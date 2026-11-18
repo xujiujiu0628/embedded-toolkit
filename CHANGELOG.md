@@ -57,7 +57,15 @@
   `ADC raw=4062 mv=3273 (3.27 V)` / `ALERT HIGH mv=3273`、
   `ADC raw=4079 mv=3287` / `ALERT HIGH mv=3287`。
   说明契约与固件都对，此前唯一的红确实是缺物理输入。
-  **仍未做**: hw-smoke 的 CI 运行（自托管 runner 当前离线），本结论只覆盖本地手工值守。
+  **2026-11-18 CI dispatch 实跑（run `44210548997`）**: runner 重新注册（agentId 22,
+  `desk-34354` online）+ 仓库变量迁到 `D:\claude-embed\...` 后，hw-smoke 首次
+  从 checkout 一路跑到 verify：`doctor --strict` / Provision machine.json /
+  `fault_lint --strict` 全绿。**唯一红项仍是 FR-ALERT-01**：
+  `pattern 未命中: 'ALERT HIGH mv=(\d+)'`，采集窗内无人值守旋 PA5 —— 与 B 的
+  残余风险逐字吻合。此前两次 dispatch 分别卡在 GitHub checkout 网络抖动
+  （`Recv failure` / `curl 52`）与探针未插（doctor SWD `open failed`）；这两条是
+  环境问题，不是 workflow 缺陷。**结论：CI 链路已通；红=物理输入缺，不是代码。**
+  **仍未做**（当时口径，已被上段取代）: hw-smoke 的 CI 运行（自托管 runner 当前离线），本结论只覆盖本地手工值守。
 
 - **F-250 (feat, 物理层): verify.py Step 0 物理检查清单闸 — 接线未核对不进烧录**（`d81479a`）:
   **背景**: 物理故障最难排除、也最容易先入为主——2026-08-26/27 两次把「用户
