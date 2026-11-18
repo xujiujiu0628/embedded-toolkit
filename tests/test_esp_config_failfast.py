@@ -136,6 +136,7 @@ def _strip_volatile(node):
     if isinstance(node, dict):
         return {k: ("<WS>" if k == "workspace"
                     else "<TV>" if k == "toolkit_version"
+                    else "<SHA>" if k in ("sha256", "file_sha256")
                     else _strip_volatile(v))
                 for k, v in node.items()
                 if k not in ("elapsed_sec", "duration_sec", "started_at",
@@ -296,6 +297,10 @@ class GoldenBehaviorTests(_MainFlowHarness):
     "status": "ok", "xpass_ids": []
    }
   },
+  "config_attestation": {
+   "path": ".workbench/config.json", "sha256": "<SHA>", "file_sha256": "<SHA>",
+   "diverged_from_file": false
+  },
   "toolkit_version": "<TV>",
   "workspace": "<WS>"
  },
@@ -336,6 +341,10 @@ class GoldenBehaviorTests(_MainFlowHarness):
     "results": [{"id": "FR-SYS-01", "status": "pass"}],
     "status": "ok", "xpass_ids": []
    }
+  },
+  "config_attestation": {
+   "path": ".workbench/config.json", "sha256": "<SHA>", "file_sha256": "<SHA>",
+   "diverged_from_file": false
   },
   "toolkit_version": "<TV>",
   "workspace": "<WS>"

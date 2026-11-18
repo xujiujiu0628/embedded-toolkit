@@ -1,0 +1,10 @@
+# 阶段 1/2a spike (2026-11-18): 真机 ELF 装进 Renode 的 STM32F103 平台。
+# 用法: renode.exe --disable-gui -P -1 <此文件>
+using sysbus
+$bin?=@D:/claude-embed/hw-projects/stm32f103-mpu6050-oled/build/mpu6050-oled.elf
+mach create "f103"
+machine LoadPlatformDescription @D:/claude-embed/embedded-toolkit/spikes/renode-f103-spike/stm32f103-dwt.repl
+sysbus LoadELF $bin
+start
+sleep 2
+quit

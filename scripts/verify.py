@@ -26,6 +26,7 @@ archive 路径, 唤起 keil_build / keil_analyze 需手动 cp 副本到仓内。
 """
 
 import argparse
+import hashlib
 import json
 import os
 import re
@@ -153,6 +154,60 @@ def load_config(project_root: str) -> dict:
             except (json.JSONDecodeError, UnicodeDecodeError) as e:
                 raise ConfigError(f"{config_path} 不可解析: {e}") from e
     raise FileNotFoundError("工程内未找到 .workbench/config.json")
+
+
+# 本次运行依据的配置摘要 (装载时算一次, 出口处再算一次比对)。
+# 与 agentic-hil 的 config_in_force 同向: 只写路径没用——路径在整个工程
+# 生命周期里是常量, 而内容是变量; 报告要能回答"这次跑的是哪份配置,
+# 以及它在跑的过程中有没有被人改过"。
+_CONFIG_ATTESTATION: dict = {}
+
+
+def _sha256_file(path: str | None) -> str | None:
+    """文件字节摘要; 读不到返回 None (不可读本身就是信息, 不编造摘要)。"""
+    if not path:
+        return None
+    try:
+        h = hashlib.sha256()
+        with open(path, "rb") as f:
+            for chunk in iter(lambda: f.read(65536), b""):
+                h.update(chunk)
+        return h.hexdigest()
+    except OSError:
+        return None
+
+
+def _record_config_attestation(project_root: str) -> None:
+    """记下本次装载的那份 config 的路径与摘要 (供出口处写进报告)。"""
+    _CONFIG_ATTESTATION.clear()
+    for marker in (".workbench/config.json", ".embeddedskills/config.json"):
+        config_path = os.path.join(project_root, marker)
+        if os.path.isfile(config_path):
+            _CONFIG_ATTESTATION.update({
+                "path": config_path,
+                "rel": marker.replace(os.sep, "/"),
+                "sha256": _sha256_file(config_path),
+            })
+            return
+
+
+def _attach_config_attestation(result: dict) -> None:
+    """出口处把配置摘要写进 result (所有退出路径共用 _output, 故挂在那里)。
+
+    `sha256` = 装载那一刻, `file_sha256` = 收尾那一刻, `diverged_from_file`
+    说明跑的过程中配置被改过。字段缺席而非 null: 没记到装载摘要就跑不到
+    这里, 缺席是有意义的。
+    """
+    loaded = _CONFIG_ATTESTATION.get("sha256")
+    if not loaded:
+        return
+    now = _sha256_file(_CONFIG_ATTESTATION.get("path"))
+    result.setdefault("config_attestation", {
+        "path": _CONFIG_ATTESTATION.get("rel", ".workbench/config.json"),
+        "sha256": loaded,
+        "file_sha256": now,
+        "diverged_from_file": now != loaded,
+    })
 
 
 def run_py(script: str, args: list[str], timeout: int = 120) -> dict:
@@ -323,11 +378,18 @@ def enforce_hil_origin(origin: str, require_schedule_origin: bool) -> tuple[bool
     return True, ""
 
 
+# 台账写失败留痕 (2026-11-18): 台账本身不改判定, 但一次"硬件动作已发生、账却没落"
+# 的运行不能当成无瑕的真机证据进发布门禁——release.py 读这个块。
+_AUDIT_FAILURES: list[str] = []
+
+
 def append_audit_entry(workspace: str, origin: str, step: str,
-                       status: str, command: str) -> None:
+                       status: str, command: str) -> bool:
     """F-046 台账: 每次 HIL 步骤执行后追加一行 JSON 到 .workbench/state/audit.jsonl.
 
     append-only 写入, 单调追加, 不重写历史. 失败不阻断主流程 (台账是审计而非门禁).
+    返回写入是否成功; 失败同时记入模块级 `_AUDIT_FAILURES`, 由出口
+    (`_attach_audit_status`)写进 result, 供发布门禁判断。
     """
     audit_dir = os.path.join(workspace, ".workbench", "state")
     audit_path = os.path.join(audit_dir, "audit.jsonl")
@@ -342,9 +404,27 @@ def append_audit_entry(workspace: str, origin: str, step: str,
         }
         with open(audit_path, "a", encoding="utf-8") as f:
             f.write(json.dumps(entry, ensure_ascii=False) + "\n")
-    except OSError:
-        # 台账是审计而非门禁: 落盘失败不阻断主流程, stderr 告警即可
+        return True
+    except OSError as e:
+        # 台账是审计而非门禁: 落盘失败不阻断主流程, stderr 告警 + 出口留痕
         print(f"[warn] audit 落盘失败: {audit_path}", file=sys.stderr)
+        _AUDIT_FAILURES.append(f"{step}: {e}")
+        return False
+
+
+def _attach_audit_status(result: dict) -> None:
+    """出口处写台账状态; 只有失败才写 (成功的运行不长这个键)。
+
+    缺席 = 所有追加都落盘了。这跟"没有 X"的诚实口径一致: 不写
+    `audit: {ok: true}` 是因为没失败就是没失败, 不需要一个恒真字段占位。
+    """
+    if not _AUDIT_FAILURES:
+        return
+    result.setdefault("audit", {
+        "ok": False,
+        "errors": list(_AUDIT_FAILURES),
+        "note": "台账追加失败: 硬件动作与账本可能不一致, 该次证据不得直接进发布门禁",
+    })
 
 
 def _release_hw_lease(lease) -> None:
@@ -719,6 +799,8 @@ def _prepare_context(args):
               file=sys.stderr)
         sys.exit(1)
     WORKSPACE = os.path.abspath(WORKSPACE)
+    _record_config_attestation(WORKSPACE)
+    _AUDIT_FAILURES.clear()   # 每次运行从零起算, 不继承上一次的失败留痕
     try:
         config = load_config(WORKSPACE)
     except ConfigError as e:
@@ -1723,6 +1805,8 @@ def _output(result: dict, as_json: bool):
     # F-128: evidence 统一在唯一出口落字段 — main() 的失败早退 (build/
     # flash/capture 失败) 也汇到这里, 消费方无需对任何 status 特判缺键
     result["evidence"] = _evidence_level(result)
+    _attach_config_attestation(result)
+    _attach_audit_status(result)
     # F-147: JUnit 报告旁路 — 写失败不炸主流程, 记 junit_xml_error 拉低退出码
     if _JUNIT_OUT:
         jr = junit_xml.write_junit_report(result, _JUNIT_OUT, workspace=WORKSPACE)

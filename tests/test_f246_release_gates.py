@@ -133,6 +133,19 @@ class RunGatesTests(unittest.TestCase):
         self.assertFalse(ok)
         self.assertIn("证据等级", msg)
 
+    def test_audit_incomplete_blocks_release(self):
+        ok, msg, _ = self._run(gate1_res=self._ok_gate1(
+            audit={"ok": False, "errors": ["capture: disk full"]}))
+        self.assertFalse(ok)
+        self.assertIn("台账不完整", msg)
+        self.assertIn("disk full", msg)
+
+    def test_audit_absent_or_ok_does_not_block(self):
+        ok, _, _ = self._run(gate1_res=self._ok_gate1(audit={"ok": True}))
+        self.assertTrue(ok)
+        ok, _, _ = self._run(gate1_res=self._ok_gate1())
+        self.assertTrue(ok)
+
     def test_all_green_with_waivers(self):
         ok, msg, ctx = self._run(
             gate1_res=self._ok_gate1(

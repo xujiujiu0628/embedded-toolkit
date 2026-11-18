@@ -280,6 +280,11 @@ EXEMPTS = {
         "argparse 直读全局 sys.argv, 仓内无替换缝; sys.argv patch 系全仓"
         "既有惯用形态 (baseline sys.argv 族 20+ 处), 本单 3 处为唯一新增, "
         "随钉落盘经裁决豁免。",
+    ("tests/test_hardfault_dwarf.py", "B", "hardfault.subprocess.run"):
+        "addr2line 是 subprocess 薄封装, 仓内没有可替换的调用缝 (被调对象是"
+        "外部可执行文件, 不是我们的模块); 同族既有三条 "
+        "hardfault.subprocess.run 基线 (F-219 / fault_site / cfg_param), "
+        "本处为新增测试文件的等价形态, 经裁决豁免。",
 }
 
 

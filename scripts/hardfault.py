@@ -25,6 +25,7 @@ import glob
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import time
@@ -429,6 +430,78 @@ def resolve_address(addr: int, symbols: list[dict]) -> dict | None:
     return {"name": sym["name"], "offset": addr - sym["addr"], "size": sym["size"]}
 
 
+def find_addr2line(explicit: str | None = None) -> str | None:
+    """定位 addr2line: 显式路径 > STM32 工具链 > WCH RISC-V 工具链 > PATH。
+
+    与 gcc_build 的工具链前缀口径一致 (arm-none-eabi / riscv-wch-elf)。
+    """
+    if explicit:
+        return explicit if os.path.isfile(explicit) else shutil.which(explicit)
+    for name in ("arm-none-eabi-addr2line", "riscv-wch-elf-addr2line",
+                 "addr2line"):
+        found = shutil.which(name)
+        if found:
+            return found
+    return None
+
+
+def addr2line_lookup(elf_path: str | None, addr: int,
+                     tool: str | None = None) -> dict | None:
+    """用 ELF 的 DWARF 把地址换成 函数 + 文件:行; 查不到返回 None。
+
+    `.map` 只给到函数名 (`resolve_address`), 从函数名到源码行必须靠 ELF 里的
+    调试信息——即链接时带 `-g`。查不到**不是错误**: 很多工程仍是 `-Os` 不带
+    `-g`(如 ch32v307 族), 此时调用方继续用 map 结果, 只是没有行号。
+
+    实现纪律: 一次一个地址 (addr2line 支持批量, 但这里调用点少, 单值更简单);
+    输出形如两行 `函数名` / `路径:行`; `??` 一律视为未命中, 不编造。
+    """
+    if not elf_path or not os.path.isfile(elf_path):
+        return None
+    exe = tool or find_addr2line()
+    if not exe:
+        return None
+    try:
+        proc = subprocess.run(
+            [exe, "-e", elf_path, "-f", "-C", f"0x{addr:08X}"],
+            capture_output=True, text=True, timeout=10,
+            encoding="utf-8", errors="replace",
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    lines = [ln.strip() for ln in (proc.stdout or "").splitlines() if ln.strip()]
+    if len(lines) < 2:
+        return None
+    func, location = lines[0], lines[1]
+    if func == "??" or location.startswith("??"):
+        return None
+    return {"function": func, "location": location.replace("\\", "/")}
+
+
+def _default_elf_path(map_path: str | None) -> str | None:
+    """与 .map 同目录同名的 .elf (GCC 工程 build/x.map + build/x.elf 的常态)。"""
+    if not map_path:
+        return None
+    candidate = os.path.splitext(map_path)[0] + ".elf"
+    return candidate if os.path.isfile(candidate) else None
+
+
+def attach_dwarf(fault_site: dict, site: dict, elf_path: str | None,
+                 tool: str | None) -> None:
+    """给 fault_site 的 pc/lr 补 DWARF 行号 (原地改, 命中才写键)。
+
+    键名 `<reg>_dwarf`, 与既有 `<reg>_sym` 并列: map 给函数名, DWARF 给行号,
+    两者都拿不到时该键缺席——缺席是有意义的, 不写 "unknown" 充数。
+    """
+    for key in ("pc", "lr"):
+        addr = site.get(key, 0)
+        if addr <= 0x08000000:
+            continue
+        hit = addr2line_lookup(elf_path, addr, tool)
+        if hit:
+            fault_site[key + "_dwarf"] = f"{hit['function']} @ {hit['location']}"
+
+
 def classify_address_range(addr: int) -> str:
     """分类地址范围"""
     if 0x08000000 <= addr < 0x08010000:
@@ -561,6 +634,9 @@ def _diagnose_from_text(args, started_at, started_ts) -> None:
                 if sym:
                     fault_site[key + "_sym"] = f"{sym['name']}+{sym['offset']}"
                     resolved[key] = fault_site[key + "_sym"]
+        attach_dwarf(fault_site, site,
+                     args.elf or _default_elf_path(map_path),
+                     find_addr2line(args.addr2line))
 
     result = {
         "status": "parsed_text_only" if site else "no_fault_marker",
@@ -618,6 +694,12 @@ def main():
     parser.add_argument("--fault-text", default=None,
                         help="含层 1 [HF] PC=/LR= 行的捕获文本路径, '-'=stdin "
                              "(F-116/H-1: handler 自旋场景下 live PC 非故障现场)")
+    parser.add_argument("--elf", default=None,
+                        help="ELF 路径 (默认与 .map 同名同目录); 链接带 -g 时"
+                             "可解析到源码行")
+    parser.add_argument("--addr2line", default=None,
+                        help="addr2line 可执行文件 (默认自动找 arm-none-eabi-"
+                             "addr2line / riscv-wch-elf-addr2line)")
     parser.add_argument("--no-probe", action="store_true",
                         help="只解析不探针 (F-130, MCP 通道底座): 跳过 OpenOCD "
                              "现场读取, 仅用 --fault-text 的层 1 现场行出诊断")
@@ -716,6 +798,9 @@ def main():
                     if sym:
                         fault_site[key + "_sym"] = \
                             f"{sym['name']}+{sym['offset']}"
+            attach_dwarf(fault_site, site,
+                         args.elf or _default_elf_path(map_path),
+                         find_addr2line(args.addr2line))
             xpsr = regs.get("xpsr", 0)
             if isinstance(xpsr, int) and (xpsr & 0x1FF):
                 fault_site["live_pc_note"] = (

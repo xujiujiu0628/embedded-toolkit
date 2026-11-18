@@ -393,6 +393,53 @@ def run_openocd(
 _state_lookup = state_lookup
 
 
+# 破坏性动作闸: 这些 raw 命令等价于任意寄存器写/选项字节改写。
+# mass_erase 抹的是整片 (含选项字节与读保护状态), 错板要走返厂流程;
+# unlock/lock 直接改写读保护, option_*/ob_* 改选项字节——都不是"再烧一次就好"。
+# 按**词**匹配而非子串: 子串会误伤 "block" 一类合法参数 ("lock" 是它的后缀)。
+_DESTRUCTIVE_RAW = ("mass_erase", "unlock", "lock")
+_DESTRUCTIVE_RAW_PREFIX = ("option_", "ob_")
+
+
+def _destructive_tokens(commands) -> list[str]:
+    """从 raw 命令里挑出破坏性 token (去重保序, 便于报错点名)。"""
+    hits: list[str] = []
+    for tok in " ".join(commands or []).lower().split():
+        if (tok in _DESTRUCTIVE_RAW
+                or tok.startswith(_DESTRUCTIVE_RAW_PREFIX)) and tok not in hits:
+            hits.append(tok)
+    return hits
+
+
+def destructive_refusal(args) -> dict | None:
+    """破坏性动作的前置拒绝 (返回 error dict; None = 放行)。
+
+    与 agentic-hil 的 allow_mass_erase / allow_raw_debugger_commands 同向:
+    **默认关闭, 要显式传参才打开**。闸放在解析参数之后、碰探针之前——
+    拒绝时一个 OpenOCD 进程都没起, 目标一个字节没动。
+
+    为什么需要它: physical_checklist 只挂在 verify.py 的 Step 0, 单独调
+    `openocd_run.py erase --mode mass` 可以整个绕过它; F-250 的立意是
+    "闸站在硬件前面", 那就得让每个入口都过同一道门。
+    """
+    if args.action == "erase" and args.mode == "mass" and not args.allow_mass_erase:
+        return {
+            "code": "permission_denied",
+            "message": ("整片擦除被拒绝: --action erase --mode mass 需要显式传 "
+                        "--allow-mass-erase (该操作同时清掉选项字节与读保护状态, "
+                        "无法用重烧恢复)"),
+        }
+    if args.action == "raw" and not args.allow_raw:
+        hits = _destructive_tokens(args.command)
+        if hits:
+            return {
+                "code": "permission_denied",
+                "message": (f"raw 命令含破坏性操作 {hits}: 需要显式传 --allow-raw "
+                            "(该面等价于任意寄存器/选项字节写)"),
+            }
+    return None
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="OpenOCD 探针探测/固件烧录/擦除/复位")
     parser.add_argument("action", choices=ALL_ACTIONS)
@@ -412,8 +459,23 @@ def main() -> None:
     parser.add_argument("--workspace", default=None, help="workspace 根目录，默认当前目录")
     parser.add_argument("--lease-wait", dest="lease_wait", type=float, default=0.0,
                         help="F-145: flash/erase 设备锁冲突时有界等待秒数 (默认 0 = fail-fast)")
+    parser.add_argument("--allow-mass-erase", dest="allow_mass_erase",
+                        action="store_true",
+                        help="授权整片擦除 (erase --mode mass); 缺省拒绝")
+    parser.add_argument("--allow-raw", dest="allow_raw", action="store_true",
+                        help="授权 raw 里的破坏性命令 (mass_erase/unlock/lock/option); 缺省拒绝")
     parser.add_argument("--json", action="store_true", dest="as_json")
     args = parser.parse_args()
+
+    refusal = destructive_refusal(args)
+    if refusal:
+        result = make_result(status="error", action=args.action,
+                             summary=refusal["message"], error=refusal)
+        if args.as_json:
+            output_json(result)
+        else:
+            print(f"错误: {refusal['message']}", file=sys.stderr)
+        sys.exit(1)
 
     started_at = now_iso()
     started_ts = time.time()

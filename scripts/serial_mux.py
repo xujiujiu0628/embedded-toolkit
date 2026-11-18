@@ -39,6 +39,7 @@ from serial_runtime import (
     is_mux_alive,
     make_result,
     output_json,
+    release_control_lines,  # 2026-11-18: 开端口即释放 DTR/RTS (与 ESP/UART 采集链同口径)
     state_write_lock,  # F-127 (工单 P1-3): state 读改写锁
 )
 
@@ -112,6 +113,7 @@ class SerialMuxServer:
                 stopbits=self.config["stopbits"],
                 timeout=0.1,
             )
+            release_control_lines(self.serial_port)
             self.server_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             self.server_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             self.server_sock.bind(("127.0.0.1", self.tcp_port))

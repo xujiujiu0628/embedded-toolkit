@@ -70,14 +70,19 @@ class OpenocdRunExitTests(unittest.TestCase):
             return cap()
 
     def test_exec_failure_json_exits_1(self):
+        # --allow-mass-erase: 破坏性动作闸默认拒绝 (2026-11-18), 本组钉的是
+        # run_openocd 返回 error 时的退出码契约, 不是闸本身; 不加这个参数
+        # 会先被闸拦掉, 测试名与实际路径不符 (假绿)。
         code, out = self._main_with({**ERR, "action": "erase", "details": {}},
-                                    ["erase", "--mode", "mass", "--exe", "no-such"])
+                                    ["erase", "--mode", "mass", "--allow-mass-erase",
+                                     "--exe", "no-such"])
         self.assertEqual(out["status"], "error")
         self.assertEqual(code, 1)
 
     def test_exec_ok_json_exits_0(self):
         ok = {"status": "ok", "action": "erase", "summary": "erased", "details": {}}
-        code, out = self._main_with(ok, ["erase", "--mode", "mass", "--exe", "no-such"])
+        code, out = self._main_with(ok, ["erase", "--mode", "mass", "--allow-mass-erase",
+                                         "--exe", "no-such"])
         self.assertEqual(out["status"], "ok")
         self.assertEqual(code, 0)
 

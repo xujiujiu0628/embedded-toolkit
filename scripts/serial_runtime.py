@@ -398,6 +398,24 @@ def get_matching_mux_info(config: dict, workspace: str | None = None) -> dict | 
     return None
 
 
+def release_control_lines(ser) -> None:
+    """开口后立即释放 DTR/RTS (与 esp_runtime._release_lines 同一口径)。
+
+    pyserial 打开端口时默认断言 DTR/RTS; CH340/CP210x 的自动下载电路把
+    这两条线的组合当成复位/进下载模式, 板子会静默停在复位里, 采集端看到
+    "0 行"却像固件挂死。ESP 链 F-177 已堵, 通用 UART 采集链 (STM32/CH32)
+    此前未堵——本函数是该链的单一出口。
+
+    释放放在 open 之后而非构造参数: socket:// 等后端没有控制线, 设属性会
+    抛异常, 这里吞掉 (与 esp 链同; 不支持控制线的桥本就无此问题)。
+    """
+    try:
+        ser.dtr = False
+        ser.rts = False
+    except Exception:
+        pass
+
+
 def open_serial_port(config: dict, use_mux: bool = True):
     """根据配置打开串口连接。
 
@@ -413,13 +431,14 @@ def open_serial_port(config: dict, use_mux: bool = True):
             url = f"socket://127.0.0.1:{mux['tcp_port']}"
             ser = serial.serial_for_url(url)
             ser.timeout = config.get("timeout_sec", 1.0)
+            release_control_lines(ser)
             setattr(ser, "_serial_skill_using_mux", True)
             return ser
 
     PARITY_MAP = {"none": "N", "even": "E", "odd": "O", "mark": "M", "space": "S"}
     parity = PARITY_MAP.get(config.get("parity", "none"), "N")
 
-    return serial.Serial(
+    ser = serial.Serial(
         port=config["port"],
         baudrate=config["baudrate"],
         bytesize=config["bytesize"],
@@ -427,6 +446,8 @@ def open_serial_port(config: dict, use_mux: bool = True):
         stopbits=config["stopbits"],
         timeout=config["timeout_sec"],
     )
+    release_control_lines(ser)
+    return ser
 
 
 # ── F-156 (P2-1): serial 族公共输出/骨架 — 五入口本地副本收编 ─────────────

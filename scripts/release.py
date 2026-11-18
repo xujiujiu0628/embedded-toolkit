@@ -299,6 +299,18 @@ def run_gates(ws, tag, allow_xfail, timeout, openocd_exe,
                        "非真机证据不得进发布门禁\n"
                        "  或 --allow-non-hardware-evidence 显式豁免"
                        " (evidence_waiver 留痕入档, 审计 R8 可见)"), {}
+    # 台账完整性门 (2026-11-18, 对标 agentic-hil "audit 写不出即判红"):
+    # verify 的 audit 块只在**追加失败**时出现;
+    # 硬件动作已发生、账却没落盘, 意味着"发生过什么"这条链断了, 该次运行
+    # 不能当作可复核的发布证据。这一条不设豁免——豁免它等于允许发布一份
+    # 无法追溯的录像。evidence 字段本身不改写 (板子确实跑过, 降级成 static
+    # 是假话), 拦在门禁这一层才是准确的位置。
+    audit = res.get("audit") or {}
+    if audit.get("ok") is False:
+        return False, ("G2 台账不完整: "
+                       + "; ".join(audit.get("errors") or ["(未记录原因)"])
+                       + "\n  硬件动作可能已发生而账未落, 该次运行不得作发布"
+                       "证据; 修复写入路径后重跑 verify"), {}
     return True, "G0~G2 全过", {"verify_result": res, "results": results,
                                 "waived": waived, "evidence": evidence,
                                 "evidence_waiver": bool(
