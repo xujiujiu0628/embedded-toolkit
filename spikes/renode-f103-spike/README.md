@@ -180,10 +180,38 @@ namespace Antmicro.Renode.Peripherals.Miscellaneous
 p (ProbePeriph)  <0xE00FD000, 0xE00FD00F>
 ```
 
-**未通**：给自定义外设接 GPIO。`GpioProbe : IGPIOReceiver, IGPIOSender` 再写
-`-> gpioPortB@11`，平台加载静默卡死（与 `.repl` 那几个坑同症状，无错误信息）。
-下一步要么走 `emulation CreateGPIOConnector` 外部件，要么让插件在机器创建后
-用 C# 直接 `AttachTo`。
+### GPIO 接线：接收通了，发送未通
+
+**接收方向（端口通知外设）可用**。把线加进平台里已有的 `gpioPortB` 连接块：
+
+```
+gpioPortB:
+    10 -> timer2@02 | rxprobe@0
+    11 -> timer2@03 | rxprobe@1
+...
+rxprobe: Antmicro.Renode.Peripherals.Miscellaneous.RxProbe @ gpioPortB
+```
+
+加载后立刻收到回调（实测）：
+
+```
+GPIO-IN number=1 value=False
+GPIO-IN number=0 value=False
+```
+
+**发送方向（外设拉线）未通**，三种写法各撞一个错：
+
+| 写法 | 结果 |
+|---|---|
+| `@ gpioPortB 11` + `-> gpioPortB@11`（同时实现收/发） | `E37`：该注册点上 IGPIOReceiver 与 IGPIOSender 二义，无法决定注册哪一种 |
+| 去掉编号 `@ gpioPortB` + `-> gpioPortB@11` | `E13 Type '...' does not contain any property of type GPIO` —— `->` 要求目标上有一个**类型为 `GPIO` 的属性**（多个时需 `[DefaultInterrupt]` 标注），`IGPIO State` 不算 |
+| 补上 `[DefaultInterrupt] public GPIO Line` 后再接 | 解析器在 `|` 多目标语法上抛 `NullReferenceException`（`CreationDriver.HandleError` 内部，错误处理器自己崩了） |
+
+最后一条意味着 **`.repl` 的连线语法对"同一引脚挂多个接收者 + 自定义发送者"这种组合不可用**，不是我们写法问题。
+
+**下一步（已定位到 API）**：`IGPIO.Connect(IGPIOReceiver destination, int number)` 存在，
+可以在插件里程序化接线——插件构造拿到 `Monitor`，在机器创建后把自建 `GPIO`
+连到 `gpioPortB` 的 11 脚，绕开 `.repl` 解析器。这条路还没验证。
 
 ## 仍然缺的
 
