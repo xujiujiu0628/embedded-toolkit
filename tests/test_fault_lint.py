@@ -167,5 +167,49 @@ void f(void) { while (FLASH->STATR & FLASH_FLAG_BSY) { } }
         self.assertNotIn("R4", [f["rule"] for f in findings])
 
 
+class R1AdcUncheckedCall(_Base):
+    """2026-11-18: R1 白名单原只覆盖 I2C/SPI/UART/CAN，ADC 层返回值被丢弃仍报绿。
+
+    adc-oled 审计实测：bsp_adc.c 里 HAL_ADC_ConfigChannel / Start / Stop 的返回值
+    全部丢弃，而 fault_lint --strict 仍 rc=0 —— 闸的视野漏掉了被测代码所在的层。
+    """
+
+    def test_bare_adc_start_is_flagged(self):
+        rules, _ = self.rules(body="""
+void f(void) { HAL_ADC_Start(0); }
+""")
+        self.assertIn("R1", rules)
+
+    def test_adc_config_and_stop_are_flagged(self):
+        rules, _ = self.rules(body="""
+void f(void) {
+    HAL_ADC_ConfigChannel(0, 0);
+    HAL_ADC_Stop(0);
+}
+""")
+        self.assertEqual(rules.count("R1"), 2)
+
+    def test_adc_ex_calibration_is_flagged(self):
+        rules, _ = self.rules(body="""
+void f(void) { HAL_ADCEx_Calibration_Start(0); }
+""")
+        self.assertIn("R1", rules)
+
+    def test_adc_value_getter_is_not_flagged(self):
+        rules, _ = self.rules(body="""
+void f(void) { (void)HAL_ADC_GetValue(0); }
+""")
+        self.assertNotIn("R1", rules)
+
+    def test_adc_assignment_is_not_flagged(self):
+        rules, _ = self.rules(body="""
+int f(void) {
+    int rc = HAL_ADC_Start(0);
+    return rc;
+}
+""")
+        self.assertNotIn("R1", rules)
+
+
 if __name__ == "__main__":
     unittest.main()

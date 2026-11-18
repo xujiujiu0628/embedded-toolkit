@@ -7,8 +7,10 @@
 
 三条规则（全部是启发式，宁可少报也不要淹没真问题）：
 
-  R1 UNCHECKED_CALL   通信调用返回值被丢弃:
+  R1 UNCHECKED_CALL   通信/外设调用返回值被丢弃:
                       `HAL_I2C_Master_Transmit(...);` —— 地址没 ACK 也照跑。
+                      覆盖 I2C/SPI/UART/CAN/ADC/ADCEx（2026-11-18 补 ADC：
+                      HAL_ADC_ConfigChannel/Start/Stop/校准的返回值同样会吞错）。
                       已知返回 void 的 HAL 函数与函数定义本身不报。
   R2 UNBOUNDED_WAIT   无界忙等: `while (HAL_I2C_GetFlagStatus(...) == RESET) { }`
                       —— 条件里有调用/寄存器，循环体是空的或只有一句，且条件里
@@ -58,7 +60,7 @@ VOID_HAL_PREFIXES = ("HAL_GPIO_WritePin", "HAL_GPIO_TogglePin", "HAL_Delay",
                      "HAL_RCC_", "HAL_SuspendTick", "HAL_ResumeTick")
 VOID_HAL_EXACT = {"HAL_Init", "HAL_MspInit", "HAL_DeInit"}
 
-COMM_CALL = re.compile(r"\b(HAL_(?:I2C|SPI|UART|CAN)_[A-Za-z0-9_]+)\s*\(")
+COMM_CALL = re.compile(r"\b(HAL_(?:ADCEx|ADC|I2C|SPI|UART|CAN)_[A-Za-z0-9_]+)\s*\(")
 TIMEOUT_HINT = re.compile(r"tick|Tick|CNT|cnt|timeout|Timeout|deadline|Deadline|"
                           r"millis|Millis|elapsed|Elapsed|Timer|timer|SysTick", )
 IGNORE = re.compile(r"fault-lint:\s*ignore\s+(R\d)\s*(?:[—:\-–]\s*(\S.*))?")
