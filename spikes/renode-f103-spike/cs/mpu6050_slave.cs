@@ -353,7 +353,18 @@ namespace Antmicro.Renode.Peripherals.Miscellaneous
                 Connections[number].Set(false);
                 return;
             }
-            base.OnGPIO(number, value);
+            bool own;
+            if(saved.TryGetValue(number, out var v))
+            {
+                own = v;
+                saved.Remove(number);
+            }
+            else
+            {
+                own = true;
+            }
+            State[number] = own;
+            Connections[number].Set(own);
         }
 
         private readonly Dictionary<int, bool> saved = new Dictionary<int, bool>();

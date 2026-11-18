@@ -315,8 +315,11 @@ public class OpenDrainF1Port : STM32F1GPIOPort
 **当前 bug**：地址帧从 `0xD0` 退化成 `0x10`（丢高位）。原因指向基类
 `OnGPIO` 在输出模式下对**高电平**直接 `return`（只发一行 warning），所以主控
 把 SDA 拉高时接收者收不到事件；低电平走我们的覆盖能通知，高电平不能。
-下一步：在 `OnGPIO` 的 `value == true` 分支里自己 `Connections[number].Set(...)`
-（按开漏线与：外部为高时线电平取自身驱动值）。
+已按此改（`value == true` 分支自己发通知），**现象无变化，仍 `0x10`**。
+说明主控写引脚走的不是 `OnGPIO`（那是给 `-> gpioPortB@N` 的外部发送者用的），
+而是 `WritePin → Connections[number].Set`，我们的覆盖根本没进那条路径。
+下一步应当**逐事件打点**：在从机 `OnGPIO` 里把 `(number, value, sclHigh, state)`
+写进日志，用一次 `MPU6050_I2C_Init` 的完整位流对照，定位到底哪几位丢了。
 
 ## 仍然缺的
 
