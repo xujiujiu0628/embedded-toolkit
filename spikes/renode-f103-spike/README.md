@@ -205,7 +205,8 @@ GPIO-IN number=0 value=False
 |---|---|
 | `@ gpioPortB 11` + `-> gpioPortB@11`（同时实现收/发） | `E37`：该注册点上 IGPIOReceiver 与 IGPIOSender 二义，无法决定注册哪一种 |
 | 去掉编号 `@ gpioPortB` + `-> gpioPortB@11` | `E13 Type '...' does not contain any property of type GPIO` —— `->` 要求目标上有一个**类型为 `GPIO` 的属性**（多个时需 `[DefaultInterrupt]` 标注），`IGPIO State` 不算 |
-| 补上 `[DefaultInterrupt] public GPIO Line` 后再接 | 解析器在 `|` 多目标语法上抛 `NullReferenceException`（`CreationDriver.HandleError` 内部，错误处理器自己崩了） |
+| 补上 `[DefaultInterrupt] public GPIO Line` 后接发送线（不含 `|` 多目标） | 仍然抛 `NullReferenceException`（`CreationDriver.HandleError` 内部，错误处理器自己崩了——真实错误被自己的报错路径吃掉） |
+| 只接发送、不做接收（最小组合） | 同上，`NullReferenceException` |
 
 最后一条意味着 **`.repl` 的连线语法对"同一引脚挂多个接收者 + 自定义发送者"这种组合不可用**，不是我们写法问题。
 
