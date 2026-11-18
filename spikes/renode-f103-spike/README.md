@@ -18,10 +18,13 @@
 
 ## 运行
 
+> 命令里的 `<d-claude-root>` 是本机工作区根的占位（仓内禁写裸机器路径，
+> 见 `tests/test_source_hygiene_paths.py`），实际执行前替换成你的路径。
+
 ```bash
 cd D:/toolchains/renode/renode_1.17.0-portable
 ./renode.exe --disable-gui -P -1 \
-  "D:/claude-embed/embedded-toolkit/spikes/renode-f103-spike/boot.resc"
+  "<d-claude-root>/embedded-toolkit/spikes/renode-f103-spike/boot.resc"
 ```
 
 `-P -1` 下 monitor 命令**不回显**（`echo`、`sysbus.cpu PC` 都看不到）。要取值走 `--console`：
@@ -29,8 +32,8 @@ cd D:/toolchains/renode/renode_1.17.0-portable
 ```bash
 printf '%s\n' \
  'mach create "a"' \
- 'machine LoadPlatformDescription @D:/claude-embed/embedded-toolkit/spikes/renode-f103-spike/stm32f103-dwt.repl' \
- 'sysbus LoadELF @D:/claude-embed/hw-projects/stm32f103-mpu6050-oled/build/mpu6050-oled.elf' \
+ 'machine LoadPlatformDescription @<d-claude-root>/embedded-toolkit/spikes/renode-f103-spike/stm32f103-dwt.repl' \
+ 'sysbus LoadELF @<d-claude-root>/hw-projects/stm32f103-mpu6050-oled/build/mpu6050-oled.elf' \
  'start' 'sleep 3' 'sysbus.cpu PC' 'quit' \
  | ./renode.exe --console --disable-gui
 ```

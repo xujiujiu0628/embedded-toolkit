@@ -58,7 +58,7 @@
   `ADC raw=4079 mv=3287` / `ALERT HIGH mv=3287`。
   说明契约与固件都对，此前唯一的红确实是缺物理输入。
   **2026-11-18 CI dispatch 实跑（run `44210548997`）**: runner 重新注册（agentId 22,
-  `desk-34354` online）+ 仓库变量迁到 `D:\claude-embed\...` 后，hw-smoke 首次
+  `desk-34354` online）+ 仓库变量迁到 `<d-claude-root>\...` 后，hw-smoke 首次
   从 checkout 一路跑到 verify：`doctor --strict` / Provision machine.json /
   `fault_lint --strict` 全绿。**唯一红项仍是 FR-ALERT-01**：
   `pattern 未命中: 'ALERT HIGH mv=(\d+)'`，采集窗内无人值守旋 PA5 —— 与 B 的

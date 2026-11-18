@@ -40,6 +40,7 @@ STUB_HEADER = r"""/* 生成器 ↔ CMSIS 接口契约 stub (F-078) — 仅用于
 #include <stdio.h>
 
 #define __DSB() ((void)0)
+#define __WFI() ((void)0)
 
 typedef struct {
     volatile uint32_t CR, CFGR, CIR, APB2RSTR, APB1RSTR,

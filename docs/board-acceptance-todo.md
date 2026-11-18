@@ -22,14 +22,14 @@
 
 - [ ] 探针/进程预检
       ```bash
-      python D:/claude/tools/cc-ops/hw_preflight.py
+      python <d-claude-root>/tools/cc-ops/hw_preflight.py
       ```
       **通过** = 末行 `RESULT: clear to open a hardware session`。
       **探针没插时的正确输出** = `no supported pyOCD probe could be opened` —— 这不算异常。
       红（有 HOLD / BUSY / 无探针）先清僵尸进程，别带着跑。
 - [ ] 工具链体检
       ```bash
-      python D:/claude-embed/embedded-toolkit/scripts/verify.py --doctor --strict
+      python <toolkit>/scripts/verify.py --doctor --strict
       ```
 - [ ] 确认没别的窗口占着同一个 ST-Link（McuBuddy / OpenOCD / 另一个 VS Code 调试会话）。
       连不上时的**归因顺序**：先问"是不是你自己拔的线" → 供电/接触/枚举 → 最后才是适配器坏。
@@ -42,8 +42,8 @@
 
 - [ ] 插上 ST-Link（3V3 供板），**不要**先 attest：
       ```bash
-      python D:/claude-embed/embedded-toolkit/scripts/verify.py \
-        --project D:/claude-embed/hw-projects/stm32f103-mpu6050-oled
+      python <toolkit>/scripts/verify.py \
+        --project <workspace>/hw-projects/stm32f103-mpu6050-oled
       ```
 - [ ] 期望：`exit 1`、耗时 <1s、**构建未启动**、打印 11 条清单。
       若它直接开跑了 → 闸没生效，停下来查（见 §5）。
@@ -64,14 +64,14 @@
 
 - [ ] 确认后登记（`--note` 必填，写清"按什么核对的"）：
       ```bash
-      python D:/claude-embed/embedded-toolkit/scripts/physical_checklist.py \
-        --project D:/claude-embed/hw-projects/stm32f103-mpu6050-oled \
+      python <toolkit>/scripts/physical_checklist.py \
+        --project <workspace>/hw-projects/stm32f103-mpu6050-oled \
         --attest --note "按 docs/FSD.md + 实物核对，PB8=SCL/PB9=SDA，AD0 接地"
       ```
 - [ ] 立刻再跑一次 verify，确认**这次不被拦**（TTL 内放行）：
       ```bash
-      python D:/claude-embed/embedded-toolkit/scripts/verify.py \
-        --project D:/claude-embed/hw-projects/stm32f103-mpu6050-oled
+      python <toolkit>/scripts/verify.py \
+        --project <workspace>/hw-projects/stm32f103-mpu6050-oled
       ```
       人读输出里应出现 `[0] Physical: OK  attested ... items=11`。
 
@@ -104,8 +104,8 @@
 
 批量跑（不改状态，只看该不该拦）：
 ```bash
-for p in D:/claude-embed/hw-projects/*/; do
-  python D:/claude-embed/embedded-toolkit/scripts/verify.py --project "$p" 2>&1 | head -3
+for p in <workspace>/hw-projects/*/; do
+  python <toolkit>/scripts/verify.py --project "$p" 2>&1 | head -3
 done
 ```
 
@@ -118,7 +118,7 @@ done
 3. **verify 跑起来但失败**：
    - 先看 `steps.physical_checklist.status` 是不是 `ok`（确认闸已放行，不是它的问题）
    - 物理现象归因：供电 / 接触 / 枚举 → 再怀疑固件
-   - 想看静态闸意见：`python D:/claude-embed/embedded-toolkit/scripts/fault_lint.py --project <工程>`
+   - 想看静态闸意见：`python <toolkit>/scripts/fault_lint.py --project <工程>`
 4. **确定要跳过闸**（例如只想知道固件能不能编）：
    加 `--skip-physical`，它会记进证据，**不会静默跳过**。
    **永远不要**替用户跑 `--attest` —— 确认的是"线接对了"，看不见实物就没资格签名。
@@ -131,15 +131,15 @@ done
 
 ```bash
 # 1) 配置在不在
-ls D:/claude-embed/hw-projects/<工程>/.workbench/physical-checklist.json
+ls <workspace>/hw-projects/<工程>/.workbench/physical-checklist.json
 
 # 2) 闸自己怎么判
-python D:/claude-embed/embedded-toolkit/scripts/physical_checklist.py \
-  --project D:/claude-embed/hw-projects/<工程> --check ; echo "rc=$?"
+python <toolkit>/scripts/physical_checklist.py \
+  --project <workspace>/hw-projects/<工程> --check ; echo "rc=$?"
 #    期望未确认时 rc=1；rc=0 说明它认为已确认或未配置
 
 # 3) 版本对不对
-git -C D:/claude-embed/embedded-toolkit log --oneline -3   # 应有 d81479a/C.../9c3cefd
+git -C <toolkit> log --oneline -3   # 应有 d81479a/C.../9c3cefd
 ```
 
 ---
@@ -167,18 +167,18 @@ git -C D:/claude-embed/embedded-toolkit log --oneline -3   # 应有 d81479a/C...
 
 ```bash
 # 预检
-python D:/claude/tools/cc-ops/hw_preflight.py
-python D:/claude-embed/embedded-toolkit/scripts/verify.py --doctor --strict
+python <d-claude-root>/tools/cc-ops/hw_preflight.py
+python <toolkit>/scripts/verify.py --doctor --strict
 
 # 清单：看状态 / 登记 / 判据
-python D:/claude-embed/embedded-toolkit/scripts/physical_checklist.py --project <工程>
-python D:/claude-embed/embedded-toolkit/scripts/physical_checklist.py --project <工程> --attest --note "..."
-python D:/claude-embed/embedded-toolkit/scripts/physical_checklist.py --project <工程> --check
+python <toolkit>/scripts/physical_checklist.py --project <工程>
+python <toolkit>/scripts/physical_checklist.py --project <工程> --attest --note "..."
+python <toolkit>/scripts/physical_checklist.py --project <工程> --check
 
 # 闭环
-python D:/claude-embed/embedded-toolkit/scripts/verify.py --project <工程>
-python D:/claude-embed/embedded-toolkit/scripts/verify.py --project <工程> --json
+python <toolkit>/scripts/verify.py --project <工程>
+python <toolkit>/scripts/verify.py --project <工程> --json
 
 # 静态闸
-python D:/claude-embed/embedded-toolkit/scripts/fault_lint.py --project <工程>
+python <toolkit>/scripts/fault_lint.py --project <工程>
 ```
