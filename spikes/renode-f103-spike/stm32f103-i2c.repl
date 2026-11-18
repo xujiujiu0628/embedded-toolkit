@@ -289,5 +289,30 @@ sysbus:
         ApplySVD @https://dl.antmicro.com/projects/renode/svd/STM32F103.svd.gz
         Tag <0x40021000, 0x40021003> "RCC_CR" 0x0A020083
 
+peripheral_bb: Miscellaneous.BitBanding @ sysbus <0x42000000, 0x43FFFFFF>
+    peripheralBase: 0x40000000
+
+Key0: Miscellaneous.Button @ gpioPortA
+    -> gpioPortA@0
+
+Key1: Miscellaneous.Button @ gpioPortB
+    invert: true
+    -> gpioPortB@15
 
 mpu: Antmicro.Renode.Peripherals.Miscellaneous.Mpu6050Slave @ sysbus 0xE00FD200
+
+dwt: Python.PythonPeripheral @ sysbus 0xE0001000
+    size: 0x1000
+    script: '''
+if request.IsInit:
+    cyccnt = 0
+elif request.IsRead:
+    if request.Offset == 0x4:
+        cyccnt = (cyccnt + 144) & 0xFFFFFFFF
+        request.Value = cyccnt
+    else:
+        request.Value = 0
+elif request.IsWrite:
+    if request.Offset == 0x4:
+        cyccnt = request.Value & 0xFFFFFFFF
+'''

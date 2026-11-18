@@ -246,13 +246,31 @@ gpioPortB:
 mpu: Antmicro.Renode.Peripherals.Miscellaneous.Mpu6050Slave @ sysbus 0xE00FD200
 ```
 
-实测：平台能加载，从机收到引脚变化。**但接上之后固件表现退化了**——只打出
-`[BOOT] stm32f103-mpu6050-oled v0.1` 就停住，比不接从机时（能打到主循环）更早。
-原因指向上面的覆盖语义：从机持有 SDA 时主控读不到自己的电平。
+实测进展（2026-11-18 末）：
 
-下一步二选一：
-1. 从机只在 ACK 时隙驱动，其余时刻 `Disconnect()`（模拟高阻），而不是 `Set(true)`；
-2. 不依赖 IDR 采样，改从端口对象读 ODR 作为"主控电平"。
+1. 平台能加载，从机收到引脚变化；
+2. **固件的 I2C 位流被正确解出**——从机打印：
+
+```
+SLAVE start
+SLAVE byte 0xD0 st=1     ← 写地址 (0x68<<1 | 0)
+SLAVE start
+SLAVE byte 0xD2 st=1     ← 读地址 (0x68<<1 | 1)
+```
+
+说明 SCL/SDA 采样、起始条件识别、8 位移位全部正确。
+
+3. **但 ACK 没被主控看见**：地址之后就没有后续字节，固件仍报 `MPU6050 init FAIL`。
+   已排除：ACK 在第 8 个时钟下降沿就被释放（改成分两拍持有，仍未解决）。
+   当前怀疑 `Sda.Disconnect()/Connect()` 的重新挂接在事务中不生效，或端口在
+   OD 模式下的 IDR 合成方式与预期不同。
+
+下一步（按顺序试）：
+
+1. 在 `Acknowledge()` 里加打印确认它被调用（当前只有 Start/Byte 两处打印）；
+2. 放弃 Connect/Disconnect，改为**常连**并在非 ACK 时读端口 ODR 作为主控电平
+   （端口现在不会覆盖主控的 ODR？需实测）；
+3. 若都不行，考虑把从机做成**替换 GPIO 模型**（代价大，要接回 EXTI/TIM/DMA 引用）。
 
 ## 仍然缺的
 

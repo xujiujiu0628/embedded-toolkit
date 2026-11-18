@@ -35,6 +35,32 @@ namespace Antmicro.Renode.Peripherals.Miscellaneous
 
         public void WriteDoubleWord(long offset, uint value) { }
 
+        public IGPIOReceiver Host { get; set; }
+
+        private void DriveLow()
+        {
+            if(Host != null && !driving)
+            {
+                Sda.Connect(Host, 11);
+                driving = true;
+            }
+            Sda.Set(false);
+        }
+
+        private void Release()
+        {
+            if(Host != null && driving)
+            {
+                Sda.Disconnect();
+                driving = false;
+            }
+        }
+
+        private void SetSda(bool level)
+        {
+            if(level) { Release(); } else { DriveLow(); }
+        }
+
         public GPIO Scl { get; private set; }
         public GPIO Sda { get; private set; }
 
@@ -47,7 +73,8 @@ namespace Antmicro.Renode.Peripherals.Miscellaneous
             reading = false;
             sclHigh = false;
             sdaHigh = true;
-            Sda.Set(true);
+            driving = false;
+            if(Host != null) { Sda.Disconnect(); }
         }
 
         public void OnGPIO(int number, bool value)
@@ -77,11 +104,13 @@ namespace Antmicro.Renode.Peripherals.Miscellaneous
 
         private void StartCondition()
         {
+            Console.WriteLine("SLAVE start");
             state = St.Addr;
             bitIndex = 0;
+            ackHeld = false;
             shift = 0;
             reading = false;
-            Sda.Set(true);
+            Release();
         }
 
         private void StopCondition()
@@ -89,7 +118,7 @@ namespace Antmicro.Renode.Peripherals.Miscellaneous
             state = St.Idle;
             bitIndex = 0;
             reading = false;
-            Sda.Set(true);
+            Release();
         }
 
         private void OnScl(bool value)
@@ -154,23 +183,31 @@ namespace Antmicro.Renode.Peripherals.Miscellaneous
                 if(bitIndex < 8)
                 {
                     bool bit = ((regs[regPtr & 0x7F] >> (7 - bitIndex)) & 1) != 0;
-                    Sda.Set(bit);
+                    SetSda(bit);
                     bitIndex++;
                 }
                 else
                 {
-                    Sda.Set(true);
+                    Release();
                 }
                 return;
             }
             if(bitIndex == 8)
             {
-                Sda.Set(true);
-                bitIndex = 0;
-                shift = 0;
-                if(state == St.Addr && !reading)
+                if(!ackHeld)
                 {
-                    state = St.Reg;
+                    ackHeld = true;
+                }
+                else
+                {
+                    Release();
+                    ackHeld = false;
+                    bitIndex = 0;
+                    shift = 0;
+                    if(state == St.Addr && !reading)
+                    {
+                        state = St.Reg;
+                    }
                 }
             }
         }
@@ -178,6 +215,7 @@ namespace Antmicro.Renode.Peripherals.Miscellaneous
         private void HandleByte()
         {
             byte b = shift;
+            Console.WriteLine("SLAVE byte 0x" + b.ToString("X2") + " st=" + (int)state);
             switch(state)
             {
             case St.Addr:
@@ -215,12 +253,12 @@ namespace Antmicro.Renode.Peripherals.Miscellaneous
 
         private void Acknowledge()
         {
-            Sda.Set(false);
+            DriveLow();
         }
 
         private void Nack()
         {
-            Sda.Set(true);
+            Release();
             state = St.Idle;
         }
 
@@ -232,5 +270,7 @@ namespace Antmicro.Renode.Peripherals.Miscellaneous
         private bool reading;
         private bool sclHigh;
         private bool sdaHigh;
+        private bool driving;
+        private bool ackHeld;
     }
 }
