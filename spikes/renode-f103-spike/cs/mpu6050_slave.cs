@@ -36,6 +36,7 @@ namespace Antmicro.Renode.Peripherals.Miscellaneous
         public void WriteDoubleWord(long offset, uint value) { }
 
         public IGPIOReceiver Host { get; set; }
+        public IBusController Bus { get; set; }
 
         private void DriveLow()
         {
@@ -267,5 +268,6 @@ namespace Antmicro.Renode.Peripherals.Miscellaneous
         private bool sdaHigh;
         private bool driving;
         private bool ackHeld;
+        private bool selfWrite;
     }
 }
