@@ -39,21 +39,12 @@ namespace Antmicro.Renode.Peripherals.Miscellaneous
 
         private void DriveLow()
         {
-            if(Host != null && !driving)
-            {
-                Sda.Connect(Host, 11);
-                driving = true;
-            }
             Sda.Set(false);
         }
 
         private void Release()
         {
-            if(Host != null && driving)
-            {
-                Sda.Disconnect();
-                driving = false;
-            }
+            Sda.Set(true);
         }
 
         private void SetSda(bool level)
@@ -73,8 +64,7 @@ namespace Antmicro.Renode.Peripherals.Miscellaneous
             reading = false;
             sclHigh = false;
             sdaHigh = true;
-            driving = false;
-            if(Host != null) { Sda.Disconnect(); }
+            Release();
         }
 
         public void OnGPIO(int number, bool value)
@@ -100,6 +90,10 @@ namespace Antmicro.Renode.Peripherals.Miscellaneous
                 StopCondition();
             }
             sdaHigh = value;
+            if(ackHeld && value)
+            {
+                DriveLow();
+            }
         }
 
         private void StartCondition()
@@ -253,6 +247,7 @@ namespace Antmicro.Renode.Peripherals.Miscellaneous
 
         private void Acknowledge()
         {
+            Console.WriteLine("SLAVE ack-drive");
             DriveLow();
         }
 
