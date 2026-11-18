@@ -37,15 +37,34 @@ namespace Antmicro.Renode.Peripherals.Miscellaneous
 
         public IGPIOReceiver Host { get; set; }
         public IBusController Bus { get; set; }
+        public OpenDrainF1Port Port { get; set; }
 
         private void DriveLow()
         {
-            Sda.Set(false);
+            selfDrive = true;
+            try
+            {
+                Sda.Set(false);
+                if(Port != null) { Port.SlaveDrive(11, false); }
+            }
+            finally
+            {
+                selfDrive = false;
+            }
         }
 
         private void Release()
         {
-            Sda.Set(true);
+            selfDrive = true;
+            try
+            {
+                Sda.Set(true);
+                if(Port != null) { Port.SlaveDrive(11, true); }
+            }
+            finally
+            {
+                selfDrive = false;
+            }
         }
 
         private void SetSda(bool level)
@@ -70,6 +89,10 @@ namespace Antmicro.Renode.Peripherals.Miscellaneous
 
         public void OnGPIO(int number, bool value)
         {
+            if(selfDrive)
+            {
+                return;
+            }
             if(number == 0)
             {
                 OnScl(value);
@@ -268,6 +291,71 @@ namespace Antmicro.Renode.Peripherals.Miscellaneous
         private bool sdaHigh;
         private bool driving;
         private bool ackHeld;
+        private bool selfDrive;
         private bool selfWrite;
+    }
+}
+
+
+namespace Antmicro.Renode.Peripherals.Miscellaneous
+{
+    using System.Collections.Generic;
+    using Antmicro.Renode.Core;
+    using Antmicro.Renode.Peripherals.GPIOPort;
+
+    // STM32F1GPIOPort 在输出模式下丢弃外部驱动 (OnGPIO 直接 return)，导致开漏
+    // 从机拉不低总线。这里覆盖成"外部低电平强制拉低、外部高电平不覆盖"，
+    // 并给从机一个直接改 State 的入口 (SlaveDrive)。
+    public class OpenDrainF1Port : STM32F1GPIOPort
+    {
+        public OpenDrainF1Port(IMachine machine, List<List<int>> invertedAFPins = null)
+            : base(machine, invertedAFPins)
+        {
+        }
+
+        public void SlaveDrive(int pin, bool level)
+        {
+            if(pin < 0 || pin >= 16)
+            {
+                return;
+            }
+            if(!level)
+            {
+                if(!saved.ContainsKey(pin))
+                {
+                    saved[pin] = State[pin];
+                }
+                State[pin] = false;
+                Connections[pin].Set(false);
+            }
+            else
+            {
+                bool own = true;
+                if(saved.TryGetValue(pin, out var v))
+                {
+                    own = v;
+                    saved.Remove(pin);
+                }
+                State[pin] = own;
+                Connections[pin].Set(own);
+            }
+        }
+
+        public override void OnGPIO(int number, bool value)
+        {
+            if(number < 0 || number >= 16)
+            {
+                return;
+            }
+            if(!value)
+            {
+                State[number] = false;
+                Connections[number].Set(false);
+                return;
+            }
+            base.OnGPIO(number, value);
+        }
+
+        private readonly Dictionary<int, bool> saved = new Dictionary<int, bool>();
     }
 }

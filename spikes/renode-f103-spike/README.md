@@ -294,12 +294,29 @@ PB10/PB11 的 CRH nibble 是 `0b0111`（开漏输出 50MHz）。按这个 CRH �
 "外接驱动决定 IDR"的结论只在**输入模式**（默认 `CRH=0x44444444`）下成立。
 这就是 ACK 不可见的根因，不是时序问题。
 
-**试过的绕过（失败）**：让从机直接写 `BSRR/BRR` 去改 ODR（既然 IDR 跟 ODR）。
-结果采样被自己的写污染（地址帧从 `0xD0` 变成 `0x10`，说明高位被自己的 ODR
-写覆盖）；加上"自写屏蔽"后固件直接卡死在启动（RTT 全 0）。已回退到能解帧的版本。
+### 方案 1：继承覆盖端口模型（进行中，已搭好骨架）
 
-另一条（更稳）的思路：把从机做成**替换 `gpioPortB` 的模型**，自己实现
-BSRR/ODR/IDR 与开漏线与语义，代价是要把 EXTI/TIM/DMA 那 20+ 处引用接回来。
+比预想便宜得多——`STM32F1GPIOPort` 的 `OnGPIO` 是 `override`，`State` 是
+`protected`，所以不用重写 500 行，只要：
+
+```csharp
+public class OpenDrainF1Port : STM32F1GPIOPort
+{
+    public void SlaveDrive(int pin, bool level) { /* 直接改 State[pin] */ }
+    public override void OnGPIO(int number, bool value) { /* 外部低强制拉低 */ }
+}
+```
+
+平台里把类型换掉一行即可，20+ 处 EXTI/TIM/DMA 连线一处都不用动：
+`gpioPortB: Antmicro.Renode.Peripherals.Miscellaneous.OpenDrainF1Port @ sysbus <0x40010C00, +0x400>`
+
+实测：平台能加载、固件正常 boot、从机仍收到事件。
+
+**当前 bug**：地址帧从 `0xD0` 退化成 `0x10`（丢高位）。原因指向基类
+`OnGPIO` 在输出模式下对**高电平**直接 `return`（只发一行 warning），所以主控
+把 SDA 拉高时接收者收不到事件；低电平走我们的覆盖能通知，高电平不能。
+下一步：在 `OnGPIO` 的 `value == true` 分支里自己 `Connections[number].Set(...)`
+（按开漏线与：外部为高时线电平取自身驱动值）。
 
 ## 仍然缺的
 

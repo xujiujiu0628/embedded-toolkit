@@ -64,7 +64,7 @@ nvicInput40: Miscellaneous.CombinedInput @ none
 gpioPortA: GPIOPort.STM32F1GPIOPort @ sysbus <0x40010800, +0x400>
     invertedAFPins: [[7, 1]]
 
-gpioPortB: GPIOPort.STM32F1GPIOPort @ sysbus <0x40010C00, +0x400>
+gpioPortB: Antmicro.Renode.Peripherals.Miscellaneous.OpenDrainF1Port @ sysbus <0x40010C00, +0x400>
     invertedAFPins: [[13, 1], [14, 1], [15, 1], [0, 1], [1, 1]]
 
 gpioPortC: GPIOPort.STM32F1GPIOPort @ sysbus <0x40011000, +0x400>
