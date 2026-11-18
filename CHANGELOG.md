@@ -66,6 +66,7 @@
   （`Recv failure` / `curl 52`）与探针未插（doctor SWD `open failed`）；这两条是
   环境问题，不是 workflow 缺陷。**结论：CI 链路已通；红=物理输入缺，不是代码。**
   **仍未做**（当时口径，已被上段取代）: hw-smoke 的 CI 运行（自托管 runner 当前离线），本结论只覆盖本地手工值守。
+  **最终 CI 全绿（2026-11-18，run `44230680308`）**: 人工值守把 PA5 停过 3V 后重跑 dispatch，hw-smoke **exit 0** —— checkout/Python/Provision/`doctor --strict`/verify(5/5, FR-ALERT-01 pass)/evidence export 全过，判定原文 `"status": "ok"`、`"evidence": "hardware_validated"`。F-249 的决策 B 至此在本地与 CI 两侧都得到真机确认。
 
 - **F-250 (feat, 物理层): verify.py Step 0 物理检查清单闸 — 接线未核对不进烧录**（`d81479a`）:
   **背景**: 物理故障最难排除、也最容易先入为主——2026-08-26/27 两次把「用户
