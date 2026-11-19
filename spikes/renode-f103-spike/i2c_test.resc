@@ -4,8 +4,20 @@ machine LoadPlatformDescription @D:/claude-embed/embedded-toolkit/spikes/renode-
 python "mpu = monitor.Machine['sysbus.mpu']"
 python "port = monitor.Machine['sysbus.gpioPortB']"
 python "mpu.Sda.Connect(port, 11)"
-python "print('WIRED sda->PB11')"
+python "mpu.DiagPort = port"
+python "import os; mpu.FailBurstAt = int(os.environ.get('I2C_FAIL_BURST', '0')); mpu.FailFromBurst = int(os.environ.get('I2C_FAIL_FROM', '0'))"
+python "import os; mpu.SetLogLimit(int(os.environ.get('I2C_LOG_LIMIT', '2600')))"
+python "print('WIRED sda->PB11 failAt=' + str(mpu.FailBurstAt) + ' failFrom=' + str(mpu.FailFromBurst))"
 sysbus LoadELF @D:/claude-embed/hw-projects/stm32f103-mpu6050-oled/build/mpu6050-oled.elf
+python "cpu = monitor.Machine['sysbus.cpu']"
+python "from Antmicro.Renode.Peripherals.CPU import CpuAddressHook"
+python "hits = []"
+python "h = CpuAddressHook(lambda c, a: hits.append(c.GetRegister(0).RawValue & 0xFF) if len(hits) < 60 else None)"
+python "cpu.AddHook(0x08002130, h)"
+python "cpu.ActivateNewHooks()"
 start
 sleep 3
+python "print('RX_BYTES=' + ' '.join('%02X' % x for x in hits))"
+python "print('READ_TX=' + str(mpu.ReadTransactions) + ' INJECTED=' + str(mpu.InjectedNacks))"
+sysbus ReadBytes 0x200007D4 512
 quit

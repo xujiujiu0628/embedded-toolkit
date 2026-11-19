@@ -15,6 +15,9 @@
 |---|---|
 | `stm32f103-dwt.repl` | 原厂 F103 平台 + `BitBanding` + DWT 计数桩 |
 | `boot.resc` | 建机器 → 载平台 → LoadELF → 跑 2 秒 |
+| `stm32f103-i2c.repl` | 同上 + 把 `gpioPortB` 换成 `OpenDrainF1Port` + 挂 MPU6050 从机 |
+| `cs/mpu6050_slave.cs` | 从机模型 + 开漏端口模型 + 逐事件打点（`BusLog`） |
+| `i2c_test.resc` | I2C 端到端复跑：接线 → 钩子 → 跑 3 秒 → 读 RTT |
 
 ## 运行
 
@@ -37,6 +40,26 @@ printf '%s\n' \
  'start' 'sleep 3' 'sysbus.cpu PC' 'quit' \
  | ./renode.exe --console --disable-gui
 ```
+
+## I2C 端到端复跑
+
+`i2c_test.resc` = 平台 + 从机 + 程序化接线 + RTT 读回 + CPU 钩子取 WHO_AM_I：
+
+```bash
+cd D:/toolchains/renode/renode_1.17.0-portable
+./renode.exe --console --disable-gui \
+  < "<d-claude-root>/embedded-toolkit/spikes/renode-f103-spike/i2c_test.resc" \
+  > run.log 2>&1
+grep "RX_BYTES\|READ_TX" run.log   # 期望：68 后接 10 11 … 1D；READ_TX 一百多
+```
+
+判读四件：`RX_BYTES` 逐字节比对（首字节 0x68，其后每 14 字节一组 = `10..1D`）、
+`READ_TX`/`INJECTED`（读事务数与注入落地数）、`[LOG CAPPED at 2600 events]`
+（打点封顶生效，避免 100Hz 采样循环把日志刷成 20 万行）、RTT 段解出
+`[BOOT] MPU6050 OK @ 0x68`。
+
+故障与日志旋钮都用环境变量，不设即默认：`I2C_FAIL_BURST`（单次 NACK）、
+`I2C_FAIL_FROM`（持续 NACK）、`I2C_LOG_LIMIT`（打点上限，看注入现场时放大）。
 
 ## 三段实测
 
@@ -294,57 +317,144 @@ PB10/PB11 的 CRH nibble 是 `0b0111`（开漏输出 50MHz）。按这个 CRH �
 "外接驱动决定 IDR"的结论只在**输入模式**（默认 `CRH=0x44444444`）下成立。
 这就是 ACK 不可见的根因，不是时序问题。
 
-### 方案 1：继承覆盖端口模型（进行中，已搭好骨架）
+### 方案 1：开漏端口模型 —— 已打通（2026-11-19）
 
-比预想便宜得多——`STM32F1GPIOPort` 的 `OnGPIO` 是 `override`，`State` 是
-`protected`，所以不用重写 500 行，只要：
+骨架 + 逐事件打点，端到端跑通：固件打印 **`[BOOT] MPU6050 OK @ 0x68`**，
+后续 `PWR_MGMT_1/SMPLRT_DIV/CONFIG/GYRO_CONFIG...` 初始化写全部按序出现。
 
-```csharp
-public class OpenDrainF1Port : STM32F1GPIOPort
-{
-    public void SlaveDrive(int pin, bool level) { /* 直接改 State[pin] */ }
-    public override void OnGPIO(int number, bool value) { /* 外部低强制拉低 */ }
-}
+**打点分层**（`BusLog.E(layer, msg)`，共用一条序号流，便于按时间对齐）：
+
+| 层 | 内容 |
+|---|---|
+| `SLV recv` | 每个引脚事件进入从机时的 `(pin,val,selfDrive,scl,sda,state,bit,ackHeld)` |
+| `SLV post` | 该事件处理完之后的线路快照，含 `IDR=` —— 直接调端口 `ReadDoubleWord(0x08)`，等价于主控此刻读到的值 |
+| `PORT` | 端口层的 `extDrive`（外部驱动）与 `slaveDrive`（从机强驱动） |
+| `SLV sample / read bit / byte / ack` | 位级解码与输出 |
+
+**寄存器层打不了点**：`STM32F1GPIOPort.Read/WriteDoubleWord` 是接口实现的
+final virtual，子类覆盖编译报 `CS0506`（反射与编译器双证）。主控写引脚走
+`SetBitsFromMask → Connections[pin].Set()`，无条件扇出，所以从机侧日志就是
+主控写给总线的真实流。
+
+**主控读回值靠 CPU 钩子取**：钩在 `MPU6050_I2C_ReceiveByte` 的返回点
+（`0x08002130`，`pop` 之前 R0 即返回值），把主控**实际组装出来的每个字节**
+收进列表。这一条是本次定位的关键 —— 线电平看着对、寄存器也算对，只有 R0
+能证明主控到底拿到了什么。
+
+#### 三个根因（按被证伪的顺序）
+
+1. **单写者 `State[]` ≠ 开漏线与。** 主控在 ACK / 读数据期间写 1 会覆盖从机
+   拉的 0（`SetBitsFromMask` 先通知接收者、后写 `State[bit]`）；而且从机自己的
+   `Sda` GPIO 也去重（`Core/GPIO.cs:42` 的 `if(state == value) return;`），
+   重复 `Set(false)` 根本到不了端口。
+   → 从机改持 `drivingLow`：只要还在拉低，每收到一个总线事件就先抬后压
+   （`ReassertLow`），绕过去重重新压低。
+2. **读地址的 ACK 槽没占拍。** ACK 在第 8 个上升沿驱动，但第 8 个下降沿就开始
+   输出数据位 → 第一个数据位被主控当 ACK 吃掉，整个字节左移一位。历史上
+   `0xD0` 读成 `0x10` 一类错值就是这个。
+   → `readAckPhase`：第 8 个下降沿继续压住，第 9 个下降沿才释放并同拍输出 bit7。
+3. **读完成的 ACK 判早了一拍。** `bitIndex == 8` 在「驱动完 8 位的第一个上升沿」
+   就触发 —— 那一拍主控还在采 bit7，从机却 `StopCondition()` + `Release()` 把线
+   拉高，最后一位变 1：`0x68` 读成 `0x69`，`try_probe` 判失败并回退 0x69。
+   → `readAckPending`：释放之后的**下一个**上升沿才判主控 ACK/NACK。
+
+#### 证据
+
+| 项 | 修前 | 修后 |
+|---|---|---|
+| CPU 钩子 R0（WHO_AM_I） | `WHO_HITS=[105]` = 0x69 | `[104]` = 0x68 |
+| 固件 RTT | `[BOOT] MPU6050 init FAIL` | `[BOOT] MPU6050 OK @ 0x68` |
+| 后续事务 | 无（两探失败即退出） | `0xD0/0x6B/0x00`、`0x19/0x09`、`0x1A/0x03`、`0x1B/0x00`… |
+
+同会话两次独立运行结果一致（`WHO_HITS` 均为 `[104]`）。
+
+#### burst 逐字节核对（14 字节）
+
+从机把 `0x3B..0x48`（`ACCEL_XOUT_H..GYRO_ZOUT_L`）种成 `0x10..0x1D`，钩子收
+主控组装出的字节流，两轮独立运行输出**完全相同**：
+
+```
+RX_BYTES=68 | 10 11 12 13 14 15 16 17 18 19 1A 1B 1C 1D | ×4 轮重复 | 10 11 12（封顶截断）
 ```
 
-平台里把类型换掉一行即可，20+ 处 EXTI/TIM/DMA 连线一处都不用动：
-`gpioPortB: Antmicro.Renode.Peripherals.Miscellaneous.OpenDrainF1Port @ sysbus <0x40010C00, +0x400>`
+首字节 `68` 是 WHO_AM_I，其后每 14 字节一组与图案逐字节相等 —— 说明**读指针
+自增、连续字节的 ACK 链、末字节 NACK 收尾**都是对的，且 100Hz 采样循环里每轮
+采样都一致。判"对"的判据是逐字节相等，不是"看起来有数据"。
 
-实测：平台能加载、固件正常 boot、从机仍收到事件。
+#### 初始化写序列（逐条对上）
 
-**当前 bug**：地址帧从 `0xD0` 退化成 `0x10`（丢高位）。原因指向基类
-`OnGPIO` 在输出模式下对**高电平**直接 `return`（只发一行 warning），所以主控
-把 SDA 拉高时接收者收不到事件；低电平走我们的覆盖能通知，高电平不能。
-已按此改（`value == true` 分支自己发通知），**现象无变化，仍 `0x10`**。
-说明主控写引脚走的不是 `OnGPIO`（那是给 `-> gpioPortB@N` 的外部发送者用的），
-而是 `WritePin → Connections[number].Set`，我们的覆盖根本没进那条路径。
-下一步应当**逐事件打点**：在从机 `OnGPIO` 里把 `(number, value, sclHigh, state)`
-写进日志，用一次 `MPU6050_I2C_Init` 的完整位流对照，定位到底哪几位丢了。
+从从机日志里抽 `SLV byte` 行，得到完整事务骨架：
+
+```
+探测   0xD0 → 0x75 → 0xD1 → 读回 0x68
+写     0x6B←0x00   0x19←0x09   0x1A←0x03   0x1B←0x00   0x1C←0x00   0x6C←0x00
+读     0x3B 起 14 字节 burst
+```
+
+与 `mpu6050.h` 的寄存器定义、`MPU6050_Init()` 的调用顺序逐条一致（含顺序，
+不是"都写过"）。这条判据不依赖任何日志之外的假设。
+
+#### 故障注入（NACK）
+
+从机两个旋钮（resc 里由环境变量驱动）：
+
+| 旋钮 | 语义 |
+|---|---|
+| `FailBurstAt = N` | 第 N 次读事务回 NACK（单次） |
+| `FailFromBurst = N` | 第 N 次及以后都回 NACK（持续） |
+
+读事务 = Init 里那次探测 + 每次 burst。校准占 `#2..#101`，主循环从 `#102` 起。
+
+```bash
+I2C_FAIL_BURST=105 ./renode.exe --console --disable-gui < i2c_test.resc   # 单次故障
+I2C_FAIL_FROM=2    ./renode.exe --console --disable-gui < i2c_test.resc   # 持续故障
+I2C_LOG_LIMIT=20000 ...                                                   # 放开打点上限(看注入现场)
+```
+
+实测（单次故障各跑两次）：
+
+| 场景 | 观察 |
+|---|---|
+| 单次 NACK @#105 | `INJECTED=1`；RTT 出现一次 `[DIAG] MPU6050_UpdateEuler FAIL`；之后读事务继续（`READ_TX=113/118`），burst 数据仍逐字节正确 → **失败后自恢复，不挂死** |
+| 持续 NACK @#2 起 | `INJECTED=350`；RTT 一次 DIAG；`[STATE=…]` 数值全 0；主循环继续 |
+| 无注入 | 无 DIAG，数据正确 |
+
+判读纪律：**`INJECTED=0` 不等于"固件没反应"** —— 先看 `READ_TX` 有没有达到 N。
+本次踩过：注入点设 #120，但那一轮只跑到 116 次读事务，注入根本没发生，一度被
+误读成"单次 NACK 不可见"。
+
+#### 时钟拉伸：没有可测对象
+
+`mpu6050_i2c.c` 里 `grep ReadPin` 只有一行，读的是 **SDA**；主控写完 SCL 高位后
+**从不回读 SCL**。所以这个固件对时钟拉伸没有任何约束：即使模型让从机压住 SCL，
+主控仍按自己的节拍继续读，拉伸只会让读到的位错乱，不会被"等待"。
+
+结论：时钟拉伸在当前固件上**不可验证**，这不是模型缺口。要测它得先改固件的
+`i2c_w_scl`（拉高后回读 SCL 等释放），属于固件侧改动，不在本 spike 范围。
 
 ## 仍然缺的
 
 | 缺口 | 状态 | 说明 |
 |---|---|---|
-| **软 I2C 从设备** | **卡住（架构限制）** | MPU6050/OLED 仍无应答，`MPU6050 init FAIL` 是预期 |
+| **软 I2C 从设备** | **已打通（2026-11-19）** | 地址探测、寄存器写、WHO_AM_I 读回端到端通；不再依赖"架构限制"结论 |
+| **读 burst 逐字节核对** | **已做（2026-11-19）** | 从机种 `0x3B..0x48=0x10..0x1D`，主控读回逐字节一致，连续多轮一致 |
+| **初始化写序列** | **已做（2026-11-19）** | 6 条配置写的寄存器/值/顺序与 `MPU6050_Init()` 逐条一致 |
+| **故障注入（NACK）** | **已做（2026-11-19）** | 单次/持续两档；固件报一次 `[DIAG]`、不挂死、单次故障后自恢复 |
+| **时钟拉伸** | **不可验证** | 固件写完 SCL 从不回读（`grep ReadPin` 仅 SDA 一行），拉伸对它没有约束 |
 | **RCC 时钟位** | 不做 | `__HAL_RCC_*` 写不落盘，但 Renode 的外设模型不检查时钟使能，补了也不改变行为；读值由 SVD `Tag` 供 |
 
-### 为什么软 I2C 从设备卡住
+### 之前为什么判成"架构限制"（已被推翻）
 
-要模拟 bit-bang I2C，必须能**观察并驱动 GPIO 线电平**。当前器材里没有这条路：
-
-1. **Python 外设接不了 GPIO**：声明 `Python.PythonPeripheral @ sysbus ...` 再加
-   `-> gpioPortB@10`，Renode 1.17 静默卡死（和 `.repl` 解析坑同一症状）。
-   对照实验：`Miscellaneous.Button` 用同样写法能加载并生效，说明不是语法问题，
-   而是 Python 外设不实现 GPIO 接收/驱动接口。
-2. **替换 `gpioPortB` 也不行**：原厂平台里 `gpioPortB` 被 EXTI、TIM1/2/3/4、
-   DMA 等 20+ 处引用（`stm32f103.repl:187-245`），整块替掉会让这些连接全部失效，
-   平台直接解析失败。
-3. 因此只有两条真路：写一个实现 Renode GPIO 接口的 **C# 外设**（需编译进 Renode），
-   或等上游支持 Python 外设挂 GPIO。
-
-在补齐之前，**任何依赖 MPU6050/OLED 读回的仿真结论都不能采信**。
+前面几轮试了 Python 外设接 GPIO（静默卡死）、整块替换 `gpioPortB`（20+ 处
+EXTI/TIM/DMA 连线全部失效），由此得出"要写 C# 外设并编译进 Renode"的结论。
+实际不需要：**继承 `STM32F1GPIOPort` 只改两个成员**（`OnGPIO` 覆盖 + 一个直接
+写 `State` 的入口）就够，`Runtime include @*.cs` 能当场编译加载。真正的难点不是
+能不能接 GPIO，而是**模型语义**——单写者的 `State[]` 要手工补成开漏线与，且
+`GPIO.Set` 的去重会让"重复压同一个电平"静默失效。
 
 ## 边界
 
 这是 **L1 预检**，永远不升级成验收：电气层、上电时序、真实外设的非理想行为都测不到。
-按键输入已有模型；在补上 I2C 从设备之前，任何依赖 MPU6050/OLED 读回的仿真结论都不能采信。
+按键输入已有模型；I2C 从机现在能应答，**单字节读写、14 字节 burst、初始化写序列、
+NACK 故障路径都已逐项核对**。仍不能采信的：电气层（上拉 RC、噪声、电平阈值）、
+时钟拉伸（固件不回读 SCL，见上）、以及任何依赖真实传感器动态特性的结论。
